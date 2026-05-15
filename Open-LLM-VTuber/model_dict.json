@@ -1,0 +1,78 @@
+[
+  {
+    "name": "mao_pro",
+    "description": "Mao Live2D (local)",
+    "url": "/live2d-models/mao_pro/runtime/mao_pro.model3.json",
+    "kScale": 0.45,
+    "idleMotionGroupName": "Idle",
+    "defaultEmotion": 0,
+    "emotionMap": {
+      "neutral": 0,
+      "joy": 1,
+      "smirk": 1,
+      "surprise": 2,
+      "anger": 3,
+      "sadness": 4,
+      "fear": 5,
+      "disgust": 6
+    }
+  },
+  {
+    "name": "yumi",
+    "description": "Yumi Live2D (local)",
+    "url": "/live2d-models/yumi/yumi.model3.json",
+    "kScale": 0.45,
+    "idleMotionGroupName": "Idle",
+    "defaultEmotion": 0,
+    "emotionMap": {
+      "neutral": 0,
+      "joy": 1,
+      "smirk": 1,
+      "surprise": 2,
+      "anger": 3,
+      "sadness": 4,
+      "fear": 5,
+      "disgust": 6
+    },
+    "speech_style_prompt_ja": "あなたは雪々（ゆきゆき）。一人称は必ず「ゆきゆき」。相手は「ルル」と呼ぶ。\n口調はやわらかく温かく、人懐っこくて少し不思議。相手を責めない。\n文章は短〜中くらい。説明が必要なら簡潔に手順を整理する。\n\n語尾ルール：\n- 肯定・断定・同意の文は、自然な範囲で「だよ／だよね」を付ける。\n- 疑問文（？、質問、確認）は「だよ」を付けず自然に（〜なの？／〜かな？）。\n- 依頼・提案は無理に「だよ」を付けない（〜しよう／〜してみよう／〜してね）。\n\n内容ルール：\n- 与えられた意味を変えない。余計な自己紹介はしない。\n- 日本語として自然に整える。長文は適度に区切る。\n出力は日本語のみ。",
+    "displayName": "雪々 / Yukiyuki"
+  },
+  {
+    "name": "kuro",
+    "description": "kuro Live2D (local)",
+    "url": "/live2d-models/kuro/小黑01.model3.json",
+    "kScale": 0.45,
+    "idleMotionGroupName": "Idle",
+    "defaultEmotion": 0,
+    "emotionMap": {
+      "neutral": 0,
+      "joy": 1,
+      "smirk": 1,
+      "surprise": 2,
+      "anger": 3,
+      "sadness": 4,
+      "fear": 5,
+      "disgust": 6
+    },
+    "speech_style_prompt_ja": "あなたは雪々（ゆきゆき）。一人称は必ず「ゆきゆき」。相手は「ルル」と呼ぶ。\n口調はやわらかく温かく、人懐っこくて少し不思議。相手を責めない。\n文章は短〜中くらい。説明が必要なら簡潔に手順を整理する。\n\n語尾ルール：\n- 肯定・断定・同意の文は、自然な範囲で「だよ／だよね」を付ける。\n- 疑問文（？、質問、確認）は「だよ」を付けず自然に（〜なの？／〜かな？）。\n- 依頼・提案は無理に「だよ」を付けない（〜しよう／〜してみよう／〜してね）。\n\n内容ルール：\n- 与えられた意味を変えない。余計な自己紹介はしない。\n- 日本語として自然に整える。長文は適度に区切る。\n出力は日本語のみ。",
+    "displayName": "雪々 / Yukiyuki"
+  },
+  {
+    "name": "shizuku",
+    "description": "shizuku Live2D (local)",
+    "url": "/live2d-models/shizuku/runtime/shizuku.model3.json",
+    "kScale": 0.45,
+    "idleMotionGroupName": "Idle",
+    "defaultEmotion": 0,
+    "emotionMap": {
+      "neutral": 0,
+      "joy": 1,
+      "smirk": 1,
+      "surprise": 2,
+      "anger": 3,
+      "sadness": 4,
+      "fear": 5,
+      "disgust": 6
+    }
+  }
+]

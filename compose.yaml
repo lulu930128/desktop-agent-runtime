@@ -1,0 +1,51 @@
+name: kuro3
+services:
+  tts:
+    image: python:3.10-slim
+    container_name: kuro-tts
+    working_dir: /workspace/GPT-SoVITS
+    command: >-
+      sh -lc "python -m pip install --upgrade pip &&
+      (pip install --no-cache-dir -r requirements.txt ||
+       pip install --no-cache-dir -r requirements_api_v2.txt) &&
+      python -X utf8 api_v2.py --host 0.0.0.0 --port 9881"
+    ports: ["9881:9881"]
+    volumes:
+      - type: bind
+        source: C:/kuro/GPT-SoVITS
+        target: /workspace/GPT-SoVITS
+    environment: {}            # 先留空；要用再填 KEY: "VALUE"
+    restart: unless-stopped
+
+  api:
+    image: python:3.10-slim
+    container_name: kuro-api
+    working_dir: /workspace/open-llm-vtuber
+    command: >-
+      sh -lc "python -m pip install --upgrade pip &&
+      pip install --no-cache-dir -r requirements.txt &&
+      uvicorn src.open_llm_vtuber.main:app --host 0.0.0.0 --port 8001 --workers 1"
+    ports: ["8001:8001"]
+    volumes:
+      - type: bind
+        source: C:/kuro/open-llm-vtuber
+        target: /workspace/open-llm-vtuber
+      - type: bind
+        source: C:/kuro
+        target: /workspace/kuro
+    environment:
+      TTS_URL: "http://tts:9881"
+      KURO_DATA_ROOT: "/workspace/kuro"
+    depends_on: [tts]
+    restart: unless-stopped
+
+  deeplx:
+    image: ghcr.io/owo-network/deeplx:latest
+    container_name: kuro-deeplx
+    ports: ["1188:1188"]
+    environment: {}
+    restart: unless-stopped
+
+networks:
+  default:
+    name: kuro-net

@@ -1,0 +1,11 @@
+路徑:C:\kuro\Open-LLM-VTuber\characters
+改腳色設定跟TTS設定
+
+路徑:C:\kuro\Open-LLM-VTuber\live2d-models
+加入腳色模型
+
+路徑:C:\kuro\gpt_sovits\GPT_SoVITS\configs
+新增"tts_infer_腳色名.yaml"並修改語音參數
+
+路徑:"C:\kuro\Open-LLM-VTuber\model_dict.json"
+新增腳色參數

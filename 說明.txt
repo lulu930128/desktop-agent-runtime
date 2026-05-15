@@ -1,0 +1,60 @@
+Kuro 桌寵本體 = UI(身體) + Agent Runtime(腦骨架) + Providers(外部能力包裝) + Plugin Host(功能載入) + Memory/Scheduler(記憶與提醒)
+
+設定成gpu
+
+$env:CUDA_VISIBLE_DEVICES = "0"              # 指定用第 0 號 GPU
+$env:PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True"  # 讓 VRAM 配置更平滑
+
+
+=========開TTS==========
+# webui
+cd C:\kuro\gpt_sovits
+.\.venv\Scripts\Activate.ps1
+python webui.py
+
+# 後端 API v2
+conda activate C:\kuro\envs\kuro-tts310
+cd C:\kuro\gpt_sovits
+python .\api_v2.py -a 127.0.0.1 -p 9881
+=========================
+
+==========開LLM==========
+conda activate C:\kuro\envs\kuro-llm310
+cd C:\kuro\Open-LLM-VTuber
+$env:OPEN_LLM_VTUBER_CONFIG = "C:\kuro\Open-LLM-VTuber\configs\conf.yaml"
+python .\run_server.py
+=========================
+
+============DEEPLX============
+
+啟動
+cd C:\kuro\bridges
+python -m uvicorn deeplx_bridge:app --host 127.0.0.1 --port 1188
+
+
+$env:OPENAI_API_KEY="你的key"
+$env:OPENAI_TRANSLATE_MODEL="gpt-5-mini"
+$env:KURO_OPEN_LLM_DIR="C:\kuro\Open-LLM-VTuber"
+$env:KURO_MODEL_DICT_PATH="C:\kuro\Open-LLM-VTuber\model_dict.json"
+
+cd C:\kuro\bridges
+python -m uvicorn deeplx_bridge:app --host 127.0.0.1 --port 1188
+
+
+
+docker compose ps                      # 看狀態
+docker compose logs -f deeplx          # 看日誌
+docker compose restart deeplx          # 重啟
+docker compose stop deeplx             # 停止
+docker compose rm -f deeplx            # 移除容器（不刪 image）
+docker compose pull deeplx             # 更新到新版
+docker compose up -d deeplx            # 重新起來
+==============================
+
+おやすみタイガ,君の隣にいつも幸せな魔法がありますように
+
+&prompt_lang=ja
+
+
+
+python C:\kuro\launcher\kuro_launcher.py

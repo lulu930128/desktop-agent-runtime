@@ -1,0 +1,67 @@
+# Local-only workspace data
+暫存區/
+launcher_logs/
+backup/
+_archive/
+
+# Python/runtime artifacts
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.ruff_cache/
+
+# Virtual environments and bundled envs
+envs/
+.venv/
+**/.venv/
+venv/
+Open-LLM-VTuber/.venv/
+gsv-tts/
+
+# Logs, caches, generated state
+*.log
+*.jsonl
+*.bak
+Open-LLM-VTuber/logs/
+Open-LLM-VTuber/cache/
+Open-LLM-VTuber/chat_history/
+Open-LLM-VTuber/conf.launcher_runtime.yaml
+
+# Local secrets and machine config
+.env
+.env.*
+!.env.example
+open_ai_api.txt
+Open-LLM-VTuber/conf.yaml
+kuro_launcher.settings.local.yaml
+
+# Large model/data artifacts
+datasets/
+models/
+*.ckpt
+*.pth
+*.safetensors
+*.onnx
+*.bin
+*.gguf
+gpt_sovits/GPT_weights*/
+gpt_sovits/SoVITS_weights*/
+gpt_sovits/GPT_SoVITS/pretrained_models/
+Open-LLM-VTuber/models/
+
+# Local voice references
+voices/**/*.wav
+voices/**/*.mp3
+voices/**/*.flac
+voices/**/*.ogg
+voices/**/*.aac
+!voices/**/.gitkeep
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/

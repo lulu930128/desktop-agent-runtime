@@ -1,0 +1,61 @@
+# Kuro Launcher Settings
+paths:
+  # ROOT = 你放 launcher.py 的地方（可攜式：搬整個資料夾就好）
+  ROOT: "C:\\kuro"
+
+  # Open-LLM-VTuber 專案根目錄
+  open_llm_vtuber_dir: "${ROOT}\\Open-LLM-VTuber"
+
+  # 角色 YAML 放這裡（你目前就是這樣）
+  characters_dir: "${open_llm_vtuber_dir}\\characters"
+
+  # deeplx bridge 的資料夾（放 deeplx_bridge.py）
+  bridge_dir: "${ROOT}\\bridges"
+
+  # GPT-SoVITS 專案路徑
+  tts_dir: "${ROOT}\\gpt_sovits"
+
+  # GPT-SoVITS 推理設定檔資料夾（多角色聲音：tts_infer_<character>.yaml）
+  tts_infer_dir: "${tts_dir}\\GPT_SoVITS\\configs"
+  tts_infer_default: "tts_infer.yaml"
+  tts_infer_template: "tts_infer_{character}.yaml"
+
+  # conda env 路徑（env 直接放在 C:\kuro\envs\...）
+  env_tts: "${ROOT}\\envs\\kuro-tts310"
+  env_llm: "${ROOT}\\envs\\kuro-llm310"
+
+  # launcher 生成的 runtime conf（透過 OPEN_LLM_VTUBER_CONFIG 注入）
+  runtime_conf_path: "${open_llm_vtuber_dir}\\conf.launcher_runtime.yaml"
+
+  # launcher logs
+  logs_dir: "${ROOT}\\launcher_logs"
+
+  # Electron 捷徑（存在就優先開桌面版）
+  electron_lnk: "C:\\Users\\thoma\\OneDrive\\桌面\\open-llm-vtuber-electron.lnk"
+
+network:
+  bridge:
+    host: "127.0.0.1"
+    port: 1188
+  tts:
+    host: "127.0.0.1"
+    # 你已確認 9880 被排除，改用 9881 OK
+    port: 9881
+  llm:
+    host: "127.0.0.1"
+    port: 23456
+
+bridge:
+  translate_path: "/translate"
+  debug_path: "/translate_debug"
+
+llm:
+  provider_env: "KURO_LLM_PROVIDER"
+  default_provider: "openai_llm"
+  openai:
+    model_env: "OPENAI_LLM_MODEL"
+    default_model: "gpt-4o"
+    temperature_env: "OPENAI_LLM_TEMPERATURE"
+    inject_key_env: "OPENAI_LLM_INJECT_KEY"
+    api_key_env: "OPENAI_LLM_API_KEY"
+    fallback_api_key_env: "OPENAI_API_KEY"
