@@ -336,7 +336,11 @@ async def handle_sentence_output(
 
 
     # Final: render ONE short spoken Japanese line from the full Chinese response
-    spoken_ja = await _render_spoken_ja(full_zh.strip())
+    full_zh_text = full_zh.strip()
+    spoken_ja = await _render_spoken_ja(full_zh_text)
+    if spoken_ja and spoken_ja.strip() == full_zh_text:
+        logger.warning("Speech renderer returned the original subtitle text; skip voice lane to avoid feeding zh text into ja TTS.")
+        spoken_ja = ""
     emotion_key = getattr(translate_engine, "last_emotion", "") if translate_engine else ""
 
     # Prefer bridge-derived emotion; fallback to inline tags; else neutral

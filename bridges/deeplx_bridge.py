@@ -18,6 +18,9 @@ app = FastAPI()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL = os.getenv("OPENAI_TRANSLATE_MODEL", "gpt-5-mini").strip()
 OPENAI_RESPONSES_URL = os.getenv("OPENAI_RESPONSES_URL", "https://api.openai.com/v1/responses").strip()
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1").strip().rstrip("/")
+OLLAMA_MODEL = os.getenv("OLLAMA_TRANSLATE_MODEL", os.getenv("OLLAMA_MODEL", "qwen2.5:7b")).strip()
+ENABLE_OLLAMA_FALLBACK = os.getenv("ENABLE_OLLAMA_FALLBACK", "1").strip().lower() in ("1", "true", "yes", "y")
 
 # Optional DeepLX fallback (default off, because upstream often 503)
 DEEPLX_ENDPOINT = os.getenv("DEEPLX_ENDPOINT", "http://127.0.0.1:1189/translate").strip()
@@ -105,6 +108,43 @@ def _extract_output_text(resp_json: Dict[str, Any]) -> str:
     return "".join(parts).strip()
 
 
+def _extract_chat_text(resp_json: Dict[str, Any]) -> str:
+    choices = resp_json.get("choices") or []
+    if not choices:
+        return ""
+    message = choices[0].get("message") or {}
+    content = message.get("content") or ""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict):
+                part = item.get("text") or item.get("content") or ""
+                if part:
+                    parts.append(str(part))
+            elif isinstance(item, str):
+                parts.append(item)
+        return "".join(parts).strip()
+    return str(content).strip()
+
+
+def _strip_code_fences(text: str) -> str:
+    out = (text or "").strip()
+    if out.startswith("```"):
+        out = re.sub(r"^```(?:json)?\s*", "", out, count=1, flags=re.IGNORECASE)
+        out = re.sub(r"\s*```$", "", out, count=1)
+    return out.strip()
+
+
+def _has_weird_spoken_chars(text: str) -> bool:
+    if not text:
+        return False
+    if re.search(r"[A-Za-z]{2,}", text):
+        return True
+    return bool(re.search(r"[^\u0020-\u007E\u3000-\u303F\u3040-\u30FF\u31F0-\u31FF\u4E00-\u9FFF\uFF01-\uFF65\uFF66-\uFF9F]", text))
+
+
 async def translate_openai_to_ja(text: str) -> str:
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY missing in environment.")
@@ -131,7 +171,6 @@ async def translate_openai_to_ja(text: str) -> str:
         "model": OPENAI_MODEL,
         "instructions": instructions,
         "input": text,
-        "reasoning": {"effort": "low"},
         "max_output_tokens": 2048,
         "store": False,
     }
@@ -146,6 +185,66 @@ async def translate_openai_to_ja(text: str) -> str:
     out = _extract_output_text(data).replace("\ufeff", "").strip()
     if not out:
         raise RuntimeError(f"OpenAI empty output_text. Raw: {json.dumps(data)[:1000]}")
+    return out
+
+
+async def _chat_ollama(system_prompt: str, user_text: str, *, max_tokens: int, temperature: float) -> str:
+    if not ENABLE_OLLAMA_FALLBACK:
+        raise RuntimeError("Ollama fallback disabled.")
+    if not OLLAMA_BASE_URL:
+        raise RuntimeError("OLLAMA_BASE_URL missing.")
+    if not OLLAMA_MODEL:
+        raise RuntimeError("OLLAMA_MODEL missing.")
+
+    body = {
+        "model": OLLAMA_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_text},
+        ],
+        "stream": False,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    url = f"{OLLAMA_BASE_URL}/chat/completions"
+
+    async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
+        r = await client.post(url, json=body)
+
+    if r.status_code != 200:
+        raise RuntimeError(f"Ollama HTTP {r.status_code}: {r.text[:800]}")
+
+    data = r.json()
+    out = _strip_code_fences(_extract_chat_text(data).replace("\ufeff", ""))
+    if not out:
+        raise RuntimeError(f"Ollama empty chat output. Raw: {json.dumps(data)[:1000]}")
+    return out
+
+
+async def translate_ollama_to_ja(text: str) -> str:
+    instructions = (
+        "You are a translation engine.\n"
+        "The user speaks Traditional Chinese.\n"
+        "If the input is already Japanese, return it unchanged.\n"
+        "Otherwise translate every sentence into natural colloquial Japanese.\n"
+        "Use normal Japanese grammar with kana in particles, verb endings, and function words.\n"
+        "Never leave Traditional Chinese phrases unchanged.\n"
+        "When a Chinese personal name appears, render it in a natural Japanese form, usually Katakana.\n"
+        "Output ONLY the final Japanese text.\n"
+        "Do not add quotes, explanations, markdown, headings, or bullet lists.\n"
+        "Examples:\n"
+        "Chinese: 你好，今天天氣如何？\n"
+        "Japanese: こんにちは、今日の天気はどうですか？\n"
+        "Chinese: 魯魯，很開心見到你。今天想聊些什麼呢？\n"
+        "Japanese: ルル、会えてうれしいよ。今日は何を話そうか？\n"
+    )
+    out = await _chat_ollama(instructions, text, max_tokens=2048, temperature=0.1)
+    if out.strip() == text.strip() and not is_mostly_japanese(out):
+        raise RuntimeError("Ollama returned untranslated non-Japanese text.")
+    if not contains_kana(out):
+        raise RuntimeError("Ollama output does not look like spoken Japanese.")
+    if _has_weird_spoken_chars(out):
+        raise RuntimeError("Ollama output contains unexpected characters.")
     return out
 
 
@@ -215,7 +314,18 @@ async def _translate_impl(payload: Dict[str, Any]) -> Dict[str, Any]:
         logger.error("OpenAI translate failed: %s", errors["openai"])
         logger.debug(traceback.format_exc())
 
-    # 4) Optional fallback: DeepLX
+    # 4) Fallback: Ollama
+    if ENABLE_OLLAMA_FALLBACK:
+        try:
+            out = await translate_ollama_to_ja(text)
+            last.update({"text": text, "ts": now, "data": out})
+            return {"out": out, "provider": f"ollama:{OLLAMA_MODEL}", "skipped": False, "errors": errors}
+        except Exception as e:
+            errors["ollama"] = str(e)
+            logger.error("Ollama translate failed: %s", errors["ollama"])
+            logger.debug(traceback.format_exc())
+
+    # 5) Optional fallback: DeepLX
     if ENABLE_DEEPLX_FALLBACK:
         try:
             out = await translate_deeplx_to_ja(text)
@@ -226,7 +336,7 @@ async def _translate_impl(payload: Dict[str, Any]) -> Dict[str, Any]:
             logger.error("DeepLX translate failed: %s", errors["deeplx"])
             logger.debug(traceback.format_exc())
 
-    # 5) Ultimate fallback: return original
+    # 6) Ultimate fallback: return original
     last.update({"text": text, "ts": now, "data": text})
     return {"out": text, "provider": "fallback-original", "skipped": False, "errors": errors}
 
@@ -282,7 +392,6 @@ async def render_openai_spoken_short(text: str, style_prompt_ja: str = "") -> Di
         "model": OPENAI_MODEL,
         "instructions": base_rules,
         "input": text,
-        "reasoning": {"effort": "low"},
         "max_output_tokens": 512,
         "store": False,
     }
@@ -322,6 +431,7 @@ async def render_openai_spoken_short(text: str, style_prompt_ja: str = "") -> Di
 
     return {"ja": ja, "emotion": emo}
 
+
 def _canonical_emotion(e: Any) -> str:
     if not e:
         return "neutral"
@@ -360,6 +470,8 @@ async def translate_debug(req: Request):
             "provider": result["provider"],
             "skipped": result["skipped"],
             "openai_key_loaded": bool(OPENAI_API_KEY),
+            "ollama_enabled": ENABLE_OLLAMA_FALLBACK,
+            "ollama_model": OLLAMA_MODEL,
             "errors": result["errors"],
         }
     )
@@ -390,7 +502,17 @@ async def render_spoken(req: Request):
         logger.error("OpenAI render_spoken failed: %s", errors["openai"])
         logger.debug(traceback.format_exc())
 
-    # Fallback: translate only (no emotion)
+    # Fallback: Ollama translate only
+    if ENABLE_OLLAMA_FALLBACK:
+        try:
+            out = await translate_ollama_to_ja(text)
+            return json_utf8({"code": 200, "data": out, "emotion": "neutral", "provider": f"ollama:{OLLAMA_MODEL}:translate_only", "errors": errors})
+        except Exception as e:
+            errors["ollama_translate"] = str(e)
+            logger.error("Ollama translate_only failed: %s", errors["ollama_translate"])
+            logger.debug(traceback.format_exc())
+
+    # Fallback: OpenAI translate only (no emotion)
     try:
         out = await translate_openai_to_ja(text)
         return json_utf8({"code": 200, "data": out, "emotion": "neutral", "provider": f"openai:{OPENAI_MODEL}:translate_only", "errors": errors})

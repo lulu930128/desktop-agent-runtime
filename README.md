@@ -1,160 +1,155 @@
 # Kuro Desktop Agent Runtime
 
-這份專案是一個桌面角色啟動器整合包。主要入口是 `launcher.py`，目標是讓使用者從啟動器選擇角色，並讓每個角色都能擁有獨立的 prompt、Live2D 模型、TTS 聲音與記憶識別。
+這份專案把 `launcher`、`Open-LLM-VTuber`、`gpt_sovits`、`bridge` 和角色資料整理成同一個 repo，目標是用啟動器選角色、選專案，再把不同層級的 prompt 組成同一條對話流程。
 
-目前專案已攤平成單一 Git repo，`Open-LLM-VTuber`、`gpt_sovits`、launcher、bridge、角色設定都由根目錄的 Git 統一管理。模型權重、音檔、環境、log 與本機 secret 不提交。
+目前新的方向是：
 
-## 啟動方式
+- 角色人格 prompt 獨立成檔
+- 專案 prompt 與 tool prompt 獨立成檔
+- 輸出格式 / 系統契約 prompt 由系統統一提供
+- 記憶仍然維持「一個角色一份」，不因專案切開
 
-一般使用時只需要從根目錄啟動 launcher：
+## 啟動
 
 ```powershell
 cd C:\kuro
 .\envs\kuro-llm310\python.exe .\launcher.py
 ```
 
-也可以直接使用桌面捷徑或 `桌寵啟動器.vbs`，但專案邏輯仍以 `launcher.py` 為入口。
+launcher 會讀：
 
-launcher 會負責：
+- [C:\kuro\kuro_launcher.settings.yaml](C:/kuro/kuro_launcher.settings.yaml)
+- `.env` / `.env.local`
+- `Open-LLM-VTuber/characters/*.yaml`
+- `projects/*/project.yaml`
 
-- 讀取 `kuro_launcher.settings.yaml`
-- 讀取本機 `.env` / `.env.local`
-- 掃描 `Open-LLM-VTuber/characters/*.yaml`
-- 讓使用者選擇角色
-- 檢查角色資源是否完整
-- 啟動 Bridge、GPT-SoVITS TTS、Open-LLM-VTuber LLM server
-- 生成 runtime config 到 `Open-LLM-VTuber/conf.launcher_runtime.yaml`
-- 開啟 Electron 或 Web UI
+## 目前架構
 
-## 整體流程圖
+### 1. 角色層
+
+每個角色仍然是一份 YAML：
+
+- [C:\kuro\Open-LLM-VTuber\characters\kuro.yaml](C:/kuro/Open-LLM-VTuber/characters/kuro.yaml)
+- [C:\kuro\Open-LLM-VTuber\characters\mao_pro.yaml](C:/kuro/Open-LLM-VTuber/characters/mao_pro.yaml)
+- [C:\kuro\Open-LLM-VTuber\characters\shizuku.yaml](C:/kuro/Open-LLM-VTuber/characters/shizuku.yaml)
+- [C:\kuro\Open-LLM-VTuber\characters\yumi.yaml](C:/kuro/Open-LLM-VTuber/characters/yumi.yaml)
+
+角色 YAML 目前保留：
+
+- `conf_name`
+- `conf_uid`
+- `live2d_model_name`
+- `agent_config`
+- `tts_config`
+- `persona_prompt_path`
+- `default_project_id`
+
+`persona_prompt` 舊欄位還在，但現在如果 `persona_prompt_path` 有值，執行時會優先讀外部檔案。
+
+### 2. 專案層
+
+專案配置放在 `projects/`：
+
+- [C:\kuro\projects\desktop-agent-runtime\project.yaml](C:/kuro/projects/desktop-agent-runtime/project.yaml)
+
+目前 `project.yaml` 會管理：
+
+- `project_id`
+- `display_name`
+- `project_root`
+- `prompts.project_prompt`
+- `prompts.tool_prompt`
+
+### 3. Prompt 分層
+
+執行時的 system prompt 現在會依序組成：
+
+1. `System Contract`
+2. `Character Persona`
+3. `Project Context`
+4. `Tool Use Policy`
+5. `Expression Contract`
+
+對應來源如下：
+
+- 系統格式 prompt：  
+  [C:\kuro\Open-LLM-VTuber\prompts\utils\response_contract_prompt.txt](C:/kuro/Open-LLM-VTuber/prompts/utils/response_contract_prompt.txt)
+- 角色 prompt：  
+  [C:\kuro\Open-LLM-VTuber\prompts\persona](C:/kuro/Open-LLM-VTuber/prompts/persona)
+- 專案 prompt：  
+  [C:\kuro\projects\desktop-agent-runtime\prompts\project_prompt.txt](C:/kuro/projects/desktop-agent-runtime/prompts/project_prompt.txt)
+- tool prompt：  
+  [C:\kuro\projects\desktop-agent-runtime\prompts\tool_prompt.txt](C:/kuro/projects/desktop-agent-runtime/prompts/tool_prompt.txt)
+- Live2D 表情契約：  
+  [C:\kuro\Open-LLM-VTuber\prompts\utils\live2d_expression_prompt.txt](C:/kuro/Open-LLM-VTuber/prompts/utils/live2d_expression_prompt.txt)
+
+## 目前預設
+
+這次調整後，prompt 檔案狀態是：
+
+- `response_contract_prompt.txt`：已填入系統輸出格式規則
+- `persona/*.txt`：先留空，等你重寫
+- `project_prompt.txt`：先留空，等你重寫
+- `tool_prompt.txt`：先留空，等你重寫
+
+也就是說，現在系統只先保留「輸出格式 / 系統契約」這層，其他人格與專案內容都交給你後續補。
+
+## 記憶規則
+
+目前仍然是「一角色一份記憶」。
+
+也就是：
+
+- 切換專案不會切掉角色記憶
+- 記憶主要仍跟 `conf_uid` 走
+
+這符合現在的需求：同一個角色換專案時，仍然像同一個人，只是工作上下文不同。
+
+## Launcher 現況
+
+新的 launcher 已改成 `CustomTkinter`，重點是：
+
+- 左側選角色
+- 中間選專案
+- 右側看目前組合、服務控制與 prompt 預覽
+- 下方看執行 log
+
+目前啟動流程：
 
 ```mermaid
 flowchart TD
-    A["使用者啟動 launcher.py"] --> B["讀取 kuro_launcher.settings.yaml"]
-    B --> C["載入 .env / .env.local"]
-    C --> D["掃描 characters/*.yaml"]
-    D --> E["在啟動器選擇角色"]
-
-    E --> F["角色資源檢查"]
-    F --> F1["角色 YAML"]
-    F --> F2["Live2D model_dict.json + model 檔"]
-    F --> F3["GPT-SoVITS infer config"]
-    F --> F4["voice ref audio"]
-    F --> F5["GPT / SoVITS weights"]
-
-    F --> G{檢查通過?}
-    G -- 否 --> H["停止啟動並顯示缺少的資源"]
-    G -- 是 --> I["建立 runtime conf"]
-
-    I --> J["啟動 Bridge :1188"]
-    I --> K["啟動 TTS API :9881"]
-    I --> L["啟動 LLM server :23456"]
-
-    K --> M["TTS smoke test"]
-    M --> N{TTS 產音成功?}
-    N -- 否 --> H
-    N -- 是 --> O["開啟 Electron / Web UI"]
-
-    O --> P["使用者對話"]
-    P --> Q["OpenAI / LLM provider 產生回覆"]
-    Q --> R["TTS 轉語音"]
-    R --> S["前端播放語音 + Live2D 表情/動作"]
-    S --> P
+    A["Launcher 啟動"] --> B["讀取 .env / settings"]
+    B --> C["選擇角色"]
+    B --> D["選擇專案"]
+    C --> E["建立 runtime conf"]
+    D --> E
+    E --> F["寫入 conf.launcher_runtime.yaml"]
+    F --> G["啟動 Bridge"]
+    F --> H["啟動 GPT-SoVITS"]
+    F --> I["啟動 Open-LLM-VTuber"]
+    I --> J["組合 system prompt"]
+    J --> K["角色回答"]
+    K --> L["字幕顯示中文"]
+    L --> M["bridge 產生日文 spoken line"]
+    M --> N["TTS 發聲"]
 ```
 
-## 主要資料夾
+## 你接下來主要會改的地方
 
-| 路徑 | 用途 |
-| --- | --- |
-| `launcher.py` | 桌面啟動器入口 |
-| `kuro_launcher/` | 啟動器設定、程序管理、角色檢查、runtime config 產生 |
-| `kuro_launcher.settings.yaml` | 本機路徑、port、LLM provider 設定 |
-| `Open-LLM-VTuber/` | LLM server、前端、Live2D、角色 runtime |
-| `Open-LLM-VTuber/characters/` | 每個角色一份 YAML |
-| `Open-LLM-VTuber/live2d-models/` | Live2D 模型資源 |
-| `Open-LLM-VTuber/model_dict.json` | Live2D 模型索引與表情對照 |
-| `gpt_sovits/` | GPT-SoVITS TTS 服務 |
-| `gpt_sovits/GPT_SoVITS/configs/` | TTS infer 設定，命名為 `tts_infer_<角色名>.yaml` |
-| `voices/` | 角色參考音資料夾，音檔不提交 |
-| `bridges/` | 翻譯/文字處理 bridge |
-| `launcher_logs/` | launcher 與服務 log，不提交 |
+如果要正式重寫角色與工作模式，優先會碰這幾個檔案：
 
-## 角色資料關係
+- 角色人格：
+  [C:\kuro\Open-LLM-VTuber\prompts\persona\kuro.txt](C:/kuro/Open-LLM-VTuber/prompts/persona/kuro.txt)
+- 專案規則：
+  [C:\kuro\projects\desktop-agent-runtime\prompts\project_prompt.txt](C:/kuro/projects/desktop-agent-runtime/prompts/project_prompt.txt)
+- tool 規則：
+  [C:\kuro\projects\desktop-agent-runtime\prompts\tool_prompt.txt](C:/kuro/projects/desktop-agent-runtime/prompts/tool_prompt.txt)
 
-目前角色是「一個角色一份 YAML」：
+如果要新增一個新專案，就複製一份 `projects/<new-project>/project.yaml` 和它的 `prompts/` 即可。
 
-- `Open-LLM-VTuber/characters/kuro.yaml`
-- `Open-LLM-VTuber/characters/yumi.yaml`
-- `Open-LLM-VTuber/characters/mao_pro.yaml`
-- `Open-LLM-VTuber/characters/shizuku.yaml`
+## 注意
 
-角色 YAML 內最重要的欄位：
-
-- `conf_name`：角色設定名稱
-- `conf_uid`：角色記憶識別 ID，應保持唯一
-- `live2d_model_name`：對應 `model_dict.json` 的 `name`
-- `character_name` / `human_name`：角色顯示名稱與使用者稱呼
-- `persona_prompt`：角色人格與行為 prompt
-- `agent_config.agent_settings.basic_memory_agent.llm_provider`：LLM provider
-- `agent_config.llm_configs.openai_llm`：OpenAI 模型設定
-- `tts_config.tts_model`：TTS 類型，目前主要使用 `gpt_sovits_tts`
-- `tts_config.gpt_sovits_tts.ref_audio_path`：角色參考音路徑
-- `tts_config.gpt_sovits_tts.prompt_text`：參考音對應文字
-
-## 本機 Secret
-
-API key 不寫進角色 YAML，也不提交到 Git。
-
-請把本機 key 放在 `.env`：
-
-```powershell
-OPENAI_API_KEY=你的 key
-OPENAI_LLM_API_KEY=
-OPENAI_LLM_MODEL=gpt-4o
-OPENAI_LLM_TEMPERATURE=1.0
-OPENAI_LLM_INJECT_KEY=1
-KURO_LLM_PROVIDER=openai_llm
-```
-
-`.env` 已被 `.gitignore` 排除。可提交的範例是 `.env.example`。
-
-## Git 規則
-
-會提交：
-
-- launcher 程式
-- Open-LLM-VTuber 程式與前端靜態檔
-- GPT-SoVITS 程式
-- 角色 YAML
-- Live2D 模型檔
-- 說明文件
-- `.env.example`
-
-不提交：
-
-- `.env`
-- `launcher_logs/`
-- `envs/`
-- `gsv-tts/`
-- `Open-LLM-VTuber/conf.launcher_runtime.yaml`
-- `Open-LLM-VTuber/logs/`
-- `voices/**/*.wav`
-- `*.ckpt`
-- `*.pth`
-- `*.onnx`
-- `gpt_sovits/GPT_weights*/`
-- `gpt_sovits/SoVITS_weights*/`
-- `gpt_sovits/GPT_SoVITS/pretrained_models/`
-- `暫存區/`
-
-## 目前注意事項
-
-- `kuro` 是目前最完整的角色基底。
-- `mao_pro` 與 `shizuku` 已切成獨立 placeholder，但缺少完整 TTS 參考音與權重時，launcher 會阻擋啟動。
-- 若新增角色暫時沒有自己的資料，可以先建空白 placeholder，但不要指回其他角色的音檔或權重，避免角色混用。
-- 若曾經把 API key 放進檔案或 log，建議更換 key。
-
-## 相關文件
-
-- `新增腳色說明.txt`：新增角色的詳細步驟
-- `說明.txt`：早期手動啟動筆記，之後可逐步整理或移除
+- `.env` 不會進 git
+- 角色記憶目前不做專案隔離
+- 角色 YAML 裡舊的 `persona_prompt` 仍存在，但現在外部檔路徑優先
+- `kuro` 目前仍沿用你先前說的 `kuro = yuki` 狀態，這次沒有改人設內容

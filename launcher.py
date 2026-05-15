@@ -1,814 +1,667 @@
+import datetime
 import os
+import queue
 import sys
 import threading
 import time
-import datetime
-import queue
 import webbrowser
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Dict, Optional
 
-import tkinter as tk
-import tkinter.font as tkfont
-from tkinter import ttk, messagebox
+from tkinter import messagebox
 
-# --- bootstrap (robust imports + crash logging) ---
-def _bootstrap_paths() -> Path:
-    """Return base_dir for resolving assets + ensure local imports work.
+import customtkinter as ctk
 
-    - When running normally: base_dir = folder containing this launcher.py
-    - When packaged (PyInstaller): base_dir = sys._MEIPASS (extracted temp dir)
-    """
-    # Determine base directory
+
+def _bootstrap_base_dir() -> Path:
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         base_dir = Path(getattr(sys, "_MEIPASS")).resolve()
     else:
         base_dir = Path(__file__).parent.resolve()
 
-    # Ensure we can import 'kuro_launcher' package (expected under base_dir/kuro_launcher)
     if str(base_dir) not in sys.path:
         sys.path.insert(0, str(base_dir))
-
-    assets_dir = base_dir / "kuro_launcher"
-    return assets_dir if assets_dir.exists() else base_dir
+    return base_dir
 
 
+BASE_DIR = _bootstrap_base_dir()
 
-def _write_crash_log() -> None:
-    """Write last exception traceback to Desktop/kuro_launcher_crash.log (best-effort)."""
-    try:
-        import traceback
-        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        p = Path.home() / "Desktop" / "kuro_launcher_crash.log"
-        p.write_text(f"[{ts}]\n{traceback.format_exc()}\n", encoding="utf-8")
-    except Exception:
-        pass
-
-
-
-def _dbg(msg: str) -> None:
-    try:
-        print(f"[launcher][DBG] {msg}", flush=True)
-    except Exception:
-        pass
-
-
-# --- runtime logging (so `python launcher.py` shows something + keeps a log) ---
-def _setup_runtime_logging(log_dir: Path) -> Path:
-    """Best-effort: mirror stdout/stderr into a log file under log_dir."""
-    try:
-        log_dir.mkdir(parents=True, exist_ok=True)
-        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_path = log_dir / "launcher.combined.log"
-
-        class _Tee:
-            def __init__(self, a, b):
-                self.a, self.b = a, b
-            def write(self, s):
-                try: self.a.write(s)
-                except Exception: pass
-                try: self.b.write(s)
-                except Exception: pass
-            def flush(self):
-                try: self.a.flush()
-                except Exception: pass
-                try: self.b.flush()
-                except Exception: pass
-
-        f = open(log_path, "a", encoding="utf-8", buffering=1)
-        sys.stdout = _Tee(sys.stdout, f)  # type: ignore
-        sys.stderr = _Tee(sys.stderr, f)  # type: ignore
-        return log_path
-    except Exception:
-        return log_dir / "launcher_console.log"
-
-# --- UI helpers: custom font + app icon (Windows friendly) ---
-def _try_register_private_font(font_path: Path, timeout_sec: float = 1.5) -> Optional[str]:
-    """Register a private TTF font on Windows (no install). Returns a best-guess family name or None.
-
-    Some Windows+Tk setups can hang when querying tkfont.families() right after font registration.
-    To keep the launcher responsive, we avoid querying families here. If registration succeeds,
-    we return a reasonable guess based on filename; otherwise None.
-    """
-    if not font_path or not font_path.exists():
-        return None
-    if not sys.platform.startswith("win"):
-        return None
-
-    ok_holder = {"ok": False}
-
-    def _do_register():
-        try:
-            import ctypes
-            FR_PRIVATE = 0x10
-            # Add font resource (private to this process)
-            ret = ctypes.windll.gdi32.AddFontResourceExW(str(font_path), FR_PRIVATE, 0)
-            ok_holder["ok"] = bool(ret)
-            # Broadcast font change (best-effort)
-            try:
-                ctypes.windll.user32.SendMessageW(0xFFFF, 0x001D, 0, 0)  # HWND_BROADCAST, WM_FONTCHANGE
-            except Exception:
-                pass
-        except Exception:
-            ok_holder["ok"] = False
-
-    t = threading.Thread(target=_do_register, daemon=True)
-    t.start()
-    t.join(timeout=timeout_sec)
-
-    if not ok_holder["ok"]:
-        return None
-
-    # Best-effort guess: many fonts expose family close to filename.
-    # If this guess doesn't match, ttk will just fall back to system font.
-    stem = font_path.stem
-    # Common cleanup
-    stem = stem.replace("-Regular", "").replace("_", " ").strip()
-    return stem or None
-
-
-def _set_app_icon(root: tk.Tk, base_dir: Path) -> None:
-    """Set window icon. Prefer .ico on Windows; fall back to .png."""
-    try:
-        ico = base_dir / "luncher_yuki.ico"
-        png = base_dir / "luncher_yuki.png"
-        if sys.platform.startswith("win") and ico.exists():
-            root.iconbitmap(default=str(ico))
-            return
-        if png.exists():
-            img = tk.PhotoImage(file=str(png))
-            root.iconphoto(True, img)
-            root._kuro_icon_img = img  # keep reference
-    except Exception:
-        pass
-
-
-from kuro_launcher.config import load_config, AppConfig
+from kuro_launcher.config import AppConfig, load_config
 from kuro_launcher.procs import ManagedProc
+from kuro_launcher.project_manager import (
+    ProjectDefinition,
+    list_project_definitions,
+)
 from kuro_launcher.runtime_conf import build_runtime_conf, write_runtime_conf
-from kuro_launcher.services import start_bridge, start_tts, start_llm, validate_profile_assets, probe_tts
+from kuro_launcher.services import (
+    probe_tts,
+    start_bridge,
+    start_llm,
+    start_tts,
+    validate_profile_assets,
+)
 from kuro_launcher.utils import (
-    log_ts, port_is_open, read_yaml_file, http_post_json,
-    get_listening_pid_windows, taskkill_tree, build_logs_dir, strip_ansi_and_ctrl,
-    load_env_file
+    build_logs_dir,
+    get_listening_pid_windows,
+    http_post_json,
+    load_env_file,
+    log_ts,
+    port_is_open,
+    read_yaml_file,
+    sanitize_ascii,
+    strip_ansi_and_ctrl,
+    taskkill_tree,
 )
 
 
+@dataclass(frozen=True)
+class CharacterRecord:
+    yaml_path: Path
+    conf_name: str
+    conf_uid: str
+    live2d_model_name: str
+    persona_prompt_path: str
+    default_project_id: str
 
-class RoundedPill(tk.Canvas):
-    """A small iPhone-like rounded badge with a colored dot and text."""
 
-    def __init__(self, master, text: str, dot: str, bg: str, border: str, fg: str):
-        bg_base = "#FFFFFF"
-        try:
-            bg_base = master.cget("background")
-        except Exception:
-            # ttk widgets may not support -background; fall back to white
-            bg_base = "#FFFFFF"
-        super().__init__(master, bg=bg_base, highlightthickness=0, bd=0)
-        self._bg = bg
-        self._border = border
-        self._fg = fg
-        self._dot = dot
-        self._text = text
-        self._padx = 10
-        self._pady = 6
-        self._r = 14
-        self._font = ("Segoe UI", 10, "bold")
-        self._draw()
-
-    def set(self, text: str, online: bool):
-        self._text = text
-        self._dot = "#2EC4C6" if online else "#FF9A3E"
-        self._draw()
-
-    def _draw(self):
-        """Draw a seamless rounded pill.
-
-        We intentionally avoid composing arcs + rectangles with outlines, because Tk will
-        often show "seams" (extra inner lines) at the join boundaries.
-        """
-        self.delete("all")
-        fnt = tk.font.Font(font=self._font)
-        tw = fnt.measure(self._text)
-        th = fnt.metrics("linespace")
-        h = th + self._pady * 2
-        w = tw + self._padx * 2 + 18  # dot + gap
-        self.config(width=w, height=h)
-
-        r = min(self._r, h // 2)
-        # Smooth polygon rounded-rect (no internal seams)
-        # points go clockwise; smooth=True makes the corners rounded.
-        pts = [
-            r, 0,
-            w - r, 0,
-            w, 0,
-            w, r,
-            w, h - r,
-            w, h,
-            w - r, h,
-            r, h,
-            0, h,
-            0, h - r,
-            0, r,
-            0, 0,
-        ]
-        self.create_polygon(
-            pts,
-            smooth=True,
-            splinesteps=24,
-            fill=self._bg,
-            outline=self._border,
-            width=1,
+class StatusBadge(ctk.CTkFrame):
+    def __init__(self, master, name: str):
+        super().__init__(
+            master,
+            corner_radius=18,
+            fg_color="#161d2a",
+            border_width=1,
+            border_color="#283245",
         )
+        self.grid_columnconfigure(1, weight=1)
+        self._name = name
+        self.dot = ctk.CTkLabel(self, text="●", text_color="#f59e0b", width=18)
+        self.dot.grid(row=0, column=0, padx=(12, 6), pady=8)
+        self.label = ctk.CTkLabel(
+            self,
+            text=f"{name} · Offline",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            anchor="w",
+        )
+        self.label.grid(row=0, column=1, padx=(0, 12), sticky="w")
 
-        # dot + text
-        cy = h // 2
-        self.create_oval((self._padx, cy - 4, self._padx + 8, cy + 4), fill=self._dot, outline="")
-        self.create_text(self._padx + 14, cy, text=self._text, anchor="w", fill=self._fg, font=self._font)
+    def set_status(self, online: bool) -> None:
+        self.dot.configure(text_color="#34d399" if online else "#f59e0b")
+        self.label.configure(text=f"{self._name} · {'Online' if online else 'Offline'}")
 
 
-class LauncherApp(tk.Tk):
-    """
-    Kuro Launcher (Dualflow-ready)
-    - Starts/stops: Bridge / TTS / LLM
-    - Select character yaml
-    """
+def _setup_runtime_logging(log_dir: Path) -> Path:
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "launcher.combined.log"
 
-    
-    def _apply_fonts_and_styles(self) -> None:
-        """Apply consistent font across ttk widgets (fix missing CJK glyphs)."""
-        base = (self._ui_font_family, self._ui_font_base)
-        bold = (self._ui_font_family, self._ui_font_base, "bold")
-        title = (self._ui_font_family, 16, "bold")
-        
-        # ttk defaults
-        self.style.configure(".", font=base)
-        self.style.configure("TLabel", font=base)
-        self.style.configure("TButton", font=base)
-        self.style.configure("TEntry", font=base)
-        self.style.configure("Treeview", font=base, rowheight=32, background="#FFFFFF", fieldbackground="#FFFFFF", foreground=self._c_fg)
-        self.style.configure("Treeview.Heading", font=bold, background="#F3F8FF", foreground=self._c_fg, relief="flat")
-        self.style.map("Treeview", background=[("selected", "#D6E8FF")], foreground=[("selected", self._c_fg)])
-        self.style.configure("Header.TLabel", font=title)
-        self.style.configure("Status.TLabel", font=bold)
-        self.style.configure("CardTitle.TLabel", font=bold)
+    class _Tee:
+        def __init__(self, stream_a, stream_b):
+            self.stream_a = stream_a
+            self.stream_b = stream_b
 
+        def write(self, chunk):
+            try:
+                self.stream_a.write(chunk)
+            except Exception:
+                pass
+            try:
+                self.stream_b.write(chunk)
+            except Exception:
+                pass
+
+        def flush(self):
+            try:
+                self.stream_a.flush()
+            except Exception:
+                pass
+            try:
+                self.stream_b.flush()
+            except Exception:
+                pass
+
+    file_handle = open(log_path, "a", encoding="utf-8", buffering=1)
+    sys.stdout = _Tee(sys.stdout, file_handle)  # type: ignore[assignment]
+    sys.stderr = _Tee(sys.stderr, file_handle)  # type: ignore[assignment]
+    return log_path
+
+
+def _resolve_repo_path(repo_root: Path, raw_path: str) -> Optional[Path]:
+    raw_path = (raw_path or "").strip()
+    if not raw_path:
+        return None
+    candidate = Path(raw_path)
+    if candidate.is_absolute():
+        return candidate
+    return (repo_root / candidate).resolve()
+
+
+def _read_text_maybe(path: Optional[Path]) -> str:
+    if path is None or not path.exists():
+        return ""
+    encodings = ["utf-8", "utf-8-sig", "gbk", "gb2312", "cp936", "ascii"]
+    for encoding in encodings:
+        try:
+            return path.read_text(encoding=encoding)
+        except UnicodeDecodeError:
+            continue
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
+class LauncherApp(ctk.CTk):
     def __init__(self, cfg: AppConfig):
-        _dbg('LauncherApp.__init__ enter')
         super().__init__()
-        _dbg('Tk root created')
-        base_dir = _bootstrap_paths()
-        _dbg(f'base_dir={base_dir}')
-        # Set app icon (put luncher_yuki.ico or luncher_yuki.png in this folder)
-        _set_app_icon(self, base_dir)
-        _dbg('icon set (best-effort)')
-        # Custom font: NaikaiFont-Regular.ttf (Windows private registration)
-        font_path = base_dir / 'NaikaiFont-Regular.ttf'
-        _dbg(f'font_path={font_path}')
-        family = _try_register_private_font(font_path, timeout_sec=1.5)
-        _dbg(f'font_family={family}')
-        self._ui_font_family = family or 'Microsoft JhengHei UI'
-        self._ui_font_base = 12
-        # Log area font: use the same family so CJK doesn't fall back unexpectedly.
-        self._log_font = (self._ui_font_family, 11)
-
         self.cfg = cfg
 
-        self.title("Kuro Launcher")
-        # Larger default window so the right control panel doesn't get clipped.
-        # (Users can resize, but we keep a reasonable minimum.)
-        self.geometry("1280x780")
-        self.minsize(1160, 700)
-
-        # procs managed by launcher (if started by launcher)
         self.proc_bridge: Optional[ManagedProc] = None
         self.proc_tts: Optional[ManagedProc] = None
         self.proc_llm: Optional[ManagedProc] = None
-
-        # Thread-safe UI logging: background threads must not touch Tk widgets directly.
-        self._main_thread_id = threading.get_ident()
-        self._log_q: "queue.Queue[str]" = queue.Queue()
-
-        self._item_to_yaml: Dict[str, Path] = {}
         self.current_run_id: Optional[str] = None
 
-        _dbg('init_style...')
-        self._init_style()
-        _dbg('build_ui...')
+        self._log_q: queue.Queue[str] = queue.Queue()
+        self._main_thread_id = threading.get_ident()
+
+        self.character_records: Dict[str, CharacterRecord] = {}
+        self.project_records: Dict[str, ProjectDefinition] = {}
+        self.character_var = ctk.StringVar(value="")
+        self.project_var = ctk.StringVar(value="")
+
+        self._prompt_boxes: Dict[str, ctk.CTkTextbox] = {}
+        self._character_radio_buttons: list[ctk.CTkRadioButton] = []
+        self._project_radio_buttons: list[ctk.CTkRadioButton] = []
+
+        self.title("Kuro Launcher")
+        self.geometry("1560x980")
+        self.minsize(1340, 860)
+        self.configure(fg_color="#0f1724")
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+
         self._build_ui()
-
-        # Start draining log queue after widgets exist.
-        self.after(100, self._drain_log_queue)
-        _dbg('refresh_character_list...')
         self._refresh_character_list()
-        _dbg('character list ready')
+        self._refresh_project_list()
+        self.after(120, self._drain_log_queue)
+        self.after(600, self._tick_status)
 
-        # ensure bridge on startup (non-blocking)
-        threading.Thread(target=self._ensure_bridge_on_start, daemon=True).start()
+    def _build_ui(self) -> None:
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(2, weight=1)
 
-        # periodic status refresh
-        self.after(400, self._tick_status)
+        header = ctk.CTkFrame(self, corner_radius=0, fg_color="transparent")
+        header.grid(row=0, column=0, sticky="ew", padx=20, pady=(18, 10))
+        header.grid_columnconfigure(0, weight=1)
 
-    # ----------------- Styling -----------------
-    def _init_style(self):
-        self.style = ttk.Style()
-        style = self.style
+        title_block = ctk.CTkFrame(header, fg_color="transparent")
+        title_block.grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(
+            title_block,
+            text="Kuro Launcher",
+            font=ctk.CTkFont(size=28, weight="bold"),
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            title_block,
+            text="Character + project runtime, prompt layering, and service control",
+            text_color="#94a3b8",
+            font=ctk.CTkFont(size=13),
+        ).pack(anchor="w", pady=(4, 0))
 
-        # Prefer a consistent theme (works well on Windows)
-        try:
-            style.theme_use("clam")
-        except Exception:
-            pass
+        badge_row = ctk.CTkFrame(header, fg_color="transparent")
+        badge_row.grid(row=0, column=1, sticky="e")
+        self.badges = {
+            "Bridge": StatusBadge(badge_row, "Bridge"),
+            "TTS": StatusBadge(badge_row, "TTS"),
+            "LLM": StatusBadge(badge_row, "LLM"),
+        }
+        for idx, badge in enumerate(self.badges.values()):
+            badge.grid(row=0, column=idx, padx=(10 if idx else 0, 0), sticky="ew")
 
-        # Pastel palette (soft blue / pink with light surfaces)
-        self._c_bg = "#EEF6FF"       # window background
-        self._c_panel = "#FFFFFF"    # cards/panels
-        self._c_panel2 = "#F3F8FF"   # subtle tinted surface
-        self._c_fg = "#1F2A44"       # text
-        self._c_muted = "#5C6B8A"    # secondary text
-        # Line color grading (outer -> inner)
-        self._c_border = "#C9DAFF"   # borders (level-1, outer)
-        self._c_border2 = "#DDE8FF"  # borders (level-2, inner groups)
-        self._c_border3 = "#EEF4FF"  # borders (level-3, separators)
-        self._c_blue = "#5B8CFF"     # primary accent (blue)
-        self._c_pink = self._c_blue     # deprecated (keep for compatibility)
-        self._c_teal = "#2EC4C6"     # supportive accent (teal)
-        self._c_warn = "#FF9A3E"     # warning / offline
+        content = ctk.CTkFrame(self, fg_color="transparent")
+        content.grid(row=1, column=0, sticky="nsew", padx=20, pady=(0, 12))
+        content.grid_columnconfigure(0, weight=2)
+        content.grid_columnconfigure(1, weight=2)
+        content.grid_columnconfigure(2, weight=3)
+        content.grid_rowconfigure(0, weight=1)
 
-        self.configure(bg=self._c_bg)
-
-        # Base fonts
-        self._font_h1 = (self._ui_font_family, 16, "bold")
-        self._font_h2 = (self._ui_font_family, 11, "bold")
-        self._font_body = (self._ui_font_family, 11)
-
-        # ttk element colors
-        style.configure("TFrame", background=self._c_bg)
-        style.configure(
-            "Card.TFrame",
-            background=self._c_panel,
-            borderwidth=1,
-            relief="solid",
+        self.character_frame = self._build_selector_panel(
+            content,
+            column=0,
+            title="角色",
+            subtitle=str(self.cfg.characters_dir),
+            refresh_cmd=self._refresh_character_list,
+        )
+        self.project_frame = self._build_selector_panel(
+            content,
+            column=1,
+            title="專案",
+            subtitle=str(self.cfg.projects_dir),
+            refresh_cmd=self._refresh_project_list,
         )
 
-        style.configure("TLabel", background=self._c_bg, foreground=self._c_fg, font=self._font_body)
-        style.configure("Muted.TLabel", background=self._c_bg, foreground=self._c_muted, font=self._font_body)
-        style.configure("H1.TLabel", background=self._c_bg, foreground=self._c_fg, font=self._font_h1)
-        style.configure("H2.TLabel", background=self._c_bg, foreground=self._c_fg, font=self._font_h2)
-
-        # Labels that live inside white panels/cards (avoid colored label "strips")
-        style.configure("Panel.TLabel", background=self._c_panel, foreground=self._c_fg, font=self._font_body)
-        style.configure("PanelMuted.TLabel", background=self._c_panel, foreground=self._c_muted, font=self._font_body)
-        style.configure("PanelH2.TLabel", background=self._c_panel, foreground=self._c_fg, font=self._font_h2)
-
-        # Labelframe
-        style.configure("TLabelframe", background=self._c_bg, bordercolor=self._c_border)
-        style.configure("TLabelframe.Label", background=self._c_bg, foreground=self._c_fg, font=self._font_h2)
-
-        # Separator (very light)
-        style.configure("TSeparator", background=self._c_border3)
-
-        # Buttons (keep several styles so the UI isn't single-tone)
-        style.configure(
-            "TButton",
-            font=self._font_body,
-            padding=(10, 7),
-            background=self._c_panel2,
-            foreground=self._c_fg,
-            borderwidth=1,
-            relief="flat",
+        right_panel = ctk.CTkFrame(
+            content,
+            corner_radius=20,
+            fg_color="#111827",
+            border_width=1,
+            border_color="#1f2937",
         )
-        style.map(
-            "TButton",
-            background=[("active", "#E3ECFF"), ("pressed", "#D9E6FF")],
+        right_panel.grid(row=0, column=2, sticky="nsew")
+        right_panel.grid_columnconfigure(0, weight=1)
+
+        self.summary_box = self._build_card_textbox(
+            right_panel,
+            row=0,
+            title="目前組合",
+            subtitle="這裡會顯示目前角色、專案與 prompt 指向。",
+            height=210,
         )
 
-        style.configure(
-            "Primary.TButton",
-            font=self._font_body,
-            padding=(10, 7),
-            background=self._c_pink,
-            foreground="#FFFFFF",
-            borderwidth=0,
-            relief="flat",
-        )
-        style.map(
-            "Primary.TButton",
-            background=[("active", "#FF86BE"), ("pressed", "#FF5AA6")],
-            foreground=[("!disabled", "#FFFFFF")],
-        )
+        actions_card = self._build_card(right_panel, row=1, title="服務控制", subtitle="啟動、停止與診斷。")
+        actions_body = actions_card[1]
+        actions_body.grid_columnconfigure(0, weight=1)
+        actions_body.grid_columnconfigure(1, weight=1)
+        self._action_button(actions_body, "啟動角色", self.on_start_profile, row=0, column=0, primary=True)
+        self._action_button(actions_body, "停止角色", self.on_stop_profile, row=0, column=1)
+        self._action_button(actions_body, "啟動 / 停止 Bridge", self.on_toggle_bridge, row=1, column=0)
+        self._action_button(actions_body, "重啟 Bridge", self.on_restart_bridge, row=1, column=1)
+        self._action_button(actions_body, "打開 Web UI", self.on_open_web_ui, row=2, column=0)
+        self._action_button(actions_body, "打開 Electron", self.on_open_electron, row=2, column=1)
+        self._action_button(actions_body, "Translate Debug", self.on_translate_debug, row=3, column=0)
+        self._action_button(actions_body, "打開 Logs", self.on_open_logs_dir, row=3, column=1)
 
-        style.configure(
-            "Blue.TButton",
-            font=self._font_body,
-            padding=(10, 7),
-            background=self._c_blue,
-            foreground="#FFFFFF",
-            borderwidth=0,
-            relief="flat",
+        prompt_card = self._build_card(
+            right_panel,
+            row=2,
+            title="Prompt 預覽",
+            subtitle="人格、專案、工具 prompt 目前都已獨立成檔。",
+            body_fill="both",
+            body_expand=True,
         )
-        style.map(
-            "Blue.TButton",
-            background=[("active", "#719CFF"), ("pressed", "#4A7CFF")],
-            foreground=[("!disabled", "#FFFFFF")],
+        prompt_body = prompt_card[1]
+        prompt_body.grid_rowconfigure(0, weight=1)
+        prompt_body.grid_columnconfigure(0, weight=1)
+        self.prompt_tabs = ctk.CTkTabview(prompt_body, fg_color="#0b1220")
+        self.prompt_tabs.grid(row=0, column=0, sticky="nsew")
+        for key, title in [
+            ("persona", "角色"),
+            ("project", "專案"),
+            ("tool", "工具"),
+            ("contract", "格式"),
+        ]:
+            tab = self.prompt_tabs.add(title)
+            tab.grid_rowconfigure(0, weight=1)
+            tab.grid_columnconfigure(0, weight=1)
+            box = ctk.CTkTextbox(
+                tab,
+                fg_color="#020617",
+                border_width=1,
+                border_color="#1e293b",
+                font=ctk.CTkFont(size=13),
+            )
+            box.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+            box.configure(state="disabled")
+            self._prompt_boxes[key] = box
+
+        log_wrap = ctk.CTkFrame(
+            self,
+            corner_radius=20,
+            fg_color="#111827",
+            border_width=1,
+            border_color="#1f2937",
         )
-
-        style.configure(
-            "Ghost.TButton",
-            font=self._font_body,
-            padding=(10, 7),
-            background=self._c_panel,
-            foreground=self._c_fg,
-            borderwidth=1,
-            relief="flat",
+        log_wrap.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 18))
+        log_wrap.grid_rowconfigure(1, weight=1)
+        log_wrap.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            log_wrap,
+            text="執行紀錄",
+            font=ctk.CTkFont(size=18, weight="bold"),
+        ).grid(row=0, column=0, sticky="w", padx=18, pady=(16, 4))
+        self.log_box = ctk.CTkTextbox(
+            log_wrap,
+            fg_color="#020617",
+            border_width=1,
+            border_color="#1e293b",
+            font=ctk.CTkFont(family="Consolas", size=12),
         )
-        style.map(
-            "Ghost.TButton",
-            background=[("active", "#F3F7FF"), ("pressed", "#EAF1FF")],
+        self.log_box.grid(row=1, column=0, sticky="nsew", padx=16, pady=(8, 16))
+        self.log_box.configure(state="disabled")
+
+    def _build_selector_panel(
+        self,
+        parent,
+        *,
+        column: int,
+        title: str,
+        subtitle: str,
+        refresh_cmd,
+    ) -> ctk.CTkScrollableFrame:
+        card = ctk.CTkFrame(
+            parent,
+            corner_radius=20,
+            fg_color="#111827",
+            border_width=1,
+            border_color="#1f2937",
         )
+        card.grid(row=0, column=column, sticky="nsew", padx=(0 if column == 0 else 12, 0))
+        card.grid_rowconfigure(1, weight=1)
+        card.grid_columnconfigure(0, weight=1)
 
-        # Treeview (table)
-        style.configure(
-            "Treeview",
-            background=self._c_panel,
-            fieldbackground=self._c_panel,
-            foreground=self._c_fg,
-            bordercolor=self._c_border,
-            lightcolor=self._c_border,
-            darkcolor=self._c_border,
-            rowheight=26,
-            font=self._font_body,
+        header = ctk.CTkFrame(card, fg_color="transparent")
+        header.grid(row=0, column=0, sticky="ew", padx=16, pady=(16, 8))
+        header.grid_columnconfigure(0, weight=1)
+        text_block = ctk.CTkFrame(header, fg_color="transparent")
+        text_block.grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(
+            text_block,
+            text=title,
+            font=ctk.CTkFont(size=20, weight="bold"),
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            text_block,
+            text=subtitle,
+            text_color="#94a3b8",
+            font=ctk.CTkFont(size=12),
+        ).pack(anchor="w", pady=(4, 0))
+        ctk.CTkButton(
+            header,
+            text="重新整理",
+            width=96,
+            command=refresh_cmd,
+            fg_color="#1d4ed8",
+            hover_color="#1e40af",
+        ).grid(row=0, column=1, sticky="e")
+
+        scroll = ctk.CTkScrollableFrame(
+            card,
+            fg_color="#0b1220",
+            corner_radius=16,
         )
-        style.configure(
-            "Treeview.Heading",
-            background="#E9F0FF",
-            foreground=self._c_fg,
-            relief="flat",
-            font=(self._ui_font_family, 11, "bold"),
+        scroll.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 14))
+        scroll.grid_columnconfigure(0, weight=1)
+        return scroll
+
+    def _build_card(self, parent, *, row: int, title: str, subtitle: str, body_fill="x", body_expand=False):
+        card = ctk.CTkFrame(
+            parent,
+            corner_radius=18,
+            fg_color="#0b1220",
+            border_width=1,
+            border_color="#1e293b",
         )
-        style.map(
-            "Treeview",
-            background=[("selected", "#DDE8FF")],
-            foreground=[("selected", self._c_fg)],
+        card.grid(row=row, column=0, sticky="nsew", padx=14, pady=(0, 14))
+        card.grid_columnconfigure(0, weight=1)
+        if body_expand:
+            card.grid_rowconfigure(1, weight=1)
+
+        head = ctk.CTkFrame(card, fg_color="transparent")
+        head.grid(row=0, column=0, sticky="ew", padx=14, pady=(14, 8))
+        head.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(head, text=title, font=ctk.CTkFont(size=18, weight="bold")).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(
+            head,
+            text=subtitle,
+            text_color="#94a3b8",
+            font=ctk.CTkFont(size=12),
+        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+
+        body = ctk.CTkFrame(card, fg_color="transparent")
+        body.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 14))
+        if body_expand:
+            body.grid_rowconfigure(0, weight=1)
+            body.grid_columnconfigure(0, weight=1)
+        return card, body
+
+    def _build_card_textbox(self, parent, *, row: int, title: str, subtitle: str, height: int) -> ctk.CTkTextbox:
+        card, body = self._build_card(parent, row=row, title=title, subtitle=subtitle)
+        box = ctk.CTkTextbox(
+            body,
+            height=height,
+            fg_color="#020617",
+            border_width=1,
+            border_color="#1e293b",
+            font=ctk.CTkFont(size=13),
         )
-        style.map(
-            "Treeview.Heading",
-            background=[("active", "#DDE8FF")],
-        )
+        box.pack(fill="both", expand=True)
+        box.configure(state="disabled")
+        return box
 
-        # Scrollbar
-        style.configure("Vertical.TScrollbar", background=self._c_panel2, troughcolor=self._c_bg, bordercolor=self._c_border)
-
-
-
-    def _mk_btn(self, parent, text: str, kind: str, command):
-        """Create a border button:
-
-        Requirement (style-2): default is "blank" (white background), hover becomes blue.
-        We use tk.Button for consistent rendering across Windows themes.
-
-        kind is kept for backward compatibility but intentionally does not change the default look.
-        """
-        normal_bg = self._c_panel
-        normal_fg = self._c_fg
-        hover_bg = self._c_blue
-        hover_fg = "#FFFFFF"
-        active_bg = "#3F74FF"  # slightly deeper blue
-
-        btn = tk.Button(
+    def _action_button(self, parent, text: str, command, *, row: int, column: int, primary: bool = False) -> None:
+        button = ctk.CTkButton(
             parent,
             text=text,
             command=command,
-            bg=normal_bg,
-            fg=normal_fg,
-            activebackground=active_bg,
-            activeforeground=hover_fg,
-            font=(self._ui_font_family, 11),
-            padx=14,
-            pady=8,
-            bd=1,
-            relief="solid",
-            highlightthickness=0,
+            height=40,
+            fg_color="#7c3aed" if primary else "#1f2937",
+            hover_color="#6d28d9" if primary else "#334155",
         )
+        button.grid(row=row, column=column, sticky="ew", padx=(0 if column == 0 else 6, 0), pady=(0, 8))
 
-        def _on_enter(_e):
-            try:
-                btn.configure(bg=hover_bg, fg=hover_fg)
-            except Exception:
-                pass
-
-        def _on_leave(_e):
-            try:
-                btn.configure(bg=normal_bg, fg=normal_fg)
-            except Exception:
-                pass
-
-        btn.bind("<Enter>", _on_enter)
-        btn.bind("<Leave>", _on_leave)
-        return btn
-
-    def _build_ui(self):
-        # ---------------- Header ----------------
-        header = ttk.Frame(self)
-        header.pack(fill="x", padx=12, pady=(12, 8))
-
-        ttk.Label(header, text="Kuro Launcher", style="H1.TLabel").pack(side="left")
-        ttk.Label(header, text="Dualflow / 多角色啟動器", style="Muted.TLabel").pack(side="left", padx=(10, 0))
-
-        status_bar = ttk.Frame(header)
-        status_bar.pack(side="right")
-
-        # iPhone-like rounded pills (Canvas-based, real rounded corners)
-        self.pill_bridge = RoundedPill(status_bar, "Bridge: OFFLINE", dot="#FF9A3E",
-                                       bg="#FFFFFF", border=self._c_border, fg=self._c_fg)
-        self.pill_bridge.pack(side="left", padx=(0, 8))
-
-        self.pill_tts = RoundedPill(status_bar, "TTS: OFFLINE", dot="#FF9A3E",
-                                    bg="#FFFFFF", border=self._c_border, fg=self._c_fg)
-        self.pill_tts.pack(side="left", padx=(0, 8))
-
-        self.pill_llm = RoundedPill(status_bar, "LLM: OFFLINE", dot="#FF9A3E",
-                                    bg="#FFFFFF", border=self._c_border, fg=self._c_fg)
-        self.pill_llm.pack(side="left")
-
-        # ---------------- Body (top) ----------------
-        body = tk.Frame(self, bg=self._c_bg)
-        body.pack(fill="both", expand=True, padx=12, pady=(0, 10))
-
-        top = tk.Frame(body, bg=self._c_bg)
-        top.pack(fill="both", expand=True)
-
-        # Left card: Characters table
-        left_card = tk.Frame(top, bg=self._c_panel, highlightthickness=1, highlightbackground=self._c_border)
-        left_card.pack(side="left", fill="both", expand=True, padx=(0, 10))
-
-        # Title row
-        title_row = tk.Frame(left_card, bg=self._c_panel)
-        title_row.pack(fill="x", padx=12, pady=(10, 6))
-        ttk.Label(title_row, text=f"角色 YAML  ({self.cfg.characters_dir})", style="PanelH2.TLabel").pack(side="left")
-
-        ttk.Separator(left_card, orient="horizontal").pack(fill="x", padx=10)
-
-        # Table area
-        table_wrap = tk.Frame(left_card, bg=self._c_panel)
-        table_wrap.pack(fill="both", expand=True, padx=10, pady=10)
-
-        columns = ("yaml", "conf_name", "conf_uid", "live2d_model")
-        self.tree = ttk.Treeview(table_wrap, columns=columns, show="headings", height=12)
-        self.tree.pack(side="left", fill="both", expand=True)
-
-        vsb = ttk.Scrollbar(table_wrap, orient="vertical", command=self.tree.yview)
-        vsb.pack(side="right", fill="y")
-        self.tree.configure(yscrollcommand=vsb.set)
-
-        for col, txt, w in [
-            ("yaml", "yaml", 170),
-            ("conf_name", "conf_name", 160),
-            ("conf_uid", "conf_uid", 170),
-            ("live2d_model", "live2d_model", 160),
-        ]:
-            self.tree.heading(col, text=txt)
-            self.tree.column(col, width=w, anchor="w", stretch=True)
-
-        # Hover highlight (default white, hover becomes light blue)
-        self._hover_iid = None
-        self.tree.tag_configure("hover", background="#F3F8FF")
-        self.tree.tag_configure("normal", background="#FFFFFF")
-        self.tree.tag_configure("zebra", background="#FAFCFF")
-
-        def _on_tree_motion(event):
-            iid = self.tree.identify_row(event.y)
-            if iid == self._hover_iid:
-                return
-            # clear old hover
-            if self._hover_iid:
-                tags = [t for t in self.tree.item(self._hover_iid, "tags") if t != "hover"]
-                self.tree.item(self._hover_iid, tags=tags)
-            self._hover_iid = iid if iid else None
-            if iid:
-                tags = list(self.tree.item(iid, "tags"))
-                if "hover" not in tags:
-                    tags.append("hover")
-                self.tree.item(iid, tags=tags)
-
-        def _on_tree_leave(_event):
-            if self._hover_iid:
-                tags = [t for t in self.tree.item(self._hover_iid, "tags") if t != "hover"]
-                self.tree.item(self._hover_iid, tags=tags)
-                self._hover_iid = None
-
-        self.tree.bind("<Motion>", _on_tree_motion)
-        self.tree.bind("<Leave>", _on_tree_leave)
-
-        # Bottom buttons in left card
-        ttk.Separator(left_card, orient="horizontal").pack(fill="x", padx=10)
-
-        btns = tk.Frame(left_card, bg=self._c_panel)
-        btns.pack(fill="x", padx=12, pady=10)
-        # Three buttons should fill the row (equal width)
-        btns.grid_columnconfigure(0, weight=1)
-        btns.grid_columnconfigure(1, weight=1)
-        btns.grid_columnconfigure(2, weight=1)
-
-        self._mk_btn(btns, "重新掃描", "ghost", self._refresh_character_list).grid(row=0, column=0, sticky="ew")
-        self._mk_btn(btns, "啟動選取角色", "primary", self.on_start_profile).grid(row=0, column=1, sticky="ew", padx=10)
-        self._mk_btn(btns, "停止 Profile", "ghost", self.on_stop_profile).grid(row=0, column=2, sticky="ew")
-
-        # Right card: Controls
-        right_card = tk.Frame(top, bg=self._c_panel, highlightthickness=1, highlightbackground=self._c_border)
-        right_card.pack(side="right", fill="y")
-
-        right_inner = tk.Frame(right_card, bg=self._c_panel)
-        right_inner.pack(fill="both", expand=True, padx=12, pady=10)
-
-        ttk.Label(right_inner, text="控制面板", style="PanelH2.TLabel").pack(anchor="w")
-
-        def _mk_group(title: str):
-            grp = tk.Frame(right_inner, bg=self._c_panel, highlightthickness=1, highlightbackground=self._c_border2)
-            grp.pack(fill="x", pady=(10, 0))
-            inner = tk.Frame(grp, bg=self._c_panel)
-            inner.pack(fill="x", padx=10, pady=10)
-            ttk.Label(inner, text=title, style="PanelMuted.TLabel").pack(anchor="w")
-            content = tk.Frame(inner, bg=self._c_panel)
-            content.pack(fill="x", pady=(8, 0))
-            return content
-
-        # Group 1: Quick actions
-        box = _mk_group("快速開啟")
-        self._mk_btn(box, "打開桌面版（Electron）", "blue", self.on_open_electron).pack(fill="x")
-        self._mk_btn(box, "備用：打開 Web UI", "ghost", lambda: webbrowser.open(self.cfg.llm_url)).pack(fill="x", pady=(8, 0))
-
-        # Group 2: Bridge
-        b = _mk_group("Bridge")
-        self.btn_toggle_bridge = self._mk_btn(b, "停止 Bridge", "ghost", self.on_toggle_bridge)
-        self.btn_toggle_bridge.pack(fill="x")
-        self._mk_btn(b, "重啟 Bridge", "blue", self.on_restart_bridge).pack(fill="x", pady=(8, 0))
-
-        # Group 3: Diagnose
-        d = _mk_group("診斷")
-        self._mk_btn(d, "測試翻譯（translate_debug）", "ghost", self.on_translate_debug).pack(fill="x")
-        self._mk_btn(d, "打開 logs 資料夾", "ghost", self.on_open_logs_dir).pack(fill="x", pady=(8, 0))
-
-        # ---------------- Bottom Log (full width) ----------------
-        log_card = tk.Frame(body, bg=self._c_panel, highlightthickness=1, highlightbackground=self._c_border)
-        log_card.pack(fill="both", expand=False, pady=(10, 0))
-
-        log_head = tk.Frame(log_card, bg=self._c_panel)
-        log_head.pack(fill="x", padx=12, pady=(10, 6))
-        ttk.Label(log_head, text="狀態 / Log", style="PanelH2.TLabel").pack(side="left")
-        ttk.Label(log_head, text="（所有啟動/錯誤資訊都會在這裡）", style="PanelMuted.TLabel").pack(side="right")
-
-        # Log content frame (give the log area its own border)
-        log_box = tk.Frame(log_card, bg=self._c_panel, highlightthickness=1, highlightbackground=self._c_border2)
-        log_box.pack(fill="both", expand=True, padx=10, pady=(8, 10))
-
-        self.txt = tk.Text(
-            log_box,
-            height=10,
-            bg="#FFFFFF",
-            fg=self._c_fg,
-            insertbackground=self._c_fg,
-            relief="flat",
-            bd=0,
-            highlightthickness=0,
-            font=self._log_font,
-            padx=12,
-            pady=10,
-        )
-        self.txt.pack(fill="both", expand=True)
-
-# ----------------- Status badge updates -----------------
-    # ----------------- Thread-safe logging -----------------
-    def log(self, msg: str) -> None:
-        """Append a log line to the UI (thread-safe) and also mirror to console log file."""
-        # Always enqueue; only the Tk main thread drains into the Text widget.
+    def log(self, message: str) -> None:
         try:
-            self._log_q.put_nowait(strip_ansi_and_ctrl(str(msg)))
+            self._log_q.put_nowait(strip_ansi_and_ctrl(str(message)))
         except Exception:
             return
-
-        # If we're already on the main thread, schedule an ASAP drain to make UI feel snappy.
         if threading.get_ident() == self._main_thread_id:
             try:
                 self.after_idle(self._drain_log_queue)
             except Exception:
                 pass
 
+    def _set_textbox(self, box: ctk.CTkTextbox, text: str) -> None:
+        box.configure(state="normal")
+        box.delete("1.0", "end")
+        if text:
+            box.insert("1.0", text)
+        box.configure(state="disabled")
+
     def _drain_log_queue(self) -> None:
-        """Drain queued logs into the Tk Text widget. Must run on Tk main thread."""
-        try:
-            # Text widget might not exist yet or might be destroyed during shutdown.
-            txt = getattr(self, "txt", None)
-            if not txt or not txt.winfo_exists():
-                return
-
-            drained = 0
-            while drained < 200:
-                try:
-                    line = self._log_q.get_nowait()
-                except Exception:
-                    break
-                try:
-                    txt.insert("end", line + "\n")
-                    txt.see("end")
-                except Exception:
-                    break
-                drained += 1
-        finally:
-            # Keep polling so background threads can log anytime.
+        drained = 0
+        self.log_box.configure(state="normal")
+        while drained < 250:
             try:
-                self.after(120, self._drain_log_queue)
+                line = self._log_q.get_nowait()
             except Exception:
-                pass
+                break
+            self.log_box.insert("end", line + "\n")
+            self.log_box.see("end")
+            drained += 1
+        self.log_box.configure(state="disabled")
+        self.after(120, self._drain_log_queue)
 
+    def _tick_status(self) -> None:
+        bridge_ok = port_is_open(self.cfg.bridge_host, self.cfg.bridge_port, 0.1)
+        tts_ok = port_is_open(self.cfg.tts_host, self.cfg.tts_port, 0.1)
+        llm_ok = port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.1)
+        self.badges["Bridge"].set_status(bridge_ok)
+        self.badges["TTS"].set_status(tts_ok)
+        self.badges["LLM"].set_status(llm_ok)
+        self.after(800, self._tick_status)
 
-    def _tick_status(self):
-        try:
-            bridge_ok = port_is_open(self.cfg.bridge_host, self.cfg.bridge_port, 0.1)
-            tts_ok = port_is_open(self.cfg.tts_host, self.cfg.tts_port, 0.1)
-            llm_ok = port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.1)
+    def _refresh_character_list(self) -> None:
+        self.character_records.clear()
+        for button in self._character_radio_buttons:
+            button.destroy()
+        self._character_radio_buttons.clear()
 
-            self._set_badge(self.pill_bridge, "Bridge", bridge_ok)
-            self._set_badge(self.pill_tts, "TTS", tts_ok)
-            self._set_badge(self.pill_llm, "LLM", llm_ok)
+        yaml_files = sorted(self.cfg.characters_dir.glob("*.yaml"))
+        for path in yaml_files:
+            data = read_yaml_file(path)
+            cc = data.get("character_config") or {}
+            record = CharacterRecord(
+                yaml_path=path,
+                conf_name=str(cc.get("conf_name") or path.stem),
+                conf_uid=str(cc.get("conf_uid") or ""),
+                live2d_model_name=str(cc.get("live2d_model_name") or ""),
+                persona_prompt_path=str(cc.get("persona_prompt_path") or ""),
+                default_project_id=str(cc.get("default_project_id") or ""),
+            )
+            key = str(path)
+            self.character_records[key] = record
+            radio = ctk.CTkRadioButton(
+                self.character_frame,
+                text=f"{record.conf_name}\n{path.name}",
+                variable=self.character_var,
+                value=key,
+                command=self._on_character_changed,
+                font=ctk.CTkFont(size=14, weight="bold"),
+                text_color="#e2e8f0",
+                hover_color="#1d4ed8",
+                fg_color="#7c3aed",
+            )
+            radio.grid(sticky="ew", padx=10, pady=(10, 0))
+            self._character_radio_buttons.append(radio)
 
-            # toggle button label
-            if bridge_ok:
-                self.btn_toggle_bridge.config(text="停止 Bridge")
-            else:
-                self.btn_toggle_bridge.config(text="啟動 Bridge")
-        finally:
-            self.after(800, self._tick_status)
-
-    def _set_badge(self, pill: 'RoundedPill', name: str, ok: bool):
-        # rounded badge with dot + text
-        pill.set(f"{name}: ONLINE" if ok else f"{name}: OFFLINE", online=ok)
-
-    # ----------------- Character list -----------------
-    def _refresh_character_list(self):
-        self.tree.delete(*self.tree.get_children())
-        self._item_to_yaml.clear()
-
-        _dbg(f'characters_dir={self.cfg.characters_dir}')
-        if not self.cfg.characters_dir.exists():
-            _dbg('characters_dir missing -> showerror')
-            messagebox.showerror("錯誤", f"找不到 characters_dir：{self.cfg.characters_dir}")
-            return
-
-        yamls = sorted(self.cfg.characters_dir.glob("*.yaml"))
-        _dbg(f'yaml_count={len(yamls)}')
-        if not yamls:
-            _dbg('no yamls -> showerror')
-            messagebox.showerror("錯誤", f"{self.cfg.characters_dir} 裡沒有任何 *.yaml")
-            return
-
-        mao_item = None
-        for i, y in enumerate(yamls):
-            try:
-                d = read_yaml_file(y)
-                cc = d.get("character_config") or {}
-                conf_name = cc.get("conf_name", y.stem)
-                conf_uid = cc.get("conf_uid", "")
-                model = cc.get("live2d_model_name", "")
-                tag = "zebra" if (i % 2 == 0) else "normal"
-                item = self.tree.insert("", "end", values=(y.name, conf_name, conf_uid, model), tags=(tag,))
-                self._item_to_yaml[item] = y
-                if y.stem.lower() == "mao_pro" or str(conf_name).lower() == "mao_pro":
-                    mao_item = item
-            except Exception:
-                item = self.tree.insert("", "end", values=(y.name, "(parse failed)", "", ""))
-                self._item_to_yaml[item] = y
-
-        self.log(f"[{log_ts()}] 已載入 {len(yamls)} 個角色 yaml。")
-
-        # default select mao_pro if exists
-        if mao_item:
-            self.tree.selection_set(mao_item)
-            self.tree.see(mao_item)
+        if self.character_records:
+            current = self.character_var.get()
+            if current not in self.character_records:
+                self.character_var.set(next(iter(self.character_records)))
+            self._on_character_changed()
         else:
-            first = self.tree.get_children()[0]
-            self.tree.selection_set(first)
-            self.tree.see(first)
+            self.character_var.set("")
+            self._update_panels()
+        self.log(f"[{log_ts()}] 角色列表已更新，共 {len(self.character_records)} 份設定。")
 
-    def _get_selected_character_path(self) -> Optional[Path]:
-        sel = self.tree.selection()
-        if not sel:
-            return None
-        return self._item_to_yaml.get(sel[0])
+    def _refresh_project_list(self) -> None:
+        self.project_records.clear()
+        for button in self._project_radio_buttons:
+            button.destroy()
+        self._project_radio_buttons.clear()
 
-    # ----------------- Bridge -----------------
-    def _ensure_bridge_on_start(self):
+        projects = list_project_definitions(self.cfg.projects_dir)
+        for project in projects:
+            key = str(project.path)
+            self.project_records[key] = project
+            radio = ctk.CTkRadioButton(
+                self.project_frame,
+                text=f"{project.display_name}\n{project.project_id}",
+                variable=self.project_var,
+                value=key,
+                command=self._on_project_changed,
+                font=ctk.CTkFont(size=14, weight="bold"),
+                text_color="#e2e8f0",
+                hover_color="#1d4ed8",
+                fg_color="#7c3aed",
+            )
+            radio.grid(sticky="ew", padx=10, pady=(10, 0))
+            self._project_radio_buttons.append(radio)
+
+        if self.project_records:
+            current = self.project_var.get()
+            if current not in self.project_records:
+                self.project_var.set(next(iter(self.project_records)))
+        else:
+            self.project_var.set("")
+        self._apply_character_default_project()
+        self._update_panels()
+        self.log(f"[{log_ts()}] 專案列表已更新，共 {len(self.project_records)} 份設定。")
+
+    def _selected_character(self) -> Optional[CharacterRecord]:
+        return self.character_records.get(self.character_var.get())
+
+    def _selected_project(self) -> Optional[ProjectDefinition]:
+        return self.project_records.get(self.project_var.get())
+
+    def _apply_character_default_project(self) -> None:
+        character = self._selected_character()
+        if not character or not self.project_records:
+            return
+        current = self.project_var.get()
+        if current in self.project_records:
+            return
+        if character.default_project_id:
+            for key, project in self.project_records.items():
+                if project.project_id == character.default_project_id:
+                    self.project_var.set(key)
+                    return
+        self.project_var.set(next(iter(self.project_records)))
+
+    def _on_character_changed(self) -> None:
+        self._apply_character_default_project()
+        self._update_panels()
+
+    def _on_project_changed(self) -> None:
+        self._update_panels()
+
+    def _update_panels(self) -> None:
+        character = self._selected_character()
+        project = self._selected_project()
+
+        summary_lines = []
+        if character:
+            summary_lines.extend(
+                [
+                    f"角色: {character.conf_name}",
+                    f"conf_uid: {character.conf_uid or '(未設定)'}",
+                    f"Live2D: {character.live2d_model_name or '(未設定)'}",
+                    f"角色設定檔: {character.yaml_path}",
+                ]
+            )
+            persona_path = _resolve_repo_path(
+                self.cfg.open_llm_dir,
+                character.persona_prompt_path,
+            )
+            summary_lines.append(f"角色 prompt: {persona_path or '(未設定)'}")
+        else:
+            summary_lines.append("角色: 尚未選擇")
+
+        summary_lines.append("")
+        if project:
+            summary_lines.extend(
+                [
+                    f"專案: {project.display_name}",
+                    f"project_id: {project.project_id}",
+                    f"專案設定檔: {project.path}",
+                    f"專案根目錄: {project.project_root}",
+                    f"project prompt: {project.project_prompt_path}",
+                    f"tool prompt: {project.tool_prompt_path}",
+                ]
+            )
+        else:
+            summary_lines.append("專案: 尚未選擇")
+
+        summary_lines.extend(
+            [
+                "",
+                f"runtime conf: {self.cfg.runtime_conf_path}",
+                "記憶模式: 依角色 conf_uid 保留，不因專案切換分離。",
+            ]
+        )
+        self._set_textbox(self.summary_box, "\n".join(summary_lines))
+
+        persona_text = ""
+        project_text = ""
+        tool_text = ""
+        contract_text = _read_text_maybe(
+            self.cfg.open_llm_dir / "prompts" / "utils" / "response_contract_prompt.txt"
+        )
+
+        if character:
+            persona_text = _read_text_maybe(
+                _resolve_repo_path(self.cfg.open_llm_dir, character.persona_prompt_path)
+            )
+        if project:
+            project_text = _read_text_maybe(project.project_prompt_path)
+            tool_text = _read_text_maybe(project.tool_prompt_path)
+
+        self._set_textbox(self._prompt_boxes["persona"], persona_text)
+        self._set_textbox(self._prompt_boxes["project"], project_text)
+        self._set_textbox(self._prompt_boxes["tool"], tool_text)
+        self._set_textbox(self._prompt_boxes["contract"], contract_text)
+
+    def _ensure_bridge_on_start(self) -> None:
         if not os.environ.get("OPENAI_API_KEY", "").strip():
-            self.log(f"[{log_ts()}] ⚠️ 未偵測到 OPENAI_API_KEY（翻譯/腦走 OpenAI 會失敗）。")
+            self.log(f"[{log_ts()}] 注意：目前環境裡沒有 OPENAI_API_KEY。")
 
         try:
-            proc = start_bridge(self.cfg, self.log, logs_root=self.cfg.logs_dir, run_id=None)
+            proc = start_bridge(
+                self.cfg,
+                self.log,
+                logs_root=self.cfg.logs_dir,
+                run_id=None,
+            )
             if proc is not None:
                 self.proc_bridge = proc
-        except Exception as e:
-            self.log(f"[{log_ts()}] Bridge 啟動失敗：{e}")
-            
+        except Exception as exc:
+            self.log(f"[{log_ts()}] Bridge 啟動失敗：{exc}")
             return
 
         for _ in range(40):
@@ -817,43 +670,11 @@ class LauncherApp(tk.Tk):
             time.sleep(0.2)
 
         if port_is_open(self.cfg.bridge_host, self.cfg.bridge_port):
-            self.log(f"[{log_ts()}] Bridge 已就緒：{self.cfg.bridge_url}")
+            self.log(f"[{log_ts()}] Bridge 已上線：{self.cfg.bridge_url}")
         else:
-            self.log(f"[{log_ts()}] ⚠️ Bridge 似乎未就緒，請看 bridge.err.log")
+            self.log(f"[{log_ts()}] Bridge 沒有成功上線，請查看 bridge log。")
 
-    def on_restart_bridge(self):
-        threading.Thread(target=self._restart_bridge_flow, daemon=True).start()
-
-    def _restart_bridge_flow(self):
-        self.log(f"[{log_ts()}] 重啟 Bridge...")
-
-        self._stop_bridge_impl(kill_external=True)
-
-        for _ in range(10):
-            if not port_is_open(self.cfg.bridge_host, self.cfg.bridge_port, 0.2):
-                break
-            time.sleep(0.2)
-
-        self._ensure_bridge_on_start()
-
-    def on_toggle_bridge(self):
-        threading.Thread(target=self._toggle_bridge_flow, daemon=True).start()
-
-    def _toggle_bridge_flow(self):
-        if port_is_open(self.cfg.bridge_host, self.cfg.bridge_port):
-            self.log(f"[{log_ts()}] 停止 Bridge...")
-            self._stop_bridge_impl(kill_external=True)
-            time.sleep(0.4)
-            if not port_is_open(self.cfg.bridge_host, self.cfg.bridge_port):
-                self.log(f"[{log_ts()}] Bridge 已停止。")
-            else:
-                self.log(f"[{log_ts()}] ⚠️ Bridge 仍在跑，請看 bridge.err.log 或確認 PID。")
-        else:
-            self.log(f"[{log_ts()}] 啟動 Bridge...")
-            self._ensure_bridge_on_start()
-
-    def _stop_bridge_impl(self, kill_external: bool = False):
-        # Stop managed proc first
+    def _stop_bridge_impl(self, kill_external: bool = False) -> None:
         if self.proc_bridge:
             try:
                 self.proc_bridge.stop()
@@ -869,23 +690,56 @@ class LauncherApp(tk.Tk):
                 except Exception:
                     pass
 
-    # ----------------- Profile -----------------
-    def on_start_profile(self):
-        ch_path = self._get_selected_character_path()
-        if not ch_path:
-            messagebox.showinfo("提示", "請先選一個角色 yaml。")
-            return
-        threading.Thread(target=self._start_profile_flow, args=(ch_path,), daemon=True).start()
+    def on_toggle_bridge(self) -> None:
+        threading.Thread(target=self._toggle_bridge_flow, daemon=True).start()
 
-    def _start_profile_flow(self, ch_path: Path):
+    def _toggle_bridge_flow(self) -> None:
+        if port_is_open(self.cfg.bridge_host, self.cfg.bridge_port):
+            self.log(f"[{log_ts()}] 正在停止 Bridge...")
+            self._stop_bridge_impl(kill_external=True)
+        else:
+            self.log(f"[{log_ts()}] 正在啟動 Bridge...")
+            self._ensure_bridge_on_start()
+
+    def on_restart_bridge(self) -> None:
+        threading.Thread(target=self._restart_bridge_flow, daemon=True).start()
+
+    def _restart_bridge_flow(self) -> None:
+        self.log(f"[{log_ts()}] 正在重啟 Bridge...")
+        self._stop_bridge_impl(kill_external=True)
+        for _ in range(10):
+            if not port_is_open(self.cfg.bridge_host, self.cfg.bridge_port, 0.2):
+                break
+            time.sleep(0.2)
+        self._ensure_bridge_on_start()
+
+    def on_start_profile(self) -> None:
+        character = self._selected_character()
+        project = self._selected_project()
+        if not character:
+            messagebox.showinfo("未選角色", "請先選一個角色。")
+            return
+        if not project:
+            messagebox.showinfo("未選專案", "請先選一個專案。")
+            return
+        threading.Thread(
+            target=self._start_profile_flow,
+            args=(character, project),
+            daemon=True,
+        ).start()
+
+    def _start_profile_flow(
+        self,
+        character: CharacterRecord,
+        project: ProjectDefinition,
+    ) -> None:
         if not port_is_open(self.cfg.bridge_host, self.cfg.bridge_port):
-            self.log(f"[{log_ts()}] Bridge 不在，先啟動 Bridge...")
+            self.log(f"[{log_ts()}] Bridge 尚未啟動，先補啟動。")
             self._ensure_bridge_on_start()
             if not port_is_open(self.cfg.bridge_host, self.cfg.bridge_port):
-                self.log(f"[{log_ts()}] ❌ Bridge 仍未就緒，取消啟動 profile。")
+                self.log(f"[{log_ts()}] Bridge 仍未成功上線，先中止角色啟動。")
                 return
 
-        # 停掉現有 profile
         self.on_stop_profile(silent=True)
 
         for _ in range(20):
@@ -896,29 +750,23 @@ class LauncherApp(tk.Tk):
                 break
             time.sleep(0.2)
 
-        if port_is_open(self.cfg.tts_host, self.cfg.tts_port):
-            self.log(f"[{log_ts()}] ❌ TTS port 仍被占用：{self.cfg.tts_host}:{self.cfg.tts_port}，為了避免沿用舊角色，取消啟動。")
-            return
-        if port_is_open(self.cfg.llm_host, self.cfg.llm_port):
-            self.log(f"[{log_ts()}] ❌ LLM port 仍被占用：{self.cfg.llm_host}:{self.cfg.llm_port}，為了避免沿用舊角色，取消啟動。")
-            return
-
-        errors, warnings = validate_profile_assets(self.cfg, ch_path)
-        for w in warnings:
-            self.log(f"[{log_ts()}] ⚠️ Profile 檢查：{w}")
+        errors, warnings = validate_profile_assets(self.cfg, character.yaml_path)
+        for warning in warnings:
+            self.log(f"[{log_ts()}] 警告：{warning}")
         if errors:
-            self.log(f"[{log_ts()}] ❌ Profile 尚未完整，取消啟動：{ch_path.name}")
-            for e in errors:
-                self.log(f"[{log_ts()}]   - {e}")
+            self.log(f"[{log_ts()}] 角色檢查失敗：{character.yaml_path.name}")
+            for error in errors:
+                self.log(f"[{log_ts()}]   - {error}")
             return
 
-        self.log(f"[{log_ts()}] 使用 runtime conf 啟動，不改寫原始 conf.yaml。")
-
-        # runtime conf
+        self.log(
+            f"[{log_ts()}] 建立 runtime conf：角色={character.conf_name}，專案={project.display_name}"
+        )
         try:
             runtime_conf, char_cfg = build_runtime_conf(
                 open_llm_dir=self.cfg.open_llm_dir,
-                character_yaml=ch_path,
+                character_yaml=character.yaml_path,
+                project_yaml=project.path,
                 llm_host=self.cfg.llm_host,
                 llm_port=self.cfg.llm_port,
                 bridge_translate_url=self.cfg.bridge_translate_url,
@@ -932,26 +780,28 @@ class LauncherApp(tk.Tk):
                 openai_fallback_key_env=self.cfg.openai_fallback_key_env,
             )
             write_runtime_conf(self.cfg.runtime_conf_path, runtime_conf)
-
             conf_uid = (char_cfg.get("conf_uid") or "").strip()
-            self.log(f"[{log_ts()}] 選取角色：{ch_path.name}")
-            self.log(f"[{log_ts()}] runtime conf：{self.cfg.runtime_conf_path}")
-            self.log(f"[{log_ts()}] conf_uid：{conf_uid or '(missing)'}（影響 chat_history 分離）")
-
-            # run_id for logs split (LLM/TTS per profile)
             ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            self.current_run_id = f"{ts}_{conf_uid or ch_path.stem}"
-            self.log(f"[{log_ts()}] run_id：{self.current_run_id}（影響 launcher_logs 分流）")
-
-        except Exception as e:
-            self.log(f"[{log_ts()}] 生成 runtime conf 失敗：{e}")
+            self.current_run_id = f"{ts}_{conf_uid or character.yaml_path.stem}"
+            self.log(f"[{log_ts()}] runtime conf: {self.cfg.runtime_conf_path}")
+            self.log(f"[{log_ts()}] active_project_id: {char_cfg.get('active_project_id', '')}")
+            self.log(f"[{log_ts()}] persona_prompt_path: {char_cfg.get('persona_prompt_path', '')}")
+            self.log(f"[{log_ts()}] project_prompt_path: {char_cfg.get('project_prompt_path', '')}")
+            self.log(f"[{log_ts()}] tool_prompt_path: {char_cfg.get('tool_prompt_path', '')}")
+        except Exception as exc:
+            self.log(f"[{log_ts()}] 建立 runtime conf 失敗：{exc}")
             return
 
-        # TTS
         try:
-            self.proc_tts = start_tts(self.cfg, self.log, character_name=ch_path.stem, logs_root=self.cfg.logs_dir, run_id=self.current_run_id)
-        except Exception as e:
-            self.log(f"[{log_ts()}] TTS 啟動失敗：{e}")
+            self.proc_tts = start_tts(
+                self.cfg,
+                self.log,
+                character_name=character.yaml_path.stem,
+                logs_root=self.cfg.logs_dir,
+                run_id=self.current_run_id or "manual",
+            )
+        except Exception as exc:
+            self.log(f"[{log_ts()}] TTS 啟動失敗：{exc}")
             return
 
         for _ in range(50):
@@ -960,23 +810,31 @@ class LauncherApp(tk.Tk):
             time.sleep(0.2)
 
         if not port_is_open(self.cfg.tts_host, self.cfg.tts_port):
-            self.log(f"[{log_ts()}] TTS 狀態：未就緒（看 tts.err.log）")
+            self.log(f"[{log_ts()}] TTS 沒有成功上線，請查看 tts log。")
             return
 
-        self.log(f"[{log_ts()}] TTS port 已就緒，開始 smoke test...")
-        ok, msg = probe_tts(self.cfg, char_cfg, logs_root=self.cfg.logs_dir, run_id=self.current_run_id)
-        if ok:
-            self.log(f"[{log_ts()}] TTS smoke test：{msg}")
-        else:
-            self.log(f"[{log_ts()}] ❌ TTS smoke test 失敗：{msg}")
+        self.log(f"[{log_ts()}] TTS 已上線，開始 smoke test...")
+        ok, message = probe_tts(
+            self.cfg,
+            char_cfg,
+            logs_root=self.cfg.logs_dir,
+            run_id=self.current_run_id or "manual",
+        )
+        if not ok:
+            self.log(f"[{log_ts()}] TTS smoke test 失敗：{message}")
             self.on_stop_profile(silent=True)
             return
+        self.log(f"[{log_ts()}] TTS smoke test：{message}")
 
-        # LLM
         try:
-            self.proc_llm = start_llm(self.cfg, self.log, logs_root=self.cfg.logs_dir, run_id=self.current_run_id)
-        except Exception as e:
-            self.log(f"[{log_ts()}] LLM 啟動失敗：{e}")
+            self.proc_llm = start_llm(
+                self.cfg,
+                self.log,
+                logs_root=self.cfg.logs_dir,
+                run_id=self.current_run_id or "manual",
+            )
+        except Exception as exc:
+            self.log(f"[{log_ts()}] LLM 啟動失敗：{exc}")
             return
 
         for _ in range(70):
@@ -985,18 +843,17 @@ class LauncherApp(tk.Tk):
             time.sleep(0.25)
 
         if port_is_open(self.cfg.llm_host, self.cfg.llm_port):
-            self.log(f"[{log_ts()}] LLM 已就緒：{self.cfg.llm_url}")
+            self.log(f"[{log_ts()}] LLM 已上線：{self.cfg.llm_url}")
             self.on_open_electron()
         else:
-            self.log(f"[{log_ts()}] ⚠️ LLM 尚未就緒，請看 llm.err.log 或稍後再按『打開桌面版』/『Web UI』。")
+            self.log(f"[{log_ts()}] LLM 沒有成功上線，請查看 llm log。")
 
-    def on_stop_profile(self, silent: bool = False):
-        # stop managed procs
+    def on_stop_profile(self, silent: bool = False) -> None:
         if self.proc_llm:
             try:
                 self.proc_llm.stop()
                 if not silent:
-                    self.log(f"[{log_ts()}] 已停止 LLM")
+                    self.log(f"[{log_ts()}] 已停止 LLM。")
             except Exception:
                 pass
             self.proc_llm = None
@@ -1005,141 +862,111 @@ class LauncherApp(tk.Tk):
             try:
                 self.proc_tts.stop()
                 if not silent:
-                    self.log(f"[{log_ts()}] 已停止 TTS")
+                    self.log(f"[{log_ts()}] 已停止 TTS。")
             except Exception:
                 pass
             self.proc_tts = None
 
-        # kill by port as fallback
-        pid_llm = get_listening_pid_windows(self.cfg.llm_port)
-        if pid_llm:
-            try:
-                taskkill_tree(pid_llm)
-                if not silent:
-                    self.log(f"[{log_ts()}] 已 taskkill LLM PID={pid_llm}")
-            except Exception:
-                pass
+        for port, name in [
+            (self.cfg.llm_port, "LLM"),
+            (self.cfg.tts_port, "TTS"),
+        ]:
+            pid = get_listening_pid_windows(port)
+            if pid:
+                try:
+                    taskkill_tree(pid)
+                    if not silent:
+                        self.log(f"[{log_ts()}] 已清理 {name} PID={pid}")
+                except Exception:
+                    pass
 
-        pid_tts = get_listening_pid_windows(self.cfg.tts_port)
-        if pid_tts:
-            try:
-                taskkill_tree(pid_tts)
-                if not silent:
-                    self.log(f"[{log_ts()}] 已 taskkill TTS PID={pid_tts}")
-            except Exception:
-                pass
-
-    # ----------------- Actions -----------------
-    def on_test_translate(self):
-        def _run():
+    def on_translate_debug(self) -> None:
+        def runner():
             if not port_is_open(self.cfg.bridge_host, self.cfg.bridge_port):
-                self.log(f"[{log_ts()}] ❌ Bridge 未啟動，無法測試。")
+                self.log(f"[{log_ts()}] Bridge 尚未啟動，無法測試 translate debug。")
                 return
             try:
-                resp = http_post_json(self.cfg.bridge_debug_url, {"text": "Hello, test translate."}, timeout_s=12)
-                self.log(f"[{log_ts()}] translate_debug => {resp}")
-            except Exception as e:
-                self.log(f"[{log_ts()}] translate_debug 失敗：{e}（看 bridge.err.log）")
+                response = http_post_json(
+                    self.cfg.bridge_debug_url,
+                    {"text": "你好，這是一個 translate debug 測試。"},
+                    timeout=12.0,
+                )
+                self.log(f"[{log_ts()}] translate_debug => {response}")
+            except Exception as exc:
+                self.log(f"[{log_ts()}] translate_debug 失敗：{exc}")
 
-        threading.Thread(target=_run, daemon=True).start()
-    # UI callback alias (for compatibility with newer UI labels)
-    def on_translate_debug(self):
-        """Alias of on_test_translate() for the UI button."""
-        return self.on_test_translate()
+        threading.Thread(target=runner, daemon=True).start()
 
+    def on_open_web_ui(self) -> None:
+        webbrowser.open(self.cfg.llm_url)
+        self.log(f"[{log_ts()}] 已開啟 Web UI：{self.cfg.llm_url}")
 
-    def on_open_electron(self):
+    def on_open_electron(self) -> None:
         try:
             if self.cfg.electron_lnk.exists():
                 os.startfile(str(self.cfg.electron_lnk))
-                self.log(f"[{log_ts()}] 已啟動桌面版：{self.cfg.electron_lnk}")
+                self.log(f"[{log_ts()}] 已開啟 Electron：{self.cfg.electron_lnk}")
             else:
-                self.log(f"[{log_ts()}] ⚠️ 找不到桌面版捷徑：{self.cfg.electron_lnk}（改用 Web UI）")
+                self.log(f"[{log_ts()}] 找不到 Electron 捷徑，改開 Web UI。")
                 webbrowser.open(self.cfg.llm_url)
-        except Exception as e:
-            self.log(f"[{log_ts()}] 啟動桌面版失敗：{e}（改用 Web UI）")
-            try:
-                webbrowser.open(self.cfg.llm_url)
-            except Exception:
-                pass
+        except Exception as exc:
+            self.log(f"[{log_ts()}] 開啟 Electron 失敗：{exc}")
+            webbrowser.open(self.cfg.llm_url)
 
-    def on_open_logs_dir(self):
+    def on_open_logs_dir(self) -> None:
         try:
             self.cfg.logs_dir.mkdir(parents=True, exist_ok=True)
             os.startfile(str(self.cfg.logs_dir))
         except Exception:
-            self.log(f"[{log_ts()}] 無法打開 logs 資料夾：{self.cfg.logs_dir}")
+            self.log(f"[{log_ts()}] 無法直接打開 logs，路徑：{self.cfg.logs_dir}")
+
+    def on_close(self) -> None:
+        try:
+            self.on_stop_profile(silent=True)
+        except Exception:
+            pass
+        self.destroy()
 
 
-    def on_open_logs(self):
-        """Backward-compatible alias."""
-        return self.on_open_logs_dir()
-
-
-
-def main():
-    here = Path(__file__).parent.resolve()
+def main() -> None:
+    here = BASE_DIR
     cfg_path = here / "kuro_launcher.settings.yaml"
 
-    # Print minimal startup info first (before reading config)
     print(f"[launcher] start: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"[launcher] cwd  : {Path.cwd()}")
     print(f"[launcher] here : {here}")
     print(f"[launcher] cfg  : {cfg_path}")
 
-    for env_path, override in ((here / ".env", False), (here / ".env.local", True)):
+    for env_path in (here / ".env", here / ".env.local"):
         try:
-            loaded = load_env_file(env_path, override=override)
+            loaded = load_env_file(env_path, override=True)
             if loaded:
                 print(f"[launcher] env  : loaded {env_path.name} ({loaded} vars)")
-        except Exception as e:
-            print(f"[launcher][WARN] failed to load {env_path.name}: {e}")
+        except Exception as exc:
+            print(f"[launcher][WARN] failed to load {env_path.name}: {exc}")
 
-    # Keep bridge and LLM usable when only one OpenAI key variable is set locally.
     if os.environ.get("OPENAI_LLM_API_KEY") and not os.environ.get("OPENAI_API_KEY"):
         os.environ["OPENAI_API_KEY"] = os.environ["OPENAI_LLM_API_KEY"]
     if os.environ.get("OPENAI_API_KEY") and not os.environ.get("OPENAI_LLM_API_KEY"):
         os.environ["OPENAI_LLM_API_KEY"] = os.environ["OPENAI_API_KEY"]
 
     if not cfg_path.exists():
-        msg = f"找不到：{cfg_path}\n請確認把 kuro_launcher.settings.yaml 放在 launcher.py 同資料夾。"
-        print(f"[launcher][ERROR] {msg}")
-        try:
-            r = tk.Tk(); r.withdraw()
-            messagebox.showerror("缺少設定檔", msg)
-            r.destroy()
-        except Exception:
-            pass
+        messagebox.showerror("缺少設定", f"找不到設定檔：{cfg_path}")
         return
 
     cfg = load_config(cfg_path)
-
-    # Runtime console tee -> launcher/YYYY/MM/DD/launcher.combined.log (daily aggregate)
-    try:
-        ldir = build_logs_dir(cfg.logs_dir, "launcher", run_id=None, aggregate_daily=True)
-        log_path = _setup_runtime_logging(ldir)
-    except Exception:
-        log_path = _setup_runtime_logging(cfg.logs_dir)
+    log_dir = build_logs_dir(cfg.logs_dir, "launcher", run_id=None, aggregate_daily=True)
+    log_path = _setup_runtime_logging(log_dir)
     print(f"[launcher] log  : {log_path}")
-    print(f"[launcher] cfg.logs_dir: {cfg.logs_dir}")
+    print(f"[launcher] root : {cfg.root}")
+    print(f"[launcher] provider env: {cfg.llm_provider_env}={os.environ.get(cfg.llm_provider_env, '')}")
 
+    ctk.set_appearance_mode("dark")
+    ctk.set_default_color_theme("blue")
     app = LauncherApp(cfg)
-    print("[launcher] UI created, entering mainloop...")
+    print("[launcher] UI ready.")
     app.mainloop()
 
+
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception:
-        _write_crash_log()
-        import traceback
-        traceback.print_exc()
-        try:
-            r = tk.Tk(); r.withdraw()
-            messagebox.showerror(
-                "Launcher 崩潰",
-                "啟動時發生錯誤，已寫入桌面 crash log 與 console log。\n\n請把錯誤回傳給我。",
-            )
-            r.destroy()
-        except Exception:
-            pass
+    main()

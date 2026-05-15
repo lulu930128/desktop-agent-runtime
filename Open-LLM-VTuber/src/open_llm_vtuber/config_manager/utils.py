@@ -13,6 +13,18 @@ from .main import Config
 T = TypeVar("T", bound=BaseModel)
 
 
+def _resolve_config_path(config_path: str) -> str:
+    """Allow the launcher to override the active conf.yaml at runtime."""
+    runtime_config = os.getenv("OPEN_LLM_VTUBER_CONFIG", "").strip()
+    if not runtime_config:
+        return config_path
+
+    if os.path.basename(os.path.normpath(config_path)).lower() == "conf.yaml":
+        return runtime_config
+
+    return config_path
+
+
 def read_yaml(config_path: str) -> Dict[str, Any]:
     """
     Read the specified YAML configuration file with environment variable substitution
@@ -28,6 +40,8 @@ def read_yaml(config_path: str) -> Dict[str, Any]:
         FileNotFoundError: If the configuration file is not found.
         IOError: If the configuration file cannot be read.
     """
+
+    config_path = _resolve_config_path(config_path)
 
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Configuration file not found: {config_path}")

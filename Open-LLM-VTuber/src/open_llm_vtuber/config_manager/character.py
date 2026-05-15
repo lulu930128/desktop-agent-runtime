@@ -1,13 +1,13 @@
-# config_manager/character.py
-from pydantic import Field, field_validator
-from typing import Dict, ClassVar
-from .i18n import I18nMixin, Description
-from .asr import ASRConfig
-from .tts import TTSConfig
-from .vad import VADConfig
-from .tts_preprocessor import TTSPreprocessorConfig
+from typing import ClassVar, Dict
+
+from pydantic import Field, model_validator
 
 from .agent import AgentConfig
+from .asr import ASRConfig
+from .i18n import Description, I18nMixin
+from .tts import TTSConfig
+from .tts_preprocessor import TTSPreprocessorConfig
+from .vad import VADConfig
 
 
 class CharacterConfig(I18nMixin):
@@ -19,7 +19,17 @@ class CharacterConfig(I18nMixin):
     character_name: str = Field(default="", alias="character_name")
     human_name: str = Field(default="Human", alias="human_name")
     avatar: str = Field(default="", alias="avatar")
-    persona_prompt: str = Field(..., alias="persona_prompt")
+    persona_prompt: str = Field(default="", alias="persona_prompt")
+    persona_prompt_path: str = Field(default="", alias="persona_prompt_path")
+    default_project_id: str = Field(default="", alias="default_project_id")
+    active_project_id: str = Field(default="", alias="active_project_id")
+    active_project_name: str = Field(default="", alias="active_project_name")
+    active_project_root: str = Field(default="", alias="active_project_root")
+    project_prompt_path: str = Field(default="", alias="project_prompt_path")
+    tool_prompt_path: str = Field(default="", alias="tool_prompt_path")
+    response_style_prompt_path: str = Field(
+        default="", alias="response_style_prompt_path"
+    )
     agent_config: AgentConfig = Field(..., alias="agent_config")
     asr_config: ASRConfig = Field(..., alias="asr_config")
     tts_config: TTSConfig = Field(..., alias="tts_config")
@@ -30,55 +40,93 @@ class CharacterConfig(I18nMixin):
 
     DESCRIPTIONS: ClassVar[Dict[str, Description]] = {
         "conf_name": Description(
-            en="Name of the character configuration", zh="角色配置名称"
+            en="Name of the character configuration",
+            zh="角色配置名稱",
         ),
         "conf_uid": Description(
             en="Unique identifier for the character configuration",
-            zh="角色配置唯一标识符",
+            zh="角色配置唯一識別碼",
         ),
         "live2d_model_name": Description(
-            en="Name of the Live2D model to use", zh="使用的Live2D模型名称"
+            en="Name of the Live2D model to use",
+            zh="Live2D 模型名稱",
         ),
         "character_name": Description(
-            en="Name of the AI character in conversation", zh="对话中AI角色的名字"
-        ),
-        "persona_prompt": Description(
-            en="Persona prompt. The persona of your character.", zh="角色人设提示词"
-        ),
-        "agent_config": Description(
-            en="Configuration for the conversation agent", zh="对话代理配置"
-        ),
-        "asr_config": Description(
-            en="Configuration for Automatic Speech Recognition", zh="语音识别配置"
-        ),
-        "tts_config": Description(
-            en="Configuration for Text-to-Speech", zh="语音合成配置"
-        ),
-        "vad_config": Description(
-            en="Configuration for Voice Activity Detection", zh="语音活动检测配置"
-        ),
-        "tts_preprocessor_config": Description(
-            en="Configuration for Text-to-Speech Preprocessor",
-            zh="语音合成预处理器配置",
+            en="Name of the AI character in conversation",
+            zh="對話中角色名稱",
         ),
         "human_name": Description(
-            en="Name of the human user in conversation", zh="对话中人类用户的名字"
+            en="Name of the human user in conversation",
+            zh="對話中的使用者名稱",
         ),
         "avatar": Description(
-            en="Avatar image path for the character", zh="角色头像图片路径"
+            en="Avatar image path for the character",
+            zh="角色頭像路徑",
+        ),
+        "persona_prompt": Description(
+            en="Inline persona prompt for the character",
+            zh="內嵌角色 prompt",
+        ),
+        "persona_prompt_path": Description(
+            en="External persona prompt file path",
+            zh="外部角色 prompt 路徑",
+        ),
+        "default_project_id": Description(
+            en="Default launcher project for this character",
+            zh="角色預設專案 ID",
+        ),
+        "active_project_id": Description(
+            en="Selected project identifier",
+            zh="目前選中的專案 ID",
+        ),
+        "active_project_name": Description(
+            en="Selected project display name",
+            zh="目前選中的專案名稱",
+        ),
+        "active_project_root": Description(
+            en="Selected project root path",
+            zh="目前選中的專案根目錄",
+        ),
+        "project_prompt_path": Description(
+            en="Project-context prompt path",
+            zh="專案 prompt 路徑",
+        ),
+        "tool_prompt_path": Description(
+            en="Tool-use prompt path",
+            zh="工具 prompt 路徑",
+        ),
+        "response_style_prompt_path": Description(
+            en="Optional response-style prompt path",
+            zh="回覆風格 prompt 路徑",
+        ),
+        "agent_config": Description(
+            en="Configuration for the conversation agent",
+            zh="對話代理設定",
+        ),
+        "asr_config": Description(
+            en="Configuration for Automatic Speech Recognition",
+            zh="語音辨識設定",
+        ),
+        "tts_config": Description(
+            en="Configuration for Text-to-Speech",
+            zh="語音合成設定",
+        ),
+        "vad_config": Description(
+            en="Configuration for Voice Activity Detection",
+            zh="VAD 設定",
+        ),
+        "tts_preprocessor_config": Description(
+            en="Configuration for Text-to-Speech preprocessor",
+            zh="TTS 前處理設定",
         ),
     }
 
-    @field_validator("persona_prompt")
-    def check_default_persona_prompt(cls, v):
-        if not v:
+    @model_validator(mode="after")
+    def finalize_character_config(self):
+        if not self.character_name:
+            self.character_name = self.conf_name
+        if not (self.persona_prompt or self.persona_prompt_path):
             raise ValueError(
-                "Persona_prompt cannot be empty. Please provide a persona prompt."
+                "Either persona_prompt or persona_prompt_path must be provided."
             )
-        return v
-
-    @field_validator("character_name")
-    def set_default_character_name(cls, v, values):
-        if not v and "conf_name" in values:
-            return values["conf_name"]
-        return v
+        return self

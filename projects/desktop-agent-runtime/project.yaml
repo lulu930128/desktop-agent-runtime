@@ -1,0 +1,8 @@
+project_id: desktop-agent-runtime
+display_name: Desktop Agent Runtime
+project_root: ../..
+prompts:
+  project_prompt: prompts/project_prompt.txt
+  tool_prompt: prompts/tool_prompt.txt
+notes: Primary working project for the launcher-driven VTuber desktop runtime.
+

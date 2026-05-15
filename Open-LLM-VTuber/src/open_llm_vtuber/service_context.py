@@ -316,6 +316,7 @@ class ServiceContext:
         await self.init_agent(
             config.character_config.agent_config,
             config.character_config.persona_prompt,
+            config.character_config,
         )
 
         self.init_translate(
@@ -377,22 +378,46 @@ class ServiceContext:
         else:
             logger.info("VAD already initialized with the same config.")
 
-    async def init_agent(self, agent_config: AgentConfig, persona_prompt: str) -> None:
+    def _prompt_signature(self, character_config: CharacterConfig | None) -> tuple[str, ...]:
+        if character_config is None:
+            return ("", "", "", "", "", "")
+        return (
+            character_config.persona_prompt or "",
+            character_config.persona_prompt_path or "",
+            character_config.project_prompt_path or "",
+            character_config.tool_prompt_path or "",
+            character_config.response_style_prompt_path or "",
+            character_config.active_project_id or "",
+        )
+
+    async def init_agent(
+        self,
+        agent_config: AgentConfig,
+        persona_prompt: str,
+        character_config: CharacterConfig | None = None,
+    ) -> None:
         """Initialize or update the LLM engine based on agent configuration."""
         logger.info(f"Initializing Agent: {agent_config.conversation_agent_choice}")
 
+        effective_character_config = character_config or self.character_config
+
         if (
             self.agent_engine is not None
+            and self.character_config is not None
             and agent_config == self.character_config.agent_config
-            and persona_prompt == self.character_config.persona_prompt
+            and self._prompt_signature(effective_character_config)
+            == self._prompt_signature(self.character_config)
         ):
             logger.debug("Agent already initialized with the same config.")
             return
 
-        system_prompt = await self.construct_system_prompt(persona_prompt)
+        system_prompt = await self.construct_system_prompt(
+            effective_character_config,
+            persona_prompt,
+        )
 
         # Pass avatar to agent factory
-        avatar = self.character_config.avatar or ""  # Get avatar from config
+        avatar = effective_character_config.avatar or ""  # Get avatar from config
 
         try:
             self.agent_engine = AgentFactory.create_agent(
@@ -401,7 +426,7 @@ class ServiceContext:
                 llm_configs=agent_config.llm_configs.model_dump(),
                 system_prompt=system_prompt,
                 live2d_model=self.live2d_model,
-                tts_preprocessor_config=self.character_config.tts_preprocessor_config,
+                tts_preprocessor_config=effective_character_config.tts_preprocessor_config,
                 character_avatar=avatar,
                 system_config=self.system_config.model_dump(),
                 tool_manager=self.tool_manager,
@@ -449,41 +474,101 @@ class ServiceContext:
 
     # ==== utils
 
-    async def construct_system_prompt(self, persona_prompt: str) -> str:
+    def _append_prompt_section(self, parts: list[str], title: str, content: str) -> None:
+        content = (content or "").strip()
+        if not content:
+            return
+        parts.append(f"[{title}]\n{content}")
+
+    def _load_optional_prompt_path(self, prompt_path: str) -> str:
+        prompt_path = (prompt_path or "").strip()
+        if not prompt_path:
+            return ""
+        return prompt_loader.load_path(prompt_path)
+
+    async def construct_system_prompt(
+        self,
+        character_config: CharacterConfig,
+        persona_prompt: str,
+    ) -> str:
         """
-        Append tool prompts to persona prompt.
+        Build a layered system prompt.
 
         Parameters:
-        - persona_prompt (str): The persona prompt.
+        - character_config (CharacterConfig): The active character configuration.
+        - persona_prompt (str): The inline persona prompt fallback.
 
         Returns:
-        - str: The system prompt with all tool prompts appended.
+        - str: The final system prompt.
         """
         logger.debug(f"constructing persona_prompt: '''{persona_prompt}'''")
 
-        for prompt_name, prompt_file in self.system_config.tool_prompts.items():
-            if (
-                prompt_name == "group_conversation_prompt"
-                or prompt_name == "proactive_speak_prompt"
-            ):
-                continue
+        parts: list[str] = []
+        tool_prompts = self.system_config.tool_prompts or {}
 
-            prompt_content = prompt_loader.load_util(prompt_file)
+        response_contract_name = tool_prompts.get("response_contract_prompt", "")
+        if response_contract_name:
+            self._append_prompt_section(
+                parts,
+                "System Contract",
+                prompt_loader.load_util(response_contract_name),
+            )
 
-            if prompt_name == "live2d_expression_prompt":
-                prompt_content = prompt_content.replace(
-                    "[<insert_emomap_keys>]", self.live2d_model.emo_str
+        effective_persona = persona_prompt
+        if character_config.persona_prompt_path:
+            effective_persona = self._load_optional_prompt_path(
+                character_config.persona_prompt_path
+            )
+        self._append_prompt_section(parts, "Character Persona", effective_persona)
+
+        self._append_prompt_section(
+            parts,
+            "Project Context",
+            self._load_optional_prompt_path(character_config.project_prompt_path),
+        )
+
+        self._append_prompt_section(
+            parts,
+            "Tool Use Policy",
+            self._load_optional_prompt_path(character_config.tool_prompt_path),
+        )
+
+        response_style = self._load_optional_prompt_path(
+            character_config.response_style_prompt_path
+        )
+        self._append_prompt_section(parts, "Response Style", response_style)
+
+        live2d_prompt_name = tool_prompts.get("live2d_expression_prompt", "")
+        if live2d_prompt_name:
+            live2d_prompt = prompt_loader.load_util(live2d_prompt_name)
+            if self.live2d_model:
+                live2d_prompt = live2d_prompt.replace(
+                    "[<insert_emomap_keys>]",
+                    self.live2d_model.emo_str,
                 )
+            self._append_prompt_section(parts, "Expression Contract", live2d_prompt)
 
-            if prompt_name == "mcp_prompt":
+        reserved_names = {
+            "response_contract_prompt",
+            "live2d_expression_prompt",
+            "group_conversation_prompt",
+            "proactive_speak_prompt",
+            "mcp_prompt",
+        }
+        for prompt_name, prompt_file in tool_prompts.items():
+            if prompt_name in reserved_names:
                 continue
+            self._append_prompt_section(
+                parts,
+                prompt_name.replace("_", " ").title(),
+                prompt_loader.load_util(prompt_file),
+            )
 
-            persona_prompt += prompt_content
-
+        system_prompt = "\n\n".join(parts).strip()
         logger.debug("\n === System Prompt ===")
-        logger.debug(persona_prompt)
+        logger.debug(system_prompt)
 
-        return persona_prompt
+        return system_prompt
 
     async def handle_config_switch(
         self,

@@ -71,6 +71,8 @@ def load_env_file(path: Path, override: bool = False) -> int:
         value = value.strip()
         if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
             value = value[1:-1]
+        if override and value == "" and key in os.environ:
+            continue
         os.environ[key] = value
         loaded += 1
 
