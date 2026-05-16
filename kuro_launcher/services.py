@@ -209,7 +209,14 @@ def validate_profile_assets(cfg: AppConfig, character_yaml: Path) -> Tuple[list[
     return errors, warnings
 
 
-def probe_tts(cfg: AppConfig, char_cfg: Dict[str, Any], *, logs_root: Path, run_id: str) -> Tuple[bool, str]:
+def probe_tts(
+    cfg: AppConfig,
+    char_cfg: Dict[str, Any],
+    *,
+    logs_root: Path,
+    run_id: str,
+    request_timeout_s: float = 120.0,
+) -> Tuple[bool, str]:
     """Make a tiny real GPT-SoVITS request so the launcher does not trust port-open only."""
     gsv = _character_tts_cfg(char_cfg)
     if not gsv:
@@ -241,7 +248,7 @@ def probe_tts(cfg: AppConfig, char_cfg: Dict[str, Any], *, logs_root: Path, run_
     out_path = smoke_dir / f"smoke.{payload['media_type']}"
 
     try:
-        with urllib.request.urlopen(url, timeout=120) as resp:
+        with urllib.request.urlopen(url, timeout=request_timeout_s) as resp:
             body = resp.read()
             status = getattr(resp, "status", 200)
             content_type = resp.headers.get("Content-Type", "")

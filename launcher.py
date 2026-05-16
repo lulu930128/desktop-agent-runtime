@@ -1456,6 +1456,54 @@ class LauncherApp(ctk.CTk):
             message += f"\n最近 log：\n{excerpt}"
         return False, message
 
+    def _wait_for_tts_smoke_ready(
+        self,
+        proc: Optional[ManagedProc],
+        char_cfg: Dict[str, object],
+        *,
+        timeout_s: float,
+    ) -> tuple[bool, str]:
+        deadline = time.time() + timeout_s
+        last_probe_message = ""
+        saw_port = False
+
+        while time.time() < deadline:
+            if proc and proc.popen and proc.popen.poll() is not None:
+                excerpt = self._recent_process_log_excerpt(proc)
+                message = f"TTS 啟動後提前結束，exit code={proc.popen.returncode}"
+                if excerpt:
+                    message += f"\n最近 log：\n{excerpt}"
+                return False, message
+
+            if not port_is_open(self.cfg.tts_host, self.cfg.tts_port, 0.2):
+                time.sleep(0.4)
+                continue
+
+            saw_port = True
+            ok, message = probe_tts(
+                self.cfg,
+                char_cfg,
+                logs_root=self.cfg.logs_dir,
+                run_id=self.current_run_id or "manual",
+                request_timeout_s=25.0,
+            )
+            if ok:
+                return True, message
+
+            last_probe_message = message
+            time.sleep(1.0)
+
+        excerpt = self._recent_process_log_excerpt(proc)
+        if saw_port:
+            message = f"TTS port 已開，但 {timeout_s:.0f}s 內 smoke test 沒成功"
+        else:
+            message = f"TTS 在 {timeout_s:.0f}s 內沒有成功開 port"
+        if last_probe_message:
+            message += f"：{last_probe_message}"
+        if excerpt:
+            message += f"\n最近 log：\n{excerpt}"
+        return False, message
+
     def _should_restart_tts_for_switch(
         self,
         status: dict,
@@ -1512,31 +1560,16 @@ class LauncherApp(ctk.CTk):
             self.log(f"[{log_ts()}] TTS 重新載入失敗：{exc}")
             return False
 
-        ready, ready_message = self._wait_for_service_ready(
-            "TTS",
-            self.cfg.tts_host,
-            self.cfg.tts_port,
+        ready, ready_message = self._wait_for_tts_smoke_ready(
             self.proc_tts,
-            timeout_s=45.0,
-            previous_pid=previous_pid,
+            char_cfg,
+            timeout_s=120.0,
         )
         if not ready:
             self.log(f"[{log_ts()}] TTS 重新載入後沒有成功上線：{ready_message}")
             return False
 
-        self.log(f"[{log_ts()}] {ready_message}")
-
-        ok, message = probe_tts(
-            self.cfg,
-            char_cfg,
-            logs_root=self.cfg.logs_dir,
-            run_id=self.current_run_id or "manual",
-        )
-        if not ok:
-            self.log(f"[{log_ts()}] TTS 熱切換 smoke test 失敗：{message}")
-            return False
-
-        self.log(f"[{log_ts()}] TTS 熱切換 smoke test：{message}")
+        self.log(f"[{log_ts()}] TTS 熱切換 smoke test：{ready_message}")
         return True
 
     def _try_hot_switch_profile(
@@ -1949,32 +1982,17 @@ class LauncherApp(ctk.CTk):
             self.log(f"[{log_ts()}] TTS 啟動失敗：{exc}")
             return
 
-        tts_ready, tts_ready_message = self._wait_for_service_ready(
-            "TTS",
-            self.cfg.tts_host,
-            self.cfg.tts_port,
+        self.log(f"[{log_ts()}] TTS 已啟動，等待 smoke test 成功...")
+        tts_ready, tts_ready_message = self._wait_for_tts_smoke_ready(
             self.proc_tts,
-            timeout_s=45.0,
-            previous_pid=previous_tts_pid,
+            char_cfg,
+            timeout_s=120.0,
         )
         if not tts_ready:
-            self.log(f"[{log_ts()}] TTS 沒有成功上線：{tts_ready_message}")
-            return
-
-        self.log(f"[{log_ts()}] {tts_ready_message}")
-
-        self.log(f"[{log_ts()}] TTS 已上線，開始 smoke test...")
-        ok, message = probe_tts(
-            self.cfg,
-            char_cfg,
-            logs_root=self.cfg.logs_dir,
-            run_id=self.current_run_id or "manual",
-        )
-        if not ok:
-            self.log(f"[{log_ts()}] TTS smoke test 失敗：{message}")
+            self.log(f"[{log_ts()}] TTS smoke test 失敗：{tts_ready_message}")
             self.on_stop_profile(silent=True)
             return
-        self.log(f"[{log_ts()}] TTS smoke test：{message}")
+        self.log(f"[{log_ts()}] TTS smoke test：{tts_ready_message}")
 
         try:
             self.proc_llm = start_llm(
