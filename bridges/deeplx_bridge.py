@@ -1,4 +1,4 @@
-# C:\kuro\bridges\deeplx_bridge.py
+# bridges/deeplx_bridge.py
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 import httpx

@@ -1,60 +1,85 @@
-Kuro 桌寵本體 = UI(身體) + Agent Runtime(腦骨架) + Providers(外部能力包裝) + Plugin Host(功能載入) + Memory/Scheduler(記憶與提醒)
+Kuro 專案啟動說明
+=================
 
-設定成gpu
+這份是手動啟動各服務時用的備忘錄。  
+以下範例都改成以「repo 根目錄」為前提，不再綁死固定磁碟路徑。
 
-$env:CUDA_VISIBLE_DEVICES = "0"              # 指定用第 0 號 GPU
-$env:PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True"  # 讓 VRAM 配置更平滑
+先切到 repo 根目錄：
 
+```powershell
+cd <repo-root>
+$RepoRoot = (Get-Location).Path
+```
 
-=========開TTS==========
-# webui
-cd C:\kuro\gpt_sovits
+GPU 環境變數
+------------
+
+```powershell
+$env:CUDA_VISIBLE_DEVICES = "0"
+$env:PYTORCH_CUDA_ALLOC_CONF = "expandable_segments:True"
+```
+
+TTS
+---
+
+### GPT-SoVITS WebUI
+
+```powershell
+Set-Location (Join-Path $RepoRoot "gpt_sovits")
 .\.venv\Scripts\Activate.ps1
-python webui.py
+python .\webui.py
+```
 
-# 後端 API v2
-conda activate C:\kuro\envs\kuro-tts310
-cd C:\kuro\gpt_sovits
+### GPT-SoVITS API v2
+
+```powershell
+conda activate (Join-Path $RepoRoot "envs\kuro-tts310")
+Set-Location (Join-Path $RepoRoot "gpt_sovits")
 python .\api_v2.py -a 127.0.0.1 -p 9881
-=========================
+```
 
-==========開LLM==========
-conda activate C:\kuro\envs\kuro-llm310
-cd C:\kuro\Open-LLM-VTuber
-$env:OPEN_LLM_VTUBER_CONFIG = "C:\kuro\Open-LLM-VTuber\configs\conf.yaml"
+LLM
+---
+
+```powershell
+conda activate (Join-Path $RepoRoot "envs\kuro-llm310")
+Set-Location (Join-Path $RepoRoot "Open-LLM-VTuber")
+$env:OPEN_LLM_VTUBER_CONFIG = (Join-Path $RepoRoot "Open-LLM-VTuber\conf.yaml")
 python .\run_server.py
-=========================
+```
 
-============DEEPLX============
+Bridge / 日文 spoken 轉換
+------------------------
 
-啟動
-cd C:\kuro\bridges
+```powershell
+$env:OPENAI_API_KEY = "<your-openai-key>"
+$env:OPENAI_TRANSLATE_MODEL = "gpt-5-mini"
+$env:KURO_OPEN_LLM_DIR = (Join-Path $RepoRoot "Open-LLM-VTuber")
+$env:KURO_MODEL_DICT_PATH = (Join-Path $RepoRoot "Open-LLM-VTuber\model_dict.json")
+
+Set-Location (Join-Path $RepoRoot "bridges")
 python -m uvicorn deeplx_bridge:app --host 127.0.0.1 --port 1188
+```
 
+Docker 指令
+-----------
 
-$env:OPENAI_API_KEY="你的key"
-$env:OPENAI_TRANSLATE_MODEL="gpt-5-mini"
-$env:KURO_OPEN_LLM_DIR="C:\kuro\Open-LLM-VTuber"
-$env:KURO_MODEL_DICT_PATH="C:\kuro\Open-LLM-VTuber\model_dict.json"
+```powershell
+docker compose ps
+docker compose logs -f deeplx
+docker compose restart deeplx
+docker compose stop deeplx
+docker compose rm -f deeplx
+docker compose pull deeplx
+docker compose up -d deeplx
+```
 
-cd C:\kuro\bridges
-python -m uvicorn deeplx_bridge:app --host 127.0.0.1 --port 1188
+Launcher
+--------
 
+```powershell
+cd <repo-root>
+.\envs\kuro-llm310\python.exe .\launcher.py
+```
 
-
-docker compose ps                      # 看狀態
-docker compose logs -f deeplx          # 看日誌
-docker compose restart deeplx          # 重啟
-docker compose stop deeplx             # 停止
-docker compose rm -f deeplx            # 移除容器（不刪 image）
-docker compose pull deeplx             # 更新到新版
-docker compose up -d deeplx            # 重新起來
-==============================
-
-おやすみタイガ,君の隣にいつも幸せな魔法がありますように
-
-&prompt_lang=ja
-
-
-
-python C:\kuro\launcher\kuro_launcher.py
+如果要用根目錄的 VBS 啟動器，現在也會以該檔所在資料夾當成 repo root。

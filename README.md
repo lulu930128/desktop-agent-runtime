@@ -1,55 +1,50 @@
 # Kuro Desktop Agent Runtime
 
-這份專案把 `launcher`、`Open-LLM-VTuber`、`gpt_sovits`、`bridge`、角色設定和專案 prompt 放在同一個 repo，目標是讓別人 clone 下來後，只要補本機模型、音檔和金鑰，就能直接套模板啟動。
+這份 repo 把 `launcher`、`Open-LLM-VTuber`、`gpt_sovits`、`bridge`、角色 prompt、專案 prompt 放在同一個工作區，方便直接當成一份完整專案維護。
+
+目前的路徑原則是：
+
+1. 進 git 的設定檔盡量使用 **repo 相對路徑**
+2. `launcher` 在執行時再把需要的路徑轉成 **絕對路徑**
+3. 本機秘密、log、模型權重、音檔、runtime 暫存檔維持在 `.gitignore`
 
 ## 啟動
 
 ```powershell
-cd C:\your-folder\desktop-agent-runtime
+cd <repo-root>
 .\envs\kuro-llm310\python.exe .\launcher.py
 ```
 
+也可以直接使用根目錄的 `桌寵啟動器.vbs`。
+
 ## 路徑規則
 
-現在這份專案採用兩層規則：
+- `kuro_launcher.settings.yaml` 使用 `${HERE}` 當 repo root
+- 角色 YAML 內的 `ref_audio_path` 使用 `voices/<角色ID>/...`
+- `compose.yaml` 的 bind mount 使用相對路徑
+- `launcher` 會在產生 runtime 設定時，把需要的音檔路徑轉成絕對路徑
+- `gpt_sovits_tts.py` 的 debug dump 不再綁死某一台機器的目錄
 
-1. **repo 內儲存的設定盡量用相對路徑**
-2. **launcher 在執行時再把需要的資源轉成絕對路徑**
+## 重要檔案
 
-這樣做的好處是：
-
-- repo 可以搬到別的磁碟或別的資料夾
-- 角色 YAML 可以當模板重複使用
-- 啟動器仍然能穩定把音檔、prompt 與 runtime config 指到正確位置
-
-### 目前已改成相對路徑的重點
-
-- [C:\kuro\kuro_launcher.settings.yaml](C:/kuro/kuro_launcher.settings.yaml)  
-  `ROOT` 改成 `${HERE}`，不再綁死 `C:\kuro`
-
-- 角色 YAML 的 `ref_audio_path` 改成 repo 相對路徑  
-  例如：
-  - [C:\kuro\Open-LLM-VTuber\characters\kuro.yaml](C:/kuro/Open-LLM-VTuber/characters/kuro.yaml)
-  - [C:\kuro\Open-LLM-VTuber\characters\mao_pro.yaml](C:/kuro/Open-LLM-VTuber/characters/mao_pro.yaml)
-  - [C:\kuro\Open-LLM-VTuber\characters\shizuku.yaml](C:/kuro/Open-LLM-VTuber/characters/shizuku.yaml)
-  - [C:\kuro\Open-LLM-VTuber\characters\yumi.yaml](C:/kuro/Open-LLM-VTuber/characters/yumi.yaml)
-
-- [C:\kuro\compose.yaml](C:/kuro/compose.yaml) 的 bind mount 改成相對路徑
-
-### 執行時的轉換
-
-- [C:\kuro\kuro_launcher\runtime_conf.py](C:/kuro/kuro_launcher/runtime_conf.py)  
-  會把角色 YAML 裡的 `ref_audio_path` 轉成 runtime 用的絕對路徑，再寫進 `conf.launcher_runtime.yaml`
-
-- [C:\kuro\kuro_launcher\services.py](C:/kuro/kuro_launcher/services.py)  
-  啟動 LLM 時會把 launcher log 目錄用環境變數傳給子程序
-
-- [C:\kuro\Open-LLM-VTuber\src\open_llm_vtuber\tts\gpt_sovits_tts.py](C:/kuro/Open-LLM-VTuber/src/open_llm_vtuber/tts/gpt_sovits_tts.py)  
-  不再把 debug dump 寫死到 `C:\kuro\launcher_logs`
+- `kuro_launcher.settings.yaml`
+- `launcher.py`
+- `kuro_launcher/runtime_conf.py`
+- `kuro_launcher/services.py`
+- `Open-LLM-VTuber/characters/*.yaml`
+- `Open-LLM-VTuber/model_dict.json`
+- `Open-LLM-VTuber/prompts/persona/*.txt`
+- `Open-LLM-VTuber/prompts/utils/response_contract_prompt.txt`
+- `projects/<project_id>/project.yaml`
+- `projects/<project_id>/prompts/project_prompt.txt`
+- `projects/<project_id>/prompts/tool_prompt.txt`
+- `voices/<角色ID>/ref.wav`
+- `voices/<角色ID>/ref6s.wav`
+- `gpt_sovits/GPT_SoVITS/configs/tts_infer_<角色ID>.yaml`
 
 ## Prompt 分層
 
-system prompt 目前會依序組成：
+目前 system prompt 會依序組成：
 
 1. `System Contract`
 2. `Character Persona`
@@ -57,26 +52,22 @@ system prompt 目前會依序組成：
 4. `Tool Use Policy`
 5. `Expression Contract`
 
-對應位置如下：
+其中：
 
-- 系統輸出格式：
-  [C:\kuro\Open-LLM-VTuber\prompts\utils\response_contract_prompt.txt](C:/kuro/Open-LLM-VTuber/prompts/utils/response_contract_prompt.txt)
-- 角色 persona：
-  [C:\kuro\Open-LLM-VTuber\prompts\persona](C:/kuro/Open-LLM-VTuber/prompts/persona)
-- 專案 prompt：
-  [C:\kuro\projects\desktop-agent-runtime\prompts\project_prompt.txt](C:/kuro/projects/desktop-agent-runtime/prompts/project_prompt.txt)
-- tool prompt：
-  [C:\kuro\projects\desktop-agent-runtime\prompts\tool_prompt.txt](C:/kuro/projects/desktop-agent-runtime/prompts/tool_prompt.txt)
+- 角色人格放在 `Open-LLM-VTuber/prompts/persona/*.txt`
+- 專案 prompt 放在 `projects/<project_id>/prompts/project_prompt.txt`
+- tool prompt 放在 `projects/<project_id>/prompts/tool_prompt.txt`
+- 系統輸出格式放在 `Open-LLM-VTuber/prompts/utils/response_contract_prompt.txt`
 
 ## 角色與專案
 
-### 角色設定
+### 角色
 
-角色 YAML 放在：
+角色設定檔位於：
 
-- [C:\kuro\Open-LLM-VTuber\characters](C:/kuro/Open-LLM-VTuber/characters)
+- `Open-LLM-VTuber/characters/`
 
-每個角色目前至少包含：
+每個角色至少會關聯到：
 
 - `conf_name`
 - `conf_uid`
@@ -86,46 +77,61 @@ system prompt 目前會依序組成：
 - `agent_config`
 - `tts_config`
 
-### 專案設定
+### 專案
 
-專案設定放在：
+專案設定位於：
 
-- [C:\kuro\projects](C:/kuro/projects)
+- `projects/`
 
 目前範例專案：
 
-- [C:\kuro\projects\desktop-agent-runtime\project.yaml](C:/kuro/projects/desktop-agent-runtime/project.yaml)
+- `projects/desktop-agent-runtime/project.yaml`
 
 ## 記憶規則
 
-目前仍然是 **一角色一份記憶**。
+目前記憶維持 **一個角色一份**，不因切換專案分離。  
+也就是說，同一角色在不同專案下會延續同一份角色記憶。
 
-也就是說：
+## Launcher
 
-- 切換專案不會切記憶
-- 同一角色在不同專案下仍會保留同一份角色歷程
-
-這符合目前的目標：角色像同一個人，只是工作上下文不同。
-
-## Launcher 目前做的事
-
-新的 launcher 已改成 `CustomTkinter`，可以：
+目前 `launcher` 已改成 `CustomTkinter`，主要負責：
 
 - 選角色
 - 選專案
-- 看目前 prompt 指向
-- 啟動 / 停止 Bridge、TTS、LLM
-- 看 log
+- 預覽 prompt
+- 啟動 / 停止 / 重啟各服務
+- 查看 log
 
-## 目前保留空白給你重寫的地方
+## Git 注意事項
 
-以下 prompt 目前預設留空，方便你自己設計：
+建議提交的內容：
 
-- [C:\kuro\Open-LLM-VTuber\prompts\persona\kuro.txt](C:/kuro/Open-LLM-VTuber/prompts/persona/kuro.txt)
-- [C:\kuro\Open-LLM-VTuber\prompts\persona\mao_pro.txt](C:/kuro/Open-LLM-VTuber/prompts/persona/mao_pro.txt)
-- [C:\kuro\Open-LLM-VTuber\prompts\persona\shizuku.txt](C:/kuro/Open-LLM-VTuber/prompts/persona/shizuku.txt)
-- [C:\kuro\Open-LLM-VTuber\prompts\persona\yumi.txt](C:/kuro/Open-LLM-VTuber/prompts/persona/yumi.txt)
-- [C:\kuro\projects\desktop-agent-runtime\prompts\project_prompt.txt](C:/kuro/projects/desktop-agent-runtime/prompts/project_prompt.txt)
-- [C:\kuro\projects\desktop-agent-runtime\prompts\tool_prompt.txt](C:/kuro/projects/desktop-agent-runtime/prompts/tool_prompt.txt)
+- 角色 YAML
+- persona / project / tool prompt
+- `model_dict.json`
+- `tts_infer_<角色ID>.yaml`
+- 專案設定
+- 程式碼與文件
 
-只有系統輸出格式 prompt 目前是預先填好的。
+不要提交的內容：
+
+- `.env`
+- API key
+- `launcher_logs/`
+- `Open-LLM-VTuber/conf.launcher_runtime.yaml`
+- `voices/**/*.wav`
+- `*.ckpt`
+- `*.pth`
+- `gpt_sovits/GPT_weights*/`
+- `gpt_sovits/SoVITS_weights*/`
+- `gpt_sovits/GPT_SoVITS/pretrained_models/`
+- 本機暫存資料夾
+
+## 目前方向
+
+這份專案現在的設計目標是：
+
+- repo 可以被 clone 到任意路徑
+- 角色 prompt、專案 prompt、tool prompt 可獨立調整
+- `launcher` 負責把相對路徑整理成執行時需要的配置
+- 使用者後續可以直接把這份 repo 當模板延伸自己的角色與專案

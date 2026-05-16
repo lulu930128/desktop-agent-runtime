@@ -1,79 +1,76 @@
-新增腳色說明
+新增角色說明
 ==============
 
-這份專案目前採用「一個腳色一份 YAML」的方式管理。新增腳色時，請讓 prompt、Live2D、TTS、記憶識別都各自獨立，不要讓新腳色直接共用舊腳色的資料。若資料還沒準備好，可以先建立空白 placeholder，讓 launcher 檢查時明確知道缺什麼。
+這份說明的目標是讓新角色可以用「相對路徑」接進目前這份大專案，而不是再綁死某台機器的 `C:\...` 位置。
 
-命名原則
+原則
+----
+
+新增一個角色時，請先決定角色 ID。  
+建議只使用英文小寫、數字、底線，例如：
+
+- `kuro`
+- `yumi`
+- `mao_pro`
+- `shizuku`
+
+之後會盡量讓這個 ID 同時出現在：
+
+- `Open-LLM-VTuber/characters/<角色ID>.yaml`
+- `live2d_model_name`
+- `voices/<角色ID>/`
+- `gpt_sovits/GPT_SoVITS/configs/tts_infer_<角色ID>.yaml`
+
+必要檔案
 --------
 
-建議先決定一個穩定的腳色 ID，例如：
+至少要準備這幾塊：
 
-- kuro
-- yumi
-- mao_pro
-- shizuku
+1. 角色 YAML  
+   `Open-LLM-VTuber/characters/<角色ID>.yaml`
 
-建議使用小寫英文、數字與底線。這個 ID 會同時用在：
+2. persona prompt  
+   `Open-LLM-VTuber/prompts/persona/<角色ID>.txt`
 
-- 腳色 YAML 檔名
+3. Live2D 模型資料夾  
+   `Open-LLM-VTuber/live2d-models/<角色ID>/`
+
+4. Live2D 對應資料  
+   `Open-LLM-VTuber/model_dict.json`
+
+5. 參考音檔  
+   `voices/<角色ID>/ref.wav`
+   或  
+   `voices/<角色ID>/ref6s.wav`
+
+6. GPT-SoVITS infer 設定  
+   `gpt_sovits/GPT_SoVITS/configs/tts_infer_<角色ID>.yaml`
+
+7. 權重檔  
+   `gpt_sovits/GPT_weights_v2Pro/...`
+   `gpt_sovits/SoVITS_weights_v2Pro/...`
+
+如果某個角色目前還沒有完整資料，可以先建立 placeholder，之後再慢慢補。
+
+步驟 1：建立角色 YAML
+--------------------
+
+請先複製一份現有角色 YAML，例如 `kuro.yaml`，再改成新的角色 ID：
+
+- `Open-LLM-VTuber/characters/<角色ID>.yaml`
+
+建議至少確認這些欄位：
+
 - `conf_name`
 - `conf_uid`
 - `live2d_model_name`
-- `voices/<腳色ID>/`
-- `tts_infer_<腳色ID>.yaml`
-- GPT / SoVITS 權重檔命名
+- `character_name`
+- `human_name`
+- `persona_prompt_path`
+- `agent_config`
+- `tts_config`
 
-必要檔案與路徑
---------------
-
-新增一個完整腳色，通常會牽涉這些位置：
-
-1. 腳色設定：
-   `C:\kuro\Open-LLM-VTuber\characters\<腳色ID>.yaml`
-
-2. Live2D 模型：
-   `C:\kuro\Open-LLM-VTuber\live2d-models\<腳色ID>\`
-
-3. Live2D 索引：
-   `C:\kuro\Open-LLM-VTuber\model_dict.json`
-
-4. TTS 參考音：
-   `C:\kuro\voices\<腳色ID>\ref.wav`
-   或
-   `C:\kuro\voices\<腳色ID>\ref6s.wav`
-
-5. GPT-SoVITS 推理設定：
-   `C:\kuro\gpt_sovits\GPT_SoVITS\configs\tts_infer_<腳色ID>.yaml`
-
-6. GPT / SoVITS 權重：
-   `C:\kuro\gpt_sovits\GPT_weights_v2Pro\...`
-   `C:\kuro\gpt_sovits\SoVITS_weights_v2Pro\...`
-
-注意：音檔與權重通常很大，而且可能帶有私有資料，已經被 `.gitignore` 排除，不會提交到 Git。
-
-步驟 1：建立腳色 YAML
----------------------
-
-最簡單的方式是複製目前最完整的 `kuro.yaml`：
-
-來源：
-`C:\kuro\Open-LLM-VTuber\characters\kuro.yaml`
-
-目標：
-`C:\kuro\Open-LLM-VTuber\characters\<腳色ID>.yaml`
-
-複製後至少要改這些欄位：
-
-- `character_config.conf_name`
-- `character_config.conf_uid`
-- `character_config.live2d_model_name`
-- `character_config.character_name`
-- `character_config.human_name`
-- `character_config.persona_prompt`
-- `character_config.tts_config.gpt_sovits_tts.ref_audio_path`
-- `character_config.tts_config.gpt_sovits_tts.prompt_text`
-
-範例：
+路徑類欄位要使用相對寫法，例如：
 
 ```yaml
 character_config:
@@ -82,55 +79,59 @@ character_config:
   live2d_model_name: new_character
   character_name: new_character
   human_name: new_character
-  persona_prompt: '這裡填入這個腳色的人格、說話方式、互動規則。'
+  persona_prompt_path: prompts/persona/new_character.txt
+
+tts_config:
+  tts_model: gpt_sovits_tts
+  gpt_sovits_tts:
+    api_url: http://127.0.0.1:9881/tts
+    text_lang: ja
+    ref_audio_path: voices/new_character/ref.wav
+    prompt_lang: ja
+    prompt_text: ""
 ```
 
-`conf_uid` 很重要，這會影響記憶歸屬。不同腳色請使用不同 `conf_uid`，例如：
+注意：
 
-- `kuro_01`
-- `mao_pro_01`
-- `shizuku_01`
+- `conf_uid` 最好保持唯一
+- `ref_audio_path` 現在應該寫成 `voices/...`，不要再寫成 `C:/...`
 
-步驟 2：設定 LLM
----------------
+步驟 2：建立 persona prompt
+--------------------------
 
-目前 launcher 會預設讓腳色走 `openai_llm`。角色 YAML 裡可以保留：
+在這裡建立角色人格：
 
-```yaml
-agent_config:
-  agent_settings:
-    basic_memory_agent:
-      llm_provider: openai_llm
-```
+- `Open-LLM-VTuber/prompts/persona/<角色ID>.txt`
 
-OpenAI API key 不要寫進 YAML。請放在根目錄 `.env`：
+這份只放角色個性、語氣、稱呼、互動習慣。  
+不要把工具規則、專案規則、系統輸出格式混進去。
 
-```text
-OPENAI_API_KEY=你的 key
-OPENAI_LLM_API_KEY=
-OPENAI_LLM_MODEL=gpt-4o
-OPENAI_LLM_TEMPERATURE=1.0
-```
+步驟 3：接 Live2D
+----------------
 
-launcher 啟動時會讀 `.env`，並把 key 注入到 runtime config。
+模型資料夾：
 
-步驟 3：加入 Live2D 模型
-------------------------
+- `Open-LLM-VTuber/live2d-models/<角色ID>/`
 
-把 Live2D 模型放進：
+同時要在這裡補上角色對應：
 
-`C:\kuro\Open-LLM-VTuber\live2d-models\<腳色ID>\`
+- `Open-LLM-VTuber/model_dict.json`
 
-接著更新：
+至少要確認：
 
-`C:\kuro\Open-LLM-VTuber\model_dict.json`
+- `name`
+- `description`
+- `url`
+- `kScale`
+- `idleMotionGroupName`
+- `emotionMap`
 
-新增一筆模型資料。範例：
+範例：
 
 ```json
 {
   "name": "new_character",
-  "description": "new_character Live2D (local)",
+  "description": "new_character Live2D",
   "url": "/live2d-models/new_character/runtime/new_character.model3.json",
   "kScale": 0.45,
   "idleMotionGroupName": "Idle",
@@ -148,54 +149,28 @@ launcher 啟動時會讀 `.env`，並把 key 注入到 runtime config。
 }
 ```
 
-注意：
+步驟 4：接 TTS 參考音
+---------------------
 
-- `name` 必須等於 YAML 的 `live2d_model_name`
-- `url` 必須指到實際存在的 `.model3.json`
-- 如果模型沒有某些表情，可以先保留通用 `emotionMap`，之後再細調
+角色音檔目錄：
 
-步驟 4：建立 TTS 參考音
-----------------------
+- `voices/<角色ID>/`
 
-每個腳色都應該有自己的 voice folder：
+常用檔名：
 
-`C:\kuro\voices\<腳色ID>\`
+- `ref.wav`
+- `ref6s.wav`
 
-建議放：
+這些音檔通常不提交到 git，但角色 YAML 會透過相對路徑引用它們。
 
-`ref.wav`
+步驟 5：接 GPT-SoVITS infer 設定
+--------------------------------
 
-或：
+位置：
 
-`ref6s.wav`
+- `gpt_sovits/GPT_SoVITS/configs/tts_infer_<角色ID>.yaml`
 
-然後在角色 YAML 設定：
-
-```yaml
-tts_config:
-  tts_model: gpt_sovits_tts
-  gpt_sovits_tts:
-    api_url: http://127.0.0.1:9881/tts
-    text_lang: ja
-    ref_audio_path: C:/kuro/voices/new_character/ref.wav
-    prompt_lang: ja
-    prompt_text: 參考音實際說的文字
-```
-
-`prompt_text` 必須盡量對應參考音內容。若文字和音檔不一致，TTS 品質容易變差。
-
-步驟 5：建立 GPT-SoVITS infer 設定
----------------------------------
-
-新增：
-
-`C:\kuro\gpt_sovits\GPT_SoVITS\configs\tts_infer_<腳色ID>.yaml`
-
-可以參考：
-
-`C:\kuro\gpt_sovits\GPT_SoVITS\configs\tts_infer_kuro.yaml`
-
-完整腳色應該設定自己的權重：
+如果新角色還沒有完整權重，可以先放 placeholder：
 
 ```yaml
 custom:
@@ -203,79 +178,62 @@ custom:
   cnhuhbert_base_path: GPT_SoVITS/pretrained_models/chinese-hubert-base
   device: cuda
   is_half: true
-  t2s_weights_path: GPT_weights_v2Pro/new_character-e10.ckpt
+  t2s_weights_path: ""
   version: v2Pro
-  vits_weights_path: SoVITS_weights_v2Pro/new_character_e8_s1808.pth
+  vits_weights_path: ""
 ```
 
-如果該腳色還沒有訓練好的權重，先用空值 placeholder：
+之後補齊：
 
-```yaml
-custom:
-  bert_base_path: GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large
-  cnhuhbert_base_path: GPT_SoVITS/pretrained_models/chinese-hubert-base
-  device: cuda
-  is_half: true
-  t2s_weights_path: ''
-  version: v2Pro
-  vits_weights_path: ''
-```
+- `t2s_weights_path`
+- `vits_weights_path`
 
-launcher 會檢查權重是否存在。如果是空值或檔案不存在，該腳色會被擋下，不會假裝啟動成功。
+步驟 6：沒有資料時的 placeholder 規則
+-----------------------------------
 
-步驟 6：placeholder 規則
------------------------
+如果目前只有角色框架，還沒有完整資源，建議先補這些最小佔位：
 
-如果新腳色還沒有完整資料，可以先建立空白 placeholder，但不要指向其他腳色的資源。
+- `Open-LLM-VTuber/characters/<角色ID>.yaml`
+- `Open-LLM-VTuber/prompts/persona/<角色ID>.txt`
+- `gpt_sovits/GPT_SoVITS/configs/tts_infer_<角色ID>.yaml`
 
-可以先建立：
+音檔或權重尚未完成時：
 
-- `Open-LLM-VTuber/characters/<腳色ID>.yaml`
-- `voices/<腳色ID>/ref.wav` 空檔
-- `gpt_sovits/GPT_SoVITS/configs/tts_infer_<腳色ID>.yaml`
-- `tts_infer_<腳色ID>.yaml` 的權重路徑留空
-
-這樣好處是：
-
-- 目錄結構先固定
-- 不會誤用 `kuro` 或其他角色的聲音
-- launcher 會明確提示缺少哪些資料
+- `ref_audio_path` 先指向未來預計位置
+- `prompt_text` 可先留空
+- 權重路徑可先留空字串
 
 步驟 7：用 launcher 驗證
------------------------
+----------------------
 
-啟動：
+從 repo 根目錄啟動：
 
 ```powershell
-cd C:\kuro
+cd <repo-root>
 .\envs\kuro-llm310\python.exe .\launcher.py
 ```
 
-選擇新腳色後，launcher 會檢查：
+確認這些項目：
 
-- YAML 是否能讀取
-- `conf_uid` 是否存在
-- `live2d_model_name` 是否在 `model_dict.json`
-- Live2D `.model3.json` 是否存在
-- TTS 是否使用 `gpt_sovits_tts`
-- 參考音是否存在且不是 0 bytes
-- `tts_infer_<腳色ID>.yaml` 是否存在
-- GPT / SoVITS 權重是否設定且存在
-- TTS smoke test 是否能產生音檔
+- 角色有出現在 launcher 列表
+- `conf_uid` 沒和別人撞名
+- `live2d_model_name` 在 `model_dict.json` 有對應
+- Live2D `.model3.json` 路徑正確
+- TTS 設定可讀
+- 參考音檔存在且不是空檔
+- `tts_infer_<角色ID>.yaml` 路徑正確
+- GPT / SoVITS 權重路徑正確，或確定目前只是 placeholder
 
-通過後才會啟動完整角色流程。
+Git 注意事項
+------------
 
-步驟 8：Git 注意事項
--------------------
-
-可以提交：
+建議提交：
 
 - 角色 YAML
-- Live2D 模型
+- persona prompt
 - `model_dict.json`
-- `tts_infer_<腳色ID>.yaml`
-- `.gitkeep`
-- 說明文件
+- `tts_infer_<角色ID>.yaml`
+- Live2D 結構檔
 
 不要提交：
 
@@ -289,21 +247,20 @@ cd C:\kuro
 - `gpt_sovits/GPT_weights*/`
 - `gpt_sovits/SoVITS_weights*/`
 - `gpt_sovits/GPT_SoVITS/pretrained_models/`
-- `暫存區/`
 
-新增腳色檢查清單
+新增角色檢查清單
 ----------------
 
-- [ ] `characters/<腳色ID>.yaml` 已建立
-- [ ] `conf_name` 已改成新腳色
-- [ ] `conf_uid` 已改成唯一 ID
-- [ ] `live2d_model_name` 已改成新腳色
-- [ ] `persona_prompt` 已改成新腳色人格
-- [ ] `model_dict.json` 已新增模型項目
+- [ ] `Open-LLM-VTuber/characters/<角色ID>.yaml` 已建立
+- [ ] `conf_name` 已改成角色名稱
+- [ ] `conf_uid` 唯一
+- [ ] `live2d_model_name` 正確
+- [ ] `persona_prompt_path` 已改成對應角色檔
+- [ ] `Open-LLM-VTuber/prompts/persona/<角色ID>.txt` 已建立
+- [ ] `Open-LLM-VTuber/model_dict.json` 已補上角色
 - [ ] Live2D `.model3.json` 路徑正確
-- [ ] `voices/<腳色ID>/` 已建立
-- [ ] 參考音不是其他腳色的音檔
-- [ ] `tts_infer_<腳色ID>.yaml` 已建立
-- [ ] GPT 權重路徑正確，或先留空 placeholder
-- [ ] SoVITS 權重路徑正確，或先留空 placeholder
-- [ ] launcher 能正確提示缺少資源或成功啟動
+- [ ] `voices/<角色ID>/` 已建立
+- [ ] `ref_audio_path` 使用相對路徑
+- [ ] `gpt_sovits/GPT_SoVITS/configs/tts_infer_<角色ID>.yaml` 已建立
+- [ ] 權重路徑已補齊，或確認目前為 placeholder
+- [ ] launcher 能正常讀到角色
