@@ -1,5 +1,6 @@
 import os
 import json
+from typing import Optional
 from uuid import uuid4
 import numpy as np
 from datetime import datetime
@@ -41,6 +42,70 @@ def init_client_ws_route(default_context_cache: ServiceContext) -> APIRouter:
             logger.error(f"Error in WebSocket connection: {e}")
             await ws_handler.handle_disconnect(client_uid)
             raise
+
+    @router.get("/launcher/status")
+    async def launcher_status(client_uid: Optional[str] = None):
+        """Return backend/session hot-switch availability for the launcher."""
+        try:
+            return JSONResponse(ws_handler.get_launcher_status(client_uid))
+        except Exception as e:
+            logger.exception(f"Error getting launcher status: {e}")
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "Failed to collect launcher status.",
+                },
+                status_code=500,
+            )
+
+    @router.post("/launcher/switch-profile")
+    async def launcher_switch_profile(payload: dict):
+        """Hot switch runtime config for the active frontend session or default context."""
+        runtime_config = payload.get("runtime_config")
+        target_client_uid = payload.get("target_client_uid")
+        trigger_source = str(payload.get("trigger_source") or "launcher")
+
+        if runtime_config is None:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "runtime_config is required.",
+                },
+                status_code=400,
+            )
+
+        try:
+            result = await ws_handler.hot_switch_runtime_config(
+                runtime_config,
+                target_client_uid=target_client_uid,
+                trigger_source=trigger_source,
+            )
+            return JSONResponse(result)
+        except ValueError as e:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": str(e),
+                },
+                status_code=400,
+            )
+        except RuntimeError as e:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": str(e),
+                },
+                status_code=409,
+            )
+        except Exception as e:
+            logger.exception(f"Error during launcher hot switch: {e}")
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "Internal server error during launcher hot switch.",
+                },
+                status_code=500,
+            )
 
     return router
 

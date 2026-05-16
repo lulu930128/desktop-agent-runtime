@@ -6,6 +6,7 @@ import queue
 import sys
 import threading
 import time
+import urllib.error
 import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,6 +47,7 @@ from kuro_launcher.services import (
 from kuro_launcher.utils import (
     build_logs_dir,
     get_listening_pid_windows,
+    http_get_json,
     http_post_json,
     load_env_file,
     log_ts,
@@ -1025,6 +1027,232 @@ class LauncherApp(ctk.CTk):
                 except Exception:
                     pass
 
+    def _stop_tts_impl(self, kill_external: bool = False) -> None:
+        if self.proc_tts:
+            try:
+                self.proc_tts.stop()
+            except Exception:
+                pass
+            self.proc_tts = None
+
+        if kill_external:
+            pid = get_listening_pid_windows(self.cfg.tts_port)
+            if pid:
+                try:
+                    taskkill_tree(pid)
+                except Exception:
+                    pass
+
+    def _launcher_api_url(self, path: str) -> str:
+        return f"{self.cfg.llm_url}{path}"
+
+    def _decode_http_error(
+        self, exc: urllib.error.HTTPError
+    ) -> tuple[int, dict, str]:
+        raw = exc.read().decode("utf-8", errors="replace")
+        try:
+            payload = json.loads(raw) if raw else {}
+        except json.JSONDecodeError:
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {"data": payload}
+        return exc.code, payload, raw
+
+    def _should_restart_tts_for_switch(
+        self,
+        status: dict,
+        char_cfg: Dict[str, object],
+    ) -> bool:
+        if not port_is_open(self.cfg.tts_host, self.cfg.tts_port, 0.2):
+            return True
+
+        desired_conf_uid = str(char_cfg.get("conf_uid") or "").strip()
+        desired_conf_name = str(char_cfg.get("conf_name") or "").strip()
+        current_conf_uid = str(
+            status.get("conf_uid") or status.get("default_conf_uid") or ""
+        ).strip()
+        current_conf_name = str(
+            status.get("conf_name") or status.get("default_conf_name") or ""
+        ).strip()
+
+        if desired_conf_uid and current_conf_uid:
+            return desired_conf_uid != current_conf_uid
+        if desired_conf_name and current_conf_name:
+            return desired_conf_name != current_conf_name
+        return True
+
+    def _restart_tts_runtime(
+        self,
+        character: CharacterRecord,
+        char_cfg: Dict[str, object],
+    ) -> bool:
+        self.log(
+            f"[{log_ts()}] 偵測到角色語音設定可能改變，重新載入 TTS：{character.yaml_path.stem}"
+        )
+        self._stop_tts_impl(kill_external=True)
+
+        for _ in range(20):
+            if not port_is_open(self.cfg.tts_host, self.cfg.tts_port, 0.1):
+                break
+            time.sleep(0.2)
+
+        try:
+            self.proc_tts = start_tts(
+                self.cfg,
+                self.log,
+                character_name=character.yaml_path.stem,
+                logs_root=self.cfg.logs_dir,
+                run_id=self.current_run_id or "manual",
+            )
+        except Exception as exc:
+            self.log(f"[{log_ts()}] TTS 重新載入失敗：{exc}")
+            return False
+
+        for _ in range(50):
+            if port_is_open(self.cfg.tts_host, self.cfg.tts_port, 0.2):
+                break
+            time.sleep(0.2)
+
+        if not port_is_open(self.cfg.tts_host, self.cfg.tts_port):
+            self.log(f"[{log_ts()}] TTS 重新載入後沒有成功監聽，請查看 tts log。")
+            return False
+
+        ok, message = probe_tts(
+            self.cfg,
+            char_cfg,
+            logs_root=self.cfg.logs_dir,
+            run_id=self.current_run_id or "manual",
+        )
+        if not ok:
+            self.log(f"[{log_ts()}] TTS 熱切換 smoke test 失敗：{message}")
+            return False
+
+        self.log(f"[{log_ts()}] TTS 熱切換 smoke test：{message}")
+        return True
+
+    def _try_hot_switch_profile(
+        self,
+        runtime_conf: Dict[str, object],
+        char_cfg: Dict[str, object],
+        character: CharacterRecord,
+        project: ProjectDefinition,
+    ) -> bool:
+        self.log(
+            f"[{log_ts()}] 偵測到 LLM 已在執行，嘗試以 idle 熱切換套用 {character.conf_name} / {project.display_name}。"
+        )
+
+        try:
+            status = http_get_json(
+                self._launcher_api_url("/launcher/status"),
+                timeout=5.0,
+            )
+        except urllib.error.HTTPError as exc:
+            code, payload, raw = self._decode_http_error(exc)
+            if code == 404:
+                self.log(
+                    f"[{log_ts()}] 目前執行中的後端還沒有熱切換 API；請手動停止一次角色後再重新啟動。"
+                )
+            else:
+                self.log(
+                    f"[{log_ts()}] 讀取熱切換狀態失敗：HTTP {code} {payload.get('error') or raw[:240]}"
+                )
+            return False
+        except Exception as exc:
+            self.log(f"[{log_ts()}] 讀取熱切換狀態失敗：{exc}")
+            return False
+
+        if not bool(status.get("can_hot_switch")):
+            self.log(
+                f"[{log_ts()}] 目前不能熱切換：{status.get('reason') or 'unknown'}"
+            )
+            return False
+
+        if self._should_restart_tts_for_switch(status, char_cfg):
+            if not self._restart_tts_runtime(character, char_cfg):
+                self.log(f"[{log_ts()}] 已取消這次熱切換，因為 TTS 沒有成功切到新角色。")
+                return False
+
+        payload = {
+            "runtime_config": runtime_conf,
+            "target_client_uid": status.get("target_client_uid"),
+            "trigger_source": "launcher",
+        }
+
+        try:
+            result = http_post_json(
+                self._launcher_api_url("/launcher/switch-profile"),
+                payload,
+                timeout=20.0,
+            )
+        except urllib.error.HTTPError as exc:
+            code, payload, raw = self._decode_http_error(exc)
+            self.log(
+                f"[{log_ts()}] 熱切換請求失敗：HTTP {code} {payload.get('error') or raw[:240]}"
+            )
+            return False
+        except Exception as exc:
+            self.log(f"[{log_ts()}] 熱切換請求失敗：{exc}")
+            return False
+
+        self.log(f"[{log_ts()}] {result.get('message') or '熱切換完成。'}")
+        return True
+
+    def _prepare_runtime_profile(
+        self,
+        character: CharacterRecord,
+        project: ProjectDefinition,
+    ) -> tuple[Optional[Dict[str, object]], Optional[Dict[str, object]]]:
+        errors, warnings = validate_profile_assets(self.cfg, character.yaml_path)
+        for warning in warnings:
+            self.log(f"[{log_ts()}] 警告：{warning}")
+        if errors:
+            self.log(f"[{log_ts()}] 角色設定檢查失敗：{character.yaml_path.name}")
+            for error in errors:
+                self.log(f"[{log_ts()}]   - {error}")
+            return None, None
+
+        self.log(
+            f"[{log_ts()}] 準備 runtime conf：{character.conf_name} / {project.display_name}"
+        )
+        try:
+            runtime_conf, char_cfg = build_runtime_conf(
+                open_llm_dir=self.cfg.open_llm_dir,
+                character_yaml=character.yaml_path,
+                project_yaml=project.path,
+                llm_host=self.cfg.llm_host,
+                llm_port=self.cfg.llm_port,
+                bridge_translate_url=self.cfg.bridge_translate_url,
+                llm_provider_env=self.cfg.llm_provider_env,
+                llm_default_provider=self.cfg.llm_default_provider,
+                openai_model_env=self.cfg.openai_model_env,
+                openai_default_model=self.cfg.openai_default_model,
+                openai_temp_env=self.cfg.openai_temp_env,
+                openai_inject_key_env=self.cfg.openai_inject_key_env,
+                openai_api_key_env=self.cfg.openai_api_key_env,
+                openai_fallback_key_env=self.cfg.openai_fallback_key_env,
+            )
+            write_runtime_conf(self.cfg.runtime_conf_path, runtime_conf)
+            conf_uid = str(char_cfg.get("conf_uid") or "").strip()
+            ts = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            self.current_run_id = f"{ts}_{conf_uid or character.yaml_path.stem}"
+            self.log(f"[{log_ts()}] runtime conf: {self.cfg.runtime_conf_path}")
+            self.log(
+                f"[{log_ts()}] active_project_id: {char_cfg.get('active_project_id', '')}"
+            )
+            self.log(
+                f"[{log_ts()}] persona_prompt_path: {char_cfg.get('persona_prompt_path', '')}"
+            )
+            self.log(
+                f"[{log_ts()}] project_prompt_path: {char_cfg.get('project_prompt_path', '')}"
+            )
+            self.log(
+                f"[{log_ts()}] tool_prompt_path: {char_cfg.get('tool_prompt_path', '')}"
+            )
+            return runtime_conf, char_cfg
+        except Exception as exc:
+            self.log(f"[{log_ts()}] 準備 runtime conf 失敗：{exc}")
+            return None, None
+
     def on_toggle_bridge(self) -> None:
         threading.Thread(target=self._toggle_bridge_flow, daemon=True).start()
 
@@ -1068,6 +1296,13 @@ class LauncherApp(ctk.CTk):
         character: CharacterRecord,
         project: ProjectDefinition,
     ) -> None:
+        if port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.2):
+            runtime_conf, char_cfg = self._prepare_runtime_profile(character, project)
+            if runtime_conf is None or char_cfg is None:
+                return
+            self._try_hot_switch_profile(runtime_conf, char_cfg, character, project)
+            return
+
         if not port_is_open(self.cfg.bridge_host, self.cfg.bridge_port):
             self.log(f"[{log_ts()}] Bridge 尚未啟動，先補啟動。")
             self._ensure_bridge_on_start()

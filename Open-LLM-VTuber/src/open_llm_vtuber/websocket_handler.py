@@ -21,7 +21,11 @@ from .chat_history_manager import (
     delete_history,
     get_history_list,
 )
-from .config_manager.utils import scan_config_alts_directory, scan_bg_directory
+from .config_manager.utils import (
+    scan_config_alts_directory,
+    scan_bg_directory,
+    validate_config,
+)
 from .conversations.conversation_handler import (
     handle_conversation_trigger,
     handle_group_interrupt,
@@ -72,6 +76,168 @@ class WebSocketHandler:
 
         # Message handlers mapping
         self._message_handlers = self._init_message_handlers()
+
+    def _prune_finished_tasks(self) -> None:
+        for task_key, task in list(self.current_conversation_tasks.items()):
+            if task is None or task.done():
+                self.current_conversation_tasks.pop(task_key, None)
+
+    def _resolve_launcher_target(
+        self, client_uid: Optional[str] = None
+    ) -> tuple[Optional[str], list[str], Optional[str]]:
+        connected_clients = sorted(self.client_connections.keys())
+        if client_uid:
+            if client_uid not in self.client_connections:
+                return None, connected_clients, f"Client {client_uid} is not connected."
+            return client_uid, connected_clients, None
+
+        if len(connected_clients) == 1:
+            return connected_clients[0], connected_clients, None
+        if len(connected_clients) == 0:
+            return None, connected_clients, None
+        return None, connected_clients, "Multiple frontend clients are connected; hot switch is ambiguous."
+
+    def _is_client_idle_for_switch(self, client_uid: str) -> tuple[bool, str]:
+        self._prune_finished_tasks()
+
+        group = self.chat_group_manager.get_client_group(client_uid)
+        if group and len(group.members) > 1:
+            return False, "The active frontend is in a multi-member group; hot switch is disabled."
+
+        task_key = group.group_id if group else client_uid
+        task = self.current_conversation_tasks.get(task_key)
+        if task and not task.done():
+            return False, "A conversation turn is still running or audio playback has not fully finished."
+
+        return True, "idle"
+
+    def get_launcher_status(self, client_uid: Optional[str] = None) -> dict:
+        self._prune_finished_tasks()
+        resolved_client_uid, connected_clients, resolve_error = (
+            self._resolve_launcher_target(client_uid)
+        )
+
+        payload = {
+            "ok": True,
+            "connected_client_count": len(connected_clients),
+            "connected_client_uids": connected_clients,
+            "target_client_uid": resolved_client_uid,
+            "can_hot_switch": False,
+            "scope": "unavailable",
+            "reason": "",
+            "default_conf_name": self.default_context_cache.character_config.conf_name,
+            "default_conf_uid": self.default_context_cache.character_config.conf_uid,
+            "default_active_project_id": (
+                self.default_context_cache.character_config.active_project_id or ""
+            ),
+        }
+
+        if resolve_error:
+            payload["reason"] = resolve_error
+            return payload
+
+        if resolved_client_uid is None:
+            payload["can_hot_switch"] = True
+            payload["scope"] = "default"
+            payload["reason"] = "No active frontend session; launcher can update the default backend context only."
+            return payload
+
+        idle, reason = self._is_client_idle_for_switch(resolved_client_uid)
+        payload["can_hot_switch"] = idle
+        payload["scope"] = "session" if idle else "busy"
+        payload["reason"] = reason
+
+        context = self.client_contexts.get(resolved_client_uid)
+        if context:
+            payload["conf_name"] = context.character_config.conf_name
+            payload["conf_uid"] = context.character_config.conf_uid
+            payload["active_project_id"] = (
+                context.character_config.active_project_id or ""
+            )
+
+        return payload
+
+    async def hot_switch_runtime_config(
+        self,
+        runtime_config_data: dict,
+        *,
+        target_client_uid: Optional[str] = None,
+        trigger_source: str = "launcher",
+    ) -> dict:
+        if not isinstance(runtime_config_data, dict):
+            raise ValueError("runtime_config must be a JSON object.")
+
+        resolved_client_uid, connected_clients, resolve_error = (
+            self._resolve_launcher_target(target_client_uid)
+        )
+        if resolve_error:
+            raise RuntimeError(resolve_error)
+
+        if resolved_client_uid is not None:
+            idle, reason = self._is_client_idle_for_switch(resolved_client_uid)
+            if not idle:
+                raise RuntimeError(reason)
+
+        validated_config = validate_config(runtime_config_data)
+
+        await self.default_context_cache.load_from_config(
+            validated_config.model_copy(deep=True)
+        )
+
+        result = {
+            "ok": True,
+            "scope": "default" if resolved_client_uid is None else "session",
+            "target_client_uid": resolved_client_uid,
+            "connected_client_count": len(connected_clients),
+            "conf_name": validated_config.character_config.conf_name,
+            "conf_uid": validated_config.character_config.conf_uid,
+            "active_project_id": validated_config.character_config.active_project_id,
+            "active_project_name": validated_config.character_config.active_project_name,
+            "message": "",
+        }
+
+        if resolved_client_uid is None:
+            result["message"] = "Default backend context updated. The next frontend session will use the new character/project."
+            return result
+
+        context = self.client_contexts.get(resolved_client_uid)
+        websocket = self.client_connections.get(resolved_client_uid)
+        if not context or not websocket:
+            raise RuntimeError(
+                f"Target client {resolved_client_uid} disconnected before hot switch could complete."
+            )
+
+        await context.load_from_config(validated_config.model_copy(deep=True))
+
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "set-model-and-conf",
+                    "model_info": context.live2d_model.model_info,
+                    "conf_name": context.character_config.conf_name,
+                    "conf_uid": context.character_config.conf_uid,
+                    "client_uid": resolved_client_uid,
+                }
+            )
+        )
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "config-switched",
+                    "message": (
+                        f"Hot switched by {trigger_source}: "
+                        f"{context.character_config.conf_name}"
+                    ),
+                    "active_project_id": context.character_config.active_project_id,
+                    "active_project_name": context.character_config.active_project_name,
+                }
+            )
+        )
+
+        result["message"] = (
+            f"Hot switched active session to {context.character_config.conf_name}"
+        )
+        return result
 
     def _init_message_handlers(self) -> Dict[str, Callable]:
         """Initialize message type to handler mapping"""

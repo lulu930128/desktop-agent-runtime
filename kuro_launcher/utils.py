@@ -124,6 +124,24 @@ import json
 import urllib.request
 import urllib.error
 
+def _parse_json_response(raw: str) -> dict:
+    obj = json.loads(raw) if raw else {}
+    if not isinstance(obj, dict):
+        return {"data": obj}
+    return obj
+
+
+def http_get_json(url: str, timeout: float = 5.0) -> dict:
+    """
+    GET JSON and return parsed JSON dict.
+    Raises exception on HTTP errors / JSON parse errors.
+    """
+    req = urllib.request.Request(url, method="GET")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read().decode("utf-8", errors="replace")
+    return _parse_json_response(raw)
+
+
 def http_post_json(url: str, payload: dict, timeout: float = 5.0) -> dict:
     """
     POST JSON and return parsed JSON dict.
@@ -139,10 +157,7 @@ def http_post_json(url: str, payload: dict, timeout: float = 5.0) -> dict:
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         raw = resp.read().decode("utf-8", errors="replace")
-    obj = json.loads(raw) if raw else {}
-    if not isinstance(obj, dict):
-        return {"data": obj}
-    return obj
+    return _parse_json_response(raw)
 
 # -------------------------
 # Process control
