@@ -20,6 +20,8 @@ from .chat_history_manager import (
     get_history,
     delete_history,
     get_history_list,
+    get_metadata,
+    touch_history_opened,
 )
 from .config_manager.utils import (
     scan_config_alts_directory,
@@ -58,6 +60,7 @@ class WSMessage(TypedDict, total=False):
     audio: Optional[List[float]]
     images: Optional[List[str]]
     history_uid: Optional[str]
+    force_new: Optional[bool]
     file: Optional[str]
     display_text: Optional[dict]
 
@@ -73,6 +76,7 @@ class WebSocketHandler:
         self.current_conversation_tasks: Dict[str, Optional[asyncio.Task]] = {}
         self.default_context_cache = default_context_cache
         self.received_data_buffers: Dict[str, np.ndarray] = {}
+        self.pending_history_bootstrap: Dict[str, bool] = {}
 
         # Message handlers mapping
         self._message_handlers = self._init_message_handlers()
@@ -110,6 +114,123 @@ class WebSocketHandler:
             return False, "A conversation turn is still running or audio playback has not fully finished."
 
         return True, "idle"
+
+    def _ordered_histories(
+        self, conf_uid: str, selected_uid: Optional[str] = None
+    ) -> list[dict]:
+        histories = get_history_list(conf_uid)
+        if not selected_uid:
+            return histories
+
+        selected_uid = str(selected_uid).strip()
+        selected = None
+        remaining = []
+        for item in histories:
+            if str(item.get("uid") or "") == selected_uid and selected is None:
+                selected = item
+            else:
+                remaining.append(item)
+        if selected is None:
+            return histories
+        return [selected, *remaining]
+
+    def _load_history_into_context(
+        self, context: ServiceContext, history_uid: str
+    ) -> list[dict]:
+        context.history_uid = history_uid
+        context.agent_engine.set_memory_from_history(
+            conf_uid=context.character_config.conf_uid,
+            history_uid=history_uid,
+        )
+        touch_history_opened(context.character_config.conf_uid, history_uid)
+        return [
+            msg
+            for msg in get_history(
+                context.character_config.conf_uid,
+                history_uid,
+            )
+            if msg["role"] != "system"
+        ]
+
+    async def _push_history_selection(
+        self,
+        websocket: WebSocket,
+        context: ServiceContext,
+        history_uid: str,
+    ) -> dict:
+        messages = self._load_history_into_context(context, history_uid)
+        histories = self._ordered_histories(
+            context.character_config.conf_uid,
+            history_uid,
+        )
+        await websocket.send_text(
+            json.dumps({"type": "history-list", "histories": histories})
+        )
+        await websocket.send_text(
+            json.dumps({"type": "history-data", "messages": messages})
+        )
+        metadata = get_metadata(context.character_config.conf_uid, history_uid)
+        return {
+            "history_uid": history_uid,
+            "messages": messages,
+            "histories": histories,
+            "title": str(metadata.get("title") or "").strip(),
+        }
+
+    async def _create_history_for_context(
+        self,
+        websocket: WebSocket,
+        context: ServiceContext,
+    ) -> dict:
+        history_uid = create_new_history(context.character_config.conf_uid)
+        if not history_uid:
+            raise RuntimeError("Failed to create a new history thread.")
+
+        context.history_uid = history_uid
+        context.agent_engine.set_memory_from_history(
+            conf_uid=context.character_config.conf_uid,
+            history_uid=history_uid,
+        )
+        touch_history_opened(context.character_config.conf_uid, history_uid)
+
+        histories = self._ordered_histories(
+            context.character_config.conf_uid,
+            history_uid,
+        )
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "new-history-created",
+                    "history_uid": history_uid,
+                }
+            )
+        )
+        await websocket.send_text(
+            json.dumps({"type": "history-list", "histories": histories})
+        )
+        metadata = get_metadata(context.character_config.conf_uid, history_uid)
+        return {
+            "history_uid": history_uid,
+            "histories": histories,
+            "title": str(metadata.get("title") or "").strip(),
+        }
+
+    async def _resume_latest_history_or_create(
+        self,
+        websocket: WebSocket,
+        context: ServiceContext,
+    ) -> dict:
+        histories = self._ordered_histories(context.character_config.conf_uid)
+        if histories:
+            history_uid = str(histories[0].get("uid") or "").strip()
+            if history_uid:
+                return await self._push_history_selection(
+                    websocket,
+                    context,
+                    history_uid,
+                )
+
+        return await self._create_history_for_context(websocket, context)
 
     def get_launcher_status(self, client_uid: Optional[str] = None) -> dict:
         self._prune_finished_tasks()
@@ -154,8 +275,90 @@ class WebSocketHandler:
             payload["active_project_id"] = (
                 context.character_config.active_project_id or ""
             )
+            payload["current_history_uid"] = context.history_uid or ""
 
         return payload
+
+    async def launcher_select_history(
+        self,
+        history_uid: str,
+        *,
+        target_client_uid: Optional[str] = None,
+        trigger_source: str = "launcher",
+    ) -> dict:
+        if not history_uid:
+            raise ValueError("history_uid is required.")
+
+        resolved_client_uid, connected_clients, resolve_error = (
+            self._resolve_launcher_target(target_client_uid)
+        )
+        if resolve_error:
+            raise RuntimeError(resolve_error)
+        if resolved_client_uid is None:
+            raise RuntimeError("No active frontend session is connected.")
+
+        idle, reason = self._is_client_idle_for_switch(resolved_client_uid)
+        if not idle:
+            raise RuntimeError(reason)
+
+        context = self.client_contexts.get(resolved_client_uid)
+        websocket = self.client_connections.get(resolved_client_uid)
+        if not context or not websocket:
+            raise RuntimeError(
+                f"Target client {resolved_client_uid} disconnected before history selection could complete."
+            )
+
+        histories = self._ordered_histories(context.character_config.conf_uid)
+        known_uids = {str(item.get("uid") or "") for item in histories}
+        if history_uid not in known_uids:
+            raise ValueError(f"History {history_uid} does not exist for this character.")
+
+        result = await self._push_history_selection(websocket, context, history_uid)
+        return {
+            "ok": True,
+            "scope": "session",
+            "target_client_uid": resolved_client_uid,
+            "connected_client_count": len(connected_clients),
+            "history_uid": history_uid,
+            "title": result.get("title", ""),
+            "message": f"History switched by {trigger_source}.",
+        }
+
+    async def launcher_create_history(
+        self,
+        *,
+        target_client_uid: Optional[str] = None,
+        trigger_source: str = "launcher",
+    ) -> dict:
+        resolved_client_uid, connected_clients, resolve_error = (
+            self._resolve_launcher_target(target_client_uid)
+        )
+        if resolve_error:
+            raise RuntimeError(resolve_error)
+        if resolved_client_uid is None:
+            raise RuntimeError("No active frontend session is connected.")
+
+        idle, reason = self._is_client_idle_for_switch(resolved_client_uid)
+        if not idle:
+            raise RuntimeError(reason)
+
+        context = self.client_contexts.get(resolved_client_uid)
+        websocket = self.client_connections.get(resolved_client_uid)
+        if not context or not websocket:
+            raise RuntimeError(
+                f"Target client {resolved_client_uid} disconnected before history creation could complete."
+            )
+
+        result = await self._create_history_for_context(websocket, context)
+        return {
+            "ok": True,
+            "scope": "session",
+            "target_client_uid": resolved_client_uid,
+            "connected_client_count": len(connected_clients),
+            "history_uid": result.get("history_uid", ""),
+            "title": result.get("title", ""),
+            "message": f"New history created by {trigger_source}.",
+        }
 
     async def hot_switch_runtime_config(
         self,
@@ -209,6 +412,10 @@ class WebSocketHandler:
 
         await context.load_from_config(validated_config.model_copy(deep=True))
 
+        history_result = await self._resume_latest_history_or_create(websocket, context)
+        selected_history_uid = str(history_result.get("history_uid") or "").strip()
+        selected_history_title = str(history_result.get("title") or "").strip()
+
         await websocket.send_text(
             json.dumps(
                 {
@@ -230,6 +437,7 @@ class WebSocketHandler:
                     ),
                     "active_project_id": context.character_config.active_project_id,
                     "active_project_name": context.character_config.active_project_name,
+                    "history_uid": selected_history_uid,
                 }
             )
         )
@@ -237,6 +445,8 @@ class WebSocketHandler:
         result["message"] = (
             f"Hot switched active session to {context.character_config.conf_name}"
         )
+        result["history_uid"] = selected_history_uid
+        result["history_title"] = selected_history_title
         return result
 
     def _init_message_handlers(self) -> Dict[str, Callable]:
@@ -308,6 +518,7 @@ class WebSocketHandler:
         self.client_connections[client_uid] = websocket
         self.client_contexts[client_uid] = session_service_context
         self.received_data_buffers[client_uid] = np.array([])
+        self.pending_history_bootstrap[client_uid] = True
 
         self.chat_group_manager.client_group_map[client_uid] = ""
         await self.send_group_update(websocket, client_uid)
@@ -467,6 +678,7 @@ class WebSocketHandler:
         self.client_connections.pop(client_uid, None)
         self.client_contexts.pop(client_uid, None)
         self.received_data_buffers.pop(client_uid, None)
+        self.pending_history_bootstrap.pop(client_uid, None)
         if client_uid in self.current_conversation_tasks:
             task = self.current_conversation_tasks[client_uid]
             if task and not task.done():
@@ -486,6 +698,7 @@ class WebSocketHandler:
         self.client_connections.pop(client_uid, None)
         self.client_contexts.pop(client_uid, None)
         self.received_data_buffers.pop(client_uid, None)
+        self.pending_history_bootstrap.pop(client_uid, None)
         self.chat_group_manager.client_group_map.pop(client_uid, None)
 
         if client_uid in self.current_conversation_tasks:
@@ -576,21 +789,7 @@ class WebSocketHandler:
             return
 
         context = self.client_contexts[client_uid]
-        # Update history_uid in service context
-        context.history_uid = history_uid
-        context.agent_engine.set_memory_from_history(
-            conf_uid=context.character_config.conf_uid,
-            history_uid=history_uid,
-        )
-
-        messages = [
-            msg
-            for msg in get_history(
-                context.character_config.conf_uid,
-                history_uid,
-            )
-            if msg["role"] != "system"
-        ]
+        messages = self._load_history_into_context(context, history_uid)
         await websocket.send_text(
             json.dumps({"type": "history-data", "messages": messages})
         )
@@ -600,21 +799,14 @@ class WebSocketHandler:
     ) -> None:
         """Handle creation of new chat history"""
         context = self.client_contexts[client_uid]
-        history_uid = create_new_history(context.character_config.conf_uid)
-        if history_uid:
-            context.history_uid = history_uid
-            context.agent_engine.set_memory_from_history(
-                conf_uid=context.character_config.conf_uid,
-                history_uid=history_uid,
-            )
-            await websocket.send_text(
-                json.dumps(
-                    {
-                        "type": "new-history-created",
-                        "history_uid": history_uid,
-                    }
-                )
-            )
+        force_new = bool(data.get("force_new"))
+        is_bootstrap = self.pending_history_bootstrap.pop(client_uid, False)
+
+        if is_bootstrap and not force_new:
+            await self._resume_latest_history_or_create(websocket, context)
+            return
+
+        await self._create_history_for_context(websocket, context)
 
     async def _handle_delete_history(
         self, websocket: WebSocket, client_uid: str, data: dict

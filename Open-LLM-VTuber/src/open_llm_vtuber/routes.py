@@ -107,6 +107,85 @@ def init_client_ws_route(default_context_cache: ServiceContext) -> APIRouter:
                 status_code=500,
             )
 
+    @router.post("/launcher/select-history")
+    async def launcher_select_history(payload: dict):
+        """Select an existing history thread for the active frontend session."""
+        history_uid = str(payload.get("history_uid") or "").strip()
+        target_client_uid = payload.get("target_client_uid")
+        trigger_source = str(payload.get("trigger_source") or "launcher")
+
+        if not history_uid:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "history_uid is required.",
+                },
+                status_code=400,
+            )
+
+        try:
+            result = await ws_handler.launcher_select_history(
+                history_uid,
+                target_client_uid=target_client_uid,
+                trigger_source=trigger_source,
+            )
+            return JSONResponse(result)
+        except ValueError as e:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": str(e),
+                },
+                status_code=400,
+            )
+        except RuntimeError as e:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": str(e),
+                },
+                status_code=409,
+            )
+        except Exception as e:
+            logger.exception(f"Error selecting launcher history: {e}")
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "Internal server error during history selection.",
+                },
+                status_code=500,
+            )
+
+    @router.post("/launcher/create-history")
+    async def launcher_create_history(payload: dict):
+        """Create and select a new history thread for the active frontend session."""
+        target_client_uid = payload.get("target_client_uid")
+        trigger_source = str(payload.get("trigger_source") or "launcher")
+
+        try:
+            result = await ws_handler.launcher_create_history(
+                target_client_uid=target_client_uid,
+                trigger_source=trigger_source,
+            )
+            return JSONResponse(result)
+        except RuntimeError as e:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": str(e),
+                },
+                status_code=409,
+            )
+        except Exception as e:
+            logger.exception(f"Error creating launcher history: {e}")
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "Internal server error during history creation.",
+                },
+                status_code=500,
+            )
+
     return router
 
 

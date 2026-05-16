@@ -92,6 +92,22 @@ cd <repo-root>
 目前記憶維持 **一個角色一份**，不因切換專案分離。  
 也就是說，同一角色在不同專案下會延續同一份角色記憶。
 
+## 短期聊天
+
+目前短期記憶以 **一個 JSON = 一段聊天 thread** 的方式運作：
+
+- `chat_history/<conf_uid>/` 下面每個 `history_uid.json` 都是一段聊天
+- `history_uid` 仍然使用 `時間戳 + uuid`，作為穩定的內部 ID
+- 每個聊天檔第一筆是 `metadata`，用來保存：
+  - `title`
+  - `summary_short`
+  - `created_at / updated_at / last_opened_at`
+  - `message_count`
+- 第一次有使用者訊息後，系統會自動用第一段內容產生聊天標題
+
+啟動前端時，後端會優先接回該角色最近一次的聊天，而不是每次都直接建立新 JSON。  
+真的要開新聊天時，再由前端或 launcher 明確建立新的 thread。
+
 ## Launcher
 
 目前 `launcher` 已改成 `CustomTkinter`，主要負責：

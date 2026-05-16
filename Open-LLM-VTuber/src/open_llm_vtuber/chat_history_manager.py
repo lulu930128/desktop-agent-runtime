@@ -16,6 +16,62 @@ class HistoryMessage(TypedDict):
     avatar: Optional[str]
 
 
+def _now_iso() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def _compact_text(content: str, max_len: int = 80) -> str:
+    if not isinstance(content, str):
+        return ""
+    compact = " ".join(content.replace("\r", " ").replace("\n", " ").split())
+    compact = compact.strip(" \t\r\n\"'`")
+    if len(compact) <= max_len:
+        return compact
+    return compact[: max_len - 1].rstrip(" ，、。,.!?！？；;:：") + "…"
+
+
+def _derive_history_title(content: str) -> str:
+    return _compact_text(content, max_len=28)
+
+
+def _build_metadata(now_str: Optional[str] = None) -> dict:
+    timestamp = now_str or _now_iso()
+    return {
+        "role": "metadata",
+        "timestamp": timestamp,
+        "created_at": timestamp,
+        "updated_at": timestamp,
+        "last_opened_at": timestamp,
+        "last_message_at": "",
+        "title": "",
+        "summary_short": "",
+        "last_preview": "",
+        "auto_title": True,
+        "message_count": 0,
+    }
+
+
+def _ensure_metadata_entry(history_data: list) -> dict:
+    timestamp = _now_iso()
+    if history_data and history_data[0].get("role") == "metadata":
+        metadata = history_data[0]
+    else:
+        metadata = _build_metadata(timestamp)
+        history_data.insert(0, metadata)
+
+    metadata.setdefault("timestamp", timestamp)
+    metadata.setdefault("created_at", metadata.get("timestamp", timestamp))
+    metadata.setdefault("updated_at", metadata.get("created_at", timestamp))
+    metadata.setdefault("last_opened_at", metadata.get("created_at", timestamp))
+    metadata.setdefault("last_message_at", "")
+    metadata.setdefault("title", "")
+    metadata.setdefault("summary_short", "")
+    metadata.setdefault("last_preview", "")
+    metadata.setdefault("auto_title", True)
+    metadata.setdefault("message_count", 0)
+    return metadata
+
+
 def _is_safe_filename(filename: str) -> bool:
     """Validate filename for safety and allowed characters"""
     if not filename or len(filename) > 255:
@@ -71,15 +127,12 @@ def create_new_history(conf_uid: str) -> str:
     history_uid = f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{uuid.uuid4().hex}"
     conf_dir = _ensure_conf_dir(conf_uid)  # conf_uid is sanitized here
 
+    now_str = _now_iso()
+
     # Create history file with empty metadata
     try:
         filepath = os.path.join(conf_dir, f"{history_uid}.json")
-        initial_data = [
-            {
-                "role": "metadata",
-                "timestamp": datetime.now().isoformat(timespec="seconds"),
-            }
-        ]
+        initial_data = [_build_metadata(now_str)]
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(initial_data, f, ensure_ascii=False, indent=2)
     except Exception as e:
@@ -127,7 +180,9 @@ def store_message(
             logger.error(f"Failed to load history file: {filepath}")
             pass
 
-    now_str = datetime.now().isoformat(timespec="seconds")
+    metadata = _ensure_metadata_entry(history_data)
+
+    now_str = _now_iso()
     new_item = {
         "role": role,
         "timestamp": now_str,
@@ -141,6 +196,31 @@ def store_message(
         new_item["avatar"] = avatar
 
     history_data.append(new_item)
+
+    actual_messages = [msg for msg in history_data if msg.get("role") != "metadata"]
+    metadata["updated_at"] = now_str
+    metadata["last_message_at"] = now_str
+    metadata["message_count"] = len(actual_messages)
+    metadata["last_preview"] = _compact_text(content, max_len=88)
+
+    first_human = next(
+        (
+            msg
+            for msg in actual_messages
+            if msg.get("role") == "human" and isinstance(msg.get("content"), str)
+        ),
+        None,
+    )
+    if first_human:
+        if not metadata.get("title"):
+            title = _derive_history_title(first_human.get("content", ""))
+            if title:
+                metadata["title"] = title
+                metadata["auto_title"] = True
+        if not metadata.get("summary_short"):
+            metadata["summary_short"] = _compact_text(
+                first_human.get("content", ""), max_len=72
+            )
 
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(history_data, f, ensure_ascii=False, indent=2)
@@ -206,6 +286,16 @@ def update_metadate(conf_uid: str, history_uid: str, metadata: dict) -> bool:
     return False
 
 
+def touch_history_opened(conf_uid: str, history_uid: str) -> bool:
+    return update_metadate(
+        conf_uid,
+        history_uid,
+        {
+            "last_opened_at": _now_iso(),
+        },
+    )
+
+
 def get_history(conf_uid: str, history_uid: str) -> List[HistoryMessage]:
     """Read chat history for the given conf_uid and history_uid"""
     if not conf_uid or not history_uid:
@@ -254,8 +344,6 @@ def get_history_list(conf_uid: str) -> List[dict]:
 
     histories = []
     conf_dir = _ensure_conf_dir(conf_uid)
-    empty_history_uids = []
-
     try:
         for filename in os.listdir(conf_dir):
             if not filename.endswith(".json"):
@@ -267,36 +355,72 @@ def get_history_list(conf_uid: str) -> List[dict]:
             try:
                 with open(filepath, "r", encoding="utf-8") as f:
                     messages = json.load(f)
+                    metadata = _ensure_metadata_entry(messages)
 
                     # Filter out metadata for checking if history is empty
                     actual_messages = [
                         msg for msg in messages if msg["role"] != "metadata"
                     ]
-                    if not actual_messages:
-                        empty_history_uids.append(history_uid)
-                        continue
 
-                    latest_message = actual_messages[-1]
+                    latest_message = actual_messages[-1] if actual_messages else None
+                    first_human = next(
+                        (
+                            msg
+                            for msg in actual_messages
+                            if msg.get("role") == "human"
+                            and isinstance(msg.get("content"), str)
+                        ),
+                        None,
+                    )
+                    title = str(metadata.get("title") or "").strip()
+                    if not title:
+                        title_seed = ""
+                        if first_human:
+                            title_seed = first_human.get("content", "")
+                        elif latest_message:
+                            title_seed = latest_message.get("content", "")
+                        title = _derive_history_title(title_seed) or "新對話"
+
+                    summary_short = str(metadata.get("summary_short") or "").strip()
+                    if not summary_short:
+                        summary_seed = ""
+                        if first_human:
+                            summary_seed = first_human.get("content", "")
+                        elif latest_message:
+                            summary_seed = latest_message.get("content", "")
+                        summary_short = _compact_text(summary_seed, max_len=72)
+
+                    last_preview = str(metadata.get("last_preview") or "").strip()
+                    if not last_preview and latest_message:
+                        last_preview = _compact_text(
+                            latest_message.get("content", ""), max_len=88
+                        )
+
+                    sort_ts = (
+                        str(metadata.get("updated_at") or "").strip()
+                        or (
+                            latest_message["timestamp"]
+                            if latest_message and latest_message.get("timestamp")
+                            else ""
+                        )
+                        or str(metadata.get("timestamp") or "").strip()
+                    )
                     history_info = {
                         "uid": history_uid,
+                        "title": title,
+                        "summary_short": summary_short,
+                        "last_preview": last_preview,
                         "latest_message": latest_message,
-                        "timestamp": (
-                            latest_message["timestamp"] if latest_message else None
-                        ),
+                        "timestamp": sort_ts or None,
+                        "created_at": metadata.get("created_at"),
+                        "updated_at": metadata.get("updated_at"),
+                        "last_opened_at": metadata.get("last_opened_at"),
+                        "is_empty": len(actual_messages) == 0,
                     }
                     histories.append(history_info)
             except Exception as e:
                 logger.error(f"Error reading history file {filename}: {e}")
                 continue
-
-        # Clean up empty histories if there are other non-empty ones
-        if len(empty_history_uids) > 0 and len(os.listdir(conf_dir)) > 1:
-            for uid in empty_history_uids:
-                try:
-                    os.remove(os.path.join(conf_dir, f"{uid}.json"))
-                    logger.info(f"Removed empty history file: {uid}")
-                except Exception as e:
-                    logger.error(f"Failed to remove empty history file {uid}: {e}")
 
         histories.sort(
             key=lambda x: x["timestamp"] if x["timestamp"] else "", reverse=True
@@ -372,3 +496,10 @@ def rename_history_file(
     except Exception as e:
         logger.error(f"Failed to rename history file: {e}")
     return False
+
+
+def get_latest_history_uid(conf_uid: str) -> str:
+    histories = get_history_list(conf_uid)
+    if not histories:
+        return ""
+    return str(histories[0].get("uid") or "")

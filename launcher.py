@@ -70,6 +70,15 @@ class CharacterRecord:
     default_project_id: str
 
 
+@dataclass(frozen=True)
+class HistoryRecord:
+    uid: str
+    title: str
+    preview: str
+    timestamp: str
+    is_empty: bool
+
+
 PALETTE = {
     "app_bg": "#edf6ff",
     "panel_bg": "#ffffff",
@@ -203,6 +212,31 @@ def _normalize_token(value: str) -> str:
     return "".join(ch for ch in (value or "").lower() if ch.isalnum())
 
 
+def _compact_history_text(content: str, max_len: int = 72) -> str:
+    if not isinstance(content, str):
+        return ""
+    compact = " ".join(content.replace("\r", " ").replace("\n", " ").split())
+    compact = compact.strip(" \t\r\n\"'`")
+    if len(compact) <= max_len:
+        return compact
+    return compact[: max_len - 3].rstrip(" .,!?;:") + "..."
+
+
+def _derive_history_title(content: str) -> str:
+    return _compact_history_text(content, max_len=28)
+
+
+def _format_history_timestamp(raw: str) -> str:
+    raw = (raw or "").strip()
+    if not raw:
+        return ""
+    try:
+        dt = datetime.datetime.fromisoformat(raw)
+        return dt.strftime("%m/%d %H:%M")
+    except ValueError:
+        return raw[:16]
+
+
 class LauncherApp(ctk.CTk):
     def __init__(self, cfg: AppConfig):
         super().__init__()
@@ -219,14 +253,18 @@ class LauncherApp(ctk.CTk):
 
         self.character_records: Dict[str, CharacterRecord] = {}
         self.project_records: Dict[str, ProjectDefinition] = {}
+        self.history_records: Dict[str, HistoryRecord] = {}
         self.character_var = ctk.StringVar(value="")
         self.project_var = ctk.StringVar(value="")
+        self.history_var = ctk.StringVar(value="")
 
         self._prompt_texts: Dict[str, str] = {}
         self.prompt_view_var = ctk.StringVar(value="角色")
         self._character_radio_buttons: list[ctk.CTkRadioButton] = []
         self._project_radio_buttons: list[ctk.CTkRadioButton] = []
+        self._history_radio_buttons: list[ctk.CTkRadioButton] = []
         self._preview_photo: Optional[PhotoImage] = None
+        self._force_new_history_on_start = False
 
         self.title("Kuro Launcher")
         self.geometry("1380x820")
@@ -328,7 +366,8 @@ class LauncherApp(ctk.CTk):
         selection_body.grid_columnconfigure(0, weight=1)
         selection_body.grid_rowconfigure(0, weight=0)
         selection_body.grid_rowconfigure(1, weight=0)
-        selection_body.grid_rowconfigure(2, weight=1)
+        selection_body.grid_rowconfigure(2, weight=0)
+        selection_body.grid_rowconfigure(3, weight=1)
 
         self.character_frame = self._build_compact_selector_section(
             selection_body,
@@ -383,6 +422,99 @@ class LauncherApp(ctk.CTk):
             font=ui_font(12),
         )
         self.preview_empty_label.grid(row=0, column=0, sticky="nsew")
+
+        self.history_wrap = ctk.CTkFrame(
+            selection_body,
+            corner_radius=16,
+            fg_color=PALETTE["panel_bg"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+        )
+        self.history_wrap.grid(row=3, column=0, sticky="nsew", pady=(12, 0))
+        self.history_wrap.grid_columnconfigure(0, weight=1)
+        self.history_wrap.grid_rowconfigure(2, weight=1)
+
+        history_head = ctk.CTkFrame(self.history_wrap, fg_color="transparent")
+        history_head.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 6))
+        history_head.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            history_head,
+            text="聊天記錄",
+            font=ui_font(15, "bold"),
+            text_color=PALETTE["text"],
+        ).grid(row=0, column=0, sticky="w")
+        history_actions = ctk.CTkFrame(history_head, fg_color="transparent")
+        history_actions.grid(row=0, column=1, sticky="e")
+        ctk.CTkButton(
+            history_actions,
+            text="套用",
+            width=56,
+            height=28,
+            corner_radius=10,
+            command=self.on_apply_history,
+            fg_color=PALETTE["accent_blue"],
+            hover_color=PALETTE["accent_blue_hover"],
+            text_color="#ffffff",
+            font=ui_font(11, "bold"),
+        ).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(
+            history_actions,
+            text="新增",
+            width=56,
+            height=28,
+            corner_radius=10,
+            command=self.on_new_history,
+            fg_color=PALETTE["panel_alt"],
+            hover_color=PALETTE["accent_soft"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+            text_color=PALETTE["text"],
+            font=ui_font(11, "bold"),
+        ).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(
+            history_actions,
+            text="更新",
+            width=56,
+            height=28,
+            corner_radius=10,
+            command=self._refresh_history_list,
+            fg_color=PALETTE["panel_alt"],
+            hover_color=PALETTE["accent_soft"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+            text_color=PALETTE["text"],
+            font=ui_font(11, "bold"),
+        ).pack(side="left")
+
+        self.history_status_label = ctk.CTkLabel(
+            self.history_wrap,
+            text="選擇要延續的聊天，或建立新的對話執行緒。",
+            text_color=PALETTE["muted"],
+            font=ui_font(11),
+            anchor="w",
+        )
+        self.history_status_label.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 6))
+
+        history_shell = ctk.CTkFrame(
+            self.history_wrap,
+            corner_radius=14,
+            fg_color=PALETTE["panel_soft"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+        )
+        history_shell.grid(row=2, column=0, sticky="nsew", padx=12, pady=(0, 12))
+        history_shell.grid_columnconfigure(0, weight=1)
+        history_shell.grid_rowconfigure(0, weight=1)
+
+        self.history_frame = ctk.CTkScrollableFrame(
+            history_shell,
+            fg_color=PALETTE["panel_bg"],
+            corner_radius=14,
+            scrollbar_button_color=PALETTE["accent_soft"],
+            scrollbar_button_hover_color=PALETTE["accent_blue"],
+        )
+        self.history_frame.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+        self.history_frame.grid_columnconfigure(0, weight=1)
 
         right_panel = ctk.CTkFrame(shell, fg_color="transparent")
         right_panel.grid(row=0, column=2, sticky="nsew")
@@ -829,6 +961,167 @@ class LauncherApp(ctk.CTk):
             self.preview_empty_label.configure(text="這個角色目前沒有可直接顯示的預覽圖")
             self.preview_empty_label.grid()
 
+    def _history_dir_for_character(
+        self, character: Optional[CharacterRecord]
+    ) -> Optional[Path]:
+        if not character or not character.conf_uid.strip():
+            return None
+        return self.cfg.open_llm_dir / "chat_history" / character.conf_uid.strip()
+
+    def _load_history_records(
+        self, character: Optional[CharacterRecord]
+    ) -> Dict[str, HistoryRecord]:
+        history_dir = self._history_dir_for_character(character)
+        if history_dir is None or not history_dir.exists():
+            return {}
+
+        items: list[HistoryRecord] = []
+        for path in sorted(history_dir.glob("*.json")):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+
+            if not isinstance(payload, list):
+                continue
+
+            metadata = {}
+            if payload and isinstance(payload[0], dict) and payload[0].get("role") == "metadata":
+                metadata = payload[0]
+
+            messages = [
+                msg
+                for msg in payload
+                if isinstance(msg, dict) and msg.get("role") != "metadata"
+            ]
+            latest = messages[-1] if messages else None
+            first_human = next(
+                (
+                    msg
+                    for msg in messages
+                    if msg.get("role") == "human" and isinstance(msg.get("content"), str)
+                ),
+                None,
+            )
+
+            title = str(metadata.get("title") or "").strip()
+            if not title:
+                seed = ""
+                if first_human:
+                    seed = str(first_human.get("content") or "")
+                elif latest:
+                    seed = str(latest.get("content") or "")
+                title = _derive_history_title(seed) or "新對話"
+
+            preview = str(metadata.get("last_preview") or "").strip()
+            if not preview:
+                preview = str(metadata.get("summary_short") or "").strip()
+            if not preview and latest:
+                preview = _compact_history_text(str(latest.get("content") or ""), 88)
+
+            timestamp = (
+                str(metadata.get("updated_at") or "").strip()
+                or (str(latest.get("timestamp") or "").strip() if latest else "")
+                or str(metadata.get("timestamp") or "").strip()
+            )
+            items.append(
+                HistoryRecord(
+                    uid=path.stem,
+                    title=title,
+                    preview=preview,
+                    timestamp=timestamp,
+                    is_empty=len(messages) == 0,
+                )
+            )
+
+        items.sort(key=lambda item: item.timestamp, reverse=True)
+        return {item.uid: item for item in items}
+
+    def _selected_history_record(self) -> Optional[HistoryRecord]:
+        return self.history_records.get(self.history_var.get().strip())
+
+    def _sync_history_status_label(self) -> None:
+        if self._force_new_history_on_start:
+            status = "目前設定：下次啟動或套用時建立新的聊天。"
+        else:
+            record = self._selected_history_record()
+            if record:
+                preview = f" / {record.preview}" if record.preview else ""
+                status = f"目前選擇：{record.title}{preview}"
+            elif self.history_records:
+                status = "已載入聊天列表，選擇一段對話後可直接套用。"
+            else:
+                status = "這個角色目前還沒有聊天記錄。"
+        self.history_status_label.configure(text=status)
+
+    def _on_history_selected(self) -> None:
+        self._force_new_history_on_start = False
+        self._sync_history_status_label()
+
+    def _after_history_created(self, new_uid: str) -> None:
+        self._force_new_history_on_start = False
+        if new_uid:
+            self.history_var.set(new_uid)
+        self._refresh_history_list()
+
+    def _after_history_selected(self) -> None:
+        self._force_new_history_on_start = False
+        self._sync_history_status_label()
+
+    def _refresh_history_list(self) -> None:
+        for child in self.history_frame.winfo_children():
+            child.destroy()
+        self._history_radio_buttons = []
+
+        character = self._selected_character()
+        self.history_records = self._load_history_records(character)
+        current = self.history_var.get().strip()
+
+        if self.history_records:
+            if self._force_new_history_on_start:
+                self.history_var.set("")
+            elif current not in self.history_records:
+                self.history_var.set(next(iter(self.history_records)))
+        else:
+            self.history_var.set("")
+
+        if not self.history_records:
+            empty = ctk.CTkLabel(
+                self.history_frame,
+                text="還沒有可接續的聊天，建立新對話後會出現在這裡。",
+                text_color=PALETTE["muted"],
+                justify="left",
+                anchor="w",
+                wraplength=300,
+                font=ui_font(12),
+            )
+            empty.grid(sticky="ew", padx=12, pady=(12, 12))
+        else:
+            for uid, record in self.history_records.items():
+                stamp = _format_history_timestamp(record.timestamp)
+                label = record.title
+                if stamp:
+                    label = f"{label}  ·  {stamp}"
+                radio = ctk.CTkRadioButton(
+                    self.history_frame,
+                    text=label,
+                    variable=self.history_var,
+                    value=uid,
+                    command=self._on_history_selected,
+                    height=28,
+                    radiobutton_width=18,
+                    radiobutton_height=18,
+                    font=ui_font(12, "bold"),
+                    text_color=PALETTE["text"],
+                    border_color=PALETTE["panel_border"],
+                    hover_color=PALETTE["accent_blue"],
+                    fg_color=PALETTE["accent_lavender"],
+                )
+                radio.grid(sticky="ew", padx=12, pady=(10, 0))
+                self._history_radio_buttons.append(radio)
+
+        self._sync_history_status_label()
+
     def _refresh_character_list(self) -> None:
         self.character_records.clear()
         for button in self._character_radio_buttons:
@@ -875,6 +1168,8 @@ class LauncherApp(ctk.CTk):
             self._on_character_changed()
         else:
             self.character_var.set("")
+            self.history_records.clear()
+            self._refresh_history_list()
             self._update_panels()
         self.log(f"[{log_ts()}] 角色列表已更新，共 {len(self.character_records)} 份設定。")
 
@@ -938,6 +1233,8 @@ class LauncherApp(ctk.CTk):
 
     def _on_character_changed(self) -> None:
         self._apply_character_default_project()
+        self._force_new_history_on_start = False
+        self._refresh_history_list()
         self._update_panels()
 
     def _on_project_changed(self) -> None:
@@ -1253,6 +1550,145 @@ class LauncherApp(ctk.CTk):
             self.log(f"[{log_ts()}] 準備 runtime conf 失敗：{exc}")
             return None, None
 
+    def _wait_for_launcher_target(self, timeout: float = 15.0) -> Optional[dict]:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                status = http_get_json(
+                    self._launcher_api_url("/launcher/status"),
+                    timeout=5.0,
+                )
+            except Exception:
+                time.sleep(0.25)
+                continue
+
+            if status.get("target_client_uid"):
+                return status
+            time.sleep(0.25)
+        return None
+
+    def _apply_history_choice(
+        self,
+        *,
+        wait_for_client: bool,
+        selected_character: CharacterRecord,
+        desired_history_uid: str,
+        force_new: bool,
+    ) -> bool:
+        if not force_new and not desired_history_uid:
+            return True
+
+        try:
+            status = (
+                self._wait_for_launcher_target()
+                if wait_for_client
+                else http_get_json(
+                    self._launcher_api_url("/launcher/status"), timeout=5.0
+                )
+            )
+        except Exception as exc:
+            self.log(f"[{log_ts()}] 讀取聊天狀態失敗：{exc}")
+            return False
+        if not status or not status.get("target_client_uid"):
+            self.log(f"[{log_ts()}] 前端尚未連線，聊天選擇暫時無法套用。")
+            return False
+
+        active_conf_uid = str(status.get("conf_uid") or status.get("default_conf_uid") or "").strip()
+        if selected_character.conf_uid and active_conf_uid and selected_character.conf_uid != active_conf_uid:
+            self.log(
+                f"[{log_ts()}] 目前執行中的角色與聊天列表角色不同，請先套用角色後再切換聊天。"
+            )
+            return False
+
+        endpoint = "/launcher/create-history" if force_new else "/launcher/select-history"
+        payload = {
+            "target_client_uid": status.get("target_client_uid"),
+            "trigger_source": "launcher",
+        }
+        if desired_history_uid:
+            payload["history_uid"] = desired_history_uid
+
+        try:
+            result = http_post_json(
+                self._launcher_api_url(endpoint),
+                payload,
+                timeout=20.0,
+            )
+        except urllib.error.HTTPError as exc:
+            code, payload, raw = self._decode_http_error(exc)
+            self.log(
+                f"[{log_ts()}] 聊天切換失敗：HTTP {code} {payload.get('error') or raw[:240]}"
+            )
+            return False
+        except Exception as exc:
+            self.log(f"[{log_ts()}] 聊天切換失敗：{exc}")
+            return False
+
+        if force_new:
+            new_uid = str(result.get("history_uid") or "").strip()
+            self.after(0, lambda uid=new_uid: self._after_history_created(uid))
+        else:
+            self.after(0, self._after_history_selected)
+
+        self.log(f"[{log_ts()}] {result.get('message') or '聊天已切換。'}")
+        return True
+
+    def on_apply_history(self) -> None:
+        selected_character = self._selected_character()
+        if not selected_character:
+            messagebox.showinfo("??????", "?????????????")
+            return
+
+        desired_history_uid = self.history_var.get().strip()
+        force_new = self._force_new_history_on_start
+
+        if force_new:
+            mode_text = "?????"
+        elif not desired_history_uid:
+            messagebox.showinfo("??????", "????????????????????")
+            return
+        else:
+            mode_text = "??????"
+
+        if not port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.2):
+            self.log(f"[{log_ts()}] ??????????????{mode_text}?")
+            self._sync_history_status_label()
+            return
+
+        threading.Thread(
+            target=lambda: self._apply_history_choice(
+                wait_for_client=True,
+                selected_character=selected_character,
+                desired_history_uid=desired_history_uid,
+                force_new=force_new,
+            ),
+            daemon=True,
+        ).start()
+
+    def on_new_history(self) -> None:
+        selected_character = self._selected_character()
+        if not selected_character:
+            messagebox.showinfo("??????", "???????????????")
+            return
+
+        self._force_new_history_on_start = True
+        self.history_var.set("")
+        self._sync_history_status_label()
+
+        if not port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.2):
+            self.log(f"[{log_ts()}] ????????????????????")
+            return
+
+        threading.Thread(
+            target=lambda: self._apply_history_choice(
+                wait_for_client=True,
+                selected_character=selected_character,
+                desired_history_uid="",
+                force_new=True,
+            ),
+            daemon=True,
+        ).start()
+
     def on_toggle_bridge(self) -> None:
         threading.Thread(target=self._toggle_bridge_flow, daemon=True).start()
 
@@ -1279,15 +1715,17 @@ class LauncherApp(ctk.CTk):
     def on_start_profile(self) -> None:
         character = self._selected_character()
         project = self._selected_project()
+        desired_history_uid = self.history_var.get().strip()
+        force_new_history = self._force_new_history_on_start
         if not character:
-            messagebox.showinfo("未選角色", "請先選一個角色。")
+            messagebox.showinfo("??????", "???????")
             return
         if not project:
-            messagebox.showinfo("未選專案", "請先選一個專案。")
+            messagebox.showinfo("??????", "???????")
             return
         threading.Thread(
             target=self._start_profile_flow,
-            args=(character, project),
+            args=(character, project, desired_history_uid, force_new_history),
             daemon=True,
         ).start()
 
@@ -1295,12 +1733,23 @@ class LauncherApp(ctk.CTk):
         self,
         character: CharacterRecord,
         project: ProjectDefinition,
+        desired_history_uid: str,
+        force_new_history: bool,
     ) -> None:
         if port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.2):
             runtime_conf, char_cfg = self._prepare_runtime_profile(character, project)
             if runtime_conf is None or char_cfg is None:
                 return
-            self._try_hot_switch_profile(runtime_conf, char_cfg, character, project)
+            switched = self._try_hot_switch_profile(
+                runtime_conf, char_cfg, character, project
+            )
+            if switched:
+                self._apply_history_choice(
+                    wait_for_client=False,
+                    selected_character=character,
+                    desired_history_uid=desired_history_uid,
+                    force_new=force_new_history,
+                )
             return
 
         if not port_is_open(self.cfg.bridge_host, self.cfg.bridge_port):
@@ -1415,6 +1864,12 @@ class LauncherApp(ctk.CTk):
         if port_is_open(self.cfg.llm_host, self.cfg.llm_port):
             self.log(f"[{log_ts()}] LLM 已上線：{self.cfg.llm_url}")
             self.on_open_electron()
+            self._apply_history_choice(
+                wait_for_client=True,
+                selected_character=character,
+                desired_history_uid=desired_history_uid,
+                force_new=force_new_history,
+            )
         else:
             self.log(f"[{log_ts()}] LLM 沒有成功上線，請查看 llm log。")
 
