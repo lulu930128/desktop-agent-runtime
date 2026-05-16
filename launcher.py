@@ -1355,6 +1355,107 @@ class LauncherApp(ctk.CTk):
             payload = {"data": payload}
         return exc.code, payload, raw
 
+    def _recent_process_log_excerpt(
+        self,
+        proc: Optional[ManagedProc],
+        *,
+        max_lines: int = 10,
+    ) -> str:
+        if not proc:
+            return ""
+
+        try:
+            path = proc.combined_path
+        except Exception:
+            return ""
+
+        if not path or not Path(path).exists():
+            return ""
+
+        try:
+            lines = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
+        except Exception:
+            return ""
+
+        tail = [line.rstrip() for line in lines[-max_lines:] if line.strip()]
+        return "\n".join(tail)
+
+    def _wait_for_port_closed(
+        self,
+        name: str,
+        host: str,
+        port: int,
+        *,
+        timeout_s: float = 15.0,
+    ) -> tuple[bool, str]:
+        deadline = time.time() + timeout_s
+        last_pid: Optional[int] = None
+
+        while time.time() < deadline:
+            pid = get_listening_pid_windows(port)
+            if pid:
+                last_pid = pid
+            if not port_is_open(host, port, 0.2):
+                return True, f"{name} port {port} 已釋放"
+            time.sleep(0.25)
+
+        pid = get_listening_pid_windows(port) or last_pid
+        if pid:
+            return False, f"{name} port {port} 仍被占用（PID={pid}）"
+        return False, f"{name} port {port} 在 {timeout_s:.0f}s 內沒有釋放"
+
+    def _wait_for_service_ready(
+        self,
+        name: str,
+        host: str,
+        port: int,
+        proc: Optional[ManagedProc],
+        *,
+        timeout_s: float,
+        previous_pid: Optional[int] = None,
+        stable_hits_required: int = 3,
+    ) -> tuple[bool, str]:
+        deadline = time.time() + timeout_s
+        stable_hits = 0
+
+        while time.time() < deadline:
+            if proc and proc.popen and proc.popen.poll() is not None:
+                excerpt = self._recent_process_log_excerpt(proc)
+                message = f"{name} 程序提前結束，exit code={proc.popen.returncode}"
+                if excerpt:
+                    message += f"\n最近 log：\n{excerpt}"
+                return False, message
+
+            listener_pid = get_listening_pid_windows(port)
+            is_open = port_is_open(host, port, 0.2)
+
+            if is_open and listener_pid and previous_pid and listener_pid == previous_pid:
+                stable_hits = 0
+                time.sleep(0.25)
+                continue
+
+            if is_open:
+                stable_hits += 1
+                if stable_hits >= stable_hits_required:
+                    if listener_pid:
+                        return True, f"{name} 已上線（PID={listener_pid}）"
+                    return True, f"{name} 已上線"
+            else:
+                stable_hits = 0
+
+            time.sleep(0.25)
+
+        listener_pid = get_listening_pid_windows(port)
+        excerpt = self._recent_process_log_excerpt(proc)
+        message = f"{name} 在 {timeout_s:.0f}s 內沒有成功上線"
+        if listener_pid:
+            message += f"（目前 PID={listener_pid}）"
+            if previous_pid and listener_pid == previous_pid:
+                message += "；看起來還是舊程序占用"
+        if excerpt:
+            message += f"\n最近 log：\n{excerpt}"
+        return False, message
+
     def _should_restart_tts_for_switch(
         self,
         status: dict,
@@ -1383,15 +1484,21 @@ class LauncherApp(ctk.CTk):
         character: CharacterRecord,
         char_cfg: Dict[str, object],
     ) -> bool:
+        previous_pid = get_listening_pid_windows(self.cfg.tts_port)
         self.log(
             f"[{log_ts()}] 偵測到角色語音設定可能改變，重新載入 TTS：{character.yaml_path.stem}"
         )
         self._stop_tts_impl(kill_external=True)
 
-        for _ in range(20):
-            if not port_is_open(self.cfg.tts_host, self.cfg.tts_port, 0.1):
-                break
-            time.sleep(0.2)
+        closed, close_message = self._wait_for_port_closed(
+            "TTS",
+            self.cfg.tts_host,
+            self.cfg.tts_port,
+            timeout_s=15.0,
+        )
+        if not closed:
+            self.log(f"[{log_ts()}] TTS 關閉等待失敗：{close_message}")
+            return False
 
         try:
             self.proc_tts = start_tts(
@@ -1405,14 +1512,19 @@ class LauncherApp(ctk.CTk):
             self.log(f"[{log_ts()}] TTS 重新載入失敗：{exc}")
             return False
 
-        for _ in range(50):
-            if port_is_open(self.cfg.tts_host, self.cfg.tts_port, 0.2):
-                break
-            time.sleep(0.2)
-
-        if not port_is_open(self.cfg.tts_host, self.cfg.tts_port):
-            self.log(f"[{log_ts()}] TTS 重新載入後沒有成功監聽，請查看 tts log。")
+        ready, ready_message = self._wait_for_service_ready(
+            "TTS",
+            self.cfg.tts_host,
+            self.cfg.tts_port,
+            self.proc_tts,
+            timeout_s=45.0,
+            previous_pid=previous_pid,
+        )
+        if not ready:
+            self.log(f"[{log_ts()}] TTS 重新載入後沒有成功上線：{ready_message}")
             return False
+
+        self.log(f"[{log_ts()}] {ready_message}")
 
         ok, message = probe_tts(
             self.cfg,
@@ -1759,15 +1871,29 @@ class LauncherApp(ctk.CTk):
                 self.log(f"[{log_ts()}] Bridge 仍未成功上線，先中止角色啟動。")
                 return
 
+        previous_tts_pid = get_listening_pid_windows(self.cfg.tts_port)
+        previous_llm_pid = get_listening_pid_windows(self.cfg.llm_port)
         self.on_stop_profile(silent=True)
 
-        for _ in range(20):
-            if (
-                not port_is_open(self.cfg.tts_host, self.cfg.tts_port, 0.1)
-                and not port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.1)
-            ):
-                break
-            time.sleep(0.2)
+        tts_closed, tts_close_message = self._wait_for_port_closed(
+            "TTS",
+            self.cfg.tts_host,
+            self.cfg.tts_port,
+            timeout_s=15.0,
+        )
+        if not tts_closed:
+            self.log(f"[{log_ts()}] 啟動前無法清乾淨舊 TTS：{tts_close_message}")
+            return
+
+        llm_closed, llm_close_message = self._wait_for_port_closed(
+            "LLM",
+            self.cfg.llm_host,
+            self.cfg.llm_port,
+            timeout_s=15.0,
+        )
+        if not llm_closed:
+            self.log(f"[{log_ts()}] 啟動前無法清乾淨舊 LLM：{llm_close_message}")
+            return
 
         errors, warnings = validate_profile_assets(self.cfg, character.yaml_path)
         for warning in warnings:
@@ -1823,14 +1949,19 @@ class LauncherApp(ctk.CTk):
             self.log(f"[{log_ts()}] TTS 啟動失敗：{exc}")
             return
 
-        for _ in range(50):
-            if port_is_open(self.cfg.tts_host, self.cfg.tts_port, 0.2):
-                break
-            time.sleep(0.2)
-
-        if not port_is_open(self.cfg.tts_host, self.cfg.tts_port):
-            self.log(f"[{log_ts()}] TTS 沒有成功上線，請查看 tts log。")
+        tts_ready, tts_ready_message = self._wait_for_service_ready(
+            "TTS",
+            self.cfg.tts_host,
+            self.cfg.tts_port,
+            self.proc_tts,
+            timeout_s=45.0,
+            previous_pid=previous_tts_pid,
+        )
+        if not tts_ready:
+            self.log(f"[{log_ts()}] TTS 沒有成功上線：{tts_ready_message}")
             return
+
+        self.log(f"[{log_ts()}] {tts_ready_message}")
 
         self.log(f"[{log_ts()}] TTS 已上線，開始 smoke test...")
         ok, message = probe_tts(
@@ -1856,13 +1987,16 @@ class LauncherApp(ctk.CTk):
             self.log(f"[{log_ts()}] LLM 啟動失敗：{exc}")
             return
 
-        for _ in range(70):
-            if port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.2):
-                break
-            time.sleep(0.25)
-
-        if port_is_open(self.cfg.llm_host, self.cfg.llm_port):
-            self.log(f"[{log_ts()}] LLM 已上線：{self.cfg.llm_url}")
+        llm_ready, llm_ready_message = self._wait_for_service_ready(
+            "LLM",
+            self.cfg.llm_host,
+            self.cfg.llm_port,
+            self.proc_llm,
+            timeout_s=35.0,
+            previous_pid=previous_llm_pid,
+        )
+        if llm_ready:
+            self.log(f"[{log_ts()}] {llm_ready_message}：{self.cfg.llm_url}")
             self.on_open_electron()
             self._apply_history_choice(
                 wait_for_client=True,
@@ -1871,7 +2005,7 @@ class LauncherApp(ctk.CTk):
                 force_new=force_new_history,
             )
         else:
-            self.log(f"[{log_ts()}] LLM 沒有成功上線，請查看 llm log。")
+            self.log(f"[{log_ts()}] LLM 沒有成功上線：{llm_ready_message}")
 
     def on_stop_profile(self, silent: bool = False) -> None:
         if self.proc_llm:
