@@ -6,6 +6,16 @@ from .project_manager import load_project_definition
 from .utils import deep_merge, read_yaml_file, sanitize_ascii, write_yaml_file
 
 
+def _resolve_repo_path(repo_root: Path, raw_path: str) -> str:
+    raw_path = (raw_path or "").strip()
+    if not raw_path:
+        return ""
+    path = Path(raw_path)
+    if path.is_absolute():
+        return path.as_posix()
+    return (repo_root / path).resolve().as_posix()
+
+
 def find_base_conf(open_llm_dir: Path) -> Path:
     candidates = [
         open_llm_dir / "configs" / "conf.yaml",
@@ -40,6 +50,7 @@ def build_runtime_conf(
     base = read_yaml_file(base_conf_path)
     character_data = read_yaml_file(character_yaml)
     merged = deep_merge(base, character_data)
+    repo_root = open_llm_dir.parent.resolve()
 
     merged.setdefault("system_config", {})
     merged["system_config"]["host"] = llm_host
@@ -52,6 +63,15 @@ def build_runtime_conf(
     translator_cfg["deeplx"]["deeplx_api_endpoint"] = bridge_translate_url
 
     character_cfg = merged.setdefault("character_config", {})
+    tts_cfg = character_cfg.get("tts_config")
+    if isinstance(tts_cfg, dict):
+        gsv_cfg = tts_cfg.get("gpt_sovits_tts")
+        if isinstance(gsv_cfg, dict):
+            gsv_cfg["ref_audio_path"] = _resolve_repo_path(
+                repo_root,
+                str(gsv_cfg.get("ref_audio_path") or ""),
+            )
+
     tts_preprocessor = character_cfg.get("tts_preprocessor_config")
     if isinstance(tts_preprocessor, dict):
         tts_preprocessor.setdefault("translator_config", {})

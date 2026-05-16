@@ -3,6 +3,8 @@
 launcher_logs/
 backup/
 _archive/
+downloads/
+open-llm-vtuber-electron/
 
 # Python/runtime artifacts
 __pycache__/

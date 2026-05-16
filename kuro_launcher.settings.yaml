@@ -1,5 +1,5 @@
 paths:
-  ROOT: "C:\\kuro"
+  ROOT: "${HERE}"
   open_llm_vtuber_dir: "${ROOT}\\Open-LLM-VTuber"
   characters_dir: "${open_llm_vtuber_dir}\\characters"
   projects_dir: "${ROOT}\\projects"
@@ -12,7 +12,7 @@ paths:
   env_llm: "${ROOT}\\envs\\kuro-llm310"
   runtime_conf_path: "${open_llm_vtuber_dir}\\conf.launcher_runtime.yaml"
   logs_dir: "${ROOT}\\launcher_logs"
-  electron_lnk: "C:\\Users\\thoma\\OneDrive\\桌面\\open-llm-vtuber-electron.lnk"
+  electron_lnk: "${ROOT}\\open-llm-vtuber-electron\\open-llm-vtuber-electron.exe"
 
 network:
   bridge:

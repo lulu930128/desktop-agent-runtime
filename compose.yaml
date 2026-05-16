@@ -1,4 +1,4 @@
-name: kuro3
+﻿name: kuro3
 services:
   tts:
     image: python:3.10-slim
@@ -12,7 +12,7 @@ services:
     ports: ["9881:9881"]
     volumes:
       - type: bind
-        source: C:/kuro/GPT-SoVITS
+        source: ./gpt_sovits
         target: /workspace/GPT-SoVITS
     environment: {}            # 先留空；要用再填 KEY: "VALUE"
     restart: unless-stopped
@@ -28,10 +28,10 @@ services:
     ports: ["8001:8001"]
     volumes:
       - type: bind
-        source: C:/kuro/open-llm-vtuber
+        source: ./Open-LLM-VTuber
         target: /workspace/open-llm-vtuber
       - type: bind
-        source: C:/kuro
+        source: .
         target: /workspace/kuro
     environment:
       TTS_URL: "http://tts:9881"
@@ -49,3 +49,5 @@ services:
 networks:
   default:
     name: kuro-net
+
+

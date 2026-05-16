@@ -1,8 +1,28 @@
+import json
+import os
 import re
+import time
+from pathlib import Path
+
 import requests
 from loguru import logger
+
 from .tts_interface import TTSInterface
-import os,json,time
+
+
+def _debug_dump_paths() -> tuple[Path, Path]:
+    logs_root = (os.getenv("KURO_LAUNCHER_LOGS_DIR", "") or "").strip()
+    if logs_root:
+        base_dir = Path(logs_root)
+    else:
+        base_dir = (Path.cwd().parent / "launcher_logs").resolve()
+
+    base_dir.mkdir(parents=True, exist_ok=True)
+    return (
+        base_dir / "tts_params_dump.jsonl",
+        base_dir / "tts_response_dump.jsonl",
+    )
+
 
 class TTSEngine(TTSInterface):
     def __init__(
@@ -42,39 +62,52 @@ class TTSEngine(TTSInterface):
             "text_split_method": self.text_split_method,
             "batch_size": int(self.batch_size) if str(self.batch_size).isdigit() else 1,
             "media_type": self.media_type,
-            # ✅ 讓 fastapi 解析成 bool（GET query 最安全是 true/false 小寫字串）
-            "streaming_mode": "true" if str(self.streaming_mode).lower() in ["1","true","yes"] else "false",
+            "streaming_mode": (
+                "true"
+                if str(self.streaming_mode).lower() in ["1", "true", "yes"]
+                else "false"
+            ),
         }
 
-        dump_path = r"C:\kuro\launcher_logs\tts_params_dump.jsonl"
-        resp_dump = r"C:\kuro\launcher_logs\tts_response_dump.jsonl"
-        os.makedirs(os.path.dirname(dump_path), exist_ok=True)
+        dump_path, response_dump_path = _debug_dump_paths()
 
-        # 1) 先 dump params（永遠要成功）
-        with open(dump_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"ts": time.time(), "data": data, "orig_text": text}, ensure_ascii=False) + "\n")
+        with dump_path.open("a", encoding="utf-8") as handle:
+            handle.write(
+                json.dumps(
+                    {"ts": time.time(), "data": data, "orig_text": text},
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
         logger.warning(f"[DEBUG TTS PARAMS] {data}")
 
-        # 2) 再打 TTS
         try:
             response = requests.get(self.api_url, params=data, timeout=120)
-        except requests.RequestException as e:
-            logger.critical(f"TTS request failed: {e}")
+        except requests.RequestException as exc:
+            logger.critical(f"TTS request failed: {exc}")
             return None
 
-        # 3) dump response（包含 body）
-        with open(resp_dump, "a", encoding="utf-8") as f:
-            f.write(json.dumps({
-                "ts": time.time(),
-                "status": response.status_code,
-                "url": getattr(response.request, "url", None),
-                "resp_text": (response.text or "")[:2000],
-            }, ensure_ascii=False) + "\n")
+        with response_dump_path.open("a", encoding="utf-8") as handle:
+            handle.write(
+                json.dumps(
+                    {
+                        "ts": time.time(),
+                        "status": response.status_code,
+                        "url": getattr(response.request, "url", None),
+                        "resp_text": (response.text or "")[:2000],
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
 
         if response.status_code == 200:
             with open(file_name, "wb") as audio_file:
                 audio_file.write(response.content)
             return file_name
 
-        logger.critical(f"Error: Failed to generate audio. Status code: {response.status_code}; body: {response.text}")
+        logger.critical(
+            "Error: Failed to generate audio. Status code: "
+            f"{response.status_code}; body: {response.text}"
+        )
         return None
