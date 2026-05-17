@@ -7,6 +7,12 @@ const DEFAULT_STATE = {
   petSpanAllDisplays: false,
   petZoomScale: 1,
   readerVisible: true,
+  outfit: {
+    outfitId: "normal",
+    parameterId: "Param10",
+    parameterIndex: null,
+    value: 0
+  },
   boundsByMode: {
     pet: {
       x: 96,
@@ -58,6 +64,25 @@ function mergeState(candidate) {
 
   if (typeof candidate.readerVisible === "boolean") {
     next.readerVisible = candidate.readerVisible;
+  }
+
+  if (candidate.outfit && typeof candidate.outfit === "object") {
+    const outfit = candidate.outfit;
+    const parameterId = String(outfit.parameterId || "Param10");
+    const normalizedParameterId = parameterId === "\u5e3dT" ? "Param10" : parameterId;
+    next.outfit = {
+      outfitId: String(outfit.outfitId || "normal"),
+      parameterId: normalizedParameterId,
+      parameterIndex:
+        normalizedParameterId === "Param10"
+          ? null
+          : Number.isInteger(outfit.parameterIndex) && outfit.parameterIndex >= 0
+            ? outfit.parameterIndex
+            : null,
+      value: Number.isFinite(Number(outfit.value))
+        ? Math.max(0, Math.min(1, Number(outfit.value)))
+        : 0
+    };
   }
 
   if (candidate.boundsByMode && typeof candidate.boundsByMode === "object") {

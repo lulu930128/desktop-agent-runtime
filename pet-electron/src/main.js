@@ -53,7 +53,11 @@ let latestFrontendState = {
   confName: "",
   confUid: "",
   currentHistoryUid: "",
-  currentHistoryTitle: ""
+  currentHistoryTitle: "",
+  currentOutfitId: "normal",
+  currentOutfitParameterId: "Param10",
+  currentOutfitParameterIndex: null,
+  currentOutfitValue: 0
 };
 
 function normalizePetZoomScale(value) {
@@ -599,6 +603,31 @@ async function handleControlAction(action, payload = {}) {
       return { ok: true, route: "ipc", action };
     case "set-reader-visible":
       return setReaderVisible(Boolean(payload.enabled));
+    case "set-outfit": {
+      const outfitId = String(payload.outfitId || "normal");
+      const rawParameterId = String(payload.parameterId || "Param10");
+      const parameterId = rawParameterId === "\u5e3dT" ? "Param10" : rawParameterId;
+      const parameterIndex = parameterId === "Param10"
+        ? null
+        : Number.isInteger(payload.parameterIndex) && payload.parameterIndex >= 0
+          ? payload.parameterIndex
+          : null;
+      const value = Math.max(0, Math.min(1, Number(payload.value) || 0));
+      appState.outfit = { outfitId, parameterId, parameterIndex, value };
+      saveCurrentState();
+      latestFrontendState.currentOutfitId = outfitId;
+      latestFrontendState.currentOutfitParameterId = parameterId;
+      latestFrontendState.currentOutfitParameterIndex = parameterIndex;
+      latestFrontendState.currentOutfitValue = value;
+      broadcast("pet-command", {
+        type: "outfit-set",
+        outfitId,
+        parameterId,
+        parameterIndex,
+        value
+      });
+      return { ok: true, route: "ipc", action };
+    }
     case "toggle-subtitle":
       return setReaderVisible(!(readerWindow && !readerWindow.isDestroyed() && readerWindow.isVisible()));
     case "toggle-camera":
@@ -1454,7 +1483,8 @@ function registerIpc() {
     event.returnValue = {
       baseUrl: process.env.KURO_BACKEND_BASE_URL || "http://127.0.0.1:23456",
       wsUrl: process.env.KURO_BACKEND_WS_URL || "ws://127.0.0.1:23456/client-ws",
-      zoomScale: normalizePetZoomScale(appState.petZoomScale)
+      zoomScale: normalizePetZoomScale(appState.petZoomScale),
+      outfit: appState.outfit
     };
   });
 
@@ -1643,6 +1673,10 @@ if (!singleInstanceLock) {
     });
     statePath = path.join(app.getPath("userData"), "pet-shell-state.json");
     appState = mergeState(loadState(statePath));
+    latestFrontendState.currentOutfitId = appState.outfit.outfitId;
+    latestFrontendState.currentOutfitParameterId = appState.outfit.parameterId;
+    latestFrontendState.currentOutfitParameterIndex = appState.outfit.parameterIndex;
+    latestFrontendState.currentOutfitValue = appState.outfit.value;
     appState.mode = "pet";
     appState.forceIgnoreMouse = true;
     appState.petSpanAllDisplays = false;

@@ -3,6 +3,7 @@ import { PetLive2DRenderer } from "./live2d/pet-live2d-renderer";
 
 const RENDERER_BUILD_TAG = "custom-renderer-2026-05-17b";
 const MODEL_ZOOM_STORAGE_KEY = "kuroPetModelZoomScale";
+const DEFAULT_OUTFIT_PARAMETER_ID = "Param10";
 console.info("[pet-renderer] boot", { build: RENDERER_BUILD_TAG });
 
 const originalFetch = window.fetch.bind(window);
@@ -42,6 +43,10 @@ type RendererState = {
   confUid: string;
   currentHistoryUid: string;
   currentHistoryTitle: string;
+  currentOutfitId: string;
+  currentOutfitParameterId: string;
+  currentOutfitParameterIndex: number | null;
+  currentOutfitValue: number;
   micEnabled: boolean;
   cameraEnabled: boolean;
   screenEnabled: boolean;
@@ -57,6 +62,12 @@ type BackendImagePayload = {
   source: "camera" | "screen";
   data: string;
   mime_type: string;
+};
+
+type SpeechLipSyncEnvelope = {
+  values: number[];
+  frameRate: number;
+  duration: number;
 };
 
 function normalizeText(value: unknown): string {
@@ -144,6 +155,175 @@ function downsampleFloat32(input: Float32Array, inputSampleRate: number, outputS
   return output;
 }
 
+function readAscii(view: DataView, offset: number, length: number): string {
+  let result = "";
+  for (let i = 0; i < length; i += 1) {
+    result += String.fromCharCode(view.getUint8(offset + i));
+  }
+  return result;
+}
+
+function readWavSample(
+  view: DataView,
+  offset: number,
+  bitsPerSample: number,
+  audioFormat: number
+): number {
+  if (audioFormat === 3 && bitsPerSample === 32) {
+    return view.getFloat32(offset, true);
+  }
+
+  if (audioFormat !== 1) {
+    return 0;
+  }
+
+  if (bitsPerSample === 8) {
+    return (view.getUint8(offset) - 128) / 128;
+  }
+  if (bitsPerSample === 16) {
+    return view.getInt16(offset, true) / 32768;
+  }
+  if (bitsPerSample === 24) {
+    let value =
+      view.getUint8(offset) |
+      (view.getUint8(offset + 1) << 8) |
+      (view.getUint8(offset + 2) << 16);
+    if (value & 0x800000) {
+      value |= 0xff000000;
+    }
+    return value / 8388608;
+  }
+  if (bitsPerSample === 32) {
+    return view.getInt32(offset, true) / 2147483648;
+  }
+
+  return 0;
+}
+
+function buildSpeechLipSyncEnvelope(audioBase64: string): SpeechLipSyncEnvelope | null {
+  try {
+    const binary = window.atob(audioBase64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+
+    const view = new DataView(bytes.buffer);
+    if (
+      view.byteLength < 44 ||
+      readAscii(view, 0, 4) !== "RIFF" ||
+      readAscii(view, 8, 4) !== "WAVE"
+    ) {
+      return null;
+    }
+
+    let audioFormat = 0;
+    let channels = 0;
+    let sampleRate = 0;
+    let bitsPerSample = 0;
+    let blockAlign = 0;
+    let dataOffset = 0;
+    let dataSize = 0;
+
+    for (let offset = 12; offset + 8 <= view.byteLength;) {
+      const chunkId = readAscii(view, offset, 4);
+      const chunkSize = view.getUint32(offset + 4, true);
+      const chunkDataOffset = offset + 8;
+
+      if (chunkDataOffset + chunkSize > view.byteLength) {
+        break;
+      }
+
+      if (chunkId === "fmt " && chunkSize >= 16) {
+        audioFormat = view.getUint16(chunkDataOffset, true);
+        channels = view.getUint16(chunkDataOffset + 2, true);
+        sampleRate = view.getUint32(chunkDataOffset + 4, true);
+        blockAlign = view.getUint16(chunkDataOffset + 12, true);
+        bitsPerSample = view.getUint16(chunkDataOffset + 14, true);
+      } else if (chunkId === "data") {
+        dataOffset = chunkDataOffset;
+        dataSize = chunkSize;
+      }
+
+      offset = chunkDataOffset + chunkSize + (chunkSize % 2);
+    }
+
+    if (
+      !dataOffset ||
+      !dataSize ||
+      !sampleRate ||
+      !channels ||
+      !blockAlign ||
+      !bitsPerSample ||
+      (audioFormat !== 1 && audioFormat !== 3)
+    ) {
+      return null;
+    }
+
+    const frameCount = Math.floor(dataSize / blockAlign);
+    if (frameCount <= 0) {
+      return null;
+    }
+
+    const mono = new Float32Array(frameCount);
+    const bytesPerSample = Math.floor(bitsPerSample / 8);
+    for (let frame = 0; frame < frameCount; frame += 1) {
+      const frameOffset = dataOffset + frame * blockAlign;
+      let mixed = 0;
+      for (let channel = 0; channel < channels; channel += 1) {
+        mixed += readWavSample(
+          view,
+          frameOffset + channel * bytesPerSample,
+          bitsPerSample,
+          audioFormat
+        );
+      }
+      mono[frame] = mixed / channels;
+    }
+
+    const duration = frameCount / sampleRate;
+    const frameRate = 60;
+    const envelopeLength = Math.max(1, Math.ceil(duration * frameRate));
+    const rmsValues: number[] = [];
+    const windowSamples = Math.max(1, Math.floor(sampleRate * 0.032));
+
+    for (let i = 0; i < envelopeLength; i += 1) {
+      const center = Math.floor((i / frameRate) * sampleRate);
+      const start = Math.max(0, center - Math.floor(windowSamples / 2));
+      const end = Math.min(frameCount, start + windowSamples);
+      let sumSquares = 0;
+      let count = 0;
+      for (let sampleIndex = start; sampleIndex < end; sampleIndex += 1) {
+        const sample = mono[sampleIndex] || 0;
+        sumSquares += sample * sample;
+        count += 1;
+      }
+      rmsValues.push(count ? Math.sqrt(sumSquares / count) : 0);
+    }
+
+    const sorted = [...rmsValues].sort((a, b) => a - b);
+    const noiseFloor = sorted[Math.floor(sorted.length * 0.18)] || 0;
+    const peak = sorted[sorted.length - 1] || 0;
+    const gate = Math.max(0.006, noiseFloor * 2.8, peak * 0.06);
+    const range = Math.max(0.001, peak - gate);
+    const values: number[] = [];
+    let smoothed = 0;
+
+    for (const rms of rmsValues) {
+      const gated = rms <= gate ? 0 : Math.min(1, (rms - gate) / range);
+      const target = gated <= 0.025 ? 0 : Math.pow(gated, 0.62);
+      const follow = target > smoothed ? 0.78 : 0.34;
+      smoothed += (target - smoothed) * follow;
+      values.push(smoothed < 0.035 ? 0 : Math.min(1, smoothed));
+    }
+
+    return { values, frameRate, duration };
+  } catch (error) {
+    console.warn("[pet-renderer] WAV lip sync envelope parse failed", error);
+    return null;
+  }
+}
+
 class BackendClient {
   private config: BackendConfig;
   private socket: WebSocket | null;
@@ -167,6 +347,14 @@ class BackendClient {
   private screenStream: MediaStream | null;
   private cameraVideo: HTMLVideoElement | null;
   private screenVideo: HTMLVideoElement | null;
+  private speechAudioContext: AudioContext | null;
+  private speechAnalyser: AnalyserNode | null;
+  private speechSource: MediaElementAudioSourceNode | null;
+  private speechData: Uint8Array<ArrayBuffer> | null;
+  private speechEnvelope: SpeechLipSyncEnvelope | null;
+  private lipSyncFrameId: number | null;
+  private lipSyncLevel: number;
+  private speechFallbackStartedAt: number;
 
   public constructor(
     config: BackendConfig,
@@ -195,6 +383,14 @@ class BackendClient {
     this.screenStream = null;
     this.cameraVideo = null;
     this.screenVideo = null;
+    this.speechAudioContext = null;
+    this.speechAnalyser = null;
+    this.speechSource = null;
+    this.speechData = null;
+    this.speechEnvelope = null;
+    this.lipSyncFrameId = null;
+    this.lipSyncLevel = 0;
+    this.speechFallbackStartedAt = 0;
   }
 
   public connect(): void {
@@ -305,6 +501,8 @@ class BackendClient {
     this.removePreviewVideo(this.screenVideo);
     this.cameraVideo = null;
     this.screenVideo = null;
+    void this.speechAudioContext?.close().catch(() => undefined);
+    this.speechAudioContext = null;
     this.updateState({ cameraEnabled: false, screenEnabled: false });
     if (this.socket) {
       this.socket.close();
@@ -471,6 +669,186 @@ class BackendClient {
       this.currentAudio.src = "";
       this.currentAudio = null;
     }
+    this.stopSpeechLipSync(true);
+  }
+
+  private ensureSpeechAudioContext(): AudioContext | null {
+    if (this.speechAudioContext) {
+      return this.speechAudioContext;
+    }
+
+    const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextCtor) {
+      return null;
+    }
+
+    this.speechAudioContext = new AudioContextCtor();
+    return this.speechAudioContext;
+  }
+
+  private beginSpeechLipSync(
+    audio: HTMLAudioElement,
+    envelope: SpeechLipSyncEnvelope | null
+  ): void {
+    this.stopSpeechLipSync(false);
+    this.speechEnvelope = envelope;
+
+    const audioContext = this.ensureSpeechAudioContext();
+    if (!audioContext) {
+      this.startSpeechLipSyncFallback();
+      return;
+    }
+
+    try {
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.58;
+      const source = audioContext.createMediaElementSource(audio);
+      source.connect(analyser);
+      analyser.connect(audioContext.destination);
+
+      this.speechSource = source;
+      this.speechAnalyser = analyser;
+      this.speechData = new Uint8Array(new ArrayBuffer(analyser.fftSize));
+      this.lipSyncLevel = envelope ? 0 : 0.34;
+      this.speechFallbackStartedAt = performance.now();
+      this.renderer.setLipSyncValue(this.lipSyncLevel);
+
+      if (audioContext.state === "suspended") {
+        void audioContext.resume().catch((error) => {
+          console.warn("[pet-renderer] Speech audio context resume failed", error);
+        });
+      }
+
+      this.scheduleSpeechLipSyncFrame();
+    } catch (error) {
+      console.warn("[pet-renderer] Speech lip sync setup failed", error);
+      this.startSpeechLipSyncFallback();
+    }
+  }
+
+  private startSpeechLipSyncFallback(): void {
+    this.speechSource = null;
+    this.speechAnalyser = null;
+    this.speechData = null;
+    this.lipSyncLevel = this.speechEnvelope ? 0 : 0.34;
+    this.speechFallbackStartedAt = performance.now();
+    this.renderer.setLipSyncValue(this.lipSyncLevel);
+    this.scheduleSpeechLipSyncFrame();
+  }
+
+  private stopSpeechLipSync(resetMouth: boolean): void {
+    if (this.lipSyncFrameId !== null) {
+      window.cancelAnimationFrame(this.lipSyncFrameId);
+      this.lipSyncFrameId = null;
+    }
+
+    try {
+      this.speechSource?.disconnect();
+    } catch {
+      // Ignore disconnect failures.
+    }
+
+    try {
+      this.speechAnalyser?.disconnect();
+    } catch {
+      // Ignore disconnect failures.
+    }
+
+    this.speechSource = null;
+    this.speechAnalyser = null;
+    this.speechData = null;
+    this.speechEnvelope = null;
+    this.lipSyncLevel = 0;
+    this.speechFallbackStartedAt = 0;
+
+    if (resetMouth) {
+      this.renderer.setLipSyncValue(0);
+    }
+  }
+
+  private scheduleSpeechLipSyncFrame(): void {
+    if (this.lipSyncFrameId !== null) {
+      return;
+    }
+
+    this.lipSyncFrameId = window.requestAnimationFrame(() => {
+      this.lipSyncFrameId = null;
+      this.updateSpeechLipSync();
+    });
+  }
+
+  private getSpeechFallbackTarget(): number {
+    const elapsed =
+      this.currentAudio?.currentTime ||
+      Math.max(0, (performance.now() - this.speechFallbackStartedAt) / 1000);
+    return Math.min(
+      0.92,
+      0.34 +
+        0.34 * (0.5 + 0.5 * Math.sin(elapsed * 18.5)) +
+        0.18 * (0.5 + 0.5 * Math.sin(elapsed * 31.0 + 0.7))
+    );
+  }
+
+  private getSpeechEnvelopeTarget(): number | null {
+    if (!this.currentAudio || !this.speechEnvelope) {
+      return null;
+    }
+
+    const { values, frameRate, duration } = this.speechEnvelope;
+    if (!values.length || frameRate <= 0 || duration <= 0) {
+      return null;
+    }
+
+    const playbackTime = Math.min(
+      duration,
+      Math.max(0, this.currentAudio.currentTime || 0)
+    );
+    const exactIndex = playbackTime * frameRate;
+    const lowerIndex = Math.min(values.length - 1, Math.floor(exactIndex));
+    const upperIndex = Math.min(values.length - 1, lowerIndex + 1);
+    const fraction = exactIndex - lowerIndex;
+    const lowerValue = values[lowerIndex] || 0;
+    const upperValue = values[upperIndex] || 0;
+    return lowerValue + (upperValue - lowerValue) * fraction;
+  }
+
+  private updateSpeechLipSync(): void {
+    if (!this.currentAudio) {
+      this.renderer.setLipSyncValue(0);
+      return;
+    }
+
+    if (this.currentAudio.ended) {
+      this.lipSyncLevel *= 0.55;
+      this.renderer.setLipSyncValue(this.lipSyncLevel);
+      if (this.lipSyncLevel > 0.01) {
+        this.scheduleSpeechLipSyncFrame();
+      }
+      return;
+    }
+
+    let target = this.currentAudio.paused ? 0 : this.getSpeechEnvelopeTarget();
+
+    if (target === null && this.speechAnalyser && this.speechData) {
+      this.speechAnalyser.getByteTimeDomainData(this.speechData);
+      let sumSquares = 0;
+      for (const sample of this.speechData) {
+        const centered = (sample - 128) / 128;
+        sumSquares += centered * centered;
+      }
+
+      const rms = Math.sqrt(sumSquares / this.speechData.length);
+      target = Math.min(1, Math.max(0, (rms - 0.006) * 26));
+    }
+
+    if (target === null) {
+      target = this.currentAudio.paused ? 0 : this.getSpeechFallbackTarget();
+    }
+
+    this.lipSyncLevel += (target - this.lipSyncLevel) * 0.58;
+    this.renderer.setLipSyncValue(Math.min(1, Math.pow(this.lipSyncLevel, 0.78)));
+    this.scheduleSpeechLipSyncFrame();
   }
 
   private stopMediaStream(stream: MediaStream | null): void {
@@ -762,8 +1140,10 @@ class BackendClient {
       return;
     }
 
+    const lipSyncEnvelope = buildSpeechLipSyncEnvelope(audioBase64);
     const audio = new Audio(`data:audio/wav;base64,${audioBase64}`);
     this.currentAudio = audio;
+    this.beginSpeechLipSync(audio, lipSyncEnvelope);
     this.updateState({
       aiState: "speaking"
     });
@@ -777,10 +1157,14 @@ class BackendClient {
       if (this.currentAudio === audio) {
         this.currentAudio = null;
       }
+      this.stopSpeechLipSync(true);
       this.playNextQueuedAudio();
     };
 
     audio.addEventListener("ended", finishPlayback);
+    audio.addEventListener("playing", () => {
+      this.scheduleSpeechLipSyncFrame();
+    });
 
     audio.addEventListener("error", () => {
       console.warn("[pet-renderer] Audio element reported playback error");
@@ -980,6 +1364,10 @@ const rendererState: RendererState = {
   confUid: "",
   currentHistoryUid: "",
   currentHistoryTitle: "",
+  currentOutfitId: "normal",
+  currentOutfitParameterId: DEFAULT_OUTFIT_PARAMETER_ID,
+  currentOutfitParameterIndex: null,
+  currentOutfitValue: 0,
   micEnabled: false,
   cameraEnabled: false,
   screenEnabled: false,
@@ -997,6 +1385,24 @@ const renderer = new PetLive2DRenderer(canvas);
 renderer.setZoomScale(resolveInitialZoomScale(initialConfig.zoomScale));
 storeModelZoomScale(renderer.getZoomScale());
 window.kuroPetElectron.setPetWindowZoom(renderer.getZoomScale());
+const initialOutfit = initialConfig.outfit || {};
+const initialOutfitId = String(initialOutfit.outfitId || "normal");
+const initialOutfitParameterId = String(
+  initialOutfit.parameterId || DEFAULT_OUTFIT_PARAMETER_ID
+);
+const initialOutfitParameterIndex =
+  Number.isInteger(initialOutfit.parameterIndex) && initialOutfit.parameterIndex !== null
+    ? initialOutfit.parameterIndex
+    : null;
+const initialOutfitValue = Math.min(
+  1,
+  Math.max(0, Number(initialOutfit.value) || 0)
+);
+renderer.setOutfitParameter(
+  initialOutfitParameterId,
+  initialOutfitValue,
+  initialOutfitParameterIndex
+);
 const client = new BackendClient(
   {
     baseUrl: initialConfig.baseUrl,
@@ -1012,7 +1418,11 @@ window.__kuroPetApplyBackendConfig = (baseUrl: string, wsUrl: string, reconnect 
 
 reportState({
   baseUrl: initialConfig.baseUrl,
-  wsUrl: initialConfig.wsUrl
+  wsUrl: initialConfig.wsUrl,
+  currentOutfitId: initialOutfitId,
+  currentOutfitParameterId: initialOutfitParameterId,
+  currentOutfitParameterIndex: initialOutfitParameterIndex,
+  currentOutfitValue: initialOutfitValue
 });
 client.connect();
 
@@ -1031,6 +1441,11 @@ function setModelHoverState(nextHover: boolean): void {
 function refreshModelHover(clientX: number, clientY: number): boolean {
   const nextHover = renderer.hitTestCanvasPoint(clientX, clientY);
   setModelHoverState(nextHover);
+  if (nextHover) {
+    renderer.setDragPointFromCanvas(clientX, clientY);
+  } else if (!draggingModel) {
+    renderer.resetDragPoint();
+  }
   return nextHover;
 }
 
@@ -1045,6 +1460,7 @@ canvas.addEventListener("pointerdown", (event) => {
 
   draggingModel = true;
   canvas.style.cursor = "grabbing";
+  renderer.setDragPointFromCanvas(event.clientX, event.clientY);
   event.preventDefault();
   window.kuroPetElectron.startWindowDrag(event.screenX, event.screenY);
 });
@@ -1066,6 +1482,7 @@ canvas.addEventListener(
 
 window.addEventListener("pointermove", (event) => {
   if (draggingModel) {
+    renderer.setDragPointFromCanvas(event.clientX, event.clientY);
     window.kuroPetElectron.updateWindowDrag(event.screenX, event.screenY);
     return;
   }
@@ -1075,6 +1492,7 @@ window.addEventListener("pointermove", (event) => {
 
 window.addEventListener("pointerup", () => {
   draggingModel = false;
+  renderer.resetDragPoint();
   canvas.style.cursor = hoverOnModel ? "grab" : "default";
   window.kuroPetElectron.endWindowDrag();
 });
@@ -1084,6 +1502,7 @@ canvas.addEventListener("pointerleave", () => {
     return;
   }
   setModelHoverState(false);
+  renderer.resetDragPoint();
 });
 
 window.addEventListener("contextmenu", (event) => {
@@ -1110,6 +1529,21 @@ const unsubscribe = window.kuroPetElectron.onCommand((payload) => {
     void client.setScreenEnabled(Boolean(payload.enabled));
   } else if (payload.type === "browser-toggle") {
     client.setBrowserPanelEnabled(Boolean(payload.enabled));
+  } else if (payload.type === "outfit-set") {
+    const outfitId = String(payload.outfitId || "normal");
+    const parameterId = String(payload.parameterId || DEFAULT_OUTFIT_PARAMETER_ID);
+    const parameterIndex =
+      Number.isInteger(payload.parameterIndex) && payload.parameterIndex !== null
+        ? payload.parameterIndex
+        : null;
+    const value = Math.min(1, Math.max(0, Number(payload.value) || 0));
+    renderer.setOutfitParameter(parameterId, value, parameterIndex);
+    reportState({
+      currentOutfitId: outfitId,
+      currentOutfitParameterId: parameterId,
+      currentOutfitParameterIndex: parameterIndex,
+      currentOutfitValue: value
+    });
   }
 });
 

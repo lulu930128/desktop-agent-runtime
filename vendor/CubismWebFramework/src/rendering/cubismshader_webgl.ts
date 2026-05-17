@@ -294,12 +294,16 @@ export class CubismShader_WebGL {
     let shaderSet: CubismShaderSet;
     // Cubism 5.2以前のシェーダを使用する場合はtrue
     let isUsingCompatible: boolean = true;
+    let debugColorBlendMode: CubismColorBlend | null = null;
+    let debugAlphaBlendMode: CubismAlphaBlend | null = null;
 
     if (model.isBlendModeEnabled() && !FORCE_LEGACY_BLEND_RENDER_PATH) {
       const colorBlendMode: CubismColorBlend =
         model.getDrawableColorBlend(index);
       const alphaBlendMode: CubismAlphaBlend =
         model.getDrawableAlphaBlend(index);
+      debugColorBlendMode = colorBlendMode;
+      debugAlphaBlendMode = alphaBlendMode;
 
       if (
         colorBlendMode == CubismColorBlend.ColorBlend_None ||
@@ -430,7 +434,11 @@ export class CubismShader_WebGL {
     if (shaderSet == null) {
       console.warn(
         '[pet-renderer] Drawable shaderSet was unresolved, forcing normal premultiplied shader',
-        { offset, colorBlendMode, alphaBlendMode }
+        {
+          offset,
+          colorBlendMode: debugColorBlendMode,
+          alphaBlendMode: debugAlphaBlendMode
+        }
       );
       shaderSet =
         this._shaderSets[ShaderNames.ShaderNames_NormalPremultipliedAlpha + offset];

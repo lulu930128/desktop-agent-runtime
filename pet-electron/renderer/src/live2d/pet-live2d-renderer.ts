@@ -49,6 +49,13 @@ function splitModelUrl(modelUrl: string): { modelDir: string; fileName: string }
   };
 }
 
+function clampDragPoint(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.min(1, Math.max(-1, value));
+}
+
 export class PetLive2DRenderer {
   private readonly canvas: HTMLCanvasElement;
   private readonly subdelegate: LAppSubdelegate;
@@ -58,6 +65,9 @@ export class PetLive2DRenderer {
   private rafId: number | null;
   private disposed: boolean;
   private zoomScale: number;
+  private outfitParameterId: string | null;
+  private outfitParameterIndex: number | null;
+  private outfitValue: number;
 
   public constructor(canvas: HTMLCanvasElement) {
     ensureCubismReady();
@@ -73,6 +83,9 @@ export class PetLive2DRenderer {
     this.rafId = null;
     this.disposed = false;
     this.zoomScale = 1.0;
+    this.outfitParameterId = null;
+    this.outfitParameterIndex = null;
+    this.outfitValue = 0;
     this.renderFrame = this.renderFrame.bind(this);
     this.start();
   }
@@ -95,6 +108,14 @@ export class PetLive2DRenderer {
     const nextModel = new LAppModel();
     nextModel.setSubdelegate(this.subdelegate);
     this.model = nextModel;
+    if (this.outfitParameterId || this.outfitParameterIndex !== null) {
+      nextModel.setExternalParameterTarget(
+        this.outfitParameterId || "",
+        this.outfitValue,
+        0.85,
+        this.outfitParameterIndex
+      );
+    }
     this.subdelegate.getTextureManager().releaseTextures();
     console.info("[pet-renderer] Loading model assets", { modelDir, fileName });
     nextModel.loadAssets(modelDir, fileName);
@@ -115,6 +136,59 @@ export class PetLive2DRenderer {
 
   public getZoomScale(): number {
     return this.zoomScale;
+  }
+
+  public setLipSyncValue(value: number): void {
+    this.model?.setExternalLipSyncValue(value);
+  }
+
+  public setOutfitParameter(
+    parameterId: string,
+    value: number,
+    parameterIndex: number | null = null
+  ): void {
+    const normalizedParameterId = String(parameterId || "").trim();
+    const normalizedParameterIndex =
+      Number.isInteger(parameterIndex) && parameterIndex !== null && parameterIndex >= 0
+        ? parameterIndex
+        : null;
+    if (!normalizedParameterId && normalizedParameterIndex === null) {
+      return;
+    }
+
+    this.outfitParameterId = normalizedParameterId;
+    this.outfitParameterIndex = normalizedParameterIndex;
+    this.outfitValue = Math.min(1, Math.max(0, Number(value) || 0));
+    this.model?.setExternalParameterTarget(
+      this.outfitParameterId,
+      this.outfitValue,
+      0.85,
+      this.outfitParameterIndex
+    );
+  }
+
+  public setDragPointFromCanvas(clientX: number, clientY: number): void {
+    if (!this.model || this.disposed) {
+      return;
+    }
+
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      this.model.setDragging(0, 0);
+      return;
+    }
+
+    const dragX = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const dragY = 1 - ((clientY - rect.top) / rect.height) * 2;
+    const clampedX = clampDragPoint(dragX);
+    const clampedY = clampDragPoint(dragY);
+    this.model.setDragging(clampedX, clampedY);
+    this.model.setExternalLookTarget(clampedX, clampedY);
+  }
+
+  public resetDragPoint(): void {
+    this.model?.setDragging(0, 0);
+    this.model?.setExternalLookTarget(0, 0);
   }
 
   public adjustZoomByWheel(deltaY: number): number {

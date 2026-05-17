@@ -259,6 +259,7 @@ class LauncherApp(ctk.CTk):
         self.character_var = ctk.StringVar(value="")
         self.project_var = ctk.StringVar(value="")
         self.history_var = ctk.StringVar(value="")
+        self.outfit_var = ctk.StringVar(value="normal")
         self.pet_base_url_var = ctk.StringVar(value=self.cfg.llm_url)
         self.pet_ws_url_var = ctk.StringVar(
             value=f"ws://{self.cfg.llm_host}:{self.cfg.llm_port}/client-ws"
@@ -269,6 +270,7 @@ class LauncherApp(ctk.CTk):
         self.preview_mode_var = ctk.StringVar(value="角色預覽")
         self.prompt_view_var = ctk.StringVar(value="角色")
         self._character_radio_buttons: list[ctk.CTkRadioButton] = []
+        self._outfit_radio_buttons: list[ctk.CTkRadioButton] = []
         self._project_radio_buttons: list[ctk.CTkRadioButton] = []
         self._history_radio_buttons: list[ctk.CTkRadioButton] = []
         self._preview_photo: Optional[PhotoImage] = None
@@ -286,6 +288,7 @@ class LauncherApp(ctk.CTk):
 
         self._build_ui()
         self._refresh_character_list()
+        self._refresh_outfit_list()
         self._refresh_project_list()
         self.after(120, self._drain_log_queue)
         self.after(600, self._tick_status)
@@ -401,7 +404,7 @@ class LauncherApp(ctk.CTk):
         selection_body.grid_rowconfigure(1, weight=1)
         self.selection_segment = ctk.CTkSegmentedButton(
             selection_body,
-            values=["角色", "專案", "聊天"],
+            values=["角色", "衣服", "專案", "聊天"],
             variable=self.selection_view_var,
             command=self._on_selection_segment_changed,
             fg_color=PALETTE["accent_soft"],
@@ -427,6 +430,12 @@ class LauncherApp(ctk.CTk):
             subtitle=_pretty_path(self.cfg.characters_dir, self.cfg.root),
             refresh_cmd=self._refresh_character_list,
         )
+        outfit_page, self.outfit_frame = self._build_selector_page(
+            selection_stack,
+            title="衣服",
+            subtitle="選擇目前角色的服裝狀態",
+            refresh_cmd=self._refresh_outfit_list,
+        )
         project_page, self.project_frame = self._build_selector_page(
             selection_stack,
             title="專案",
@@ -434,6 +443,7 @@ class LauncherApp(ctk.CTk):
             refresh_cmd=self._refresh_project_list,
         )
         self.selection_pages["角色"] = character_page
+        self.selection_pages["衣服"] = outfit_page
         self.selection_pages["專案"] = project_page
 
         self.history_wrap = ctk.CTkFrame(selection_stack, fg_color="transparent")
@@ -1783,10 +1793,35 @@ class LauncherApp(ctk.CTk):
                     return path
         return None
 
-    def _find_live2d_preview(self, character: CharacterRecord) -> Optional[Path]:
+    def _preferred_outfit_texture(
+        self,
+        character: CharacterRecord,
+        outfit_id: Optional[str],
+    ) -> Optional[Path]:
         model_root = self.cfg.open_llm_dir / "live2d-models" / character.live2d_model_name
         if not model_root.exists():
             return None
+
+        texture_name = "texture_01.png" if outfit_id == "hoodie" else "texture_00.png"
+        matches = sorted(
+            path
+            for path in model_root.rglob(texture_name)
+            if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
+        )
+        return matches[0] if matches else None
+
+    def _find_live2d_preview(
+        self,
+        character: CharacterRecord,
+        outfit_id: Optional[str] = None,
+    ) -> Optional[Path]:
+        model_root = self.cfg.open_llm_dir / "live2d-models" / character.live2d_model_name
+        if not model_root.exists():
+            return None
+
+        outfit_texture = self._preferred_outfit_texture(character, outfit_id)
+        if outfit_texture:
+            return outfit_texture
 
         preview_names = ("preview", "thumbnail", "poster", "cover")
         files = sorted(p for p in model_root.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS)
@@ -1800,10 +1835,15 @@ class LauncherApp(ctk.CTk):
         return files[0] if files else None
 
     def _resolve_preview_asset(self, character: CharacterRecord) -> tuple[Optional[Path], str]:
+        outfit_id = self.outfit_var.get().strip() if hasattr(self, "outfit_var") else "normal"
+        outfit_texture = self._preferred_outfit_texture(character, outfit_id)
+        if outfit_texture:
+            return outfit_texture, "Live2D texture"
+
         avatar = self._find_avatar_preview(character)
         if avatar:
             return avatar, "角色圖預覽"
-        live2d = self._find_live2d_preview(character)
+        live2d = self._find_live2d_preview(character, outfit_id)
         if live2d:
             return live2d, "Live2D 素材預覽"
         return None, "尚未找到可用預覽"
@@ -2259,6 +2299,40 @@ class LauncherApp(ctk.CTk):
             self._update_panels()
         self.log(f"[{log_ts()}] 角色列表已更新，共 {len(self.character_records)} 份設定。")
 
+    def _refresh_outfit_list(self) -> None:
+        if not hasattr(self, "outfit_frame"):
+            return
+
+        for button in self._outfit_radio_buttons:
+            button.destroy()
+        self._outfit_radio_buttons.clear()
+
+        outfits = [
+            ("normal", "原版", "保持角色預設服裝"),
+            ("hoodie", "帽T", "切換到第二套帽T服裝"),
+        ]
+        for outfit_id, label, description in outfits:
+            radio = ctk.CTkRadioButton(
+                self.outfit_frame,
+                text=f"{label}  ·  {description}",
+                variable=self.outfit_var,
+                value=outfit_id,
+                command=self._on_outfit_changed,
+                height=28,
+                radiobutton_width=18,
+                radiobutton_height=18,
+                font=ui_font(13, "bold"),
+                text_color=PALETTE["text"],
+                border_color=PALETTE["panel_border"],
+                hover_color=PALETTE["accent_blue"],
+                fg_color=PALETTE["accent_lavender"],
+            )
+            radio.grid(sticky="ew", padx=12, pady=(10, 0))
+            self._outfit_radio_buttons.append(radio)
+
+        if self.outfit_var.get() not in {"normal", "hoodie"}:
+            self.outfit_var.set("normal")
+
     def _refresh_project_list(self) -> None:
         self.project_records.clear()
         for button in self._project_radio_buttons:
@@ -2325,6 +2399,47 @@ class LauncherApp(ctk.CTk):
 
     def _on_project_changed(self) -> None:
         self._update_panels()
+
+    def _selected_outfit_payload(self) -> tuple[str, str, int]:
+        outfit_id = self.outfit_var.get().strip() or "normal"
+        outfit_value = 1 if outfit_id == "hoodie" else 0
+        outfit_label = "帽T" if outfit_id == "hoodie" else "原版"
+        return outfit_id, outfit_label, outfit_value
+
+    def _apply_selected_outfit(self, *, wait_for_shell: bool = False) -> None:
+        outfit_id, outfit_label, outfit_value = self._selected_outfit_payload()
+
+        def runner() -> None:
+            if wait_for_shell:
+                for _ in range(30):
+                    if port_is_open(self.cfg.pet_control_host, self.cfg.pet_control_port, 0.25):
+                        break
+                    time.sleep(0.25)
+            try:
+                result = http_post_json(
+                    self._pet_control_endpoint("/command"),
+                    {
+                        "action": "set-outfit",
+                        "outfitId": outfit_id,
+                        "parameterId": "Param10",
+                        "value": outfit_value,
+                    },
+                    timeout=5.0,
+                )
+            except Exception as exc:
+                self.log(f"[{log_ts()}] 切換服裝失敗：{exc}")
+                return
+
+            renderer = result.get("renderer") or {}
+            self.after(0, lambda r=renderer: self._sync_pet_toggle_states(r))
+            self.after(0, self._tick_pet_shell_status)
+            self.log(f"[{log_ts()}] 已切換服裝：{outfit_label}")
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def _on_outfit_changed(self) -> None:
+        self._update_character_preview(self._selected_character())
+        self._apply_selected_outfit()
 
     def _on_prompt_segment_changed(self, _value: str) -> None:
         self._refresh_prompt_view()
@@ -2984,6 +3099,7 @@ class LauncherApp(ctk.CTk):
             )
             if switched:
                 self._launch_pet_electron()
+                self._apply_selected_outfit(wait_for_shell=True)
                 self._apply_history_choice(
                     wait_for_client=False,
                     selected_character=character,
@@ -3104,6 +3220,7 @@ class LauncherApp(ctk.CTk):
         if llm_ready:
             self.log(f"[{log_ts()}] {llm_ready_message}：{self.cfg.llm_url}")
             self.on_open_electron()
+            self._apply_selected_outfit(wait_for_shell=True)
             self._apply_history_choice(
                 wait_for_client=True,
                 selected_character=character,
@@ -3206,6 +3323,11 @@ class LauncherApp(ctk.CTk):
             var = self.pet_toggle_vars.get(action)
             if var is not None:
                 var.set("on" if bool(renderer.get(key)) else "off")
+
+        outfit_id = str(renderer.get("currentOutfitId") or "").strip()
+        if outfit_id in {"normal", "hoodie"}:
+            self.outfit_var.set(outfit_id)
+            self._update_character_preview(self._selected_character())
 
     def _sync_runtime_history_selection(self, renderer: dict) -> None:
         history_uid = str(

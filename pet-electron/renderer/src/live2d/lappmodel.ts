@@ -66,6 +66,21 @@ function resolveAssetUrl(baseUrl: string, value: string): string {
   return new URL(normalized, baseUrl).toString();
 }
 
+function withCacheBust(assetUrl: string, cacheBust: string): string {
+  if (!assetUrl || /^(data:|blob:)/i.test(assetUrl)) {
+    return assetUrl;
+  }
+
+  try {
+    const url = new URL(assetUrl, window.location.href);
+    url.searchParams.set('kuroLive2dBust', cacheBust);
+    return url.toString();
+  } catch (_error) {
+    const separator = assetUrl.includes('?') ? '&' : '?';
+    return `${assetUrl}${separator}kuroLive2dBust=${encodeURIComponent(cacheBust)}`;
+  }
+}
+
 function absolutizeModelSetting(rawText: string, modelUrl: string): string {
   const payload = JSON.parse(rawText);
   const refs = payload?.FileReferences || {};
@@ -169,13 +184,145 @@ enum LoadStep {
 const SKIP_OPTIONAL_PHYSICS = true;
 const MINIMAL_RENDERER_BOOT = true;
 
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.min(1, Math.max(0, value));
+}
+
+function clampSigned(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.min(1, Math.max(-1, value));
+}
+
+type IdleWaveParameterSpec = {
+  parameterId: string;
+  amplitude: number;
+  speed: number;
+  phase: number;
+  weightScale: number;
+};
+
+type IdleWaveParameter = {
+  id: CubismIdHandle;
+  amplitude: number;
+  speed: number;
+  phase: number;
+  weightScale: number;
+};
+
+type ExternalParameterTarget = {
+  id: CubismIdHandle | null;
+  parameterIndex: number | null;
+  currentValue: number;
+  targetValue: number;
+  durationSeconds: number;
+};
+
+function createIdleWaveSpecs(
+  parameterIds: string[],
+  amplitude: number,
+  speed: number,
+  phase: number,
+  phaseStep: number,
+  weightScale: number
+): IdleWaveParameterSpec[] {
+  return parameterIds.map((parameterId, index) => ({
+    parameterId,
+    amplitude: amplitude * (index % 2 === 0 ? 1 : -0.82),
+    speed: speed + (index % 3) * 0.035,
+    phase: phase + index * phaseStep,
+    weightScale
+  }));
+}
+
 /**
  * ユーザーが実際に使用するモデルの実装クラス<br>
  * モデル生成、機能コンポーネント生成、更新処理とレンダリングの呼び出しを行う。
  */
 export class LAppModel extends CubismUserModel {
+  private static readonly FallbackMouthParameterIds = ['ParamMouthOpenY'];
+  private static readonly FallbackEyeBlinkParameterIds = [
+    'ParamEyeLOpen',
+    'ParamEyeROpen'
+  ];
+  private static readonly SecondaryIdleWaveParameterSpecs: IdleWaveParameterSpec[] = [
+    ...createIdleWaveSpecs(
+      ['Param17', 'Param18', 'Param19', 'Param20', 'Param21', 'Param22', 'Param23', 'Param24', 'Param25', 'Param26'],
+      5.2,
+      0.68,
+      0.15,
+      0.47,
+      0.56
+    ),
+    ...createIdleWaveSpecs(
+      ['Param27', 'Param28', 'Param29'],
+      4.2,
+      0.74,
+      1.1,
+      0.72,
+      0.45
+    ),
+    ...createIdleWaveSpecs(
+      ['Param30', 'Param31', 'Param32', 'Param33', 'Param34', 'Param35', 'Param36', 'Param37'],
+      7.0,
+      0.48,
+      0.55,
+      0.39,
+      0.52
+    ),
+    ...createIdleWaveSpecs(
+      ['Param38', 'Param39', 'Param40', 'Param41', 'Param42', 'Param43', 'Param44', 'Param45', 'Param46', 'Param47', 'Param48', 'Param49'],
+      4.8,
+      0.38,
+      0.2,
+      0.31,
+      0.42
+    ),
+    ...createIdleWaveSpecs(
+      ['Param50', 'Param51', 'Param52', 'Param53', 'Param54', 'Param55', 'Param56', 'Param57', 'Param58', 'Param59', 'Param60', 'Param61'],
+      5.4,
+      0.34,
+      1.0,
+      0.28,
+      0.44
+    ),
+    ...createIdleWaveSpecs(
+      ['Param62', 'Param63', 'Param64', 'Param65', 'Param66', 'Param67', 'Param68', 'Param69', 'Param70', 'Param71', 'Param72', 'Param73', 'Param74', 'Param75', 'Param76'],
+      6.0,
+      0.31,
+      1.8,
+      0.24,
+      0.48
+    ),
+    ...createIdleWaveSpecs(
+      ['Param77', 'Param78', 'Param79', 'Param80'],
+      6.5,
+      0.42,
+      0.7,
+      0.58,
+      0.5
+    ),
+    ...createIdleWaveSpecs(
+      ['Param81', 'Param82', 'Param83', 'Param84', 'Param85', 'Param86', 'Param87', 'Param88'],
+      5.8,
+      0.58,
+      1.35,
+      0.43,
+      0.55
+    )
+  ];
+  private _mouthDebugPulseActive: boolean;
+  private _mouthDebugPulseElapsed: number;
+  private _mouthDebugPulseDuration: number;
+  private _externalParameterTargets: Map<string, ExternalParameterTarget>;
+  private _assetCacheBust: string;
+
   private resolveAssetPath(assetPath: string): string {
-    return resolveAssetUrl(this._modelHomeDir, assetPath);
+    return withCacheBust(resolveAssetUrl(this._modelHomeDir, assetPath), this._assetCacheBust);
   }
   /**
    * model3.jsonが置かれたディレクトリとファイルパスからモデルを生成する
@@ -184,10 +331,11 @@ export class LAppModel extends CubismUserModel {
    */
   public loadAssets(dir: string, fileName: string): void {
     this._modelHomeDir = dir;
+    this._assetCacheBust = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-    const modelUrl = resolveAssetUrl(this._modelHomeDir, fileName);
+    const modelUrl = this.resolveAssetPath(fileName);
 
-    fetch(modelUrl)
+    fetch(modelUrl, { cache: 'no-store' })
       .then(response => {
         console.info('[pet-renderer] model3 fetch response', {
           url: modelUrl,
@@ -271,7 +419,7 @@ export class LAppModel extends CubismUserModel {
         displayInfo: displayInfoFileName
       });
 
-      fetch(this.resolveAssetPath(modelFileName))
+      fetch(this.resolveAssetPath(modelFileName), { cache: 'no-store' })
         .then(response => {
           console.info('[pet-renderer] model fetch response', {
             url: this.resolveAssetPath(modelFileName),
@@ -322,7 +470,7 @@ export class LAppModel extends CubismUserModel {
           const expressionFileName =
             this._modelSetting.getExpressionFileName(i);
 
-          fetch(this.resolveAssetPath(expressionFileName))
+          fetch(this.resolveAssetPath(expressionFileName), { cache: 'no-store' })
             .then(response => {
               if (response.ok) {
                 return response.arrayBuffer();
@@ -390,7 +538,7 @@ export class LAppModel extends CubismUserModel {
       );
       if (physicsFileName != '') {
 
-        fetch(this.resolveAssetPath(physicsFileName))
+        fetch(this.resolveAssetPath(physicsFileName), { cache: 'no-store' })
           .then(response => {
             console.info('[pet-renderer] physics fetch response', {
               url: this.resolveAssetPath(physicsFileName),
@@ -445,7 +593,7 @@ export class LAppModel extends CubismUserModel {
       );
       if (poseFileName != '') {
 
-        fetch(this.resolveAssetPath(poseFileName))
+        fetch(this.resolveAssetPath(poseFileName), { cache: 'no-store' })
           .then(response => {
             console.info('[pet-renderer] pose fetch response', {
               url: this.resolveAssetPath(poseFileName),
@@ -554,7 +702,7 @@ export class LAppModel extends CubismUserModel {
       );
       if (userDataFile != '') {
 
-        fetch(this.resolveAssetPath(userDataFile))
+      fetch(this.resolveAssetPath(userDataFile), { cache: 'no-store' })
           .then(response => {
             console.info('[pet-renderer] userdata fetch response', {
               url: this.resolveAssetPath(userDataFile),
@@ -619,6 +767,14 @@ export class LAppModel extends CubismUserModel {
       this._lipSyncIds.length = lipSyncIdCount;
       for (let i = 0; i < lipSyncIdCount; ++i) {
         this._lipSyncIds[i] = this._modelSetting.getLipSyncParameterId(i);
+      }
+
+      if (this._lipSyncIds.length > 0) {
+        this._externalLipSyncIds = [...this._lipSyncIds];
+      } else {
+        this._externalLipSyncIds = LAppModel.FallbackMouthParameterIds.map(
+          parameterId => CubismFramework.getIdManager().getId(parameterId)
+        );
       }
 
       // LipSync Updaterの追加
@@ -842,13 +998,16 @@ export class LAppModel extends CubismUserModel {
     // Reset motion updated flag each frame
     this._motionUpdated = false;
 
-    if (this._motionManager.isFinished()) {
+    if (
+      this._motionManager.isFinished() &&
+      this._modelSetting.getMotionCount(LAppDefine.MotionGroupIdle) > 0
+    ) {
       // モーションの再生がない場合、待機モーションの中からランダムで再生する
       this.startRandomMotion(
         LAppDefine.MotionGroupIdle,
         LAppDefine.PriorityIdle
       );
-    } else {
+    } else if (!this._motionManager.isFinished()) {
       this._motionUpdated = this._motionManager.updateMotion(
         this._model,
         deltaTimeSeconds
@@ -859,8 +1018,64 @@ export class LAppModel extends CubismUserModel {
 
     // UpdateSchedulerによる一括エフェクト更新
     this._updateScheduler.onLateUpdate(this._model, deltaTimeSeconds);
+    this.applyFallbackIdle();
+    this.applyIdleBlink(deltaTimeSeconds);
+    this.applyExternalLookTarget(deltaTimeSeconds);
+    this.applyExternalLipSync();
+    this.applyExternalParameterTargets(deltaTimeSeconds);
+    this.applyMouthDebugPulse(deltaTimeSeconds);
 
     this._model.update();
+  }
+
+  public setExternalLipSyncValue(value: number): void {
+    const nextValue = clamp01(value);
+    this._externalLipSyncActive =
+      nextValue > 0.001 || this._externalLipSyncValue > 0.001;
+    this._externalLipSyncValue = nextValue;
+  }
+
+  public startMouthDebugPulse(durationSeconds = 3): void {
+    this._mouthDebugPulseElapsed = 0;
+    this._mouthDebugPulseDuration = Math.max(0.1, durationSeconds);
+    this._mouthDebugPulseActive = true;
+  }
+
+  public setExternalLookTarget(x: number, y: number): void {
+    this._externalLookTargetX = clampSigned(x);
+    this._externalLookTargetY = clampSigned(y);
+  }
+
+  public setExternalParameterTarget(
+    parameterId: string,
+    targetValue: number,
+    durationSeconds = 0.85,
+    parameterIndex: number | null = null
+  ): void {
+    const normalizedIndex =
+      Number.isInteger(parameterIndex) && parameterIndex !== null && parameterIndex >= 0
+        ? parameterIndex
+        : null;
+    const normalizedParameterId = String(parameterId || "").trim();
+    const key =
+      normalizedIndex !== null
+        ? `index:${normalizedIndex}`
+        : normalizedParameterId;
+    if (!key) {
+      return;
+    }
+
+    const existing = this._externalParameterTargets.get(key);
+    this._externalParameterTargets.set(key, {
+      id:
+        normalizedIndex === null
+          ? existing?.id || CubismFramework.getIdManager().getId(normalizedParameterId)
+          : null,
+      parameterIndex: normalizedIndex,
+      currentValue: existing?.currentValue ?? 0,
+      targetValue: clamp01(targetValue),
+      durationSeconds: Math.max(0.08, durationSeconds)
+    });
   }
 
   public isReadyToRender(): boolean {
@@ -917,7 +1132,7 @@ export class LAppModel extends CubismUserModel {
     let autoDelete = false;
 
     if (motion == null) {
-      fetch(this.resolveAssetPath(motionFileName))
+      fetch(this.resolveAssetPath(motionFileName), { cache: 'no-store' })
         .then(response => {
           if (response.ok) {
             return response.arrayBuffer();
@@ -1097,7 +1312,7 @@ export class LAppModel extends CubismUserModel {
         );
       }
 
-      fetch(this.resolveAssetPath(motionFileName))
+      fetch(this.resolveAssetPath(motionFileName), { cache: 'no-store' })
         .then(response => {
           if (response.ok) {
             return response.arrayBuffer();
@@ -1215,7 +1430,7 @@ export class LAppModel extends CubismUserModel {
     if (this._modelSetting.getModelFileName() != '') {
       const modelFileName = this._modelSetting.getModelFileName();
 
-      const response = await fetch(this.resolveAssetPath(modelFileName));
+      const response = await fetch(this.resolveAssetPath(modelFileName), { cache: 'no-store' });
       const arrayBuffer = await response.arrayBuffer();
 
       this._consistency = CubismMoc.hasMocConsistency(arrayBuffer);
@@ -1234,6 +1449,281 @@ export class LAppModel extends CubismUserModel {
 
   public setSubdelegate(subdelegate: LAppSubdelegate): void {
     this._subdelegate = subdelegate;
+  }
+
+  private isExistingParameter(parameterId: CubismIdHandle): boolean {
+    if (!this._model) {
+      return false;
+    }
+
+    const parameterIndex = this._model.getParameterIndex(parameterId);
+    return parameterIndex >= 0 && parameterIndex < this._model.getParameterCount();
+  }
+
+  private setExistingParameterValue(
+    parameterId: CubismIdHandle,
+    value: number,
+    weight = 1.0
+  ): void {
+    if (!this.isExistingParameter(parameterId)) {
+      return;
+    }
+    this._model.setParameterValueById(parameterId, value, weight);
+  }
+
+  private addExistingParameterValue(
+    parameterId: CubismIdHandle,
+    value: number,
+    weight = 1.0
+  ): void {
+    if (!this.isExistingParameter(parameterId)) {
+      return;
+    }
+    this._model.addParameterValueById(parameterId, value, weight);
+  }
+
+  private applyFallbackIdle(): void {
+    if (!this._model) {
+      return;
+    }
+
+    const time = this._userTimeSeconds;
+    const hasIdleMotion =
+      this._modelSetting?.getMotionCount(LAppDefine.MotionGroupIdle) > 0;
+    const weight = hasIdleMotion ? 0.22 : 0.86;
+
+    this.addExistingParameterValue(
+      this._idParamAngleX,
+      Math.sin(time * 0.72) * 12.5,
+      weight
+    );
+    this.addExistingParameterValue(
+      this._idParamAngleY,
+      Math.sin(time * 0.48 + 0.8) * 8.0,
+      weight
+    );
+    this.addExistingParameterValue(
+      this._idParamAngleZ,
+      Math.sin(time * 0.58 + 1.7) * 9.2,
+      weight
+    );
+    this.addExistingParameterValue(
+      this._idParamBodyAngleX,
+      Math.sin(time * 0.38 + 0.4) * 8.5,
+      weight
+    );
+    this.addExistingParameterValue(
+      this._idParamBodyAngleY,
+      Math.sin(time * 0.42 + 1.2) * 5.8,
+      weight
+    );
+    this.addExistingParameterValue(
+      this._idParamBodyAngleZ,
+      Math.sin(time * 0.35 + 2.0) * 5.6,
+      weight
+    );
+    this.addExistingParameterValue(
+      this._idParamChestX,
+      Math.sin(time * 0.56 + 0.35) * 8.0,
+      weight
+    );
+    this.addExistingParameterValue(
+      this._idParamChestY,
+      Math.sin(time * 0.72 + 1.1) * 10.5,
+      weight
+    );
+
+    for (const parameter of this._secondaryIdleWaveParameters) {
+      this.addExistingParameterValue(
+        parameter.id,
+        Math.sin(time * parameter.speed + parameter.phase) * parameter.amplitude,
+        weight * parameter.weightScale
+      );
+    }
+  }
+
+  private scheduleNextIdleBlink(): void {
+    this._idleBlinkElapsed = 0;
+    this._idleBlinkInterval = 1.6 + Math.random() * 2.2;
+    this._idleBlinkDuration = 0.24 + Math.random() * 0.08;
+    this._idleBlinkDouble = Math.random() < 0.22;
+  }
+
+  private getIdleBlinkOpenValue(progress: number): number {
+    if (progress < 0 || progress > 1) {
+      return 1;
+    }
+
+    if (this._idleBlinkDouble) {
+      if (progress < 0.18) {
+        return 1 - progress / 0.18;
+      }
+      if (progress < 0.34) {
+        return 0;
+      }
+      if (progress < 0.52) {
+        return (progress - 0.34) / 0.18;
+      }
+      if (progress < 0.64) {
+        return 1 - (progress - 0.52) / 0.12;
+      }
+      if (progress < 0.8) {
+        return 0;
+      }
+      return (progress - 0.8) / 0.2;
+    }
+
+    if (progress < 0.28) {
+      return 1 - progress / 0.28;
+    }
+    if (progress < 0.46) {
+      return 0;
+    }
+    return (progress - 0.46) / 0.54;
+  }
+
+  private applyIdleBlink(deltaTimeSeconds: number): void {
+    if (!this._model || this._idleBlinkIds.length === 0) {
+      return;
+    }
+
+    this._idleBlinkElapsed += deltaTimeSeconds;
+    if (this._idleBlinkElapsed < this._idleBlinkInterval) {
+      return;
+    }
+
+    const blinkTime = this._idleBlinkElapsed - this._idleBlinkInterval;
+    const duration = this._idleBlinkDouble
+      ? this._idleBlinkDuration * 2.35
+      : this._idleBlinkDuration;
+    const progress = blinkTime / duration;
+
+    if (progress >= 1) {
+      for (const parameterId of this._idleBlinkIds) {
+        this.setExistingParameterValue(parameterId, 1, 1.0);
+      }
+      this.scheduleNextIdleBlink();
+      return;
+    }
+
+    const openValue = this.getIdleBlinkOpenValue(progress);
+    for (const parameterId of this._idleBlinkIds) {
+      this.setExistingParameterValue(parameterId, openValue, 1.0);
+    }
+  }
+
+  private applyExternalLookTarget(deltaTimeSeconds: number): void {
+    if (!this._model) {
+      return;
+    }
+
+    const follow = Math.min(1, Math.max(0.08, deltaTimeSeconds * 12));
+    this._externalLookX +=
+      (this._externalLookTargetX - this._externalLookX) * follow;
+    this._externalLookY +=
+      (this._externalLookTargetY - this._externalLookY) * follow;
+
+    const lookX = this._externalLookX;
+    const lookY = this._externalLookY;
+    if (Math.abs(lookX) < 0.002 && Math.abs(lookY) < 0.002) {
+      return;
+    }
+
+    this.addExistingParameterValue(this._idParamAngleX, lookX * 22.0, 0.9);
+    this.addExistingParameterValue(this._idParamAngleY, lookY * 16.0, 0.9);
+    this.addExistingParameterValue(this._idParamAngleZ, -lookX * lookY * 12.0, 0.9);
+    this.addExistingParameterValue(this._idParamBodyAngleX, lookX * 6.0, 0.75);
+    this.addExistingParameterValue(this._idParamBodyAngleY, lookY * 3.0, 0.75);
+  }
+
+  private applyExternalLipSync(): void {
+    if (!this._model || !this._externalLipSyncActive) {
+      return;
+    }
+
+    const value = clamp01(this._externalLipSyncValue);
+    if (value <= 0.001) {
+      for (const parameterId of this.getMouthParameterIds()) {
+        this.setExistingParameterValue(parameterId, 0, 1.0);
+      }
+      this._externalLipSyncActive = false;
+      return;
+    }
+
+    const time = this._userTimeSeconds;
+    const drive = Math.max(0.45, value);
+    const primaryWave = 0.5 + 0.5 * Math.sin(time * 18.0);
+    const secondaryWave = 0.5 + 0.5 * Math.sin(time * 31.0 + 0.7);
+    const speechPulse = 0.2 + 0.58 * primaryWave + 0.22 * secondaryWave;
+    const mouthOpenValue = Math.min(2.1, drive * speechPulse * 2.1);
+    for (const parameterId of this.getMouthParameterIds()) {
+      this.setExistingParameterValue(parameterId, mouthOpenValue, 1.0);
+    }
+  }
+
+  private applyExternalParameterTargets(deltaTimeSeconds: number): void {
+    if (!this._model || this._externalParameterTargets.size === 0) {
+      return;
+    }
+
+    for (const parameter of this._externalParameterTargets.values()) {
+      const follow = Math.min(
+        1,
+        Math.max(0.02, deltaTimeSeconds / parameter.durationSeconds)
+      );
+      parameter.currentValue +=
+        (parameter.targetValue - parameter.currentValue) * follow;
+      if (Math.abs(parameter.targetValue - parameter.currentValue) < 0.001) {
+        parameter.currentValue = parameter.targetValue;
+      }
+      if (parameter.parameterIndex !== null) {
+        if (
+          parameter.parameterIndex >= 0 &&
+          parameter.parameterIndex < this._model.getParameterCount()
+        ) {
+          this._model.setParameterValueByIndex(
+            parameter.parameterIndex,
+            parameter.currentValue,
+            1.0
+          );
+        }
+      } else if (parameter.id) {
+        this.setExistingParameterValue(parameter.id, parameter.currentValue, 1.0);
+      }
+    }
+  }
+
+  private getMouthParameterIds(): Array<CubismIdHandle> {
+    if (this._externalLipSyncIds.length > 0) {
+      return this._externalLipSyncIds;
+    }
+
+    return LAppModel.FallbackMouthParameterIds.map(parameterId =>
+      CubismFramework.getIdManager().getId(parameterId)
+    );
+  }
+
+  private applyMouthDebugPulse(deltaTimeSeconds: number): void {
+    if (!this._model || !this._mouthDebugPulseActive) {
+      return;
+    }
+
+    this._mouthDebugPulseElapsed += deltaTimeSeconds;
+    const progress =
+      this._mouthDebugPulseElapsed / this._mouthDebugPulseDuration;
+
+    if (progress >= 1) {
+      for (const parameterId of this.getMouthParameterIds()) {
+        this.setExistingParameterValue(parameterId, 0, 1.0);
+      }
+      this._mouthDebugPulseActive = false;
+      return;
+    }
+
+    const openValue = Math.max(0, Math.sin(progress * Math.PI * 8)) * 2.1;
+    for (const parameterId of this.getMouthParameterIds()) {
+      this.setExistingParameterValue(parameterId, openValue, 1.0);
+    }
   }
 
   /**
@@ -1258,6 +1748,7 @@ export class LAppModel extends CubismUserModel {
 
     this._modelSetting = null;
     this._modelHomeDir = null;
+    this._assetCacheBust = '';
     this._userTimeSeconds = 0.0;
 
     this._eyeBlinkIds = new Array<CubismIdHandle>();
@@ -1281,6 +1772,25 @@ export class LAppModel extends CubismUserModel {
     this._idParamBodyAngleX = CubismFramework.getIdManager().getId(
       CubismDefaultParameterId.ParamBodyAngleX
     );
+    this._idParamBodyAngleY = CubismFramework.getIdManager().getId(
+      CubismDefaultParameterId.ParamBodyAngleY
+    );
+    this._idParamBodyAngleZ = CubismFramework.getIdManager().getId(
+      CubismDefaultParameterId.ParamBodyAngleZ
+    );
+    this._idParamChestX = CubismFramework.getIdManager().getId('Param89');
+    this._idParamChestY = CubismFramework.getIdManager().getId('Param90');
+    this._idleBlinkIds = LAppModel.FallbackEyeBlinkParameterIds.map(
+      parameterId => CubismFramework.getIdManager().getId(parameterId)
+    );
+    this._secondaryIdleWaveParameters =
+      LAppModel.SecondaryIdleWaveParameterSpecs.map(spec => ({
+        id: CubismFramework.getIdManager().getId(spec.parameterId),
+        amplitude: spec.amplitude,
+        speed: spec.speed,
+        phase: spec.phase,
+        weightScale: spec.weightScale
+      }));
 
     if (LAppDefine.MOCConsistencyValidationEnable) {
       this._mocConsistency = true;
@@ -1300,6 +1810,21 @@ export class LAppModel extends CubismUserModel {
     this._look = null;
     this._updateScheduler = new CubismUpdateScheduler();
     this._motionUpdated = false;
+    this._externalLipSyncIds = new Array<CubismIdHandle>();
+    this._externalLipSyncValue = 0;
+    this._externalLipSyncActive = false;
+    this._mouthDebugPulseActive = false;
+    this._mouthDebugPulseElapsed = 0;
+    this._mouthDebugPulseDuration = 0;
+    this._externalParameterTargets = new Map<string, ExternalParameterTarget>();
+    this._externalLookTargetX = 0;
+    this._externalLookTargetY = 0;
+    this._externalLookX = 0;
+    this._externalLookY = 0;
+    this._idleBlinkElapsed = 0;
+    this._idleBlinkInterval = 1.6 + Math.random() * 0.9;
+    this._idleBlinkDuration = 0.26;
+    this._idleBlinkDouble = false;
   }
 
   private _updateScheduler: CubismUpdateScheduler; // アップデートスケジューラー
@@ -1323,6 +1848,23 @@ export class LAppModel extends CubismUserModel {
   _idParamAngleY: CubismIdHandle; // パラメータID: ParamAngleY
   _idParamAngleZ: CubismIdHandle; // パラメータID: ParamAngleZ
   _idParamBodyAngleX: CubismIdHandle; // パラメータID: ParamBodyAngleX
+  _idParamBodyAngleY: CubismIdHandle; // パラメータID: ParamBodyAngleY
+  _idParamBodyAngleZ: CubismIdHandle; // パラメータID: ParamBodyAngleZ
+  _idParamChestX: CubismIdHandle; // kuro胸部パラメータID: Param89
+  _idParamChestY: CubismIdHandle; // kuro胸部パラメータID: Param90
+  _idleBlinkIds: Array<CubismIdHandle>; // 明示まばたき用パラメータID
+  _secondaryIdleWaveParameters: Array<IdleWaveParameter>; // 髮/裙擺/蝴蝶結の待機二次動作
+  _externalLipSyncIds: Array<CubismIdHandle>; // 外部TTS音量から操作する口パラメータID
+  _externalLipSyncValue: number; // 外部TTS音量から算出した口開度
+  _externalLipSyncActive: boolean; // 口パラメータの明示更新が必要か
+  _externalLookTargetX: number; // 外部ポインター入力から算出した目標X
+  _externalLookTargetY: number; // 外部ポインター入力から算出した目標Y
+  _externalLookX: number; // 補間済みの外部ポインターX
+  _externalLookY: number; // 補間済みの外部ポインターY
+  _idleBlinkElapsed: number; // 待機まばたきの経過時間
+  _idleBlinkInterval: number; // 次のまばたきまでの秒数
+  _idleBlinkDuration: number; // まばたき一回分の秒数
+  _idleBlinkDouble: boolean; // 二連まばたきを行うか
 
   _look: CubismLook; // ドラッグ追従
 
