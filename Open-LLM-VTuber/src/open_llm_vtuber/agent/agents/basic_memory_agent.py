@@ -236,7 +236,34 @@ class BasicMemoryAgent(AgentInterface):
                 )
 
         if input_data.images:
-            message_parts.append("\n[User has also provided images]")
+            image_notes = [
+                "[Visual Input Instructions]",
+                "- This user turn includes real image data attached to this same message.",
+                "- You can inspect the attached image(s) and answer based on visible, non-sensitive content.",
+                "- Do not claim that you cannot see images, cannot view the screen, or cannot analyze image content when image data is attached.",
+                "- If the user asks whether you can see the image or screen, answer yes for this still attached frame, then briefly describe what is visible.",
+                "- You cannot continuously monitor the user's screen or camera; you only have the still frame(s) attached to this turn.",
+                "- Do not identify a real person's identity. If a person or character appears, describe visible non-identifying details, objects, UI, text, or scene layout instead.",
+                "- Do not add a generic closing question after describing the image. Stop naturally unless the user asked for a next step.",
+                "",
+                "[Attached visual context]",
+            ]
+            for img_data in input_data.images:
+                source = str(getattr(img_data.source, "value", img_data.source)).lower()
+                if source == "screen":
+                    image_notes.append(
+                        "- One attached image is a screenshot of the user's screen captured at the moment this message was sent."
+                    )
+                elif source == "camera":
+                    image_notes.append(
+                        "- One attached image is a camera frame captured at the moment this message was sent."
+                    )
+                else:
+                    image_notes.append(
+                        f"- One attached image came from source '{source}'. Use this still image when relevant."
+                    )
+
+            message_parts.append("\n" + "\n".join(image_notes))
 
         return "\n".join(message_parts).strip()
 

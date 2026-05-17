@@ -16,7 +16,9 @@ declare global {
       onCommand: (listener: (payload: { type: string; enabled?: boolean }) => void) => () => void;
     };
     __kuroPetRendererState?: Record<string, unknown>;
-    __kuroPetSendTextInput?: (text: string) => { ok: boolean; error?: string; text?: string };
+    __kuroPetSendTextInput?: (
+      text: string
+    ) => Promise<{ ok: boolean; error?: string; text?: string }>;
     __kuroPetApplyBackendConfig?: (
       baseUrl: string,
       wsUrl: string,

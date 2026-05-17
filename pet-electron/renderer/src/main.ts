@@ -53,6 +53,12 @@ type BackendConfig = {
   wsUrl: string;
 };
 
+type BackendImagePayload = {
+  source: "camera" | "screen";
+  data: string;
+  mime_type: string;
+};
+
 function normalizeText(value: unknown): string {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
@@ -159,6 +165,8 @@ class BackendClient {
   private micSamples: number[];
   private cameraStream: MediaStream | null;
   private screenStream: MediaStream | null;
+  private cameraVideo: HTMLVideoElement | null;
+  private screenVideo: HTMLVideoElement | null;
 
   public constructor(
     config: BackendConfig,
@@ -185,6 +193,8 @@ class BackendClient {
     this.micSamples = [];
     this.cameraStream = null;
     this.screenStream = null;
+    this.cameraVideo = null;
+    this.screenVideo = null;
   }
 
   public connect(): void {
@@ -286,11 +296,15 @@ class BackendClient {
     this.shouldReconnect = false;
     this.clearReconnectTimer();
     this.stopAudioPlayback(true);
-    this.stopMicrophoneCapture(false);
+    void this.stopMicrophoneCapture(false);
     this.stopMediaStream(this.cameraStream);
     this.stopMediaStream(this.screenStream);
     this.cameraStream = null;
     this.screenStream = null;
+    this.removePreviewVideo(this.cameraVideo);
+    this.removePreviewVideo(this.screenVideo);
+    this.cameraVideo = null;
+    this.screenVideo = null;
     this.updateState({ cameraEnabled: false, screenEnabled: false });
     if (this.socket) {
       this.socket.close();
@@ -317,7 +331,7 @@ class BackendClient {
     return { ...this.config };
   }
 
-  public sendText(text: string): { ok: boolean; error?: string; text?: string } {
+  public async sendText(text: string): Promise<{ ok: boolean; error?: string; text?: string }> {
     const normalized = normalizeText(text);
     if (!normalized) {
       return { ok: false, error: "empty-text" };
@@ -327,10 +341,12 @@ class BackendClient {
       return { ok: false, error: "websocket-not-open" };
     }
 
+    const images = await this.captureEnabledImages();
     this.socket.send(
       JSON.stringify({
         type: "text-input",
-        text: normalized
+        text: normalized,
+        ...(images.length ? { images } : {})
       })
     );
     this.resetAssistantTurn();
@@ -365,13 +381,15 @@ class BackendClient {
     if (enabled) {
       return this.startMicrophoneCapture();
     }
-    return this.stopMicrophoneCapture(true);
+    return await this.stopMicrophoneCapture(true);
   }
 
   public async setCameraEnabled(enabled: boolean): Promise<{ ok: boolean; error?: string }> {
     if (!enabled) {
       this.stopMediaStream(this.cameraStream);
       this.cameraStream = null;
+      this.removePreviewVideo(this.cameraVideo);
+      this.cameraVideo = null;
       this.updateState({ cameraEnabled: false });
       return { ok: true };
     }
@@ -381,6 +399,7 @@ class BackendClient {
         video: true,
         audio: false
       });
+      this.cameraVideo = await this.createPreviewVideo(this.cameraStream);
       this.updateState({ cameraEnabled: true });
       return { ok: true };
     } catch (error) {
@@ -394,6 +413,8 @@ class BackendClient {
     if (!enabled) {
       this.stopMediaStream(this.screenStream);
       this.screenStream = null;
+      this.removePreviewVideo(this.screenVideo);
+      this.screenVideo = null;
       this.updateState({ screenEnabled: false });
       return { ok: true };
     }
@@ -414,6 +435,7 @@ class BackendClient {
         }
       } as unknown as MediaStreamConstraints;
       this.screenStream = await navigator.mediaDevices.getUserMedia(constraints);
+      this.screenVideo = await this.createPreviewVideo(this.screenStream);
       this.updateState({ screenEnabled: true });
       return { ok: true };
     } catch (error) {
@@ -462,6 +484,84 @@ class BackendClient {
         // Ignore media cleanup failures.
       }
     }
+  }
+
+  private removePreviewVideo(video: HTMLVideoElement | null): void {
+    if (!video) {
+      return;
+    }
+    video.pause();
+    video.srcObject = null;
+    video.remove();
+  }
+
+  private async createPreviewVideo(stream: MediaStream): Promise<HTMLVideoElement> {
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.autoplay = true;
+    video.style.display = "none";
+    video.srcObject = stream;
+    document.body.appendChild(video);
+
+    await new Promise<void>((resolve) => {
+      const done = () => resolve();
+      if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+        resolve();
+        return;
+      }
+      video.addEventListener("loadedmetadata", done, { once: true });
+      window.setTimeout(done, 1000);
+    });
+
+    await video.play().catch(() => undefined);
+    return video;
+  }
+
+  private captureVideoFrame(
+    video: HTMLVideoElement | null,
+    source: "camera" | "screen"
+  ): BackendImagePayload | null {
+    if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      return null;
+    }
+
+    const rawWidth = video.videoWidth || 0;
+    const rawHeight = video.videoHeight || 0;
+    if (rawWidth <= 0 || rawHeight <= 0) {
+      return null;
+    }
+
+    const maxEdge = source === "screen" ? 1280 : 768;
+    const scale = Math.min(1, maxEdge / Math.max(rawWidth, rawHeight));
+    const width = Math.max(1, Math.round(rawWidth * scale));
+    const height = Math.max(1, Math.round(rawHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      return null;
+    }
+    context.drawImage(video, 0, 0, width, height);
+    return {
+      source,
+      data: canvas.toDataURL("image/jpeg", 0.72),
+      mime_type: "image/jpeg"
+    };
+  }
+
+  private async captureEnabledImages(): Promise<BackendImagePayload[]> {
+    const images: BackendImagePayload[] = [];
+    const cameraFrame = this.captureVideoFrame(this.cameraVideo, "camera");
+    if (cameraFrame) {
+      images.push(cameraFrame);
+    }
+    const screenFrame = this.captureVideoFrame(this.screenVideo, "screen");
+    if (screenFrame) {
+      images.push(screenFrame);
+    }
+    return images;
   }
 
   private async startMicrophoneCapture(): Promise<{ ok: boolean; error?: string }> {
@@ -535,7 +635,7 @@ class BackendClient {
     this.micProcessor = null;
   }
 
-  private stopMicrophoneCapture(submit: boolean): { ok: boolean; error?: string } {
+  private async stopMicrophoneCapture(submit: boolean): Promise<{ ok: boolean; error?: string }> {
     const samples = this.micSamples.slice();
     this.micSamples = [];
     this.stopMicrophoneNodes();
@@ -562,7 +662,13 @@ class BackendClient {
     this.resetAssistantTurn();
     this.stopAudioPlayback(true);
     this.resetPlaybackTurn();
-    this.socket.send(JSON.stringify({ type: "mic-audio-end" }));
+    const images = await this.captureEnabledImages();
+    this.socket.send(
+      JSON.stringify({
+        type: "mic-audio-end",
+        ...(images.length ? { images } : {})
+      })
+    );
     this.updateState({ latestAssistantText: "", aiState: "thinking" });
     return { ok: true };
   }
