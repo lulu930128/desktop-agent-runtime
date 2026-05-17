@@ -3,6 +3,7 @@ import json
 import math
 import os
 import queue
+import subprocess
 import sys
 import threading
 import time
@@ -257,6 +258,10 @@ class LauncherApp(ctk.CTk):
         self.character_var = ctk.StringVar(value="")
         self.project_var = ctk.StringVar(value="")
         self.history_var = ctk.StringVar(value="")
+        self.pet_base_url_var = ctk.StringVar(value=self.cfg.llm_url)
+        self.pet_ws_url_var = ctk.StringVar(
+            value=f"ws://{self.cfg.llm_host}:{self.cfg.llm_port}/client-ws"
+        )
 
         self._prompt_texts: Dict[str, str] = {}
         self.prompt_view_var = ctk.StringVar(value="角色")
@@ -265,6 +270,8 @@ class LauncherApp(ctk.CTk):
         self._history_radio_buttons: list[ctk.CTkRadioButton] = []
         self._preview_photo: Optional[PhotoImage] = None
         self._force_new_history_on_start = False
+        self._transcript_signature = ""
+        self._pet_shell_online = False
 
         self.title("Kuro Launcher")
         self.geometry("1380x820")
@@ -519,7 +526,57 @@ class LauncherApp(ctk.CTk):
         right_panel = ctk.CTkFrame(shell, fg_color="transparent")
         right_panel.grid(row=0, column=2, sticky="nsew")
         right_panel.grid_columnconfigure(0, weight=1)
-        right_panel.grid_rowconfigure(0, weight=1)
+        right_panel.grid_rowconfigure(0, weight=7)
+        right_panel.grid_rowconfigure(1, weight=5)
+        right_panel.grid_rowconfigure(2, weight=0)
+
+        transcript_card = ctk.CTkFrame(
+            right_panel,
+            corner_radius=18,
+            fg_color=PALETTE["panel_soft"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+        )
+        transcript_card.grid(row=0, column=0, sticky="nsew")
+        transcript_card.grid_columnconfigure(0, weight=1)
+        transcript_card.grid_rowconfigure(1, weight=1)
+
+        transcript_head = ctk.CTkFrame(transcript_card, fg_color="transparent")
+        transcript_head.grid(row=0, column=0, sticky="ew", padx=14, pady=(14, 8))
+        transcript_head.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            transcript_head,
+            text="對話紀錄（唯讀）",
+            font=ui_font(18, "bold"),
+            text_color=PALETTE["text"],
+        ).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(
+            transcript_head,
+            text="左邊是她，右邊是你；這裡只顯示，不提供輸入。",
+            text_color=PALETTE["muted"],
+            font=ui_font(12),
+        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+
+        transcript_shell = ctk.CTkFrame(
+            transcript_card,
+            corner_radius=14,
+            fg_color=PALETTE["textbox_bg"],
+            border_width=1,
+            border_color=PALETTE["textbox_border"],
+        )
+        transcript_shell.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 14))
+        transcript_shell.grid_columnconfigure(0, weight=1)
+        transcript_shell.grid_rowconfigure(0, weight=1)
+
+        self.transcript_frame = ctk.CTkScrollableFrame(
+            transcript_shell,
+            fg_color=PALETTE["textbox_bg"],
+            corner_radius=14,
+            scrollbar_button_color=PALETTE["accent_soft"],
+            scrollbar_button_hover_color=PALETTE["accent_blue"],
+        )
+        self.transcript_frame.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+        self.transcript_frame.grid_columnconfigure(0, weight=1)
 
         prompt_card = ctk.CTkFrame(
             right_panel,
@@ -528,7 +585,7 @@ class LauncherApp(ctk.CTk):
             border_width=1,
             border_color=PALETTE["panel_border"],
         )
-        prompt_card.grid(row=0, column=0, sticky="nsew")
+        prompt_card.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
         prompt_card.grid_columnconfigure(0, weight=1)
         prompt_card.grid_rowconfigure(1, weight=1)
 
@@ -572,6 +629,167 @@ class LauncherApp(ctk.CTk):
         )
         self.prompt_box.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 14))
         self.prompt_box.configure(state="disabled")
+
+        pet_card = ctk.CTkFrame(
+            right_panel,
+            corner_radius=18,
+            fg_color=PALETTE["panel_soft"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+        )
+        pet_card.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+        pet_card.grid_columnconfigure(0, weight=1)
+        pet_card.grid_columnconfigure(1, weight=1)
+
+        pet_head = ctk.CTkFrame(pet_card, fg_color="transparent")
+        pet_head.grid(row=0, column=0, columnspan=2, sticky="ew", padx=14, pady=(14, 8))
+        pet_head.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            pet_head,
+            text="桌寵控制",
+            font=ui_font(17, "bold"),
+            text_color=PALETTE["text"],
+        ).grid(row=0, column=0, sticky="w")
+        self.pet_status_label = ctk.CTkLabel(
+            pet_head,
+            text="桌寵 shell 尚未連線。",
+            font=ui_font(12),
+            text_color=PALETTE["muted"],
+            anchor="e",
+        )
+        self.pet_status_label.grid(row=0, column=1, sticky="e")
+
+        ctk.CTkLabel(
+            pet_card,
+            text="Base URL",
+            font=ui_font(12, "bold"),
+            text_color=PALETTE["text"],
+        ).grid(row=1, column=0, sticky="w", padx=14)
+        ctk.CTkLabel(
+            pet_card,
+            text="WebSocket URL",
+            font=ui_font(12, "bold"),
+            text_color=PALETTE["text"],
+        ).grid(row=1, column=1, sticky="w", padx=(8, 14))
+
+        self.pet_base_url_entry = ctk.CTkEntry(
+            pet_card,
+            textvariable=self.pet_base_url_var,
+            fg_color=PALETTE["textbox_bg"],
+            border_color=PALETTE["textbox_border"],
+            text_color=PALETTE["text"],
+            font=ui_font(12),
+        )
+        self.pet_base_url_entry.grid(row=2, column=0, sticky="ew", padx=14, pady=(4, 10))
+        self.pet_ws_url_entry = ctk.CTkEntry(
+            pet_card,
+            textvariable=self.pet_ws_url_var,
+            fg_color=PALETTE["textbox_bg"],
+            border_color=PALETTE["textbox_border"],
+            text_color=PALETTE["text"],
+            font=ui_font(12),
+        )
+        self.pet_ws_url_entry.grid(row=2, column=1, sticky="ew", padx=(8, 14), pady=(4, 10))
+
+        pet_button_bar = ctk.CTkFrame(pet_card, fg_color="transparent")
+        pet_button_bar.grid(row=3, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 14))
+        for idx in range(4):
+            pet_button_bar.grid_columnconfigure(idx, weight=1)
+
+        ctk.CTkButton(
+            pet_button_bar,
+            text="套用端點",
+            command=self.on_pet_apply_backend_urls,
+            fg_color=PALETTE["accent_blue"],
+            hover_color=PALETTE["accent_blue_hover"],
+            text_color="#ffffff",
+            font=ui_font(12, "bold"),
+            height=32,
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 6), pady=(0, 6))
+        ctk.CTkButton(
+            pet_button_bar,
+            text="刷新狀態",
+            command=self.on_pet_refresh_status,
+            fg_color=PALETTE["panel_alt"],
+            hover_color=PALETTE["accent_soft"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+            text_color=PALETTE["text"],
+            font=ui_font(12, "bold"),
+            height=32,
+        ).grid(row=0, column=1, sticky="ew", padx=6, pady=(0, 6))
+        ctk.CTkButton(
+            pet_button_bar,
+            text="麥克風",
+            command=self.on_pet_toggle_mic,
+            fg_color=PALETTE["panel_alt"],
+            hover_color=PALETTE["accent_soft"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+            text_color=PALETTE["text"],
+            font=ui_font(12, "bold"),
+            height=32,
+        ).grid(row=0, column=2, sticky="ew", padx=6, pady=(0, 6))
+        ctk.CTkButton(
+            pet_button_bar,
+            text="打斷",
+            command=self.on_pet_interrupt,
+            fg_color=PALETTE["panel_alt"],
+            hover_color=PALETTE["accent_soft"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+            text_color=PALETTE["text"],
+            font=ui_font(12, "bold"),
+            height=32,
+        ).grid(row=0, column=3, sticky="ew", padx=(6, 0), pady=(0, 6))
+        ctk.CTkButton(
+            pet_button_bar,
+            text="攝影機",
+            command=self.on_pet_toggle_camera,
+            fg_color=PALETTE["panel_alt"],
+            hover_color=PALETTE["accent_soft"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+            text_color=PALETTE["text"],
+            font=ui_font(12, "bold"),
+            height=32,
+        ).grid(row=1, column=0, sticky="ew", padx=(0, 6))
+        ctk.CTkButton(
+            pet_button_bar,
+            text="螢幕",
+            command=self.on_pet_toggle_screen,
+            fg_color=PALETTE["panel_alt"],
+            hover_color=PALETTE["accent_soft"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+            text_color=PALETTE["text"],
+            font=ui_font(12, "bold"),
+            height=32,
+        ).grid(row=1, column=1, sticky="ew", padx=6)
+        ctk.CTkButton(
+            pet_button_bar,
+            text="瀏覽器",
+            command=self.on_pet_toggle_browser,
+            fg_color=PALETTE["panel_alt"],
+            hover_color=PALETTE["accent_soft"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+            text_color=PALETTE["text"],
+            font=ui_font(12, "bold"),
+            height=32,
+        ).grid(row=1, column=2, sticky="ew", padx=6)
+        ctk.CTkButton(
+            pet_button_bar,
+            text="字幕框",
+            command=self.on_pet_toggle_subtitle,
+            fg_color=PALETTE["panel_alt"],
+            hover_color=PALETTE["accent_soft"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+            text_color=PALETTE["text"],
+            font=ui_font(12, "bold"),
+            height=32,
+        ).grid(row=1, column=3, sticky="ew", padx=(6, 0))
 
         log_wrap = ctk.CTkFrame(
             shell,
@@ -848,6 +1066,8 @@ class LauncherApp(ctk.CTk):
         self.badges["Bridge"].set_status(bridge_ok)
         self.badges["TTS"].set_status(tts_ok)
         self.badges["LLM"].set_status(llm_ok)
+        self._refresh_history_transcript()
+        self._tick_pet_shell_status()
         self.after(800, self._tick_status)
 
     def _load_live2d_catalog(self) -> Dict[str, dict]:
@@ -968,6 +1188,65 @@ class LauncherApp(ctk.CTk):
             return None
         return self.cfg.open_llm_dir / "chat_history" / character.conf_uid.strip()
 
+    def _history_file_for_character(
+        self, character: Optional[CharacterRecord], history_uid: str
+    ) -> Optional[Path]:
+        history_dir = self._history_dir_for_character(character)
+        history_uid = (history_uid or "").strip()
+        if history_dir is None or not history_uid:
+            return None
+        return history_dir / f"{history_uid}.json"
+
+    def _normalize_history_message_content(self, content) -> str:
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if isinstance(item, str):
+                    parts.append(item)
+                elif isinstance(item, dict):
+                    text_value = item.get("text")
+                    if isinstance(text_value, str):
+                        parts.append(text_value)
+            return "\n".join(part.strip() for part in parts if part and part.strip())
+        if content is None:
+            return ""
+        return str(content).strip()
+
+    def _load_history_messages(
+        self, character: Optional[CharacterRecord], history_uid: str
+    ) -> list[dict]:
+        history_path = self._history_file_for_character(character, history_uid)
+        if history_path is None or not history_path.exists():
+            return []
+
+        try:
+            payload = json.loads(history_path.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+
+        if not isinstance(payload, list):
+            return []
+
+        messages: list[dict] = []
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role") or "").strip().lower()
+            if role == "metadata":
+                continue
+            content = self._normalize_history_message_content(item.get("content"))
+            timestamp = str(item.get("timestamp") or "").strip()
+            messages.append(
+                {
+                    "role": role,
+                    "content": content,
+                    "timestamp": timestamp,
+                }
+            )
+        return messages
+
     def _load_history_records(
         self, character: Optional[CharacterRecord]
     ) -> Dict[str, HistoryRecord]:
@@ -1054,9 +1333,150 @@ class LauncherApp(ctk.CTk):
                 status = "這個角色目前還沒有聊天記錄。"
         self.history_status_label.configure(text=status)
 
+    def _history_transcript_signature_for_current(self) -> str:
+        character = self._selected_character()
+        if character is None:
+            return "no-character"
+        if self._force_new_history_on_start:
+            return f"new:{character.conf_uid}"
+
+        history_uid = self.history_var.get().strip()
+        if not history_uid:
+            return f"empty:{character.conf_uid}"
+
+        history_path = self._history_file_for_character(character, history_uid)
+        if history_path is None:
+            return f"missing:{character.conf_uid}:{history_uid}"
+        try:
+            stat = history_path.stat()
+        except OSError:
+            return f"missing:{character.conf_uid}:{history_uid}"
+        return f"{character.conf_uid}:{history_uid}:{stat.st_mtime_ns}:{stat.st_size}"
+
+    def _clear_history_transcript(self, placeholder: str) -> None:
+        for child in self.transcript_frame.winfo_children():
+            child.destroy()
+        empty = ctk.CTkLabel(
+            self.transcript_frame,
+            text=placeholder,
+            text_color=PALETTE["muted"],
+            justify="left",
+            anchor="w",
+            wraplength=420,
+            font=ui_font(12),
+        )
+        empty.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 12))
+
+    def _append_history_bubble(
+        self,
+        *,
+        row: int,
+        speaker: str,
+        content: str,
+        timestamp: str,
+        is_user: bool,
+    ) -> None:
+        lane = ctk.CTkFrame(self.transcript_frame, fg_color="transparent")
+        lane.grid(row=row, column=0, sticky="ew", padx=10, pady=(10 if row == 0 else 2, 6))
+        lane.grid_columnconfigure(0, weight=1)
+        lane.grid_columnconfigure(1, weight=1)
+
+        bubble = ctk.CTkFrame(
+            lane,
+            corner_radius=14,
+            fg_color=PALETTE["accent_soft"] if is_user else PALETTE["panel_bg"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+        )
+        bubble.grid(
+            row=0,
+            column=1 if is_user else 0,
+            sticky="e" if is_user else "w",
+            padx=(40, 0) if is_user else (0, 40),
+        )
+
+        ctk.CTkLabel(
+            bubble,
+            text=speaker,
+            font=ui_font(11, "bold"),
+            text_color=PALETTE["muted"],
+            anchor="w",
+        ).grid(row=0, column=0, sticky="w", padx=12, pady=(10, 2))
+        ctk.CTkLabel(
+            bubble,
+            text=content or "(空白訊息)",
+            font=ui_font(12),
+            text_color=PALETTE["text"],
+            justify="left",
+            anchor="w",
+            wraplength=380,
+        ).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 4))
+
+        if timestamp:
+            ctk.CTkLabel(
+                bubble,
+                text=_format_history_timestamp(timestamp),
+                font=ui_font(10),
+                text_color=PALETTE["muted"],
+                anchor="e" if is_user else "w",
+            ).grid(row=2, column=0, sticky="e" if is_user else "w", padx=12, pady=(0, 10))
+        else:
+            bubble.grid_rowconfigure(2, minsize=8)
+
+    def _refresh_history_transcript(self, *, force: bool = False) -> None:
+        if not hasattr(self, "transcript_frame"):
+            return
+
+        signature = self._history_transcript_signature_for_current()
+        if not force and signature == self._transcript_signature:
+            return
+        self._transcript_signature = signature
+
+        character = self._selected_character()
+        if character is None:
+            self._clear_history_transcript("請先選擇角色，這裡才會顯示完整對話。")
+            return
+        if self._force_new_history_on_start:
+            self._clear_history_transcript("新的聊天會在啟動或套用後建立，這裡會顯示新的對話內容。")
+            return
+
+        history_uid = self.history_var.get().strip()
+        if not history_uid:
+            if self.history_records:
+                self._clear_history_transcript("請先從聊天列表選一段對話。")
+            else:
+                self._clear_history_transcript("這個角色目前還沒有聊天內容。")
+            return
+
+        messages = self._load_history_messages(character, history_uid)
+        if not messages:
+            self._clear_history_transcript("這段聊天目前還沒有訊息。")
+            return
+
+        for child in self.transcript_frame.winfo_children():
+            child.destroy()
+
+        assistant_name = character.conf_name or "她"
+        for row, message in enumerate(messages):
+            role = str(message.get("role") or "").strip().lower()
+            is_user = role in {"human", "user"}
+            self._append_history_bubble(
+                row=row,
+                speaker="你" if is_user else assistant_name,
+                content=str(message.get("content") or ""),
+                timestamp=str(message.get("timestamp") or ""),
+                is_user=is_user,
+            )
+
+        try:
+            self.transcript_frame._parent_canvas.yview_moveto(1.0)
+        except Exception:
+            pass
+
     def _on_history_selected(self) -> None:
         self._force_new_history_on_start = False
         self._sync_history_status_label()
+        self._refresh_history_transcript(force=True)
 
     def _after_history_created(self, new_uid: str) -> None:
         self._force_new_history_on_start = False
@@ -1067,6 +1487,7 @@ class LauncherApp(ctk.CTk):
     def _after_history_selected(self) -> None:
         self._force_new_history_on_start = False
         self._sync_history_status_label()
+        self._refresh_history_transcript(force=True)
 
     def _refresh_history_list(self) -> None:
         for child in self.history_frame.winfo_children():
@@ -1121,6 +1542,7 @@ class LauncherApp(ctk.CTk):
                 self._history_radio_buttons.append(radio)
 
         self._sync_history_status_label()
+        self._refresh_history_transcript(force=True)
 
     def _refresh_character_list(self) -> None:
         self.character_records.clear()
@@ -1781,22 +2203,22 @@ class LauncherApp(ctk.CTk):
     def on_apply_history(self) -> None:
         selected_character = self._selected_character()
         if not selected_character:
-            messagebox.showinfo("??????", "?????????????")
+            messagebox.showinfo("聊天記錄", "請先選擇角色。")
             return
 
         desired_history_uid = self.history_var.get().strip()
         force_new = self._force_new_history_on_start
 
         if force_new:
-            mode_text = "?????"
+            mode_text = "新增聊天"
         elif not desired_history_uid:
-            messagebox.showinfo("??????", "????????????????????")
+            messagebox.showinfo("聊天記錄", "請先選擇要套用的聊天。")
             return
         else:
-            mode_text = "??????"
+            mode_text = "切換聊天"
 
         if not port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.2):
-            self.log(f"[{log_ts()}] ??????????????{mode_text}?")
+            self.log(f"[{log_ts()}] 後端尚未啟動，會在啟動角色時套用{mode_text}。")
             self._sync_history_status_label()
             return
 
@@ -1813,15 +2235,16 @@ class LauncherApp(ctk.CTk):
     def on_new_history(self) -> None:
         selected_character = self._selected_character()
         if not selected_character:
-            messagebox.showinfo("??????", "???????????????")
+            messagebox.showinfo("聊天記錄", "請先選擇角色後再新增聊天。")
             return
 
         self._force_new_history_on_start = True
         self.history_var.set("")
         self._sync_history_status_label()
+        self._refresh_history_transcript(force=True)
 
         if not port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.2):
-            self.log(f"[{log_ts()}] ????????????????????")
+            self.log(f"[{log_ts()}] 已標記為新增聊天，會在啟動角色時建立。")
             return
 
         threading.Thread(
@@ -1863,10 +2286,10 @@ class LauncherApp(ctk.CTk):
         desired_history_uid = self.history_var.get().strip()
         force_new_history = self._force_new_history_on_start
         if not character:
-            messagebox.showinfo("??????", "???????")
+            messagebox.showinfo("啟動角色", "請先選擇角色。")
             return
         if not project:
-            messagebox.showinfo("??????", "???????")
+            messagebox.showinfo("啟動角色", "請先選擇專案。")
             return
         threading.Thread(
             target=self._start_profile_flow,
@@ -2074,17 +2497,212 @@ class LauncherApp(ctk.CTk):
 
         threading.Thread(target=runner, daemon=True).start()
 
+    def _pet_control_endpoint(self, path: str) -> str:
+        if not path.startswith("/"):
+            path = "/" + path
+        return f"{self.cfg.pet_control_url}{path}"
+
+    def _set_pet_status_label(self, text: str) -> None:
+        if hasattr(self, "pet_status_label"):
+            self.pet_status_label.configure(text=text)
+
+    def _set_pet_shell_online(self, online: bool, text: Optional[str] = None) -> None:
+        self._pet_shell_online = online
+        if text is not None:
+            self._set_pet_status_label(text)
+
+    def _sync_pet_url_entries(self, base_url: str, ws_url: str) -> None:
+        focused = self.focus_get()
+        if getattr(self, "pet_base_url_entry", None) is not None and focused != self.pet_base_url_entry:
+            self.pet_base_url_var.set(base_url)
+        if getattr(self, "pet_ws_url_entry", None) is not None and focused != self.pet_ws_url_entry:
+            self.pet_ws_url_var.set(ws_url)
+
+    def _tick_pet_shell_status(self) -> None:
+        if not hasattr(self, "pet_status_label"):
+            return
+        try:
+            status = http_get_json(self._pet_control_endpoint("/status"), timeout=0.35)
+        except Exception:
+            self._set_pet_shell_online(False, "桌寵 shell 離線")
+            return
+
+        renderer = status.get("renderer") or {}
+        base_url = str(renderer.get("baseUrl") or self.pet_base_url_var.get() or "").strip()
+        ws_url = str(renderer.get("wsUrl") or self.pet_ws_url_var.get() or "").strip()
+        self._sync_pet_url_entries(base_url, ws_url)
+
+        ws_badge = str(renderer.get("wsBadge") or "").strip()
+        ai_state = str(renderer.get("aiState") or "").strip()
+        mode = str(status.get("mode") or "pet").strip()
+        summary = f"shell: {mode}"
+        if ws_badge:
+            summary += f" / {ws_badge}"
+        if ai_state:
+            summary += f" / {ai_state}"
+        self._set_pet_shell_online(True, summary)
+
+    def _run_pet_command(
+        self,
+        action: str,
+        *,
+        payload: Optional[dict] = None,
+        success_log: Optional[str] = None,
+    ) -> None:
+        def runner():
+            try:
+                body = {"action": action}
+                if payload:
+                    body.update(payload)
+                result = http_post_json(
+                    self._pet_control_endpoint("/command"),
+                    body,
+                    timeout=5.0,
+                )
+            except Exception as exc:
+                self.log(f"[{log_ts()}] pet shell 指令失敗（{action}）：{exc}")
+                self.after(0, lambda: self._set_pet_shell_online(False, "桌寵 shell 離線"))
+                return
+
+            renderer = result.get("renderer") or {}
+            base_url = str(renderer.get("baseUrl") or self.pet_base_url_var.get() or "").strip()
+            ws_url = str(renderer.get("wsUrl") or self.pet_ws_url_var.get() or "").strip()
+            self.after(0, lambda: self._sync_pet_url_entries(base_url, ws_url))
+            self.after(0, self._tick_pet_shell_status)
+            self.log(f"[{log_ts()}] {success_log or result.get('message') or f'已送出 {action}'}")
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def on_pet_refresh_status(self) -> None:
+        def runner():
+            try:
+                status = http_get_json(self._pet_control_endpoint("/status"), timeout=5.0)
+            except Exception as exc:
+                self.log(f"[{log_ts()}] 讀取桌寵 shell 狀態失敗：{exc}")
+                self.after(0, lambda: self._set_pet_shell_online(False, "桌寵 shell 離線"))
+                return
+
+            renderer = status.get("renderer") or {}
+            base_url = str(renderer.get("baseUrl") or self.pet_base_url_var.get() or "").strip()
+            ws_url = str(renderer.get("wsUrl") or self.pet_ws_url_var.get() or "").strip()
+            button_texts = renderer.get("buttonTexts") or []
+            ws_badge = str(renderer.get("wsBadge") or "").strip()
+            ai_state = str(renderer.get("aiState") or "").strip()
+
+            self.after(0, lambda: self._sync_pet_url_entries(base_url, ws_url))
+            self.after(0, self._tick_pet_shell_status)
+            self.log(
+                f"[{log_ts()}] pet shell 狀態：mode={status.get('mode')} ws={ws_badge or '-'} ai={ai_state or '-'} buttons={button_texts}"
+            )
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def on_pet_apply_backend_urls(self) -> None:
+        base_url = self.pet_base_url_var.get().strip()
+        ws_url = self.pet_ws_url_var.get().strip()
+        if not base_url or not ws_url:
+            messagebox.showinfo("桌寵控制", "請先填入 Base URL 和 WebSocket URL。")
+            return
+
+        def runner():
+            try:
+                result = http_post_json(
+                    self._pet_control_endpoint("/backend-config"),
+                    {
+                        "baseUrl": base_url,
+                        "wsUrl": ws_url,
+                        "reload": True,
+                    },
+                    timeout=8.0,
+                )
+            except Exception as exc:
+                self.log(f"[{log_ts()}] 套用桌寵端點失敗：{exc}")
+                self.after(0, lambda: self._set_pet_shell_online(False, "桌寵 shell 離線"))
+                return
+
+            self.after(0, lambda: self._sync_pet_url_entries(base_url, ws_url))
+            self.after(0, self._tick_pet_shell_status)
+            self.log(f"[{log_ts()}] {result.get('message') or '已套用桌寵端點並重新載入前端。'}")
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def on_pet_toggle_mic(self) -> None:
+        self._run_pet_command("mic-toggle", success_log="已送出桌寵麥克風切換。")
+
+    def on_pet_interrupt(self) -> None:
+        self._run_pet_command("interrupt", success_log="已送出桌寵打斷指令。")
+
+    def on_pet_toggle_camera(self) -> None:
+        self._run_pet_command("toggle-camera", success_log="已送出攝影機切換。")
+
+    def on_pet_toggle_screen(self) -> None:
+        self._run_pet_command("toggle-screen", success_log="已送出螢幕分享切換。")
+
+    def on_pet_toggle_browser(self) -> None:
+        self._run_pet_command("toggle-browser", success_log="已送出瀏覽器面板切換。")
+
+    def on_pet_toggle_subtitle(self) -> None:
+        self._run_pet_command("toggle-subtitle", success_log="已送出字幕框切換。")
+
     def on_open_web_ui(self) -> None:
         webbrowser.open(self.cfg.llm_url)
         self.log(f"[{log_ts()}] 已開啟 Web UI：{self.cfg.llm_url}")
 
+    def _pet_electron_runtime(self) -> tuple[Optional[Path], Optional[str]]:
+        pet_dir = self.cfg.pet_electron_dir
+        if not pet_dir.exists():
+            return None, "找不到 pet-electron 專案資料夾。"
+
+        electron_exe = pet_dir / "node_modules" / "electron" / "dist" / "electron.exe"
+        if electron_exe.exists():
+            return electron_exe, None
+
+        package_json = pet_dir / "package.json"
+        if package_json.exists():
+            return None, f"pet-electron 尚未安裝依賴，請先在 {pet_dir} 執行 npm install。"
+
+        return None, "pet-electron 缺少 package.json。"
+
+    def _launch_pet_electron(self) -> bool:
+        runtime_exe, reason = self._pet_electron_runtime()
+        if runtime_exe is None:
+            if reason:
+                self.log(f"[{log_ts()}] 新桌寵殼未啟動：{reason}")
+            return False
+
+        creationflags = 0
+        if os.name == "nt":
+            creationflags = (
+                getattr(subprocess, "DETACHED_PROCESS", 0)
+                | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            )
+
+        env = os.environ.copy()
+        env["KURO_BACKEND_BASE_URL"] = self.cfg.llm_url
+        env["KURO_BACKEND_WS_URL"] = f"ws://{self.cfg.llm_host}:{self.cfg.llm_port}/client-ws"
+        env["KURO_PET_CONTROL_HOST"] = self.cfg.pet_control_host
+        env["KURO_PET_CONTROL_PORT"] = str(self.cfg.pet_control_port)
+
+        subprocess.Popen(
+            [str(runtime_exe), "."],
+            cwd=str(self.cfg.pet_electron_dir),
+            creationflags=creationflags,
+            close_fds=True,
+            env=env,
+        )
+        self.log(f"[{log_ts()}] 已開啟自製桌寵殼：{self.cfg.pet_electron_dir}")
+        return True
+
     def on_open_electron(self) -> None:
         try:
+            if self.cfg.pet_electron_preferred and self._launch_pet_electron():
+                return
+
             if self.cfg.electron_lnk.exists():
                 os.startfile(str(self.cfg.electron_lnk))
-                self.log(f"[{log_ts()}] 已開啟 Electron：{self.cfg.electron_lnk}")
+                self.log(f"[{log_ts()}] 已開啟舊版 Electron：{self.cfg.electron_lnk}")
             else:
-                self.log(f"[{log_ts()}] 找不到 Electron 捷徑，改開 Web UI。")
+                self.log(f"[{log_ts()}] 找不到 Electron 執行檔，改開 Web UI。")
                 webbrowser.open(self.cfg.llm_url)
         except Exception as exc:
             self.log(f"[{log_ts()}] 開啟 Electron 失敗：{exc}")

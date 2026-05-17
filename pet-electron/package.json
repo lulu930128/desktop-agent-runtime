@@ -1,0 +1,20 @@
+{
+  "name": "kuro-pet-electron",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Source-controlled pet shell for the Kuro desktop companion.",
+  "main": "src/main.js",
+  "scripts": {
+    "prepare:renderer": "node scripts/prepare-renderer-assets.mjs",
+    "build:renderer": "npm run prepare:renderer && vite build --config vite.renderer.config.ts",
+    "check:renderer": "tsc --project tsconfig.renderer.json --noEmit",
+    "start": "npm run build:renderer && electron .",
+    "dev": "npm run build:renderer && electron ."
+  },
+  "devDependencies": {
+    "@types/node": "^25.8.0",
+    "electron": "^32.3.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.13"
+  }
+}

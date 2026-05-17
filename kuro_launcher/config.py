@@ -47,6 +47,8 @@ class AppConfig:
     runtime_conf_path: Path
     logs_dir: Path
     electron_lnk: Path
+    pet_electron_dir: Path
+    pet_electron_preferred: bool
 
     bridge_host: str
     bridge_port: int
@@ -54,6 +56,8 @@ class AppConfig:
     tts_port: int
     llm_host: str
     llm_port: int
+    pet_control_host: str
+    pet_control_port: int
 
     llm_provider_env: str
     llm_default_provider: str
@@ -82,6 +86,10 @@ class AppConfig:
     @property
     def llm_url(self) -> str:
         return f"http://{self.llm_host}:{self.llm_port}"
+
+    @property
+    def pet_control_url(self) -> str:
+        return f"http://{self.pet_control_host}:{self.pet_control_port}"
 
 
 def load_config(config_path: Path) -> AppConfig:
@@ -138,11 +146,17 @@ def load_config(config_path: Path) -> AppConfig:
         str(paths.get("electron_lnk") or ""),
         mapping,
     ).resolve()
+    pet_electron_dir = _resolve_path(
+        str(paths.get("pet_electron_dir") or (root / "pet-electron")),
+        mapping,
+    ).resolve()
+    pet_electron_preferred = bool(paths.get("pet_electron_preferred", True))
 
     net = cfg.get("network") or {}
     bridge_net = net.get("bridge") or {}
     tts_net = net.get("tts") or {}
     llm_net = net.get("llm") or {}
+    pet_control_net = net.get("pet_control") or {}
 
     llm = cfg.get("llm") or {}
     openai = llm.get("openai") or {}
@@ -164,12 +178,16 @@ def load_config(config_path: Path) -> AppConfig:
         runtime_conf_path=runtime_conf_path,
         logs_dir=logs_dir,
         electron_lnk=electron_lnk,
+        pet_electron_dir=pet_electron_dir,
+        pet_electron_preferred=pet_electron_preferred,
         bridge_host=str(bridge_net.get("host", "127.0.0.1")),
         bridge_port=int(bridge_net.get("port", 1188)),
         tts_host=str(tts_net.get("host", "127.0.0.1")),
         tts_port=int(tts_net.get("port", 9881)),
         llm_host=str(llm_net.get("host", "127.0.0.1")),
         llm_port=int(llm_net.get("port", 23456)),
+        pet_control_host=str(pet_control_net.get("host", "127.0.0.1")),
+        pet_control_port=int(pet_control_net.get("port", 23567)),
         llm_provider_env=str(llm.get("provider_env", "KURO_LLM_PROVIDER")),
         llm_default_provider=str(llm.get("default_provider", "openai_llm")),
         openai_model_env=str(openai.get("model_env", "OPENAI_LLM_MODEL")),

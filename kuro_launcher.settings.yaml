@@ -13,6 +13,8 @@ paths:
   runtime_conf_path: "${open_llm_vtuber_dir}\\conf.launcher_runtime.yaml"
   logs_dir: "${ROOT}\\launcher_logs"
   electron_lnk: "${ROOT}\\open-llm-vtuber-electron\\open-llm-vtuber-electron.exe"
+  pet_electron_dir: "${ROOT}\\pet-electron"
+  pet_electron_preferred: true
 
 network:
   bridge:
@@ -24,6 +26,9 @@ network:
   llm:
     host: "127.0.0.1"
     port: 23456
+  pet_control:
+    host: "127.0.0.1"
+    port: 23567
 
 bridge:
   translate_path: "/translate"

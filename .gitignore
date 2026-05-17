@@ -5,6 +5,9 @@ backup/
 _archive/
 downloads/
 open-llm-vtuber-electron/
+pet-electron/node_modules/
+pet-electron/dist/
+pet-electron/renderer-dist/
 
 # Python/runtime artifacts
 __pycache__/

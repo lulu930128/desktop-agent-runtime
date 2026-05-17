@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'unsafe-inline' 'self'; script-src 'unsafe-inline' 'self';"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kuro Reader</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #eef1f5;
+        --panel: rgba(255, 255, 255, 0.82);
+        --border: rgba(148, 163, 184, 0.28);
+        --text: #263448;
+        --muted: #64748b;
+        --accent: #8b5cf6;
+        --accent-hover: #7c3aed;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family: "Microsoft JhengHei UI", "Segoe UI", sans-serif;
+        background: transparent;
+        color: var(--text);
+      }
+
+      body {
+        padding: 14px;
+      }
+
+      .shell {
+        width: 100%;
+        height: 100%;
+        border-radius: 18px;
+        background: linear-gradient(180deg, rgba(241, 245, 249, 0.96), rgba(233, 238, 245, 0.94));
+        border: 1px solid var(--border);
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        backdrop-filter: blur(14px);
+      }
+
+      .titlebar {
+        height: 42px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 12px 0 14px;
+        -webkit-app-region: drag;
+        user-select: none;
+      }
+
+      .title {
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0;
+      }
+
+      .status {
+        font-size: 12px;
+        color: var(--muted);
+        margin-left: 8px;
+      }
+
+      .close {
+        -webkit-app-region: no-drag;
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        width: 28px;
+        height: 28px;
+        border-radius: 999px;
+        cursor: pointer;
+        font-size: 16px;
+      }
+
+      .close:hover {
+        background: rgba(148, 163, 184, 0.14);
+        color: var(--text);
+      }
+
+      .content {
+        display: grid;
+        grid-template-rows: 1fr auto;
+        gap: 12px;
+        padding: 0 14px 14px;
+        min-height: 0;
+      }
+
+      .reply {
+        border-radius: 16px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        padding: 14px 16px;
+        font-size: 14px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        overflow: auto;
+      }
+
+      .reply.empty {
+        color: var(--muted);
+      }
+
+      .composer {
+        border-radius: 16px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        padding: 10px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        align-items: end;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 84px;
+        max-height: 140px;
+        resize: none;
+        border: 0;
+        outline: none;
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+        line-height: 1.5;
+      }
+
+      textarea::placeholder {
+        color: #94a3b8;
+      }
+
+      .send {
+        align-self: stretch;
+        min-width: 92px;
+        border: 0;
+        border-radius: 14px;
+        background: var(--accent);
+        color: white;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+        padding: 0 16px;
+      }
+
+      .send:hover {
+        background: var(--accent-hover);
+      }
+
+      .send:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="titlebar">
+        <div>
+          <span class="title">Kuro Reader</span>
+          <span class="status" id="status">idle</span>
+        </div>
+        <button class="close" id="closeBtn" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="content">
+        <div class="reply empty" id="replyBox">這裡會顯示最新一次回覆。</div>
+        <div class="composer">
+          <textarea id="inputBox" placeholder="輸入訊息..." spellcheck="false"></textarea>
+          <button class="send" id="sendBtn" type="button">送出</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const replyBox = document.getElementById("replyBox");
+      const inputBox = document.getElementById("inputBox");
+      const sendBtn = document.getElementById("sendBtn");
+      const statusLabel = document.getElementById("status");
+      const closeBtn = document.getElementById("closeBtn");
+
+      let currentState = {
+        aiState: "idle",
+        latestAssistantText: "",
+        sending: false
+      };
+
+      function render(state) {
+        currentState = { ...currentState, ...(state || {}) };
+        statusLabel.textContent = currentState.aiState || "idle";
+
+        const text = String(currentState.latestAssistantText || "").trim();
+        if (text) {
+          replyBox.textContent = text;
+          replyBox.classList.remove("empty");
+        } else {
+          replyBox.textContent = "這裡會顯示最新一次回覆。";
+          replyBox.classList.add("empty");
+        }
+
+        sendBtn.disabled = currentState.sending;
+      }
+
+      async function sendCurrentText() {
+        const text = inputBox.value.trim();
+        if (!text || currentState.sending) {
+          return;
+        }
+
+        render({ sending: true });
+        try {
+          const result = await window.kuroReader.sendText(text);
+          if (result && result.ok) {
+            inputBox.value = "";
+          } else {
+            console.warn("[kuro-reader] send failed", result);
+          }
+        } catch (error) {
+          console.warn("[kuro-reader] send exception", error);
+        } finally {
+          render({ sending: false });
+        }
+      }
+
+      sendBtn.addEventListener("click", sendCurrentText);
+      closeBtn.addEventListener("click", () => window.kuroReader.closeWindow());
+      inputBox.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          sendCurrentText();
+        }
+      });
+
+      window.kuroReader.onState((state) => render(state));
+      window.kuroReader.getState().then((state) => render(state));
+    </script>
+  </body>
+</html>
