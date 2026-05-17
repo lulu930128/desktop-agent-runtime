@@ -1,7 +1,8 @@
 import "./styles.css";
 import { PetLive2DRenderer } from "./live2d/pet-live2d-renderer";
 
-const RENDERER_BUILD_TAG = "custom-renderer-2026-05-17a";
+const RENDERER_BUILD_TAG = "custom-renderer-2026-05-17b";
+const MODEL_ZOOM_STORAGE_KEY = "kuroPetModelZoomScale";
 console.info("[pet-renderer] boot", { build: RENDERER_BUILD_TAG });
 
 const originalFetch = window.fetch.bind(window);
@@ -37,6 +38,10 @@ type RendererState = {
   wsUrl: string;
   baseUrl: string;
   currentModelUrl: string;
+  confName: string;
+  confUid: string;
+  currentHistoryUid: string;
+  currentHistoryTitle: string;
 };
 
 type BackendConfig = {
@@ -48,6 +53,22 @@ function normalizeText(value: unknown): string {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function mergeTextFragments(parts: string[]): string {
+  let merged = "";
+  for (const part of parts) {
+    if (!part) {
+      continue;
+    }
+    if (!merged) {
+      merged = part;
+      continue;
+    }
+    const needsSpace = /[A-Za-z0-9]$/.test(merged) && /^[A-Za-z0-9]/.test(part);
+    merged += needsSpace ? ` ${part}` : part;
+  }
+  return merged;
+}
+
 function buildAbsoluteModelUrl(baseUrl: string, relativeOrAbsoluteUrl: string): string {
   try {
     return new URL(relativeOrAbsoluteUrl, baseUrl).toString();
@@ -56,15 +77,52 @@ function buildAbsoluteModelUrl(baseUrl: string, relativeOrAbsoluteUrl: string): 
   }
 }
 
+function loadStoredModelZoomScale(): number {
+  try {
+    const raw = window.localStorage.getItem(MODEL_ZOOM_STORAGE_KEY);
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : 1.0;
+  } catch {
+    return 1.0;
+  }
+}
+
+function storeModelZoomScale(zoomScale: number): void {
+  try {
+    window.localStorage.setItem(MODEL_ZOOM_STORAGE_KEY, String(zoomScale));
+  } catch {
+    // Ignore localStorage write failures.
+  }
+}
+
+function resolveInitialZoomScale(configZoomScale: unknown): number {
+  const normalized = Number(configZoomScale);
+  const stored = loadStoredModelZoomScale();
+  if (Number.isFinite(stored) && Math.abs(stored - 1.0) > 0.0001) {
+    if (!Number.isFinite(normalized) || Math.abs(normalized - 1.0) <= 0.0001) {
+      return stored;
+    }
+  }
+  if (Number.isFinite(normalized)) {
+    return normalized;
+  }
+  return stored;
+}
+
 class BackendClient {
   private config: BackendConfig;
   private socket: WebSocket | null;
   private renderer: PetLive2DRenderer;
   private currentAudio: HTMLAudioElement | null;
+  private audioQueue: string[];
   private readonly updateState: (patch: Partial<RendererState>) => void;
   private reconnectTimer: number | null;
   private reconnectAttempt: number;
   private shouldReconnect: boolean;
+  private assistantTurnParts: string[];
+  private assistantTurnText: string;
+  private backendSynthComplete: boolean;
+  private playbackCompleteSent: boolean;
 
   public constructor(
     config: BackendConfig,
@@ -75,14 +133,21 @@ class BackendClient {
     this.renderer = renderer;
     this.socket = null;
     this.currentAudio = null;
+    this.audioQueue = [];
     this.updateState = updateState;
     this.reconnectTimer = null;
     this.reconnectAttempt = 0;
     this.shouldReconnect = true;
+    this.assistantTurnParts = [];
+    this.assistantTurnText = "";
+    this.backendSynthComplete = false;
+    this.playbackCompleteSent = false;
   }
 
   public connect(): void {
     this.clearReconnectTimer();
+    this.stopAudioPlayback(true);
+    this.resetPlaybackTurn();
     if (this.socket) {
       this.socket.close();
       this.socket = null;
@@ -126,6 +191,11 @@ class BackendClient {
       }
       this.reconnectAttempt = 0;
       console.info("[pet-renderer] Backend WebSocket connected");
+      socket.send(
+        JSON.stringify({
+          type: "create-new-history"
+        })
+      );
       this.updateState({
         wsConnected: true,
         aiState: "idle"
@@ -172,7 +242,7 @@ class BackendClient {
   public disconnect(): void {
     this.shouldReconnect = false;
     this.clearReconnectTimer();
-    this.stopAudioPlayback();
+    this.stopAudioPlayback(true);
     if (this.socket) {
       this.socket.close();
       this.socket = null;
@@ -214,8 +284,12 @@ class BackendClient {
         text: normalized
       })
     );
+    this.resetAssistantTurn();
+    this.stopAudioPlayback(true);
+    this.resetPlaybackTurn();
     this.updateState({
       latestUserText: normalized,
+      latestAssistantText: "",
       aiState: "thinking"
     });
     return { ok: true, text: normalized };
@@ -231,6 +305,8 @@ class BackendClient {
         text: "launcher-interrupt"
       })
     );
+    this.stopAudioPlayback(true);
+    this.resetPlaybackTurn();
     this.updateState({
       aiState: "interrupted"
     });
@@ -247,59 +323,163 @@ class BackendClient {
     );
   }
 
-  private stopAudioPlayback(): void {
-    if (!this.currentAudio) {
-      return;
+  private stopAudioPlayback(clearQueue = false): void {
+    if (clearQueue) {
+      this.audioQueue = [];
     }
-    this.currentAudio.pause();
-    this.currentAudio.src = "";
-    this.currentAudio = null;
+
+    if (this.currentAudio) {
+      this.currentAudio.pause();
+      this.currentAudio.src = "";
+      this.currentAudio = null;
+    }
   }
 
-  private playAudioPayload(audioBase64: string | null, displayText: string): void {
+  private resetPlaybackTurn(): void {
+    this.audioQueue = [];
+    this.backendSynthComplete = false;
+    this.playbackCompleteSent = false;
+  }
+
+  private resetAssistantTurn(): void {
+    this.assistantTurnParts = [];
+    this.assistantTurnText = "";
+  }
+
+  private appendAssistantTextFragment(value: unknown): string {
+    const fragment = normalizeText(value);
+    if (!fragment) {
+      return this.assistantTurnText;
+    }
+
+    if (this.assistantTurnText === fragment) {
+      return this.assistantTurnText;
+    }
+
+    if (this.assistantTurnText && fragment.startsWith(this.assistantTurnText)) {
+      this.assistantTurnParts = [fragment];
+      this.assistantTurnText = fragment;
+      return this.assistantTurnText;
+    }
+
+    if (this.assistantTurnText && this.assistantTurnText.includes(fragment)) {
+      return this.assistantTurnText;
+    }
+
+    const lastPart = this.assistantTurnParts[this.assistantTurnParts.length - 1];
+    if (lastPart === fragment) {
+      return this.assistantTurnText;
+    }
+
+    this.assistantTurnParts.push(fragment);
+    this.assistantTurnText = mergeTextFragments(this.assistantTurnParts);
+    return this.assistantTurnText;
+  }
+
+  private setAssistantText(value: unknown): string {
+    const text = normalizeText(value);
+    if (!text) {
+      return this.assistantTurnText;
+    }
+
+    if (text === "Connection established" || text === "Thinking...") {
+      return this.assistantTurnText;
+    }
+
+    if (!this.assistantTurnText || text.startsWith(this.assistantTurnText)) {
+      this.assistantTurnParts = [text];
+      this.assistantTurnText = text;
+      return this.assistantTurnText;
+    }
+
+    if (this.assistantTurnText.includes(text)) {
+      return this.assistantTurnText;
+    }
+
+    return this.appendAssistantTextFragment(text);
+  }
+
+  private playAudioPayload(audioBase64: string | null): void {
     if (!audioBase64) {
-      this.updateState({
-        latestAssistantText: displayText,
-        aiState: "idle"
-      });
-      this.sendPlaybackComplete();
+      this.maybeNotifyPlaybackComplete();
       return;
     }
 
-    this.stopAudioPlayback();
+    this.audioQueue.push(audioBase64);
+    this.playbackCompleteSent = false;
+    this.updateState({
+      aiState: "speaking"
+    });
+    this.playNextQueuedAudio();
+  }
+
+  private playNextQueuedAudio(): void {
+    if (this.currentAudio) {
+      return;
+    }
+
+    const audioBase64 = this.audioQueue.shift();
+    if (!audioBase64) {
+      this.maybeNotifyPlaybackComplete();
+      return;
+    }
+
     const audio = new Audio(`data:audio/wav;base64,${audioBase64}`);
     this.currentAudio = audio;
-
-    audio.addEventListener("ended", () => {
-      if (this.currentAudio === audio) {
-        this.currentAudio = null;
-      }
-      this.updateState({
-        aiState: "idle"
-      });
-      this.sendPlaybackComplete();
+    this.updateState({
+      aiState: "speaking"
     });
 
-    audio.addEventListener("error", () => {
+    let settled = false;
+    const finishPlayback = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
       if (this.currentAudio === audio) {
         this.currentAudio = null;
       }
-      this.updateState({
-        aiState: "idle"
-      });
-      this.sendPlaybackComplete();
+      this.playNextQueuedAudio();
+    };
+
+    audio.addEventListener("ended", finishPlayback);
+
+    audio.addEventListener("error", () => {
+      console.warn("[pet-renderer] Audio element reported playback error");
+      finishPlayback();
     });
 
     void audio.play().catch((error) => {
       console.warn("[pet-renderer] Audio playback failed", error);
-      if (this.currentAudio === audio) {
-        this.currentAudio = null;
-      }
-      this.updateState({
-        aiState: "idle"
-      });
-      this.sendPlaybackComplete();
+      finishPlayback();
     });
+  }
+
+  private markBackendSynthComplete(): void {
+    this.backendSynthComplete = true;
+    this.maybeNotifyPlaybackComplete();
+  }
+
+  private maybeNotifyPlaybackComplete(): void {
+    if (this.currentAudio || this.audioQueue.length > 0) {
+      return;
+    }
+
+    this.updateState({
+      aiState: "idle"
+    });
+
+    if (!this.backendSynthComplete || this.playbackCompleteSent) {
+      return;
+    }
+
+    this.playbackCompleteSent = true;
+    window.setTimeout(() => {
+      if (this.currentAudio || this.audioQueue.length > 0 || !this.backendSynthComplete || !this.playbackCompleteSent) {
+        return;
+      }
+      this.sendPlaybackComplete();
+    }, 50);
   }
 
   private handleMessage(payload: Record<string, any>): void {
@@ -317,7 +497,44 @@ class BackendClient {
         });
         this.renderer.loadModel(absoluteUrl, scaleWidth);
         this.updateState({
-          currentModelUrl: absoluteUrl
+          currentModelUrl: absoluteUrl,
+          confName: normalizeText(payload.conf_name || ""),
+          confUid: normalizeText(payload.conf_uid || "")
+        });
+      }
+      return;
+    }
+
+    if (messageType === "history-list") {
+      const histories = Array.isArray(payload.histories) ? payload.histories : [];
+      const selected = histories[0] || {};
+      const historyUid = normalizeText(selected.uid || selected.history_uid || "");
+      if (historyUid) {
+        this.updateState({
+          currentHistoryUid: historyUid,
+          currentHistoryTitle: normalizeText(selected.title || "")
+        });
+      }
+      return;
+    }
+
+    if (messageType === "new-history-created") {
+      const historyUid = normalizeText(payload.history_uid || "");
+      if (historyUid) {
+        this.updateState({
+          currentHistoryUid: historyUid,
+          currentHistoryTitle: ""
+        });
+      }
+      return;
+    }
+
+    if (messageType === "config-switched") {
+      const historyUid = normalizeText(payload.history_uid || "");
+      if (historyUid) {
+        this.updateState({
+          currentHistoryUid: historyUid,
+          currentHistoryTitle: ""
         });
       }
       return;
@@ -326,22 +543,35 @@ class BackendClient {
     if (messageType === "audio") {
       const displayText = normalizeText(payload.display_text?.text || "");
       if (displayText) {
+        const assistantText = this.appendAssistantTextFragment(displayText);
         this.updateState({
-          latestAssistantText: displayText,
+          latestAssistantText: assistantText,
           aiState: payload.audio ? "speaking" : "idle"
         });
       }
-      this.playAudioPayload(payload.audio || null, displayText);
+      this.playAudioPayload(payload.audio || null);
+      return;
+    }
+
+    if (messageType === "backend-synth-complete") {
+      this.markBackendSynthComplete();
       return;
     }
 
     if (messageType === "control") {
       const text = String(payload.text || "");
       if (text === "conversation-chain-start") {
-        this.updateState({ aiState: "thinking" });
+        this.stopAudioPlayback(true);
+        this.resetPlaybackTurn();
+        this.resetAssistantTurn();
+        this.updateState({ latestAssistantText: "", aiState: "thinking" });
       } else if (text === "conversation-chain-end") {
-        this.updateState({ aiState: "idle" });
+        this.updateState({
+          aiState: this.currentAudio || this.audioQueue.length > 0 ? "speaking" : "idle"
+        });
       } else if (text === "interrupt" || text === "interrupt-signal") {
+        this.stopAudioPlayback(true);
+        this.resetPlaybackTurn();
         this.updateState({ aiState: "interrupted" });
       } else if (text === "audio-play-start") {
         this.updateState({ aiState: "speaking" });
@@ -350,8 +580,8 @@ class BackendClient {
     }
 
     if (messageType === "full-text") {
-      const text = normalizeText(payload.text || "");
-      if (text && text !== "Connection established") {
+      const text = this.setAssistantText(payload.text || "");
+      if (text) {
         this.updateState({
           latestAssistantText: text
         });
@@ -392,13 +622,11 @@ if (!root) {
 root.innerHTML = `
   <div class="pet-renderer">
     <canvas id="live2d-canvas"></canvas>
-    <div class="pet-status" id="pet-status">idle</div>
   </div>
 `;
 
 const canvas = document.getElementById("live2d-canvas");
-const status = document.getElementById("pet-status");
-if (!(canvas instanceof HTMLCanvasElement) || !(status instanceof HTMLDivElement)) {
+if (!(canvas instanceof HTMLCanvasElement)) {
   throw new Error("Renderer DOM bootstrap failed.");
 }
 
@@ -409,18 +637,24 @@ const rendererState: RendererState = {
   latestUserText: "",
   wsUrl: "",
   baseUrl: "",
-  currentModelUrl: ""
+  currentModelUrl: "",
+  confName: "",
+  confUid: "",
+  currentHistoryUid: "",
+  currentHistoryTitle: ""
 };
 
 const reportState = (patch: Partial<RendererState>) => {
   Object.assign(rendererState, patch);
-  status.textContent = rendererState.aiState;
   window.__kuroPetRendererState = { ...rendererState };
   window.kuroPetElectron.reportFrontendState({ ...rendererState });
 };
 
-const renderer = new PetLive2DRenderer(canvas);
 const initialConfig = window.kuroPetElectron.getInitialConfig();
+const renderer = new PetLive2DRenderer(canvas);
+renderer.setZoomScale(resolveInitialZoomScale(initialConfig.zoomScale));
+storeModelZoomScale(renderer.getZoomScale());
+window.kuroPetElectron.setPetWindowZoom(renderer.getZoomScale());
 const client = new BackendClient(
   {
     baseUrl: initialConfig.baseUrl,
@@ -440,28 +674,74 @@ reportState({
 });
 client.connect();
 
-canvas.addEventListener("pointerenter", () => {
-  window.kuroPetElectron.updateComponentHover("live2d-model", true);
-});
+let hoverOnModel = false;
+let draggingModel = false;
 
-canvas.addEventListener("pointerleave", () => {
-  window.kuroPetElectron.updateComponentHover("live2d-model", false);
-});
+function setModelHoverState(nextHover: boolean): void {
+  if (hoverOnModel === nextHover) {
+    return;
+  }
+  hoverOnModel = nextHover;
+  canvas.style.cursor = draggingModel ? "grabbing" : hoverOnModel ? "grab" : "default";
+  window.kuroPetElectron.updateComponentHover("live2d-model", hoverOnModel);
+}
+
+function refreshModelHover(clientX: number, clientY: number): boolean {
+  const nextHover = renderer.hitTestCanvasPoint(clientX, clientY);
+  setModelHoverState(nextHover);
+  return nextHover;
+}
 
 canvas.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) {
     return;
   }
+
+  if (!refreshModelHover(event.clientX, event.clientY)) {
+    return;
+  }
+
+  draggingModel = true;
+  canvas.style.cursor = "grabbing";
   event.preventDefault();
   window.kuroPetElectron.startWindowDrag(event.screenX, event.screenY);
 });
 
+canvas.addEventListener(
+  "wheel",
+  (event) => {
+    if (!refreshModelHover(event.clientX, event.clientY)) {
+      return;
+    }
+
+    event.preventDefault();
+    const zoomScale = renderer.adjustZoomByWheel(event.deltaY);
+    storeModelZoomScale(zoomScale);
+    window.kuroPetElectron.setPetWindowZoom(zoomScale);
+  },
+  { passive: false }
+);
+
 window.addEventListener("pointermove", (event) => {
-  window.kuroPetElectron.updateWindowDrag(event.screenX, event.screenY);
+  if (draggingModel) {
+    window.kuroPetElectron.updateWindowDrag(event.screenX, event.screenY);
+    return;
+  }
+
+  refreshModelHover(event.clientX, event.clientY);
 });
 
 window.addEventListener("pointerup", () => {
+  draggingModel = false;
+  canvas.style.cursor = hoverOnModel ? "grab" : "default";
   window.kuroPetElectron.endWindowDrag();
+});
+
+canvas.addEventListener("pointerleave", () => {
+  if (draggingModel) {
+    return;
+  }
+  setModelHoverState(false);
 });
 
 window.addEventListener("contextmenu", (event) => {
@@ -487,6 +767,7 @@ window.addEventListener(
   "beforeunload",
   () => {
     unsubscribe();
+    setModelHoverState(false);
     client.disconnect();
     renderer.dispose();
   },

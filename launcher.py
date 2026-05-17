@@ -272,6 +272,7 @@ class LauncherApp(ctk.CTk):
         self._force_new_history_on_start = False
         self._transcript_signature = ""
         self._pet_shell_online = False
+        self._runtime_history_uid = ""
 
         self.title("Kuro Launcher")
         self.geometry("1380x820")
@@ -2518,6 +2519,47 @@ class LauncherApp(ctk.CTk):
         if getattr(self, "pet_ws_url_entry", None) is not None and focused != self.pet_ws_url_entry:
             self.pet_ws_url_var.set(ws_url)
 
+    def _sync_runtime_history_selection(self, renderer: dict) -> None:
+        history_uid = str(
+            renderer.get("currentHistoryUid")
+            or renderer.get("current_history_uid")
+            or ""
+        ).strip()
+        if not history_uid or self._force_new_history_on_start:
+            return
+        self._runtime_history_uid = history_uid
+
+        character = self._selected_character()
+        if character is None:
+            return
+
+        runtime_conf_uid = str(renderer.get("confUid") or renderer.get("conf_uid") or "").strip()
+        if runtime_conf_uid and character.conf_uid and runtime_conf_uid != character.conf_uid:
+            return
+
+        current = self.history_var.get().strip()
+        if current == history_uid:
+            self._refresh_history_transcript()
+            return
+
+        if current and current in self.history_records:
+            self._refresh_history_transcript()
+            return
+
+        if history_uid not in self.history_records:
+            refreshed_records = self._load_history_records(character)
+            if current and current in refreshed_records:
+                self.history_records = refreshed_records
+                self._sync_history_status_label()
+                self._refresh_history_transcript(force=True)
+                return
+            if history_uid not in refreshed_records:
+                return
+            self.history_records = refreshed_records
+
+        self.history_var.set(history_uid)
+        self._refresh_history_list()
+
     def _tick_pet_shell_status(self) -> None:
         if not hasattr(self, "pet_status_label"):
             return
@@ -2531,6 +2573,7 @@ class LauncherApp(ctk.CTk):
         base_url = str(renderer.get("baseUrl") or self.pet_base_url_var.get() or "").strip()
         ws_url = str(renderer.get("wsUrl") or self.pet_ws_url_var.get() or "").strip()
         self._sync_pet_url_entries(base_url, ws_url)
+        self._sync_runtime_history_selection(renderer)
 
         ws_badge = str(renderer.get("wsBadge") or "").strip()
         ai_state = str(renderer.get("aiState") or "").strip()
@@ -2590,6 +2633,7 @@ class LauncherApp(ctk.CTk):
             ai_state = str(renderer.get("aiState") or "").strip()
 
             self.after(0, lambda: self._sync_pet_url_entries(base_url, ws_url))
+            self.after(0, lambda r=renderer: self._sync_runtime_history_selection(r))
             self.after(0, self._tick_pet_shell_status)
             self.log(
                 f"[{log_ts()}] pet shell 狀態：mode={status.get('mode')} ws={ws_badge or '-'} ai={ai_state or '-'} buttons={button_texts}"

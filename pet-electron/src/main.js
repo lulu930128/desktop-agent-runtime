@@ -25,6 +25,14 @@ const rendererEntry = path.join(repoRoot, "pet-electron", "renderer-dist", "inde
 const iconPath = path.join(repoRoot, "Open-LLM-VTuber", "frontend", "favicon.ico");
 const readerEntry = path.join(__dirname, "reader-window.html");
 const readerPreloadPath = path.join(__dirname, "reader-preload.js");
+const MIN_PET_ZOOM_SCALE = 0.55;
+const MAX_PET_ZOOM_SCALE = 2.25;
+const DEFAULT_PET_BOUNDS = cloneDefaultState().boundsByMode.pet;
+const BASE_PET_WINDOW_WIDTH = DEFAULT_PET_BOUNDS.width;
+const BASE_PET_WINDOW_HEIGHT = DEFAULT_PET_BOUNDS.height;
+const MIN_PET_WINDOW_WIDTH = 280;
+const MIN_PET_WINDOW_HEIGHT = 420;
+const MIN_PET_VISIBLE_MARGIN = 80;
 
 let mainWindow = null;
 let readerWindow = null;
@@ -40,8 +48,20 @@ let latestFrontendState = {
   latestAssistantText: "",
   latestUserText: "",
   wsUrl: process.env.KURO_BACKEND_WS_URL || "",
-  baseUrl: process.env.KURO_BACKEND_BASE_URL || ""
+  baseUrl: process.env.KURO_BACKEND_BASE_URL || "",
+  confName: "",
+  confUid: "",
+  currentHistoryUid: "",
+  currentHistoryTitle: ""
 };
+
+function normalizePetZoomScale(value) {
+  const zoomScale = Number(value);
+  if (!Number.isFinite(zoomScale)) {
+    return 1;
+  }
+  return Math.max(MIN_PET_ZOOM_SCALE, Math.min(MAX_PET_ZOOM_SCALE, zoomScale));
+}
 
 function shouldUseCustomRenderer() {
   return fs.existsSync(rendererEntry);
@@ -212,6 +232,42 @@ function clampReaderBounds(bounds) {
   return clampBoundsToVirtualDesktopWithOverflow(bounds, 160);
 }
 
+function scaleBoundsAroundCenter(bounds, scaleRatio) {
+  const ratio = Number.isFinite(scaleRatio) ? scaleRatio : 1;
+  const nextWidth = Math.max(MIN_PET_WINDOW_WIDTH, Math.round(bounds.width * ratio));
+  const nextHeight = Math.max(MIN_PET_WINDOW_HEIGHT, Math.round(bounds.height * ratio));
+
+  return {
+    x: Math.round(bounds.x - (nextWidth - bounds.width) / 2),
+    y: Math.round(bounds.y - (nextHeight - bounds.height) / 2),
+    width: nextWidth,
+    height: nextHeight
+  };
+}
+
+function buildBoundsAroundCenter(centerPoint, width, height) {
+  const nextWidth = Math.max(MIN_PET_WINDOW_WIDTH, Math.round(width));
+  const nextHeight = Math.max(MIN_PET_WINDOW_HEIGHT, Math.round(height));
+  return {
+    x: Math.round(centerPoint.x - nextWidth / 2),
+    y: Math.round(centerPoint.y - nextHeight / 2),
+    width: nextWidth,
+    height: nextHeight
+  };
+}
+
+function getCurrentWindowCenter(bounds) {
+  return {
+    x: bounds.x + bounds.width / 2,
+    y: bounds.y + bounds.height / 2
+  };
+}
+
+function getPetWindowVisibleMargin(bounds) {
+  const shortestEdge = Math.min(bounds.width, bounds.height);
+  return Math.max(MIN_PET_VISIBLE_MARGIN, Math.round(shortestEdge * 0.08));
+}
+
 function resolveTargetBoundsForMode(mode) {
   if (mode === "pet" && appState.petSpanAllDisplays) {
     return getVirtualWorkAreaBounds();
@@ -219,7 +275,10 @@ function resolveTargetBoundsForMode(mode) {
 
   const requestedBounds = getWindowBoundsForMode(mode);
   if (mode === "pet") {
-    return clampBoundsToVirtualDesktopWithOverflow(requestedBounds);
+    return clampBoundsToVirtualDesktopWithOverflow(
+      requestedBounds,
+      getPetWindowVisibleMargin(requestedBounds)
+    );
   }
 
   return clampBoundsToDisplay(requestedBounds, findDisplayForBounds(requestedBounds));
@@ -238,6 +297,49 @@ function applyIgnoreMouseState() {
   mainWindow.setIgnoreMouseEvents(shouldIgnore, { forward: true });
 }
 
+function setPetWindowZoom(zoomScale, options = {}) {
+  const normalizedZoomScale = normalizePetZoomScale(zoomScale);
+
+  appState.petZoomScale = normalizedZoomScale;
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    saveCurrentState();
+    return false;
+  }
+
+  if (appState.mode !== "pet" || appState.petSpanAllDisplays) {
+    saveCurrentState();
+    return false;
+  }
+
+  const currentBounds = mainWindow.getBounds();
+  const currentCenter = getCurrentWindowCenter(currentBounds);
+  const targetBounds = buildBoundsAroundCenter(
+    currentCenter,
+    BASE_PET_WINDOW_WIDTH * normalizedZoomScale,
+    BASE_PET_WINDOW_HEIGHT * normalizedZoomScale
+  );
+  const nextBounds = clampBoundsToVirtualDesktopWithOverflow(
+    targetBounds,
+    getPetWindowVisibleMargin(targetBounds)
+  );
+
+  mainWindow.setBounds(nextBounds, false);
+  setBoundsForCurrentMode(nextBounds);
+  return true;
+}
+
+function adjustPetWindowScale(scaleRatio) {
+  const ratio = Number.isFinite(scaleRatio) ? Number(scaleRatio) : 1;
+  if (ratio <= 0) {
+    return false;
+  }
+
+  return setPetWindowZoom(normalizePetZoomScale(appState.petZoomScale) * ratio, {
+    previousZoomScale: normalizePetZoomScale(appState.petZoomScale)
+  });
+}
+
 function getReaderStatePayload() {
   return {
     ok: true,
@@ -247,6 +349,10 @@ function getReaderStatePayload() {
     latestUserText: latestFrontendState.latestUserText || "",
     wsUrl: latestFrontendState.wsUrl || "",
     baseUrl: latestFrontendState.baseUrl || "",
+    confName: latestFrontendState.confName || "",
+    confUid: latestFrontendState.confUid || "",
+    currentHistoryUid: latestFrontendState.currentHistoryUid || "",
+    currentHistoryTitle: latestFrontendState.currentHistoryTitle || "",
     readerVisible: Boolean(readerWindow && !readerWindow.isDestroyed() && readerWindow.isVisible())
   };
 }
@@ -489,6 +595,9 @@ async function handleControlAction(action) {
     case "reload-frontend":
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.reloadIgnoringCache();
+      }
+      if (readerWindow && !readerWindow.isDestroyed()) {
+        readerWindow.webContents.reloadIgnoringCache();
       }
       return { ok: true, action };
     case "show-pet":
@@ -1168,8 +1277,8 @@ function createWindow() {
     y: bounds.y,
     width: bounds.width,
     height: bounds.height,
-    minWidth: 320,
-    minHeight: 520,
+    minWidth: MIN_PET_WINDOW_WIDTH,
+    minHeight: MIN_PET_WINDOW_HEIGHT,
     transparent: true,
     backgroundColor: "#00000000",
     frame: false,
@@ -1312,6 +1421,14 @@ function createWindow() {
 }
 
 function registerIpc() {
+  ipcMain.on("get-bootstrap-config", (event) => {
+    event.returnValue = {
+      baseUrl: process.env.KURO_BACKEND_BASE_URL || "http://127.0.0.1:23456",
+      wsUrl: process.env.KURO_BACKEND_WS_URL || "ws://127.0.0.1:23456/client-ws",
+      zoomScale: normalizePetZoomScale(appState.petZoomScale)
+    };
+  });
+
   ipcMain.on("pet-frontend-state", (_event, payload) => {
     if (!payload || typeof payload !== "object") {
       return;
@@ -1438,6 +1555,14 @@ function registerIpc() {
     setBoundsForCurrentMode(nextBounds);
   });
 
+  ipcMain.on("adjust-pet-window-scale", (_event, payload) => {
+    adjustPetWindowScale(Number(payload?.scaleRatio));
+  });
+
+  ipcMain.on("set-pet-window-zoom", (_event, payload) => {
+    setPetWindowZoom(Number(payload?.zoomScale));
+  });
+
   ipcMain.on("end-window-drag", () => {
     activeWindowDrag = null;
     hoveredComponents.set("pet-window-drag", false);
@@ -1489,6 +1614,7 @@ if (!singleInstanceLock) {
     appState.mode = "pet";
     appState.forceIgnoreMouse = true;
     appState.petSpanAllDisplays = false;
+    appState.petZoomScale = normalizePetZoomScale(appState.petZoomScale);
     const virtualArea = getVirtualWorkAreaBounds();
     const petBounds = appState.boundsByMode.pet;
     if (

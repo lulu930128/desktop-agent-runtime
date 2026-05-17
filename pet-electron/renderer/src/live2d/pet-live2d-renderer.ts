@@ -11,6 +11,13 @@ type ModelDescriptor = {
   sizeHint: number;
 };
 
+type DrawableBounds = {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+};
+
 let cubismInitialized = false;
 
 function ensureCubismReady() {
@@ -45,10 +52,12 @@ function splitModelUrl(modelUrl: string): { modelDir: string; fileName: string }
 export class PetLive2DRenderer {
   private readonly canvas: HTMLCanvasElement;
   private readonly subdelegate: LAppSubdelegate;
+  private readonly hitTestPixel: Uint8Array;
   private model: LAppModel | null;
   private modelDescriptor: ModelDescriptor | null;
   private rafId: number | null;
   private disposed: boolean;
+  private zoomScale: number;
 
   public constructor(canvas: HTMLCanvasElement) {
     ensureCubismReady();
@@ -58,10 +67,12 @@ export class PetLive2DRenderer {
       throw new Error("Unable to initialize Live2D WebGL context.");
     }
 
+    this.hitTestPixel = new Uint8Array(4);
     this.model = null;
     this.modelDescriptor = null;
     this.rafId = null;
     this.disposed = false;
+    this.zoomScale = 1.0;
     this.renderFrame = this.renderFrame.bind(this);
     this.start();
   }
@@ -93,6 +104,83 @@ export class PetLive2DRenderer {
     this.subdelegate.resize();
   }
 
+  public setZoomScale(nextZoomScale: number): number {
+    if (!Number.isFinite(nextZoomScale)) {
+      return this.zoomScale;
+    }
+
+    this.zoomScale = Math.min(2.25, Math.max(0.55, nextZoomScale));
+    return this.zoomScale;
+  }
+
+  public getZoomScale(): number {
+    return this.zoomScale;
+  }
+
+  public adjustZoomByWheel(deltaY: number): number {
+    const direction = deltaY < 0 ? 1 : -1;
+    const nextScale = this.zoomScale * (direction > 0 ? 1.08 : 1 / 1.08);
+    return this.setZoomScale(nextScale);
+  }
+
+  public hitTestCanvasPoint(clientX: number, clientY: number): boolean {
+    if (this.disposed) {
+      return false;
+    }
+
+    const readyModel =
+      this.model && typeof this.model.isReadyToRender === "function" && this.model.isReadyToRender()
+        ? this.model
+        : null;
+    if (!readyModel) {
+      return false;
+    }
+
+    const gl = this.subdelegate.getGlManager().getGl();
+    if (!gl || gl.isContextLost()) {
+      return false;
+    }
+
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return false;
+    }
+
+    const localX = clientX - rect.left;
+    const localY = clientY - rect.top;
+    if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) {
+      return false;
+    }
+
+    const pixelX = Math.max(
+      0,
+      Math.min(this.canvas.width - 1, Math.floor((localX / rect.width) * this.canvas.width))
+    );
+    const pixelY = Math.max(
+      0,
+      Math.min(
+        this.canvas.height - 1,
+        this.canvas.height - 1 - Math.floor((localY / rect.height) * this.canvas.height)
+      )
+    );
+
+    try {
+      gl.readPixels(
+        pixelX,
+        pixelY,
+        1,
+        1,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        this.hitTestPixel
+      );
+      return this.hitTestPixel[3] >= 20;
+    } catch (error) {
+      console.warn("[pet-renderer] Canvas hit test failed", error);
+      return false;
+    }
+  }
+
   public dispose(): void {
     this.disposed = true;
     if (this.rafId !== null) {
@@ -122,6 +210,51 @@ export class PetLive2DRenderer {
     }
 
     this.model = null;
+  }
+
+  private measureDrawableBounds(readyModel: LAppModel): DrawableBounds | null {
+    const cubismModel = readyModel.getModel();
+    if (!cubismModel) {
+      return null;
+    }
+
+    let left = Number.POSITIVE_INFINITY;
+    let right = Number.NEGATIVE_INFINITY;
+    let top = Number.POSITIVE_INFINITY;
+    let bottom = Number.NEGATIVE_INFINITY;
+    let hasVisibleVertex = false;
+    const drawableCount = cubismModel.getDrawableCount();
+
+    for (let drawableIndex = 0; drawableIndex < drawableCount; drawableIndex += 1) {
+      if (
+        cubismModel.getDrawableOpacity(drawableIndex) <= 0.001 ||
+        !cubismModel.getDrawableDynamicFlagIsVisible(drawableIndex)
+      ) {
+        continue;
+      }
+
+      const vertexCount = cubismModel.getDrawableVertexCount(drawableIndex);
+      const vertices = cubismModel.getDrawableVertices(drawableIndex);
+      for (let vertexIndex = 0; vertexIndex < vertexCount; vertexIndex += 1) {
+        const x = vertices[vertexIndex * 2];
+        const y = vertices[vertexIndex * 2 + 1];
+        if (!Number.isFinite(x) || !Number.isFinite(y)) {
+          continue;
+        }
+
+        left = Math.min(left, x);
+        right = Math.max(right, x);
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y);
+        hasVisibleVertex = true;
+      }
+    }
+
+    if (!hasVisibleVertex) {
+      return null;
+    }
+
+    return { left, right, top, bottom };
   }
 
   private renderFrame(): void {
@@ -163,21 +296,33 @@ export class PetLive2DRenderer {
         }
       }
 
-      const matrix = this.model.getModelMatrix();
+      readyModel.update();
+
+      const matrix = readyModel.getModelMatrix();
       if (matrix && this.modelDescriptor) {
         matrix.loadIdentity();
 
         const targetHeight = Math.min(
-          1.85,
-          Math.max(1.45, this.modelDescriptor.sizeHint * 1.9)
+          2.8,
+          Math.max(0.85, this.modelDescriptor.sizeHint * 1.9)
         );
 
         matrix.setHeight(targetHeight);
-        matrix.centerX(0);
-        matrix.bottom(1.02);
+
+        const bounds = this.measureDrawableBounds(readyModel);
+        if (bounds) {
+          const centerX = (bounds.left + bounds.right) / 2;
+          const centerY = (bounds.top + bounds.bottom) / 2;
+          matrix.translate(
+            -centerX * matrix.getScaleX(),
+            -centerY * matrix.getScaleY()
+          );
+        } else {
+          matrix.centerX(0);
+          matrix.centerY(0);
+        }
       }
 
-      readyModel.update();
       readyModel.draw(projection);
 
       CubismWebGLOffscreenManager.getInstance().endFrameProcess(gl);

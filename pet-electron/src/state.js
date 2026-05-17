@@ -5,6 +5,7 @@ const DEFAULT_STATE = {
   mode: "pet",
   forceIgnoreMouse: true,
   petSpanAllDisplays: false,
+  petZoomScale: 1,
   readerVisible: true,
   boundsByMode: {
     pet: {
@@ -49,6 +50,10 @@ function mergeState(candidate) {
 
   if (typeof candidate.petSpanAllDisplays === "boolean") {
     next.petSpanAllDisplays = candidate.petSpanAllDisplays;
+  }
+
+  if (Number.isFinite(candidate.petZoomScale)) {
+    next.petZoomScale = Math.max(0.55, Math.min(2.25, Number(candidate.petZoomScale)));
   }
 
   if (typeof candidate.readerVisible === "boolean") {

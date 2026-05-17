@@ -22,9 +22,17 @@ function onPetCommand(listener) {
 
 const bridge = {
   getInitialConfig() {
+    let bootstrapConfig = null;
+    try {
+      bootstrapConfig = ipcRenderer.sendSync("get-bootstrap-config");
+    } catch (error) {
+      console.warn("[pet-electron] Failed to read bootstrap config:", error);
+    }
+
     return {
       baseUrl: normalizeConfigValue(DEFAULT_BACKEND_BASE_URL, "http://127.0.0.1:23456"),
-      wsUrl: normalizeConfigValue(DEFAULT_BACKEND_WS_URL, "ws://127.0.0.1:23456/client-ws")
+      wsUrl: normalizeConfigValue(DEFAULT_BACKEND_WS_URL, "ws://127.0.0.1:23456/client-ws"),
+      ...(bootstrapConfig && typeof bootstrapConfig === "object" ? bootstrapConfig : {})
     };
   },
   reportFrontendState(payload) {
@@ -48,6 +56,16 @@ const bridge = {
       screenY: Number(screenY)
     });
   },
+  setPetWindowZoom(zoomScale) {
+    ipcRenderer.send("set-pet-window-zoom", {
+      zoomScale: Number(zoomScale)
+    });
+  },
+  adjustPetWindowScale(scaleRatio) {
+    ipcRenderer.send("adjust-pet-window-scale", {
+      scaleRatio: Number(scaleRatio)
+    });
+  },
   endWindowDrag() {
     ipcRenderer.send("end-window-drag");
   },
@@ -61,6 +79,8 @@ contextBridge.exposeInMainWorld("kuroPetElectron", bridge);
 contextBridge.exposeInMainWorld("api", {
   startWindowDrag: bridge.startWindowDrag,
   updateWindowDrag: bridge.updateWindowDrag,
+  setPetWindowZoom: bridge.setPetWindowZoom,
+  adjustPetWindowScale: bridge.adjustPetWindowScale,
   endWindowDrag: bridge.endWindowDrag,
   updateComponentHover: bridge.updateComponentHover,
   setIgnoreMouseEvent: bridge.setIgnoreMouseEvent,
