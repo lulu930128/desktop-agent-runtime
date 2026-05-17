@@ -265,6 +265,8 @@ class LauncherApp(ctk.CTk):
         )
 
         self._prompt_texts: Dict[str, str] = {}
+        self.selection_view_var = ctk.StringVar(value="角色")
+        self.preview_mode_var = ctk.StringVar(value="角色預覽")
         self.prompt_view_var = ctk.StringVar(value="角色")
         self._character_radio_buttons: list[ctk.CTkRadioButton] = []
         self._project_radio_buttons: list[ctk.CTkRadioButton] = []
@@ -289,6 +291,394 @@ class LauncherApp(ctk.CTk):
         self.after(600, self._tick_status)
 
     def _build_ui(self) -> None:
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+
+        shell = ctk.CTkFrame(self, fg_color="transparent")
+        shell.grid(row=0, column=0, sticky="nsew", padx=18, pady=18)
+        shell.grid_columnconfigure(0, weight=0, minsize=198)
+        shell.grid_columnconfigure(1, weight=4, uniform="workspace")
+        shell.grid_columnconfigure(2, weight=6, uniform="workspace")
+        shell.grid_rowconfigure(0, weight=4)
+        shell.grid_rowconfigure(1, weight=1)
+
+        sidebar = ctk.CTkFrame(
+            shell,
+            width=198,
+            corner_radius=22,
+            fg_color=PALETTE["panel_bg"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+        )
+        sidebar.grid(row=0, column=0, rowspan=2, sticky="ns", padx=(0, 14))
+        sidebar.grid_propagate(False)
+        sidebar.grid_columnconfigure(0, weight=1)
+        sidebar.grid_rowconfigure(3, weight=1)
+
+        ctk.CTkLabel(
+            sidebar,
+            text="Kuro Launcher",
+            font=ui_font(24, "bold"),
+            text_color=PALETTE["text"],
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(18, 4))
+        ctk.CTkLabel(
+            sidebar,
+            text="角色與專案執行台",
+            font=ui_font(12),
+            text_color=PALETTE["muted"],
+        ).grid(row=1, column=0, sticky="w", padx=16)
+
+        controls = ctk.CTkFrame(sidebar, fg_color="transparent")
+        controls.grid(row=2, column=0, sticky="new", padx=16, pady=(22, 0))
+        controls.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            controls,
+            text="控制",
+            font=ui_font(16, "bold"),
+            text_color=PALETTE["text"],
+        ).grid(row=0, column=0, sticky="w", pady=(0, 4))
+        ctk.CTkLabel(
+            controls,
+            text="啟停角色與開啟桌寵",
+            font=ui_font(11),
+            text_color=PALETTE["muted"],
+        ).grid(row=1, column=0, sticky="w", pady=(0, 12))
+        self._action_button(controls, "啟動角色", self.on_start_profile, row=2, primary=True)
+        self._action_button(controls, "停止角色", self.on_stop_profile, row=3)
+        self._action_button(controls, "開 Electron", self.on_open_electron, row=4)
+        self._action_button(controls, "Logs", self.on_open_logs_dir, row=5)
+
+        pet_controls = ctk.CTkFrame(sidebar, fg_color="transparent")
+        pet_controls.grid(row=3, column=0, sticky="new", padx=16, pady=(18, 0))
+        pet_controls.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            pet_controls,
+            text="桌寵",
+            font=ui_font(16, "bold"),
+            text_color=PALETTE["text"],
+        ).grid(row=0, column=0, sticky="w", pady=(0, 4))
+        self.pet_status_label = ctk.CTkLabel(
+            pet_controls,
+            text="桌寵 shell 尚未連線。",
+            font=ui_font(11),
+            text_color=PALETTE["muted"],
+            anchor="w",
+        )
+        self.pet_status_label.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+
+        pet_button_bar = ctk.CTkFrame(pet_controls, fg_color="transparent")
+        pet_button_bar.grid(row=2, column=0, sticky="ew")
+        pet_button_bar.grid_columnconfigure(0, weight=1)
+        self._configure_pet_control_bar(pet_button_bar)
+
+        badge_column = ctk.CTkFrame(sidebar, fg_color="transparent")
+        badge_column.grid(row=4, column=0, sticky="sew", padx=16, pady=(16, 16))
+        badge_column.grid_columnconfigure(0, weight=1)
+        self.badges = {
+            "Bridge": StatusBadge(badge_column, "Bridge"),
+            "TTS": StatusBadge(badge_column, "TTS"),
+            "LLM": StatusBadge(badge_column, "LLM"),
+        }
+        for idx, badge in enumerate(self.badges.values()):
+            badge.grid(row=idx, column=0, sticky="ew", pady=(0 if idx == 0 else 8, 0))
+
+        center_panel = ctk.CTkFrame(shell, fg_color="transparent")
+        center_panel.grid(row=0, column=1, sticky="nsew", padx=(0, 12))
+        center_panel.grid_columnconfigure(0, weight=1)
+        center_panel.grid_rowconfigure(0, weight=4)
+        center_panel.grid_rowconfigure(1, weight=5)
+
+        selection_card, selection_body = self._build_card(
+            center_panel,
+            row=0,
+            title="角色 / 專案 / 聊天",
+            subtitle="選擇目前要操作的項目。",
+            body_fill="both",
+            body_expand=True,
+        )
+        selection_body.grid_columnconfigure(0, weight=1)
+        selection_body.grid_rowconfigure(0, weight=0)
+        selection_body.grid_rowconfigure(1, weight=1)
+        self.selection_segment = ctk.CTkSegmentedButton(
+            selection_body,
+            values=["角色", "專案", "聊天"],
+            variable=self.selection_view_var,
+            command=self._on_selection_segment_changed,
+            fg_color=PALETTE["accent_soft"],
+            selected_color=PALETTE["accent_blue"],
+            selected_hover_color=PALETTE["accent_blue_hover"],
+            unselected_color=PALETTE["panel_bg"],
+            unselected_hover_color=PALETTE["panel_alt"],
+            text_color=PALETTE["text"],
+            font=ui_font(12, "bold"),
+            height=30,
+        )
+        self.selection_segment.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+
+        selection_stack = ctk.CTkFrame(selection_body, fg_color="transparent")
+        selection_stack.grid(row=1, column=0, sticky="nsew")
+        selection_stack.grid_columnconfigure(0, weight=1)
+        selection_stack.grid_rowconfigure(0, weight=1)
+
+        self.selection_pages: Dict[str, ctk.CTkFrame] = {}
+        character_page, self.character_frame = self._build_selector_page(
+            selection_stack,
+            title="角色",
+            subtitle=_pretty_path(self.cfg.characters_dir, self.cfg.root),
+            refresh_cmd=self._refresh_character_list,
+        )
+        project_page, self.project_frame = self._build_selector_page(
+            selection_stack,
+            title="專案",
+            subtitle=_pretty_path(self.cfg.projects_dir, self.cfg.root),
+            refresh_cmd=self._refresh_project_list,
+        )
+        self.selection_pages["角色"] = character_page
+        self.selection_pages["專案"] = project_page
+
+        self.history_wrap = ctk.CTkFrame(selection_stack, fg_color="transparent")
+        self.history_wrap.grid_columnconfigure(0, weight=1)
+        self.history_wrap.grid_rowconfigure(2, weight=1)
+        self.selection_pages["聊天"] = self.history_wrap
+
+        history_head = ctk.CTkFrame(self.history_wrap, fg_color="transparent")
+        history_head.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        history_head.grid_columnconfigure(0, weight=1)
+        history_title = ctk.CTkFrame(history_head, fg_color="transparent")
+        history_title.grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(
+            history_title,
+            text="聊天紀錄",
+            font=ui_font(16, "bold"),
+            text_color=PALETTE["text"],
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            history_title,
+            text="選擇要延續的聊天，或建立新的對話執行緒。",
+            text_color=PALETTE["muted"],
+            font=ui_font(10),
+        ).pack(anchor="w", pady=(1, 0))
+        history_actions = ctk.CTkFrame(history_head, fg_color="transparent")
+        history_actions.grid(row=0, column=1, sticky="e")
+        ctk.CTkButton(
+            history_actions,
+            text="套用",
+            width=56,
+            height=28,
+            corner_radius=10,
+            command=self.on_apply_history,
+            fg_color=PALETTE["accent_blue"],
+            hover_color=PALETTE["accent_blue_hover"],
+            text_color="#ffffff",
+            font=ui_font(11, "bold"),
+        ).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(
+            history_actions,
+            text="新增",
+            width=56,
+            height=28,
+            corner_radius=10,
+            command=self.on_new_history,
+            fg_color=PALETTE["panel_alt"],
+            hover_color=PALETTE["accent_soft"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+            text_color=PALETTE["text"],
+            font=ui_font(11, "bold"),
+        ).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(
+            history_actions,
+            text="更新",
+            width=56,
+            height=28,
+            corner_radius=10,
+            command=self._refresh_history_list,
+            fg_color=PALETTE["panel_alt"],
+            hover_color=PALETTE["accent_soft"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+            text_color=PALETTE["text"],
+            font=ui_font(11, "bold"),
+        ).pack(side="left")
+
+        self.history_status_label = ctk.CTkLabel(
+            self.history_wrap,
+            text="選擇要延續的聊天，或建立新的對話執行緒。",
+            text_color=PALETTE["muted"],
+            font=ui_font(11),
+            anchor="w",
+        )
+        self.history_status_label.grid(row=1, column=0, sticky="ew", pady=(0, 6))
+
+        history_shell = ctk.CTkFrame(
+            self.history_wrap,
+            corner_radius=14,
+            fg_color=PALETTE["panel_soft"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+        )
+        history_shell.grid(row=2, column=0, sticky="nsew")
+        history_shell.grid_columnconfigure(0, weight=1)
+        history_shell.grid_rowconfigure(0, weight=1)
+        self.history_frame = ctk.CTkScrollableFrame(
+            history_shell,
+            fg_color=PALETTE["panel_bg"],
+            corner_radius=14,
+            scrollbar_button_color=PALETTE["accent_soft"],
+            scrollbar_button_hover_color=PALETTE["accent_blue"],
+        )
+        self.history_frame.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+        self.history_frame.grid_columnconfigure(0, weight=1)
+
+        for page in self.selection_pages.values():
+            page.grid(row=0, column=0, sticky="nsew")
+        self._show_selection_page()
+
+        preview_card, preview_body = self._build_card(
+            center_panel,
+            row=1,
+            title="預覽",
+            subtitle="角色立繪與 prompt 內容集中在這裡。",
+            body_fill="both",
+            body_expand=True,
+        )
+        preview_body.grid_columnconfigure(0, weight=1)
+        preview_body.grid_rowconfigure(0, weight=0)
+        preview_body.grid_rowconfigure(1, weight=1)
+        self.preview_segment = ctk.CTkSegmentedButton(
+            preview_body,
+            values=["角色預覽", "角色", "專案", "工具", "格式"],
+            variable=self.preview_mode_var,
+            command=self._on_preview_mode_changed,
+            fg_color=PALETTE["accent_soft"],
+            selected_color=PALETTE["accent_blue"],
+            selected_hover_color=PALETTE["accent_blue_hover"],
+            unselected_color=PALETTE["panel_bg"],
+            unselected_hover_color=PALETTE["panel_alt"],
+            text_color=PALETTE["text"],
+            font=ui_font(12, "bold"),
+            height=30,
+        )
+        self.preview_segment.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+
+        self.preview_stage = ctk.CTkFrame(
+            preview_body,
+            corner_radius=16,
+            fg_color=PALETTE["panel_bg"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+        )
+        self.preview_stage.grid(row=1, column=0, sticky="nsew")
+        self.preview_stage.grid_columnconfigure(0, weight=1)
+        self.preview_stage.grid_rowconfigure(0, weight=1)
+        self.preview_image_label = TkLabel(
+            self.preview_stage,
+            bg=PALETTE["panel_bg"],
+            bd=0,
+            highlightthickness=0,
+        )
+        self.preview_image_label.grid(row=0, column=0, sticky="nsew")
+        self.preview_empty_label = ctk.CTkLabel(
+            self.preview_stage,
+            text="選取角色後會在這裡顯示預覽",
+            text_color=PALETTE["muted"],
+            justify="center",
+            wraplength=300,
+            font=ui_font(12),
+        )
+        self.preview_empty_label.grid(row=0, column=0, sticky="nsew")
+
+        self.prompt_box = ctk.CTkTextbox(
+            preview_body,
+            fg_color=PALETTE["textbox_bg"],
+            border_width=1,
+            border_color=PALETTE["textbox_border"],
+            text_color=PALETTE["text"],
+            font=ui_font(12),
+        )
+        self.prompt_box.grid(row=1, column=0, sticky="nsew")
+        self.prompt_box.configure(state="disabled")
+        self._refresh_preview_panel()
+
+        right_panel = ctk.CTkFrame(shell, fg_color="transparent")
+        right_panel.grid(row=0, column=2, sticky="nsew")
+        right_panel.grid_columnconfigure(0, weight=1)
+        right_panel.grid_rowconfigure(0, weight=1)
+
+        transcript_card = ctk.CTkFrame(
+            right_panel,
+            corner_radius=18,
+            fg_color=PALETTE["panel_soft"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+        )
+        transcript_card.grid(row=0, column=0, sticky="nsew")
+        transcript_card.grid_columnconfigure(0, weight=1)
+        transcript_card.grid_rowconfigure(1, weight=1)
+        transcript_head = ctk.CTkFrame(transcript_card, fg_color="transparent")
+        transcript_head.grid(row=0, column=0, sticky="ew", padx=14, pady=(14, 8))
+        transcript_head.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            transcript_head,
+            text="對話紀錄（唯讀）",
+            font=ui_font(18, "bold"),
+            text_color=PALETTE["text"],
+        ).grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(
+            transcript_head,
+            text="左邊是她，右邊是你；這裡只顯示，不提供輸入。",
+            text_color=PALETTE["muted"],
+            font=ui_font(12),
+        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+
+        transcript_shell = ctk.CTkFrame(
+            transcript_card,
+            corner_radius=14,
+            fg_color=PALETTE["textbox_bg"],
+            border_width=1,
+            border_color=PALETTE["textbox_border"],
+        )
+        transcript_shell.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 14))
+        transcript_shell.grid_columnconfigure(0, weight=1)
+        transcript_shell.grid_rowconfigure(0, weight=1)
+        self.transcript_frame = ctk.CTkScrollableFrame(
+            transcript_shell,
+            fg_color=PALETTE["textbox_bg"],
+            corner_radius=14,
+            scrollbar_button_color=PALETTE["accent_soft"],
+            scrollbar_button_hover_color=PALETTE["accent_blue"],
+        )
+        self.transcript_frame.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+        self.transcript_frame.grid_columnconfigure(0, weight=1)
+
+        log_wrap = ctk.CTkFrame(
+            shell,
+            corner_radius=20,
+            fg_color=PALETTE["panel_bg"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+        )
+        log_wrap.grid(row=1, column=1, columnspan=2, sticky="nsew", pady=(14, 0))
+        log_wrap.grid_rowconfigure(1, weight=1)
+        log_wrap.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            log_wrap,
+            text="執行紀錄",
+            font=ui_font(17, "bold"),
+            text_color=PALETTE["text"],
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(14, 2))
+        self.log_box = ctk.CTkTextbox(
+            log_wrap,
+            fg_color=PALETTE["textbox_bg"],
+            border_width=1,
+            border_color=PALETTE["textbox_border"],
+            text_color=PALETTE["text"],
+            font=mono_font(11),
+        )
+        self.log_box.grid(row=1, column=0, sticky="nsew", padx=16, pady=(8, 14))
+        self.log_box.configure(state="disabled")
+
+    def _build_ui_legacy(self) -> None:
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
@@ -966,6 +1356,102 @@ class LauncherApp(ctk.CTk):
         scroll.grid_columnconfigure(0, weight=1)
         return scroll
 
+    def _build_selector_page(
+        self,
+        parent,
+        *,
+        title: str,
+        subtitle: str,
+        refresh_cmd,
+    ) -> tuple[ctk.CTkFrame, ctk.CTkScrollableFrame]:
+        page = ctk.CTkFrame(parent, fg_color="transparent")
+        page.grid_columnconfigure(0, weight=1)
+        page.grid_rowconfigure(1, weight=1)
+
+        header = ctk.CTkFrame(page, fg_color="transparent")
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        header.grid_columnconfigure(0, weight=1)
+        label_box = ctk.CTkFrame(header, fg_color="transparent")
+        label_box.grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(
+            label_box,
+            text=title,
+            font=ui_font(16, "bold"),
+            text_color=PALETTE["text"],
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            label_box,
+            text=subtitle,
+            text_color=PALETTE["muted"],
+            font=ui_font(10),
+        ).pack(anchor="w", pady=(1, 0))
+        ctk.CTkButton(
+            header,
+            text="更新",
+            width=72,
+            height=28,
+            corner_radius=10,
+            command=refresh_cmd,
+            fg_color=PALETTE["accent_blue"],
+            hover_color=PALETTE["accent_blue_hover"],
+            text_color="#ffffff",
+            font=ui_font(11, "bold"),
+        ).grid(row=0, column=1, sticky="e")
+
+        shell = ctk.CTkFrame(
+            page,
+            corner_radius=14,
+            fg_color=PALETTE["panel_soft"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+        )
+        shell.grid(row=1, column=0, sticky="nsew")
+        shell.grid_columnconfigure(0, weight=1)
+        shell.grid_rowconfigure(0, weight=1)
+
+        scroll = ctk.CTkScrollableFrame(
+            shell,
+            fg_color=PALETTE["panel_bg"],
+            corner_radius=14,
+            scrollbar_button_color=PALETTE["accent_soft"],
+            scrollbar_button_hover_color=PALETTE["accent_blue"],
+        )
+        scroll.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+        scroll.grid_columnconfigure(0, weight=1)
+        return page, scroll
+
+    def _show_selection_page(self) -> None:
+        selected = self.selection_view_var.get() or "角色"
+        pages = getattr(self, "selection_pages", {})
+        for name, page in pages.items():
+            if not page.winfo_manager():
+                page.grid(row=0, column=0, sticky="nsew")
+            if name == selected:
+                page.tkraise()
+
+    def _on_selection_segment_changed(self, _value: str) -> None:
+        self._show_selection_page()
+
+    def _refresh_preview_panel(self) -> None:
+        mode = self.preview_mode_var.get() or "角色預覽"
+        if hasattr(self, "preview_stage") and not self.preview_stage.winfo_manager():
+            self.preview_stage.grid(row=1, column=0, sticky="nsew")
+        if hasattr(self, "prompt_box") and not self.prompt_box.winfo_manager():
+            self.prompt_box.grid(row=1, column=0, sticky="nsew")
+
+        if mode == "角色預覽":
+            if hasattr(self, "preview_stage"):
+                self.preview_stage.tkraise()
+            return
+
+        if hasattr(self, "prompt_box"):
+            self.prompt_box.tkraise()
+        self.prompt_view_var.set(mode)
+        self._refresh_prompt_view()
+
+    def _on_preview_mode_changed(self, _value: str) -> None:
+        self._refresh_preview_panel()
+
     def _build_card(self, parent, *, row: int, title: str, subtitle: str, body_fill="x", body_expand=False):
         card = ctk.CTkFrame(
             parent,
@@ -1160,46 +1646,50 @@ class LauncherApp(ctk.CTk):
     def _configure_pet_control_bar(self, pet_button_bar: ctk.CTkFrame) -> None:
         for widget in pet_button_bar.winfo_children():
             widget.destroy()
-        for idx in range(4):
-            pet_button_bar.grid_columnconfigure(idx, weight=0)
-        for idx in range(3):
-            pet_button_bar.grid_columnconfigure(idx, weight=1)
+        pet_button_bar.grid_columnconfigure(0, weight=1)
 
-        self._pet_control_button(
-            pet_button_bar,
-            "套用端點",
-            self.on_pet_apply_backend_urls,
-            row=0,
-            column=0,
-            primary=True,
-        )
-        self._pet_control_button(
-            pet_button_bar,
-            "刷新狀態",
-            self.on_pet_refresh_status,
-            row=0,
-            column=1,
-        )
         self._pet_control_button(
             pet_button_bar,
             "停止輸出",
             self.on_pet_interrupt,
             row=0,
-            column=2,
-            padx=(6, 0),
+            column=0,
+            primary=True,
+            padx=(0, 0),
         )
 
-        self._pet_toggle_switch(pet_button_bar, "麥克風", "mic-toggle", row=1, column=0)
-        self._pet_toggle_switch(pet_button_bar, "攝影機", "toggle-camera", row=1, column=1)
+        self._pet_toggle_switch(
+            pet_button_bar,
+            "麥克風",
+            "mic-toggle",
+            row=1,
+            column=0,
+            padx=(0, 0),
+        )
+        self._pet_toggle_switch(
+            pet_button_bar,
+            "攝影機",
+            "toggle-camera",
+            row=2,
+            column=0,
+            padx=(0, 0),
+        )
         self._pet_toggle_switch(
             pet_button_bar,
             "螢幕",
             "toggle-screen",
-            row=1,
-            column=2,
-            padx=(6, 0),
+            row=3,
+            column=0,
+            padx=(0, 0),
         )
-        self._pet_toggle_switch(pet_button_bar, "對話框", "set-reader-visible", row=2, column=0)
+        self._pet_toggle_switch(
+            pet_button_bar,
+            "對話框",
+            "set-reader-visible",
+            row=4,
+            column=0,
+            padx=(0, 0),
+        )
 
     def log(self, message: str) -> None:
         try:
@@ -2478,6 +2968,13 @@ class LauncherApp(ctk.CTk):
         desired_history_uid: str,
         force_new_history: bool,
     ) -> None:
+        if not port_is_open(self.cfg.bridge_host, self.cfg.bridge_port):
+            self.log(f"[{log_ts()}] Bridge 尚未啟動，先補啟動。")
+            self._ensure_bridge_on_start()
+            if not port_is_open(self.cfg.bridge_host, self.cfg.bridge_port):
+                self.log(f"[{log_ts()}] Bridge 仍未成功上線，先中止角色啟動。")
+                return
+
         if port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.2):
             runtime_conf, char_cfg = self._prepare_runtime_profile(character, project)
             if runtime_conf is None or char_cfg is None:
@@ -2495,16 +2992,9 @@ class LauncherApp(ctk.CTk):
                 )
             return
 
-        if not port_is_open(self.cfg.bridge_host, self.cfg.bridge_port):
-            self.log(f"[{log_ts()}] Bridge 尚未啟動，先補啟動。")
-            self._ensure_bridge_on_start()
-            if not port_is_open(self.cfg.bridge_host, self.cfg.bridge_port):
-                self.log(f"[{log_ts()}] Bridge 仍未成功上線，先中止角色啟動。")
-                return
-
         previous_tts_pid = get_listening_pid_windows(self.cfg.tts_port)
         previous_llm_pid = get_listening_pid_windows(self.cfg.llm_port)
-        self.on_stop_profile(silent=True)
+        self.on_stop_profile(silent=True, stop_bridge=False)
 
         tts_closed, tts_close_message = self._wait_for_port_closed(
             "TTS",
@@ -2623,7 +3113,7 @@ class LauncherApp(ctk.CTk):
         else:
             self.log(f"[{log_ts()}] LLM 沒有成功上線：{llm_ready_message}")
 
-    def on_stop_profile(self, silent: bool = False) -> None:
+    def on_stop_profile(self, silent: bool = False, stop_bridge: bool = True) -> None:
         self._stop_pet_electron(silent=silent)
 
         if self.proc_llm:
@@ -2656,6 +3146,14 @@ class LauncherApp(ctk.CTk):
                         self.log(f"[{log_ts()}] 已清理 {name} PID={pid}")
                 except Exception:
                     pass
+
+        if stop_bridge:
+            bridge_was_running = bool(self.proc_bridge) or port_is_open(
+                self.cfg.bridge_host, self.cfg.bridge_port, 0.1
+            )
+            self._stop_bridge_impl(kill_external=True)
+            if bridge_was_running and not silent:
+                self.log(f"[{log_ts()}] 已停止 Bridge。")
 
     def on_translate_debug(self) -> None:
         def runner():
