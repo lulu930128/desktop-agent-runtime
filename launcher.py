@@ -247,6 +247,7 @@ class LauncherApp(ctk.CTk):
         self.proc_bridge: Optional[ManagedProc] = None
         self.proc_tts: Optional[ManagedProc] = None
         self.proc_llm: Optional[ManagedProc] = None
+        self.proc_pet_electron: Optional[subprocess.Popen] = None
         self.current_run_id: Optional[str] = None
 
         self._log_q: queue.Queue[str] = queue.Queue()
@@ -273,6 +274,7 @@ class LauncherApp(ctk.CTk):
         self._transcript_signature = ""
         self._pet_shell_online = False
         self._runtime_history_uid = ""
+        self.pet_toggle_vars: Dict[str, ctk.StringVar] = {}
 
         self.title("Kuro Launcher")
         self.geometry("1380x820")
@@ -346,6 +348,7 @@ class LauncherApp(ctk.CTk):
         self._action_button(controls, "開 Web UI", self.on_open_web_ui, row=5)
         self._action_button(controls, "開 Electron", self.on_open_electron, row=6)
         self._action_button(controls, "Logs", self.on_open_logs_dir, row=7)
+        self._configure_sidebar_controls(controls)
 
         badge_column = ctk.CTkFrame(sidebar, fg_color="transparent")
         badge_column.grid(row=4, column=0, sticky="sew", padx=16, pady=(16, 16))
@@ -792,6 +795,8 @@ class LauncherApp(ctk.CTk):
             height=32,
         ).grid(row=1, column=3, sticky="ew", padx=(6, 0))
 
+        self._configure_pet_control_bar(pet_button_bar)
+
         log_wrap = ctk.CTkFrame(
             shell,
             corner_radius=20,
@@ -1027,6 +1032,174 @@ class LauncherApp(ctk.CTk):
             font=ui_font(12, "bold" if primary else "normal"),
         )
         button.grid(row=row, column=0, sticky="ew", pady=(0, 8))
+
+    def _configure_sidebar_controls(self, controls: ctk.CTkFrame) -> None:
+        for widget in controls.grid_slaves(row=0, column=0):
+            try:
+                widget.configure(text="控制")
+            except Exception:
+                pass
+        for widget in controls.grid_slaves(row=1, column=0):
+            try:
+                widget.configure(text="常用啟停與檢查操作")
+            except Exception:
+                pass
+
+        labels_by_row = {
+            2: "啟動角色",
+            3: "停止角色",
+            6: "開 Electron",
+            7: "Logs",
+        }
+        for row, label in labels_by_row.items():
+            for widget in controls.grid_slaves(row=row, column=0):
+                try:
+                    widget.configure(text=label)
+                except Exception:
+                    pass
+
+        for row in (4, 5):
+            for widget in controls.grid_slaves(row=row, column=0):
+                widget.grid_remove()
+
+        for source_row, target_row in ((6, 4), (7, 5)):
+            for widget in controls.grid_slaves(row=source_row, column=0):
+                widget.grid_configure(row=target_row)
+
+    def _pet_control_button(
+        self,
+        parent,
+        text: str,
+        command,
+        *,
+        row: int,
+        column: int,
+        primary: bool = False,
+        padx=(0, 6),
+        pady=(0, 8),
+    ) -> None:
+        ctk.CTkButton(
+            parent,
+            text=text,
+            command=command,
+            fg_color=PALETTE["accent_blue"] if primary else PALETTE["panel_bg"],
+            hover_color=PALETTE["accent_blue_hover"] if primary else PALETTE["panel_alt"],
+            border_width=0 if primary else 1,
+            border_color=PALETTE["panel_border"],
+            text_color="#ffffff" if primary else PALETTE["text"],
+            font=ui_font(12, "bold"),
+            height=34,
+            corner_radius=12,
+        ).grid(row=row, column=column, sticky="ew", padx=padx, pady=pady)
+
+    def _pet_toggle_switch(
+        self,
+        parent,
+        label: str,
+        action: str,
+        *,
+        row: int,
+        column: int,
+        padx=(0, 6),
+        pady=(0, 8),
+    ) -> None:
+        var = self.pet_toggle_vars.get(action)
+        if var is None:
+            var = ctk.StringVar(value="off")
+            self.pet_toggle_vars[action] = var
+
+        shell = ctk.CTkFrame(
+            parent,
+            corner_radius=14,
+            fg_color=PALETTE["panel_bg"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+        )
+        shell.grid(row=row, column=column, sticky="ew", padx=padx, pady=pady)
+        shell.grid_columnconfigure(0, weight=1)
+
+        state_label = ctk.CTkLabel(
+            shell,
+            text="ON" if var.get() == "on" else "OFF",
+            width=34,
+            font=ui_font(11, "bold"),
+            text_color=PALETTE["success"] if var.get() == "on" else PALETTE["muted"],
+        )
+        state_label.grid(row=0, column=1, padx=(4, 10), pady=8)
+
+        def on_change() -> None:
+            enabled = var.get() == "on"
+            state_label.configure(
+                text="ON" if enabled else "OFF",
+                text_color=PALETTE["success"] if enabled else PALETTE["muted"],
+            )
+            mode = "啟用" if enabled else "停止"
+            self._run_pet_command(
+                action,
+                payload={"enabled": enabled},
+                success_log=f"{label} 已切換為 {mode}。",
+            )
+
+        ctk.CTkSwitch(
+            shell,
+            text=label,
+            variable=var,
+            onvalue="on",
+            offvalue="off",
+            command=on_change,
+            progress_color=PALETTE["success"],
+            fg_color="#d8dee8",
+            button_color=PALETTE["panel_bg"],
+            button_hover_color=PALETTE["accent_soft"],
+            text_color=PALETTE["text"],
+            font=ui_font(12, "bold"),
+            switch_width=48,
+            switch_height=24,
+        ).grid(row=0, column=0, sticky="w", padx=(12, 4), pady=8)
+
+    def _configure_pet_control_bar(self, pet_button_bar: ctk.CTkFrame) -> None:
+        for widget in pet_button_bar.winfo_children():
+            widget.destroy()
+        for idx in range(4):
+            pet_button_bar.grid_columnconfigure(idx, weight=0)
+        for idx in range(3):
+            pet_button_bar.grid_columnconfigure(idx, weight=1)
+
+        self._pet_control_button(
+            pet_button_bar,
+            "套用端點",
+            self.on_pet_apply_backend_urls,
+            row=0,
+            column=0,
+            primary=True,
+        )
+        self._pet_control_button(
+            pet_button_bar,
+            "刷新狀態",
+            self.on_pet_refresh_status,
+            row=0,
+            column=1,
+        )
+        self._pet_control_button(
+            pet_button_bar,
+            "停止輸出",
+            self.on_pet_interrupt,
+            row=0,
+            column=2,
+            padx=(6, 0),
+        )
+
+        self._pet_toggle_switch(pet_button_bar, "麥克風", "mic-toggle", row=1, column=0)
+        self._pet_toggle_switch(pet_button_bar, "攝影機", "toggle-camera", row=1, column=1)
+        self._pet_toggle_switch(
+            pet_button_bar,
+            "螢幕",
+            "toggle-screen",
+            row=1,
+            column=2,
+            padx=(6, 0),
+        )
+        self._pet_toggle_switch(pet_button_bar, "對話框", "set-reader-visible", row=2, column=0)
 
     def log(self, message: str) -> None:
         try:
@@ -2313,6 +2486,7 @@ class LauncherApp(ctk.CTk):
                 runtime_conf, char_cfg, character, project
             )
             if switched:
+                self._launch_pet_electron()
                 self._apply_history_choice(
                     wait_for_client=False,
                     selected_character=character,
@@ -2450,6 +2624,8 @@ class LauncherApp(ctk.CTk):
             self.log(f"[{log_ts()}] LLM 沒有成功上線：{llm_ready_message}")
 
     def on_stop_profile(self, silent: bool = False) -> None:
+        self._stop_pet_electron(silent=silent)
+
         if self.proc_llm:
             try:
                 self.proc_llm.stop()
@@ -2519,6 +2695,20 @@ class LauncherApp(ctk.CTk):
         if getattr(self, "pet_ws_url_entry", None) is not None and focused != self.pet_ws_url_entry:
             self.pet_ws_url_var.set(ws_url)
 
+    def _sync_pet_toggle_states(self, renderer: dict) -> None:
+        state_map = {
+            "mic-toggle": "micEnabled",
+            "toggle-camera": "cameraEnabled",
+            "toggle-screen": "screenEnabled",
+            "set-reader-visible": "readerVisible",
+        }
+        for action, key in state_map.items():
+            if key not in renderer:
+                continue
+            var = self.pet_toggle_vars.get(action)
+            if var is not None:
+                var.set("on" if bool(renderer.get(key)) else "off")
+
     def _sync_runtime_history_selection(self, renderer: dict) -> None:
         history_uid = str(
             renderer.get("currentHistoryUid")
@@ -2573,6 +2763,7 @@ class LauncherApp(ctk.CTk):
         base_url = str(renderer.get("baseUrl") or self.pet_base_url_var.get() or "").strip()
         ws_url = str(renderer.get("wsUrl") or self.pet_ws_url_var.get() or "").strip()
         self._sync_pet_url_entries(base_url, ws_url)
+        self._sync_pet_toggle_states(renderer)
         self._sync_runtime_history_selection(renderer)
 
         ws_badge = str(renderer.get("wsBadge") or "").strip()
@@ -2611,6 +2802,7 @@ class LauncherApp(ctk.CTk):
             base_url = str(renderer.get("baseUrl") or self.pet_base_url_var.get() or "").strip()
             ws_url = str(renderer.get("wsUrl") or self.pet_ws_url_var.get() or "").strip()
             self.after(0, lambda: self._sync_pet_url_entries(base_url, ws_url))
+            self.after(0, lambda r=renderer: self._sync_pet_toggle_states(r))
             self.after(0, self._tick_pet_shell_status)
             self.log(f"[{log_ts()}] {success_log or result.get('message') or f'已送出 {action}'}")
 
@@ -2633,6 +2825,7 @@ class LauncherApp(ctk.CTk):
             ai_state = str(renderer.get("aiState") or "").strip()
 
             self.after(0, lambda: self._sync_pet_url_entries(base_url, ws_url))
+            self.after(0, lambda r=renderer: self._sync_pet_toggle_states(r))
             self.after(0, lambda r=renderer: self._sync_runtime_history_selection(r))
             self.after(0, self._tick_pet_shell_status)
             self.log(
@@ -2708,6 +2901,13 @@ class LauncherApp(ctk.CTk):
         return None, "pet-electron 缺少 package.json。"
 
     def _launch_pet_electron(self) -> bool:
+        if self.proc_pet_electron and self.proc_pet_electron.poll() is None:
+            self.log(f"[{log_ts()}] 自製桌寵殼已在執行中。")
+            return True
+        if port_is_open(self.cfg.pet_control_host, self.cfg.pet_control_port, 0.2):
+            self.log(f"[{log_ts()}] 自製桌寵殼控制端已在線。")
+            return True
+
         runtime_exe, reason = self._pet_electron_runtime()
         if runtime_exe is None:
             if reason:
@@ -2727,7 +2927,7 @@ class LauncherApp(ctk.CTk):
         env["KURO_PET_CONTROL_HOST"] = self.cfg.pet_control_host
         env["KURO_PET_CONTROL_PORT"] = str(self.cfg.pet_control_port)
 
-        subprocess.Popen(
+        self.proc_pet_electron = subprocess.Popen(
             [str(runtime_exe), "."],
             cwd=str(self.cfg.pet_electron_dir),
             creationflags=creationflags,
@@ -2736,6 +2936,31 @@ class LauncherApp(ctk.CTk):
         )
         self.log(f"[{log_ts()}] 已開啟自製桌寵殼：{self.cfg.pet_electron_dir}")
         return True
+
+    def _stop_pet_electron(self, silent: bool = False) -> None:
+        stopped = False
+        if self.proc_pet_electron and self.proc_pet_electron.poll() is None:
+            try:
+                taskkill_tree(self.proc_pet_electron.pid)
+                stopped = True
+            except Exception:
+                try:
+                    self.proc_pet_electron.terminate()
+                    stopped = True
+                except Exception:
+                    pass
+        self.proc_pet_electron = None
+
+        pid = get_listening_pid_windows(self.cfg.pet_control_port)
+        if pid:
+            try:
+                taskkill_tree(pid)
+                stopped = True
+            except Exception:
+                pass
+
+        if stopped and not silent:
+            self.log(f"[{log_ts()}] 已停止自製桌寵殼。")
 
     def on_open_electron(self) -> None:
         try:
@@ -2746,11 +2971,10 @@ class LauncherApp(ctk.CTk):
                 os.startfile(str(self.cfg.electron_lnk))
                 self.log(f"[{log_ts()}] 已開啟舊版 Electron：{self.cfg.electron_lnk}")
             else:
-                self.log(f"[{log_ts()}] 找不到 Electron 執行檔，改開 Web UI。")
-                webbrowser.open(self.cfg.llm_url)
+                self.log(f"[{log_ts()}] 找不到 Electron 執行檔。")
+                self.log(f"[{log_ts()}] 找不到 Electron 執行檔，未開啟 Web UI。")
         except Exception as exc:
             self.log(f"[{log_ts()}] 開啟 Electron 失敗：{exc}")
-            webbrowser.open(self.cfg.llm_url)
 
     def on_open_logs_dir(self) -> None:
         try:

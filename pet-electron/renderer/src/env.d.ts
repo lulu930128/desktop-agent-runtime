@@ -10,9 +10,10 @@ declare global {
       startWindowDrag: (screenX: number, screenY: number) => void;
       updateWindowDrag: (screenX: number, screenY: number) => void;
       setPetWindowZoom: (zoomScale: number) => void;
+      getScreenCaptureSourceId: () => Promise<string>;
       endWindowDrag: () => void;
       showContextMenu: () => void;
-      onCommand: (listener: (payload: { type: string }) => void) => () => void;
+      onCommand: (listener: (payload: { type: string; enabled?: boolean }) => void) => () => void;
     };
     __kuroPetRendererState?: Record<string, unknown>;
     __kuroPetSendTextInput?: (text: string) => { ok: boolean; error?: string; text?: string };

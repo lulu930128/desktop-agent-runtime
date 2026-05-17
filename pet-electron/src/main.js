@@ -9,7 +9,8 @@ const {
   desktopCapturer,
   ipcMain,
   nativeImage,
-  screen
+  screen,
+  session
 } = require("electron");
 
 const { cloneDefaultState, loadState, mergeState, saveState } = require("./state");
@@ -566,31 +567,57 @@ async function clickRendererButtonByText(candidates) {
   );
 }
 
-async function handleControlAction(action) {
+function setReaderVisible(visible) {
+  appState.readerVisible = Boolean(visible);
+  if (!readerWindow || readerWindow.isDestroyed()) {
+    if (appState.readerVisible) {
+      createReaderWindow();
+    }
+  } else if (appState.readerVisible) {
+    readerWindow.show();
+    readerWindow.focus();
+  } else {
+    readerWindow.hide();
+  }
+  updateTrayMenu();
+  broadcastReaderState();
+  return {
+    ok: true,
+    route: "window",
+    action: "set-reader-visible",
+    readerVisible: appState.readerVisible
+  };
+}
+
+async function handleControlAction(action, payload = {}) {
   switch (action) {
     case "mic-toggle":
-      broadcast("pet-command", { type: "mic-toggle" });
+      broadcast("pet-command", { type: "mic-toggle", enabled: Boolean(payload.enabled) });
       return { ok: true, route: "ipc", action };
     case "interrupt":
       broadcast("pet-command", { type: "interrupt" });
       return { ok: true, route: "ipc", action };
+    case "set-reader-visible":
+      return setReaderVisible(Boolean(payload.enabled));
     case "toggle-subtitle":
-      if (!readerWindow || readerWindow.isDestroyed()) {
-        appState.readerVisible = true;
-        createReaderWindow();
-      } else if (readerWindow.isVisible()) {
-        readerWindow.hide();
-      } else {
-        readerWindow.show();
-        readerWindow.focus();
-      }
-      updateTrayMenu();
-      return { ok: true, route: "window", action };
+      return setReaderVisible(!(readerWindow && !readerWindow.isDestroyed() && readerWindow.isVisible()));
     case "toggle-camera":
+      if (shouldUseCustomRenderer()) {
+        broadcast("pet-command", { type: "camera-toggle", enabled: Boolean(payload.enabled) });
+        return { ok: true, route: "ipc", action };
+      }
       return clickRendererButtonByText(["camera", "攝像頭", "摄像头", "攝影機"]);
     case "toggle-screen":
+      if (shouldUseCustomRenderer()) {
+        broadcast("pet-command", { type: "screen-toggle", enabled: Boolean(payload.enabled) });
+        return { ok: true, route: "ipc", action };
+      }
       return clickRendererButtonByText(["screen", "螢幕", "屏幕", "屏幕共享"]);
     case "toggle-browser":
+      if (shouldUseCustomRenderer()) {
+        broadcast("pet-command", { type: "browser-toggle", enabled: Boolean(payload.enabled) });
+        return { ok: true, route: "ipc", action };
+      }
       return clickRendererButtonByText(["browser", "瀏覽器", "浏览器"]);
     case "reload-frontend":
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1095,6 +1122,7 @@ function startControlServer() {
     try {
       if (req.method === "GET" && requestUrl.pathname === "/status") {
         const renderer = await readRendererStatus();
+        renderer.readerVisible = Boolean(appState.readerVisible);
         writeJson(res, 200, {
           ok: true,
           mode: appState.mode,
@@ -1110,8 +1138,9 @@ function startControlServer() {
         const raw = await readRequestBody(req);
         const payload = raw ? JSON.parse(raw) : {};
         const action = String(payload.action || "").trim();
-        const result = await handleControlAction(action);
+        const result = await handleControlAction(action, payload);
         const renderer = await readRendererStatus();
+        renderer.readerVisible = Boolean(appState.readerVisible);
         writeJson(res, 200, {
           ok: Boolean(result && result.ok),
           message: result && result.ok ? `command ${action} dispatched` : result.error || "command failed",
@@ -1609,6 +1638,9 @@ if (!singleInstanceLock) {
 
   app.whenReady().then(() => {
     app.setAppUserModelId(APP_NAME);
+    session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+      callback(permission === "media" || permission === "display-capture");
+    });
     statePath = path.join(app.getPath("userData"), "pet-shell-state.json");
     appState = mergeState(loadState(statePath));
     appState.mode = "pet";

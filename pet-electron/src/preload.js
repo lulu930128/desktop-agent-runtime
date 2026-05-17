@@ -66,6 +66,9 @@ const bridge = {
       scaleRatio: Number(scaleRatio)
     });
   },
+  async getScreenCaptureSourceId() {
+    return ipcRenderer.invoke("get-screen-capture");
+  },
   endWindowDrag() {
     ipcRenderer.send("end-window-drag");
   },
@@ -81,6 +84,7 @@ contextBridge.exposeInMainWorld("api", {
   updateWindowDrag: bridge.updateWindowDrag,
   setPetWindowZoom: bridge.setPetWindowZoom,
   adjustPetWindowScale: bridge.adjustPetWindowScale,
+  getScreenCaptureSourceId: bridge.getScreenCaptureSourceId,
   endWindowDrag: bridge.endWindowDrag,
   updateComponentHover: bridge.updateComponentHover,
   setIgnoreMouseEvent: bridge.setIgnoreMouseEvent,

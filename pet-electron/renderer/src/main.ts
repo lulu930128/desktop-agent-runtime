@@ -42,6 +42,10 @@ type RendererState = {
   confUid: string;
   currentHistoryUid: string;
   currentHistoryTitle: string;
+  micEnabled: boolean;
+  cameraEnabled: boolean;
+  screenEnabled: boolean;
+  browserPanelEnabled: boolean;
 };
 
 type BackendConfig = {
@@ -109,6 +113,31 @@ function resolveInitialZoomScale(configZoomScale: unknown): number {
   return stored;
 }
 
+function downsampleFloat32(input: Float32Array, inputSampleRate: number, outputSampleRate: number): number[] {
+  if (!input.length) {
+    return [];
+  }
+  if (!Number.isFinite(inputSampleRate) || inputSampleRate <= 0 || inputSampleRate === outputSampleRate) {
+    return Array.from(input);
+  }
+
+  const ratio = inputSampleRate / outputSampleRate;
+  const outputLength = Math.max(1, Math.floor(input.length / ratio));
+  const output: number[] = [];
+  for (let i = 0; i < outputLength; i += 1) {
+    const start = Math.floor(i * ratio);
+    const end = Math.min(input.length, Math.floor((i + 1) * ratio));
+    let total = 0;
+    let count = 0;
+    for (let j = start; j < end; j += 1) {
+      total += input[j] || 0;
+      count += 1;
+    }
+    output.push(count ? total / count : input[start] || 0);
+  }
+  return output;
+}
+
 class BackendClient {
   private config: BackendConfig;
   private socket: WebSocket | null;
@@ -123,6 +152,13 @@ class BackendClient {
   private assistantTurnText: string;
   private backendSynthComplete: boolean;
   private playbackCompleteSent: boolean;
+  private micStream: MediaStream | null;
+  private micAudioContext: AudioContext | null;
+  private micSource: MediaStreamAudioSourceNode | null;
+  private micProcessor: ScriptProcessorNode | null;
+  private micSamples: number[];
+  private cameraStream: MediaStream | null;
+  private screenStream: MediaStream | null;
 
   public constructor(
     config: BackendConfig,
@@ -142,6 +178,13 @@ class BackendClient {
     this.assistantTurnText = "";
     this.backendSynthComplete = false;
     this.playbackCompleteSent = false;
+    this.micStream = null;
+    this.micAudioContext = null;
+    this.micSource = null;
+    this.micProcessor = null;
+    this.micSamples = [];
+    this.cameraStream = null;
+    this.screenStream = null;
   }
 
   public connect(): void {
@@ -243,6 +286,12 @@ class BackendClient {
     this.shouldReconnect = false;
     this.clearReconnectTimer();
     this.stopAudioPlayback(true);
+    this.stopMicrophoneCapture(false);
+    this.stopMediaStream(this.cameraStream);
+    this.stopMediaStream(this.screenStream);
+    this.cameraStream = null;
+    this.screenStream = null;
+    this.updateState({ cameraEnabled: false, screenEnabled: false });
     if (this.socket) {
       this.socket.close();
       this.socket = null;
@@ -312,6 +361,73 @@ class BackendClient {
     });
   }
 
+  public async setMicrophoneEnabled(enabled: boolean): Promise<{ ok: boolean; error?: string }> {
+    if (enabled) {
+      return this.startMicrophoneCapture();
+    }
+    return this.stopMicrophoneCapture(true);
+  }
+
+  public async setCameraEnabled(enabled: boolean): Promise<{ ok: boolean; error?: string }> {
+    if (!enabled) {
+      this.stopMediaStream(this.cameraStream);
+      this.cameraStream = null;
+      this.updateState({ cameraEnabled: false });
+      return { ok: true };
+    }
+
+    try {
+      this.cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: false
+      });
+      this.updateState({ cameraEnabled: true });
+      return { ok: true };
+    } catch (error) {
+      console.warn("[pet-renderer] Camera capture failed", error);
+      this.updateState({ cameraEnabled: false });
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  public async setScreenEnabled(enabled: boolean): Promise<{ ok: boolean; error?: string }> {
+    if (!enabled) {
+      this.stopMediaStream(this.screenStream);
+      this.screenStream = null;
+      this.updateState({ screenEnabled: false });
+      return { ok: true };
+    }
+
+    try {
+      const sourceId = await window.kuroPetElectron.getScreenCaptureSourceId();
+      if (!sourceId) {
+        throw new Error("screen-source-missing");
+      }
+      const constraints = {
+        audio: false,
+        video: {
+          mandatory: {
+            chromeMediaSource: "desktop",
+            chromeMediaSourceId: sourceId,
+            maxFrameRate: 2
+          }
+        }
+      } as unknown as MediaStreamConstraints;
+      this.screenStream = await navigator.mediaDevices.getUserMedia(constraints);
+      this.updateState({ screenEnabled: true });
+      return { ok: true };
+    } catch (error) {
+      console.warn("[pet-renderer] Screen capture failed", error);
+      this.updateState({ screenEnabled: false });
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  public setBrowserPanelEnabled(enabled: boolean): { ok: boolean } {
+    this.updateState({ browserPanelEnabled: enabled });
+    return { ok: true };
+  }
+
   private sendPlaybackComplete(): void {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       return;
@@ -333,6 +449,122 @@ class BackendClient {
       this.currentAudio.src = "";
       this.currentAudio = null;
     }
+  }
+
+  private stopMediaStream(stream: MediaStream | null): void {
+    if (!stream) {
+      return;
+    }
+    for (const track of stream.getTracks()) {
+      try {
+        track.stop();
+      } catch {
+        // Ignore media cleanup failures.
+      }
+    }
+  }
+
+  private async startMicrophoneCapture(): Promise<{ ok: boolean; error?: string }> {
+    if (this.micStream) {
+      this.updateState({ micEnabled: true });
+      return { ok: true };
+    }
+
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      this.updateState({ micEnabled: false });
+      return { ok: false, error: "websocket-not-open" };
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true
+        },
+        video: false
+      });
+      const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+      const audioContext = new AudioContextCtor();
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      const mute = audioContext.createGain();
+      mute.gain.value = 0;
+
+      this.micSamples = [];
+      processor.onaudioprocess = (event) => {
+        const channel = event.inputBuffer.getChannelData(0);
+        const samples = downsampleFloat32(channel, audioContext.sampleRate, 16000);
+        this.micSamples.push(...samples);
+      };
+
+      source.connect(processor);
+      processor.connect(mute);
+      mute.connect(audioContext.destination);
+
+      this.micStream = stream;
+      this.micAudioContext = audioContext;
+      this.micSource = source;
+      this.micProcessor = processor;
+      this.updateState({ micEnabled: true, aiState: "listening" });
+      return { ok: true };
+    } catch (error) {
+      console.warn("[pet-renderer] Microphone capture failed", error);
+      this.stopMicrophoneNodes();
+      this.updateState({ micEnabled: false });
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  private stopMicrophoneNodes(): void {
+    try {
+      this.micProcessor?.disconnect();
+    } catch {
+      // Ignore disconnect failures.
+    }
+    try {
+      this.micSource?.disconnect();
+    } catch {
+      // Ignore disconnect failures.
+    }
+    this.stopMediaStream(this.micStream);
+    void this.micAudioContext?.close().catch(() => undefined);
+    this.micStream = null;
+    this.micAudioContext = null;
+    this.micSource = null;
+    this.micProcessor = null;
+  }
+
+  private stopMicrophoneCapture(submit: boolean): { ok: boolean; error?: string } {
+    const samples = this.micSamples.slice();
+    this.micSamples = [];
+    this.stopMicrophoneNodes();
+    this.updateState({ micEnabled: false });
+
+    if (!submit || samples.length === 0) {
+      this.updateState({ aiState: "idle" });
+      return { ok: true };
+    }
+
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      return { ok: false, error: "websocket-not-open" };
+    }
+
+    const chunkSize = 4096;
+    for (let i = 0; i < samples.length; i += chunkSize) {
+      this.socket.send(
+        JSON.stringify({
+          type: "mic-audio-data",
+          audio: samples.slice(i, i + chunkSize)
+        })
+      );
+    }
+    this.resetAssistantTurn();
+    this.stopAudioPlayback(true);
+    this.resetPlaybackTurn();
+    this.socket.send(JSON.stringify({ type: "mic-audio-end" }));
+    this.updateState({ latestAssistantText: "", aiState: "thinking" });
+    return { ok: true };
   }
 
   private resetPlaybackTurn(): void {
@@ -641,7 +873,11 @@ const rendererState: RendererState = {
   confName: "",
   confUid: "",
   currentHistoryUid: "",
-  currentHistoryTitle: ""
+  currentHistoryTitle: "",
+  micEnabled: false,
+  cameraEnabled: false,
+  screenEnabled: false,
+  browserPanelEnabled: false
 };
 
 const reportState = (patch: Partial<RendererState>) => {
@@ -760,6 +996,14 @@ const unsubscribe = window.kuroPetElectron.onCommand((payload) => {
 
   if (payload.type === "interrupt") {
     client.sendInterrupt();
+  } else if (payload.type === "mic-toggle") {
+    void client.setMicrophoneEnabled(Boolean(payload.enabled));
+  } else if (payload.type === "camera-toggle") {
+    void client.setCameraEnabled(Boolean(payload.enabled));
+  } else if (payload.type === "screen-toggle") {
+    void client.setScreenEnabled(Boolean(payload.enabled));
+  } else if (payload.type === "browser-toggle") {
+    client.setBrowserPanelEnabled(Boolean(payload.enabled));
   }
 });
 
