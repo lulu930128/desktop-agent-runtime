@@ -16,6 +16,7 @@ from .conversation_utils import (
 from .types import WebSocketSend
 from .tts_manager import TTSTaskManager
 from ..chat_history_manager import store_message
+from ..character_memory_manager import process_character_memory_turn
 from ..service_context import ServiceContext
 # =========================
 # Default translation engine (Bridge)
@@ -301,6 +302,17 @@ async def process_single_conversation(
                 avatar=context.character_config.avatar,
             )
             logger.info(f"AI response: {full_response}")
+
+        if context.history_uid and not skip_history and input_text:
+            memory_changed, memory_notes = process_character_memory_turn(
+                conf_uid=context.character_config.conf_uid,
+                history_uid=context.history_uid,
+                user_text=input_text,
+                assistant_text=full_response,
+            )
+            if memory_changed:
+                logger.info(f"Character memory updated: {memory_notes}")
+                await context.refresh_system_prompt()
 
         return full_response  # Return accumulated full_response
 

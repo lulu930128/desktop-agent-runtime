@@ -23,6 +23,7 @@ from .tts.tts_factory import TTSFactory
 from .vad.vad_factory import VADFactory
 from .agent.agent_factory import AgentFactory
 from .translate.translate_factory import TranslateFactory
+from .character_memory_manager import format_character_memories_for_prompt
 
 from .config_manager import (
     Config,
@@ -472,6 +473,19 @@ class ServiceContext:
         else:
             logger.info("Translation already initialized with the same config.")
 
+    async def refresh_system_prompt(self) -> None:
+        """Rebuild the active system prompt without recreating provider clients."""
+        if not self.character_config or not self.agent_engine:
+            return
+
+        system_prompt = await self.construct_system_prompt(
+            self.character_config,
+            self.character_config.persona_prompt,
+        )
+        if hasattr(self.agent_engine, "set_system"):
+            self.agent_engine.set_system(system_prompt)
+        self.system_prompt = system_prompt
+
     # ==== utils
 
     def _append_prompt_section(self, parts: list[str], title: str, content: str) -> None:
@@ -520,6 +534,12 @@ class ServiceContext:
                 character_config.persona_prompt_path
             )
         self._append_prompt_section(parts, "Character Persona", effective_persona)
+
+        self._append_prompt_section(
+            parts,
+            "Character Memory",
+            format_character_memories_for_prompt(character_config.conf_uid),
+        )
 
         self._append_prompt_section(
             parts,

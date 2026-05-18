@@ -313,6 +313,7 @@ def start_llm(cfg: AppConfig, logger_cb, *, logs_root: Path, run_id: str) -> Man
     env = os.environ.copy()
     env["OPEN_LLM_VTUBER_CONFIG"] = str(cfg.runtime_conf_path)
     env["KURO_LAUNCHER_LOGS_DIR"] = str(Path(logs_root).resolve())
+    env["KURO_MEMORY_ROOT"] = str((Path(cfg.open_llm_dir) / "memories").resolve())
 
     _probe_llm_import(python_llm, Path(cfg.open_llm_dir), env, logger_cb)
 

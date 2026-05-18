@@ -32,6 +32,7 @@ gsv-tts/
 Open-LLM-VTuber/logs/
 Open-LLM-VTuber/cache/
 Open-LLM-VTuber/chat_history/
+Open-LLM-VTuber/memories/
 Open-LLM-VTuber/conf.launcher_runtime.yaml
 
 # Local secrets and machine config

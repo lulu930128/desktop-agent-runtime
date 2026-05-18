@@ -303,6 +303,34 @@ def _read_text_maybe(path: Optional[Path]) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+def _format_character_memory_preview(open_llm_dir: Path, conf_uid: str) -> str:
+    conf_uid = (conf_uid or "").strip()
+    if not conf_uid:
+        return ""
+    memory_path = open_llm_dir / "memories" / "characters" / conf_uid / "long_term.json"
+    if not memory_path.exists():
+        return "目前沒有角色長期記憶。"
+    try:
+        payload = json.loads(memory_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        return f"角色長期記憶讀取失敗：{exc}"
+
+    entries = payload.get("entries") if isinstance(payload, dict) else []
+    if not isinstance(entries, list) or not entries:
+        return "目前沒有角色長期記憶。"
+
+    lines: list[str] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        marker = "ON" if entry.get("enabled", True) else "OFF"
+        memory_type = str(entry.get("memory_type") or "fact")
+        content = _compact_history_text(str(entry.get("content") or ""), max_len=180)
+        if content:
+            lines.append(f"[{marker}] ({memory_type}) {content}")
+    return "\n".join(lines).strip() or "目前沒有角色長期記憶。"
+
+
 def _pretty_path(path: Optional[Path], root: Path) -> str:
     if path is None:
         return "(未設定)"
@@ -2653,6 +2681,7 @@ class LauncherApp(ctk.CTk):
         self._update_character_preview(character)
 
         persona_text = ""
+        memory_text = ""
         project_text = ""
         tool_text = ""
         contract_text = _read_text_maybe(
@@ -2663,12 +2692,23 @@ class LauncherApp(ctk.CTk):
             persona_text = _read_text_maybe(
                 _resolve_repo_path(self.cfg.open_llm_dir, character.persona_prompt_path)
             )
+            memory_text = _format_character_memory_preview(
+                self.cfg.open_llm_dir,
+                character.conf_uid,
+            )
+            if memory_text:
+                persona_text = (
+                    f"{persona_text.rstrip()}\n\n[角色長期記憶]\n{memory_text}"
+                    if persona_text.strip()
+                    else f"[角色長期記憶]\n{memory_text}"
+                )
         if project:
             project_text = _read_text_maybe(project.project_prompt_path)
             tool_text = _read_text_maybe(project.tool_prompt_path)
 
         self._prompt_texts = {
             "persona": persona_text,
+            "memory": memory_text,
             "project": project_text,
             "tool": tool_text,
             "contract": contract_text,
