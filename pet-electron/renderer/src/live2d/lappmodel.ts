@@ -198,6 +198,13 @@ function clampSigned(value: number): number {
   return Math.min(1, Math.max(-1, value));
 }
 
+function clampExternalParameterValue(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.min(1, Math.max(-1, value));
+}
+
 type IdleWaveParameterSpec = {
   parameterId: string;
   amplitude: number;
@@ -1073,7 +1080,7 @@ export class LAppModel extends CubismUserModel {
           : null,
       parameterIndex: normalizedIndex,
       currentValue: existing?.currentValue ?? 0,
-      targetValue: clamp01(targetValue),
+      targetValue: clampExternalParameterValue(targetValue),
       durationSeconds: Math.max(0.08, durationSeconds)
     });
   }

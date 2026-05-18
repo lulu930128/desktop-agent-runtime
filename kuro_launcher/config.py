@@ -2,7 +2,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import yaml
 
@@ -46,7 +46,7 @@ class AppConfig:
     env_llm: Path
     runtime_conf_path: Path
     logs_dir: Path
-    electron_lnk: Path
+    electron_lnk: Optional[Path]
     pet_electron_dir: Path
     pet_electron_preferred: bool
 
@@ -142,10 +142,12 @@ def load_config(config_path: Path) -> AppConfig:
         mapping,
     ).resolve()
     logs_dir = _resolve_path(str(paths.get("logs_dir") or ""), mapping).resolve()
-    electron_lnk = _resolve_path(
-        str(paths.get("electron_lnk") or ""),
-        mapping,
-    ).resolve()
+    electron_lnk_value = str(paths.get("electron_lnk") or "").strip()
+    electron_lnk = (
+        _resolve_path(electron_lnk_value, mapping).resolve()
+        if electron_lnk_value
+        else None
+    )
     pet_electron_dir = _resolve_path(
         str(paths.get("pet_electron_dir") or (root / "pet-electron")),
         mapping,

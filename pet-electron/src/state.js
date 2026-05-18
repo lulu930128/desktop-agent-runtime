@@ -13,6 +13,11 @@ const DEFAULT_STATE = {
     parameterIndex: null,
     value: 0
   },
+  expression: {
+    expressionId: "neutral",
+    expressionLabel: "一般",
+    parameters: {}
+  },
   boundsByMode: {
     pet: {
       x: 96,
@@ -82,6 +87,26 @@ function mergeState(candidate) {
       value: Number.isFinite(Number(outfit.value))
         ? Math.max(0, Math.min(1, Number(outfit.value)))
         : 0
+    };
+  }
+
+  if (candidate.expression && typeof candidate.expression === "object") {
+    const expression = candidate.expression;
+    const parameters = {};
+    if (expression.parameters && typeof expression.parameters === "object") {
+      for (const [key, value] of Object.entries(expression.parameters)) {
+        const parameterId = String(key || "").trim();
+        const numberValue = Number(value);
+        if (!parameterId || !Number.isFinite(numberValue)) {
+          continue;
+        }
+        parameters[parameterId] = Math.max(-1, Math.min(1, numberValue));
+      }
+    }
+    next.expression = {
+      expressionId: String(expression.expressionId || "neutral"),
+      expressionLabel: String(expression.expressionLabel || "一般"),
+      parameters
     };
   }
 

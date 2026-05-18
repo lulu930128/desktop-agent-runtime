@@ -57,7 +57,9 @@ let latestFrontendState = {
   currentOutfitId: "normal",
   currentOutfitParameterId: "Param10",
   currentOutfitParameterIndex: null,
-  currentOutfitValue: 0
+  currentOutfitValue: 0,
+  currentExpressionId: "neutral",
+  currentExpressionLabel: "一般"
 };
 
 function normalizePetZoomScale(value) {
@@ -625,6 +627,32 @@ async function handleControlAction(action, payload = {}) {
         parameterId,
         parameterIndex,
         value
+      });
+      return { ok: true, route: "ipc", action };
+    }
+    case "set-expression": {
+      const expressionId = String(payload.expressionId || "neutral");
+      const expressionLabel = String(payload.expressionLabel || expressionId);
+      const parameters = {};
+      if (payload.parameters && typeof payload.parameters === "object") {
+        for (const [key, value] of Object.entries(payload.parameters)) {
+          const parameterId = String(key || "").trim();
+          const numberValue = Number(value);
+          if (!parameterId || !Number.isFinite(numberValue)) {
+            continue;
+          }
+          parameters[parameterId] = Math.max(-1, Math.min(1, numberValue));
+        }
+      }
+      appState.expression = { expressionId, expressionLabel, parameters };
+      saveCurrentState();
+      latestFrontendState.currentExpressionId = expressionId;
+      latestFrontendState.currentExpressionLabel = expressionLabel;
+      broadcast("pet-command", {
+        type: "expression-set",
+        expressionId,
+        expressionLabel,
+        parameters
       });
       return { ok: true, route: "ipc", action };
     }
@@ -1484,7 +1512,8 @@ function registerIpc() {
       baseUrl: process.env.KURO_BACKEND_BASE_URL || "http://127.0.0.1:23456",
       wsUrl: process.env.KURO_BACKEND_WS_URL || "ws://127.0.0.1:23456/client-ws",
       zoomScale: normalizePetZoomScale(appState.petZoomScale),
-      outfit: appState.outfit
+      outfit: appState.outfit,
+      expression: appState.expression
     };
   });
 
@@ -1677,6 +1706,8 @@ if (!singleInstanceLock) {
     latestFrontendState.currentOutfitParameterId = appState.outfit.parameterId;
     latestFrontendState.currentOutfitParameterIndex = appState.outfit.parameterIndex;
     latestFrontendState.currentOutfitValue = appState.outfit.value;
+    latestFrontendState.currentExpressionId = appState.expression.expressionId;
+    latestFrontendState.currentExpressionLabel = appState.expression.expressionLabel;
     appState.mode = "pet";
     appState.forceIgnoreMouse = true;
     appState.petSpanAllDisplays = false;

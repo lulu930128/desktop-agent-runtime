@@ -13,6 +13,11 @@ declare global {
           parameterIndex?: number | null;
           value?: number;
         };
+        expression?: {
+          expressionId?: string;
+          expressionLabel?: string;
+          parameters?: Record<string, number>;
+        };
       };
       reportFrontendState: (payload: Record<string, unknown>) => void;
       updateComponentHover: (componentName: string, hovered: boolean) => void;
@@ -30,6 +35,9 @@ declare global {
           outfitId?: string;
           parameterId?: string;
           parameterIndex?: number | null;
+          expressionId?: string;
+          expressionLabel?: string;
+          parameters?: Record<string, number>;
           value?: number;
         }) => void
       ) => () => void;

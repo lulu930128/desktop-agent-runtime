@@ -68,6 +68,7 @@ export class PetLive2DRenderer {
   private outfitParameterId: string | null;
   private outfitParameterIndex: number | null;
   private outfitValue: number;
+  private expressionParameters: Record<string, number>;
 
   public constructor(canvas: HTMLCanvasElement) {
     ensureCubismReady();
@@ -86,6 +87,7 @@ export class PetLive2DRenderer {
     this.outfitParameterId = null;
     this.outfitParameterIndex = null;
     this.outfitValue = 0;
+    this.expressionParameters = {};
     this.renderFrame = this.renderFrame.bind(this);
     this.start();
   }
@@ -115,6 +117,9 @@ export class PetLive2DRenderer {
         0.85,
         this.outfitParameterIndex
       );
+    }
+    for (const [parameterId, value] of Object.entries(this.expressionParameters)) {
+      nextModel.setExternalParameterTarget(parameterId, value, 0.35);
     }
     this.subdelegate.getTextureManager().releaseTextures();
     console.info("[pet-renderer] Loading model assets", { modelDir, fileName });
@@ -165,6 +170,30 @@ export class PetLive2DRenderer {
       0.85,
       this.outfitParameterIndex
     );
+  }
+
+  public setExpressionParameters(parameters: Record<string, number>): void {
+    const nextParameters: Record<string, number> = {};
+
+    for (const [parameterId, value] of Object.entries(parameters || {})) {
+      const normalizedParameterId = String(parameterId || "").trim();
+      const numericValue = Number(value);
+      if (!normalizedParameterId || !Number.isFinite(numericValue)) {
+        continue;
+      }
+      nextParameters[normalizedParameterId] = Math.min(1, Math.max(-1, numericValue));
+    }
+
+    for (const parameterId of Object.keys(this.expressionParameters)) {
+      if (!(parameterId in nextParameters)) {
+        this.model?.setExternalParameterTarget(parameterId, 0, 0.35);
+      }
+    }
+
+    this.expressionParameters = nextParameters;
+    for (const [parameterId, value] of Object.entries(nextParameters)) {
+      this.model?.setExternalParameterTarget(parameterId, value, 0.35);
+    }
   }
 
   public setDragPointFromCanvas(clientX: number, clientY: number): void {

@@ -30,6 +30,20 @@ def _bootstrap_base_dir() -> Path:
 
 
 BASE_DIR = _bootstrap_base_dir()
+WINDOWS_APP_USER_MODEL_ID = "kuro.desktop-agent.launcher"
+
+
+def _set_windows_app_user_model_id() -> None:
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            WINDOWS_APP_USER_MODEL_ID
+        )
+    except Exception:
+        pass
 
 from kuro_launcher.config import AppConfig, load_config
 from kuro_launcher.procs import ManagedProc
@@ -103,6 +117,95 @@ PALETTE = {
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+
+EXPRESSION_BASE_PARAMETERS: Dict[str, float] = {
+    "Param6": 0,
+    "Param7": 0,
+    "Param8": 0,
+    "Param9": 0,
+    "Param91": 0,
+    "Param92": 0,
+    "Param93": 0,
+    "Param94": 0,
+    "ParamCheek": 0,
+    "ParamEyeLSmile": 0,
+    "ParamEyeRSmile": 0,
+    "ParamMouthForm": 0,
+    "ParamBrowLY": 0,
+    "ParamBrowRY": 0,
+    "ParamBrowLForm": 0,
+    "ParamBrowRForm": 0,
+}
+
+EXPRESSION_PRESETS: Dict[str, dict] = {
+    "neutral": {"label": "一般", "parameters": {}},
+    "happy": {
+        "label": "開心",
+        "parameters": {
+            "Param6": 1,
+            "ParamCheek": 0.35,
+            "ParamEyeLSmile": 0.65,
+            "ParamEyeRSmile": 0.65,
+            "ParamMouthForm": 0.28,
+        },
+    },
+    "angry": {
+        "label": "生氣",
+        "parameters": {
+            "Param7": 1,
+            "ParamBrowLForm": -0.6,
+            "ParamBrowRForm": -0.6,
+            "ParamMouthForm": -0.32,
+        },
+    },
+    "sad": {
+        "label": "難過",
+        "parameters": {
+            "Param8": 1,
+            "ParamBrowLY": -0.25,
+            "ParamBrowRY": -0.25,
+            "ParamMouthForm": -0.42,
+        },
+    },
+    "cry": {
+        "label": "哭哭",
+        "parameters": {
+            "Param9": 1,
+            "Param91": 1,
+            "Param92": 1,
+            "Param93": 1,
+            "Param94": 1,
+            "ParamMouthForm": -0.4,
+        },
+    },
+    "shy": {
+        "label": "害羞",
+        "parameters": {
+            "Param6": 0.7,
+            "ParamCheek": 0.85,
+            "ParamEyeLSmile": 0.35,
+            "ParamEyeRSmile": 0.35,
+            "ParamMouthForm": 0.12,
+        },
+    },
+    "thinking": {
+        "label": "思考",
+        "parameters": {
+            "ParamBrowLY": 0.25,
+            "ParamBrowRY": 0.25,
+            "ParamMouthForm": -0.12,
+        },
+    },
+}
+
+EXPRESSION_LABEL_TO_ID = {
+    str(item["label"]): expression_id
+    for expression_id, item in EXPRESSION_PRESETS.items()
+}
+EXPRESSION_ID_TO_LABEL = {
+    expression_id: str(item["label"])
+    for expression_id, item in EXPRESSION_PRESETS.items()
+}
 
 FONT_UI = "Microsoft JhengHei UI"
 FONT_MONO = "Cascadia Mono"
@@ -260,6 +363,7 @@ class LauncherApp(ctk.CTk):
         self.project_var = ctk.StringVar(value="")
         self.history_var = ctk.StringVar(value="")
         self.outfit_var = ctk.StringVar(value="normal")
+        self.expression_var = ctk.StringVar(value=EXPRESSION_ID_TO_LABEL["neutral"])
         self.pet_base_url_var = ctk.StringVar(value=self.cfg.llm_url)
         self.pet_ws_url_var = ctk.StringVar(
             value=f"ws://{self.cfg.llm_host}:{self.cfg.llm_port}/client-ws"
@@ -281,6 +385,7 @@ class LauncherApp(ctk.CTk):
         self.pet_toggle_vars: Dict[str, ctk.StringVar] = {}
 
         self.title("Kuro Launcher")
+        self._apply_window_icon()
         self.geometry("1380x820")
         self.minsize(1160, 720)
         self.configure(fg_color=PALETTE["app_bg"])
@@ -292,6 +397,16 @@ class LauncherApp(ctk.CTk):
         self._refresh_project_list()
         self.after(120, self._drain_log_queue)
         self.after(600, self._tick_status)
+
+    def _apply_window_icon(self) -> None:
+        icon_path = self.cfg.root / "kuro_launcher" / "launcher_yuki.ico"
+        if not icon_path.exists():
+            return
+        try:
+            self.iconbitmap(str(icon_path))
+            self.wm_iconbitmap(default=str(icon_path))
+        except Exception:
+            pass
 
     def _build_ui(self) -> None:
         self.grid_columnconfigure(0, weight=1)
@@ -1701,6 +1816,38 @@ class LauncherApp(ctk.CTk):
             padx=(0, 0),
         )
 
+        expression_shell = ctk.CTkFrame(
+            pet_button_bar,
+            corner_radius=14,
+            fg_color=PALETTE["panel_bg"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+        )
+        expression_shell.grid(row=5, column=0, sticky="ew", padx=(0, 0), pady=(0, 8))
+        expression_shell.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(
+            expression_shell,
+            text="表情",
+            font=ui_font(12, "bold"),
+            text_color=PALETTE["text"],
+        ).grid(row=0, column=0, sticky="w", padx=(12, 8), pady=8)
+        ctk.CTkOptionMenu(
+            expression_shell,
+            variable=self.expression_var,
+            values=[EXPRESSION_ID_TO_LABEL[key] for key in EXPRESSION_PRESETS],
+            command=self._on_expression_changed,
+            fg_color=PALETTE["panel_alt"],
+            button_color=PALETTE["accent_blue"],
+            button_hover_color=PALETTE["accent_blue_hover"],
+            dropdown_fg_color=PALETTE["panel_bg"],
+            dropdown_hover_color=PALETTE["accent_soft"],
+            text_color=PALETTE["text"],
+            font=ui_font(12, "bold"),
+            dropdown_font=ui_font(12),
+            height=30,
+            corner_radius=10,
+        ).grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=8)
+
     def log(self, message: str) -> None:
         try:
             self._log_q.put_nowait(strip_ansi_and_ctrl(str(message)))
@@ -2441,6 +2588,52 @@ class LauncherApp(ctk.CTk):
         self._update_character_preview(self._selected_character())
         self._apply_selected_outfit()
 
+    def _selected_expression_payload(self) -> tuple[str, str, Dict[str, float]]:
+        label = self.expression_var.get().strip() or EXPRESSION_ID_TO_LABEL["neutral"]
+        expression_id = EXPRESSION_LABEL_TO_ID.get(label, "neutral")
+        preset = EXPRESSION_PRESETS.get(expression_id, EXPRESSION_PRESETS["neutral"])
+        parameters = dict(EXPRESSION_BASE_PARAMETERS)
+        parameters.update(preset.get("parameters") or {})
+        return expression_id, str(preset.get("label") or label), parameters
+
+    def _apply_selected_expression(self, *, wait_for_shell: bool = False) -> None:
+        expression_id, expression_label, parameters = self._selected_expression_payload()
+
+        def runner() -> None:
+            if wait_for_shell:
+                for _ in range(30):
+                    if port_is_open(self.cfg.pet_control_host, self.cfg.pet_control_port, 0.25):
+                        break
+                    time.sleep(0.25)
+            elif not port_is_open(self.cfg.pet_control_host, self.cfg.pet_control_port, 0.1):
+                self.log(f"[{log_ts()}] 桌寵未啟動，表情已先記錄：{expression_label}")
+                return
+
+            try:
+                result = http_post_json(
+                    self._pet_control_endpoint("/command"),
+                    {
+                        "action": "set-expression",
+                        "expressionId": expression_id,
+                        "expressionLabel": expression_label,
+                        "parameters": parameters,
+                    },
+                    timeout=5.0,
+                )
+            except Exception as exc:
+                self.log(f"[{log_ts()}] 切換表情失敗：{exc}")
+                return
+
+            renderer = result.get("renderer") or {}
+            self.after(0, lambda r=renderer: self._sync_pet_toggle_states(r))
+            self.after(0, self._tick_pet_shell_status)
+            self.log(f"[{log_ts()}] 已切換表情：{expression_label}")
+
+        threading.Thread(target=runner, daemon=True).start()
+
+    def _on_expression_changed(self, _value: str) -> None:
+        self._apply_selected_expression()
+
     def _on_prompt_segment_changed(self, _value: str) -> None:
         self._refresh_prompt_view()
 
@@ -3100,6 +3293,7 @@ class LauncherApp(ctk.CTk):
             if switched:
                 self._launch_pet_electron()
                 self._apply_selected_outfit(wait_for_shell=True)
+                self._apply_selected_expression(wait_for_shell=True)
                 self._apply_history_choice(
                     wait_for_client=False,
                     selected_character=character,
@@ -3221,6 +3415,7 @@ class LauncherApp(ctk.CTk):
             self.log(f"[{log_ts()}] {llm_ready_message}：{self.cfg.llm_url}")
             self.on_open_electron()
             self._apply_selected_outfit(wait_for_shell=True)
+            self._apply_selected_expression(wait_for_shell=True)
             self._apply_history_choice(
                 wait_for_client=True,
                 selected_character=character,
@@ -3328,6 +3523,10 @@ class LauncherApp(ctk.CTk):
         if outfit_id in {"normal", "hoodie"}:
             self.outfit_var.set(outfit_id)
             self._update_character_preview(self._selected_character())
+
+        expression_id = str(renderer.get("currentExpressionId") or "").strip()
+        if expression_id in EXPRESSION_ID_TO_LABEL:
+            self.expression_var.set(EXPRESSION_ID_TO_LABEL[expression_id])
 
     def _sync_runtime_history_selection(self, renderer: dict) -> None:
         history_uid = str(
@@ -3587,7 +3786,7 @@ class LauncherApp(ctk.CTk):
             if self.cfg.pet_electron_preferred and self._launch_pet_electron():
                 return
 
-            if self.cfg.electron_lnk.exists():
+            if self.cfg.electron_lnk and self.cfg.electron_lnk.exists():
                 os.startfile(str(self.cfg.electron_lnk))
                 self.log(f"[{log_ts()}] 已開啟舊版 Electron：{self.cfg.electron_lnk}")
             else:
@@ -3612,6 +3811,7 @@ class LauncherApp(ctk.CTk):
 
 
 def main() -> None:
+    _set_windows_app_user_model_id()
     here = BASE_DIR
     cfg_path = here / "kuro_launcher.settings.yaml"
 

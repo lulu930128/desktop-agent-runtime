@@ -47,6 +47,8 @@ type RendererState = {
   currentOutfitParameterId: string;
   currentOutfitParameterIndex: number | null;
   currentOutfitValue: number;
+  currentExpressionId: string;
+  currentExpressionLabel: string;
   micEnabled: boolean;
   cameraEnabled: boolean;
   screenEnabled: boolean;
@@ -1368,6 +1370,8 @@ const rendererState: RendererState = {
   currentOutfitParameterId: DEFAULT_OUTFIT_PARAMETER_ID,
   currentOutfitParameterIndex: null,
   currentOutfitValue: 0,
+  currentExpressionId: "neutral",
+  currentExpressionLabel: "一般",
   micEnabled: false,
   cameraEnabled: false,
   screenEnabled: false,
@@ -1403,6 +1407,11 @@ renderer.setOutfitParameter(
   initialOutfitValue,
   initialOutfitParameterIndex
 );
+const initialExpression = initialConfig.expression || {};
+const initialExpressionId = String(initialExpression.expressionId || "neutral");
+const initialExpressionLabel = String(initialExpression.expressionLabel || "一般");
+const initialExpressionParameters = initialExpression.parameters || {};
+renderer.setExpressionParameters(initialExpressionParameters);
 const client = new BackendClient(
   {
     baseUrl: initialConfig.baseUrl,
@@ -1422,7 +1431,9 @@ reportState({
   currentOutfitId: initialOutfitId,
   currentOutfitParameterId: initialOutfitParameterId,
   currentOutfitParameterIndex: initialOutfitParameterIndex,
-  currentOutfitValue: initialOutfitValue
+  currentOutfitValue: initialOutfitValue,
+  currentExpressionId: initialExpressionId,
+  currentExpressionLabel: initialExpressionLabel
 });
 client.connect();
 
@@ -1543,6 +1554,15 @@ const unsubscribe = window.kuroPetElectron.onCommand((payload) => {
       currentOutfitParameterId: parameterId,
       currentOutfitParameterIndex: parameterIndex,
       currentOutfitValue: value
+    });
+  } else if (payload.type === "expression-set") {
+    const expressionId = String(payload.expressionId || "neutral");
+    const expressionLabel = String(payload.expressionLabel || expressionId);
+    const parameters = payload.parameters || {};
+    renderer.setExpressionParameters(parameters);
+    reportState({
+      currentExpressionId: expressionId,
+      currentExpressionLabel: expressionLabel
     });
   }
 });

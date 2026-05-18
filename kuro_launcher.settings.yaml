@@ -12,7 +12,6 @@ paths:
   env_llm: "${ROOT}\\envs\\kuro-llm310"
   runtime_conf_path: "${open_llm_vtuber_dir}\\conf.launcher_runtime.yaml"
   logs_dir: "${ROOT}\\launcher_logs"
-  electron_lnk: "${ROOT}\\open-llm-vtuber-electron\\open-llm-vtuber-electron.exe"
   pet_electron_dir: "${ROOT}\\pet-electron"
   pet_electron_preferred: true
 
