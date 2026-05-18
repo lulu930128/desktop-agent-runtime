@@ -360,6 +360,47 @@ class WebSocketHandler:
             "message": f"New history created by {trigger_source}.",
         }
 
+    async def launcher_refresh_memory(
+        self,
+        *,
+        target_client_uid: Optional[str] = None,
+        trigger_source: str = "launcher",
+    ) -> dict:
+        resolved_client_uid, connected_clients, resolve_error = (
+            self._resolve_launcher_target(target_client_uid)
+        )
+        if resolve_error:
+            raise RuntimeError(resolve_error)
+
+        if resolved_client_uid is None:
+            await self.default_context_cache.refresh_system_prompt()
+            return {
+                "ok": True,
+                "scope": "default",
+                "target_client_uid": "",
+                "connected_client_count": len(connected_clients),
+                "message": f"Default memory prompt refreshed by {trigger_source}.",
+            }
+
+        idle, reason = self._is_client_idle_for_switch(resolved_client_uid)
+        if not idle:
+            raise RuntimeError(reason)
+
+        context = self.client_contexts.get(resolved_client_uid)
+        if not context:
+            raise RuntimeError(
+                f"Target client {resolved_client_uid} disconnected before memory refresh could complete."
+            )
+
+        await context.refresh_system_prompt()
+        return {
+            "ok": True,
+            "scope": "session",
+            "target_client_uid": resolved_client_uid,
+            "connected_client_count": len(connected_clients),
+            "message": f"Memory prompt refreshed by {trigger_source}.",
+        }
+
     async def hot_switch_runtime_config(
         self,
         runtime_config_data: dict,

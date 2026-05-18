@@ -15,6 +15,7 @@ from .conversation_utils import (
 )
 from .types import WebSocketSend
 from .tts_manager import TTSTaskManager
+from ..chat_event_manager import store_history_event
 from ..chat_history_manager import store_message
 from ..character_memory_manager import process_character_memory_turn
 from ..service_context import ServiceContext
@@ -162,6 +163,75 @@ def _load_speech_style_prompt(context: "ServiceContext") -> str:
 from ..agent.output_types import SentenceOutput, AudioOutput
 
 
+def _compact_event_text(value: Any, max_len: int = 240) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        try:
+            value = json.dumps(value, ensure_ascii=False)
+        except Exception:
+            value = str(value)
+    compact = " ".join(value.replace("\r", " ").replace("\n", " ").split())
+    if len(compact) <= max_len:
+        return compact
+    return compact[: max_len - 1].rstrip(" ，、。,.!?！？；;:：") + "…"
+
+
+def _store_tool_status_event(
+    *,
+    context: ServiceContext,
+    output_item: Dict[str, Any],
+    skip_history: bool,
+) -> None:
+    if skip_history or not context.history_uid:
+        return
+
+    status = str(output_item.get("status") or "info").strip().lower()
+    if status == "running":
+        return
+
+    tool_name = str(output_item.get("tool_name") or "tool").strip() or "tool"
+    content_preview = _compact_event_text(output_item.get("content"), max_len=180)
+    if status == "completed":
+        summary = f"{tool_name} 已完成"
+    elif status == "error":
+        summary = f"{tool_name} 發生錯誤"
+        if content_preview:
+            summary = f"{summary}：{content_preview}"
+    else:
+        summary = f"{tool_name} 狀態：{status}"
+
+    store_history_event(
+        conf_uid=context.character_config.conf_uid,
+        history_uid=context.history_uid,
+        event_type="tool_call",
+        status=status,
+        title=f"工具：{tool_name}",
+        summary=summary,
+        detail={
+            "tool_id": output_item.get("tool_id"),
+            "tool_name": tool_name,
+            "status": status,
+            "content_preview": content_preview,
+        },
+    )
+
+
+def _memory_event_summary(memory_notes: List[str]) -> str:
+    upserts = sum(1 for note in memory_notes if note == "upsert")
+    disabled = sum(
+        int(note.split(":", 1)[1])
+        for note in memory_notes
+        if note.startswith("disabled:") and note.split(":", 1)[1].isdigit()
+    )
+    parts: list[str] = []
+    if upserts:
+        parts.append(f"新增或更新 {upserts} 條角色記憶")
+    if disabled:
+        parts.append(f"停用 {disabled} 條角色記憶")
+    return "，".join(parts) or "角色記憶已更新"
+
+
 async def process_single_conversation(
     context: ServiceContext,
     websocket_send: WebSocketSend,
@@ -238,6 +308,11 @@ async def process_single_conversation(
                     isinstance(output_item, dict)
                     and output_item.get("type") == "tool_call_status"
                 ):
+                    _store_tool_status_event(
+                        context=context,
+                        output_item=output_item,
+                        skip_history=bool(skip_history),
+                    )
                     # Handle tool status event: send WebSocket message
                     output_item["name"] = context.character_config.character_name
                     logger.debug(f"Sending tool status update: {output_item}")
@@ -312,7 +387,26 @@ async def process_single_conversation(
             )
             if memory_changed:
                 logger.info(f"Character memory updated: {memory_notes}")
+                store_history_event(
+                    conf_uid=context.character_config.conf_uid,
+                    history_uid=context.history_uid,
+                    event_type="memory_update",
+                    status="ok",
+                    title="角色記憶已更新",
+                    summary=_memory_event_summary(memory_notes),
+                    detail={"notes": memory_notes},
+                )
                 await context.refresh_system_prompt()
+            elif "skipped-sensitive" in memory_notes:
+                store_history_event(
+                    conf_uid=context.character_config.conf_uid,
+                    history_uid=context.history_uid,
+                    event_type="memory_skipped",
+                    status="skipped",
+                    title="角色記憶未寫入",
+                    summary="這次輸入看起來包含敏感資料，因此沒有寫入長期記憶。",
+                    detail={"notes": memory_notes},
+                )
 
         return full_response  # Return accumulated full_response
 

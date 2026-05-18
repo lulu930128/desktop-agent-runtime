@@ -352,6 +352,132 @@ def _disable_memories(store: dict[str, Any], target: str) -> int:
     return count
 
 
+def _merge_entry(existing: dict[str, Any], incoming: dict[str, Any]) -> bool:
+    changed = False
+    existing_enabled = bool(existing.get("enabled", True))
+    incoming_enabled = bool(incoming.get("enabled", True))
+    existing_importance = float(existing.get("importance") or 0)
+    incoming_importance = float(incoming.get("importance") or 0)
+    existing_updated = str(existing.get("updated_at") or "")
+    incoming_updated = str(incoming.get("updated_at") or "")
+
+    prefer_incoming_content = (
+        incoming_enabled and not existing_enabled
+        or incoming_importance > existing_importance
+        or (
+            incoming_importance == existing_importance
+            and incoming_updated > existing_updated
+            and len(str(incoming.get("content") or ""))
+            >= len(str(existing.get("content") or ""))
+        )
+    )
+
+    if prefer_incoming_content:
+        for key in ("content", "memory_type", "source", "source_history_uid"):
+            value = incoming.get(key)
+            if value and existing.get(key) != value:
+                existing[key] = value
+                changed = True
+
+    merged_values = {
+        "enabled": existing_enabled or incoming_enabled,
+        "confidence": max(
+            float(existing.get("confidence") or 0),
+            float(incoming.get("confidence") or 0),
+        ),
+        "importance": max(existing_importance, incoming_importance),
+        "updated_at": max(existing_updated, incoming_updated) or _now_iso(),
+    }
+    for key, value in merged_values.items():
+        if existing.get(key) != value:
+            existing[key] = value
+            changed = True
+    return changed
+
+
+def _compact_store(store: dict[str, Any]) -> bool:
+    raw_entries = store.get("entries", [])
+    if not isinstance(raw_entries, list):
+        store["entries"] = []
+        return True
+
+    changed = False
+    merged_entries: list[dict[str, Any]] = []
+    for raw_entry in raw_entries:
+        if not isinstance(raw_entry, dict):
+            changed = True
+            continue
+        content = _clean_text(str(raw_entry.get("content") or ""), max_len=260)
+        if not content:
+            changed = True
+            continue
+
+        entry = dict(raw_entry)
+        if entry.get("content") != content:
+            entry["content"] = content
+            changed = True
+        entry.setdefault("id", uuid.uuid4().hex)
+        entry.setdefault("scope", "character")
+        entry.setdefault("memory_type", _classify_memory_type(content))
+        entry.setdefault("enabled", True)
+        entry.setdefault("confidence", 0.7)
+        entry.setdefault("importance", 0.6)
+        entry.setdefault("source", "unknown")
+        entry.setdefault("source_history_uid", "")
+        entry.setdefault("created_at", _now_iso())
+        entry.setdefault("updated_at", entry.get("created_at") or _now_iso())
+
+        existing = _find_existing(merged_entries, content)
+        if existing:
+            if _merge_entry(existing, entry):
+                changed = True
+            changed = True
+            continue
+        merged_entries.append(entry)
+
+    enabled_entries = [entry for entry in merged_entries if entry.get("enabled", True)]
+    if len(enabled_entries) > 80:
+        enabled_entries.sort(
+            key=lambda entry: (
+                float(entry.get("importance") or 0),
+                str(entry.get("updated_at") or ""),
+            ),
+            reverse=True,
+        )
+        keep_ids = {entry.get("id") for entry in enabled_entries[:80]}
+        for entry in merged_entries:
+            if entry.get("enabled", True) and entry.get("id") not in keep_ids:
+                entry["enabled"] = False
+                entry["updated_at"] = _now_iso()
+                changed = True
+
+    merged_entries.sort(
+        key=lambda entry: (
+            bool(entry.get("enabled", True)),
+            float(entry.get("importance") or 0),
+            str(entry.get("updated_at") or ""),
+        ),
+        reverse=True,
+    )
+
+    if merged_entries != raw_entries:
+        store["entries"] = merged_entries
+        changed = True
+    return changed
+
+
+def compact_character_memories(conf_uid: str) -> tuple[bool, int]:
+    if not conf_uid:
+        return False, 0
+    store = _load_store(conf_uid)
+    before_count = len(store.get("entries", [])) if isinstance(store.get("entries"), list) else 0
+    changed = _compact_store(store)
+    after_count = len(store.get("entries", [])) if isinstance(store.get("entries"), list) else 0
+    if changed:
+        _save_store(conf_uid, store)
+    return changed, max(0, before_count - after_count)
+
+
 def process_character_memory_turn(
     *,
     conf_uid: str,
@@ -401,23 +527,7 @@ def process_character_memory_turn(
     if not changed:
         return False, notes
 
-    # Keep the first version compact so prompt injection stays predictable.
-    entries = store["entries"]
-    enabled_entries = [entry for entry in entries if entry.get("enabled", True)]
-    if len(enabled_entries) > 80:
-        enabled_entries.sort(
-            key=lambda entry: (
-                float(entry.get("importance") or 0),
-                str(entry.get("updated_at") or ""),
-            ),
-            reverse=True,
-        )
-        keep_ids = {entry.get("id") for entry in enabled_entries[:80]}
-        for entry in entries:
-            if entry.get("enabled", True) and entry.get("id") not in keep_ids:
-                entry["enabled"] = False
-                entry["updated_at"] = _now_iso()
-
+    _compact_store(store)
     _save_store(conf_uid, store)
     return True, notes
 

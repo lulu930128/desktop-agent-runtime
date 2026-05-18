@@ -186,6 +186,36 @@ def init_client_ws_route(default_context_cache: ServiceContext) -> APIRouter:
                 status_code=500,
             )
 
+    @router.post("/launcher/refresh-memory")
+    async def launcher_refresh_memory(payload: dict):
+        """Refresh the active system prompt after launcher-side memory changes."""
+        target_client_uid = payload.get("target_client_uid")
+        trigger_source = str(payload.get("trigger_source") or "launcher")
+
+        try:
+            result = await ws_handler.launcher_refresh_memory(
+                target_client_uid=target_client_uid,
+                trigger_source=trigger_source,
+            )
+            return JSONResponse(result)
+        except RuntimeError as e:
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": str(e),
+                },
+                status_code=409,
+            )
+        except Exception as e:
+            logger.exception(f"Error refreshing launcher memory prompt: {e}")
+            return JSONResponse(
+                {
+                    "ok": False,
+                    "error": "Internal server error during memory prompt refresh.",
+                },
+                status_code=500,
+            )
+
     return router
 
 

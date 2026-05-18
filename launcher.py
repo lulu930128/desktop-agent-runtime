@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 import urllib.error
+import uuid
 import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
@@ -92,6 +93,15 @@ class HistoryRecord:
     preview: str
     timestamp: str
     is_empty: bool
+
+
+@dataclass(frozen=True)
+class MemoryRecord:
+    entry_id: str
+    content: str
+    memory_type: str
+    enabled: bool
+    updated_at: str
 
 
 PALETTE = {
@@ -344,6 +354,19 @@ def _normalize_token(value: str) -> str:
     return "".join(ch for ch in (value or "").lower() if ch.isalnum())
 
 
+def _classify_memory_text(content: str) -> str:
+    content = content or ""
+    if any(token in content for token in ("叫我", "稱呼我", "我的名字", "我是")):
+        return "identity"
+    if any(token in content for token in ("不要", "別再", "不喜歡", "討厭")):
+        return "boundary"
+    if any(token in content for token in ("以後", "之後", "預設", "固定", "都要", "都不要")):
+        return "instruction"
+    if any(token in content for token in ("喜歡", "希望", "偏好", "習慣", "想要")):
+        return "preference"
+    return "fact"
+
+
 def _compact_history_text(content: str, max_len: int = 72) -> str:
     if not isinstance(content, str):
         return ""
@@ -387,9 +410,11 @@ class LauncherApp(ctk.CTk):
         self.character_records: Dict[str, CharacterRecord] = {}
         self.project_records: Dict[str, ProjectDefinition] = {}
         self.history_records: Dict[str, HistoryRecord] = {}
+        self.memory_records: Dict[str, MemoryRecord] = {}
         self.character_var = ctk.StringVar(value="")
         self.project_var = ctk.StringVar(value="")
         self.history_var = ctk.StringVar(value="")
+        self.memory_var = ctk.StringVar(value="")
         self.outfit_var = ctk.StringVar(value="normal")
         self.expression_var = ctk.StringVar(value=EXPRESSION_ID_TO_LABEL["neutral"])
         self.pet_base_url_var = ctk.StringVar(value=self.cfg.llm_url)
@@ -404,7 +429,8 @@ class LauncherApp(ctk.CTk):
         self._character_radio_buttons: list[ctk.CTkRadioButton] = []
         self._outfit_radio_buttons: list[ctk.CTkRadioButton] = []
         self._project_radio_buttons: list[ctk.CTkRadioButton] = []
-        self._history_radio_buttons: list[ctk.CTkRadioButton] = []
+        self._history_radio_buttons: list[ctk.CTkFrame] = []
+        self._memory_radio_buttons: list[ctk.CTkRadioButton] = []
         self._preview_photo: Optional[PhotoImage] = None
         self._force_new_history_on_start = False
         self._transcript_signature = ""
@@ -537,7 +563,7 @@ class LauncherApp(ctk.CTk):
         selection_card, selection_body = self._build_card(
             center_panel,
             row=0,
-            title="角色 / 專案 / 聊天",
+            title="角色 / 專案 / 聊天 / 記憶",
             subtitle="選擇目前要操作的項目。",
             body_fill="both",
             body_expand=True,
@@ -547,7 +573,7 @@ class LauncherApp(ctk.CTk):
         selection_body.grid_rowconfigure(1, weight=1)
         self.selection_segment = ctk.CTkSegmentedButton(
             selection_body,
-            values=["角色", "衣服", "專案", "聊天"],
+            values=["角色", "衣服", "專案", "聊天", "記憶"],
             variable=self.selection_view_var,
             command=self._on_selection_segment_changed,
             fg_color=PALETTE["accent_soft"],
@@ -615,18 +641,6 @@ class LauncherApp(ctk.CTk):
         history_actions.grid(row=0, column=1, sticky="e")
         ctk.CTkButton(
             history_actions,
-            text="套用",
-            width=56,
-            height=28,
-            corner_radius=10,
-            command=self.on_apply_history,
-            fg_color=PALETTE["accent_blue"],
-            hover_color=PALETTE["accent_blue_hover"],
-            text_color="#ffffff",
-            font=ui_font(11, "bold"),
-        ).pack(side="left", padx=(0, 6))
-        ctk.CTkButton(
-            history_actions,
             text="新增",
             width=56,
             height=28,
@@ -682,6 +696,81 @@ class LauncherApp(ctk.CTk):
         )
         self.history_frame.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
         self.history_frame.grid_columnconfigure(0, weight=1)
+
+        self.memory_wrap = ctk.CTkFrame(selection_stack, fg_color="transparent")
+        self.memory_wrap.grid_columnconfigure(0, weight=1)
+        self.memory_wrap.grid_rowconfigure(2, weight=1)
+        self.selection_pages["記憶"] = self.memory_wrap
+
+        memory_head = ctk.CTkFrame(self.memory_wrap, fg_color="transparent")
+        memory_head.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        memory_head.grid_columnconfigure(0, weight=1)
+        memory_title = ctk.CTkFrame(memory_head, fg_color="transparent")
+        memory_title.grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(
+            memory_title,
+            text="角色記憶",
+            font=ui_font(16, "bold"),
+            text_color=PALETTE["text"],
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            memory_title,
+            text="管理目前角色的長期記憶，可手動新增、停用或整理。",
+            text_color=PALETTE["muted"],
+            font=ui_font(10),
+        ).pack(anchor="w", pady=(1, 0))
+        memory_actions = ctk.CTkFrame(memory_head, fg_color="transparent")
+        memory_actions.grid(row=0, column=1, sticky="e")
+        for label, command, is_primary in [
+            ("新增", self.on_add_memory, True),
+            ("啟停", self.on_toggle_memory, False),
+            ("刪除", self.on_delete_memory, False),
+            ("整理", self.on_compact_memory, False),
+            ("更新", self._refresh_memory_list, False),
+        ]:
+            ctk.CTkButton(
+                memory_actions,
+                text=label,
+                width=54,
+                height=28,
+                corner_radius=10,
+                command=command,
+                fg_color=PALETTE["accent_blue"] if is_primary else PALETTE["panel_alt"],
+                hover_color=PALETTE["accent_blue_hover"] if is_primary else PALETTE["accent_soft"],
+                border_width=0 if is_primary else 1,
+                border_color=PALETTE["panel_border"],
+                text_color="#ffffff" if is_primary else PALETTE["text"],
+                font=ui_font(11, "bold"),
+            ).pack(side="left", padx=(0, 6))
+
+        self.memory_status_label = ctk.CTkLabel(
+            self.memory_wrap,
+            text="長期記憶會在對話後保守寫入，也可以在這裡手動管理。",
+            text_color=PALETTE["muted"],
+            font=ui_font(11),
+            anchor="w",
+        )
+        self.memory_status_label.grid(row=1, column=0, sticky="ew", pady=(0, 6))
+
+        memory_shell = ctk.CTkFrame(
+            self.memory_wrap,
+            corner_radius=14,
+            fg_color=PALETTE["panel_soft"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+        )
+        memory_shell.grid(row=2, column=0, sticky="nsew")
+        memory_shell.grid_columnconfigure(0, weight=1)
+        memory_shell.grid_rowconfigure(0, weight=1)
+        self.memory_frame = ctk.CTkScrollableFrame(
+            memory_shell,
+            fg_color=PALETTE["panel_bg"],
+            corner_radius=14,
+            scrollbar_button_color=PALETTE["accent_soft"],
+            scrollbar_button_hover_color=PALETTE["accent_blue"],
+        )
+        self.memory_frame.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
+        self.memory_frame.grid_columnconfigure(0, weight=1)
 
         for page in self.selection_pages.values():
             page.grid(row=0, column=0, sticky="nsew")
@@ -999,18 +1088,6 @@ class LauncherApp(ctk.CTk):
         ).grid(row=0, column=0, sticky="w")
         history_actions = ctk.CTkFrame(history_head, fg_color="transparent")
         history_actions.grid(row=0, column=1, sticky="e")
-        ctk.CTkButton(
-            history_actions,
-            text="套用",
-            width=56,
-            height=28,
-            corner_radius=10,
-            command=self.on_apply_history,
-            fg_color=PALETTE["accent_blue"],
-            hover_color=PALETTE["accent_blue_hover"],
-            text_color="#ffffff",
-            font=ui_font(11, "bold"),
-        ).pack(side="left", padx=(0, 6))
         ctk.CTkButton(
             history_actions,
             text="新增",
@@ -2076,6 +2153,14 @@ class LauncherApp(ctk.CTk):
             return None
         return history_dir / f"{history_uid}.json"
 
+    def _history_event_file_for_character(
+        self, character: Optional[CharacterRecord], history_uid: str
+    ) -> Optional[Path]:
+        history_path = self._history_file_for_character(character, history_uid)
+        if history_path is None:
+            return None
+        return history_path.with_suffix(".events.jsonl")
+
     def _normalize_history_message_content(self, content) -> str:
         if isinstance(content, str):
             return content.strip()
@@ -2125,6 +2210,43 @@ class LauncherApp(ctk.CTk):
                 }
             )
         return messages
+
+    def _load_history_events(
+        self, character: Optional[CharacterRecord], history_uid: str
+    ) -> list[dict]:
+        event_path = self._history_event_file_for_character(character, history_uid)
+        if event_path is None or not event_path.exists():
+            return []
+
+        events: list[dict] = []
+        try:
+            lines = event_path.read_text(encoding="utf-8").splitlines()
+        except Exception:
+            return []
+
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                item = json.loads(line)
+            except Exception:
+                continue
+            if not isinstance(item, dict):
+                continue
+            events.append(
+                {
+                    "type": str(item.get("type") or "").strip(),
+                    "status": str(item.get("status") or "").strip(),
+                    "title": str(item.get("title") or "").strip(),
+                    "summary": _compact_history_text(
+                        str(item.get("summary") or "").strip(),
+                        max_len=120,
+                    ),
+                    "timestamp": str(item.get("timestamp") or "").strip(),
+                }
+            )
+        return events
 
     def _load_history_records(
         self, character: Optional[CharacterRecord]
@@ -2200,14 +2322,14 @@ class LauncherApp(ctk.CTk):
 
     def _sync_history_status_label(self) -> None:
         if self._force_new_history_on_start:
-            status = "目前設定：下次啟動或套用時建立新的聊天。"
+            status = "目前設定：下次啟動或新增時建立新的聊天。"
         else:
             record = self._selected_history_record()
             if record:
                 preview = f" / {record.preview}" if record.preview else ""
                 status = f"目前選擇：{record.title}{preview}"
             elif self.history_records:
-                status = "已載入聊天列表，選擇一段對話後可直接套用。"
+                status = "已載入聊天列表，點選一段對話後會直接顯示並同步。"
             else:
                 status = "這個角色目前還沒有聊天記錄。"
         self.history_status_label.configure(text=status)
@@ -2230,7 +2352,19 @@ class LauncherApp(ctk.CTk):
             stat = history_path.stat()
         except OSError:
             return f"missing:{character.conf_uid}:{history_uid}"
-        return f"{character.conf_uid}:{history_uid}:{stat.st_mtime_ns}:{stat.st_size}"
+
+        event_path = self._history_event_file_for_character(character, history_uid)
+        event_sig = "no-events"
+        if event_path is not None and event_path.exists():
+            try:
+                event_stat = event_path.stat()
+                event_sig = f"{event_stat.st_mtime_ns}:{event_stat.st_size}"
+            except OSError:
+                event_sig = "events-missing"
+        return (
+            f"{character.conf_uid}:{history_uid}:"
+            f"h:{stat.st_mtime_ns}:{stat.st_size}:e:{event_sig}"
+        )
 
     def _clear_history_transcript(self, placeholder: str) -> None:
         for child in self.transcript_frame.winfo_children():
@@ -2302,6 +2436,80 @@ class LauncherApp(ctk.CTk):
         else:
             bubble.grid_rowconfigure(2, minsize=8)
 
+    def _append_history_event(self, *, row: int, event: dict) -> None:
+        event_type = str(event.get("type") or "").strip()
+        status = str(event.get("status") or "").strip()
+        title = str(event.get("title") or "").strip()
+        summary = str(event.get("summary") or "").strip()
+        timestamp = str(event.get("timestamp") or "").strip()
+
+        if not title:
+            if event_type.startswith("memory"):
+                title = "角色記憶"
+            elif event_type == "tool_call":
+                title = "工具"
+            else:
+                title = "系統事件"
+
+        status_text = {
+            "completed": "完成",
+            "error": "錯誤",
+            "ok": "完成",
+            "skipped": "略過",
+        }.get(status, status)
+        status_label = f" · {status_text}" if status_text else ""
+        lane = ctk.CTkFrame(self.transcript_frame, fg_color="transparent")
+        lane.grid(row=row, column=0, sticky="ew", padx=10, pady=(6 if row else 10, 4))
+        lane.grid_columnconfigure(0, weight=1)
+
+        card = ctk.CTkFrame(
+            lane,
+            corner_radius=12,
+            fg_color=PALETTE["panel_alt"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+        )
+        card.grid(row=0, column=0, sticky="ew", padx=(18, 18))
+        card.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            card,
+            text=f"{title}{status_label}",
+            font=ui_font(11, "bold"),
+            text_color=PALETTE["accent_blue_hover"],
+            anchor="w",
+        ).grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 2))
+
+        if summary:
+            ctk.CTkLabel(
+                card,
+                text=summary,
+                font=ui_font(11),
+                text_color=PALETTE["text"],
+                justify="left",
+                anchor="w",
+                wraplength=520,
+            ).grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 2))
+
+        if timestamp:
+            ctk.CTkLabel(
+                card,
+                text=_format_history_timestamp(timestamp),
+                font=ui_font(10),
+                text_color=PALETTE["muted"],
+                anchor="w",
+            ).grid(row=2, column=0, sticky="w", padx=12, pady=(0, 8))
+
+    def _history_timeline_sort_key(self, item: dict) -> tuple[str, int]:
+        timestamp = str(item.get("timestamp") or "")
+        if item.get("kind") == "event":
+            event_type = str(item.get("type") or "")
+            priority = 3 if event_type.startswith("memory") else 1
+        else:
+            role = str(item.get("role") or "").strip().lower()
+            priority = 0 if role in {"human", "user"} else 2
+        return timestamp, priority
+
     def _refresh_history_transcript(self, *, force: bool = False) -> None:
         if not hasattr(self, "transcript_frame"):
             return
@@ -2316,7 +2524,7 @@ class LauncherApp(ctk.CTk):
             self._clear_history_transcript("請先選擇角色，這裡才會顯示完整對話。")
             return
         if self._force_new_history_on_start:
-            self._clear_history_transcript("新的聊天會在啟動或套用後建立，這裡會顯示新的對話內容。")
+            self._clear_history_transcript("新的聊天會在啟動或新增後建立，這裡會顯示新的對話內容。")
             return
 
         history_uid = self.history_var.get().strip()
@@ -2328,22 +2536,34 @@ class LauncherApp(ctk.CTk):
             return
 
         messages = self._load_history_messages(character, history_uid)
-        if not messages:
+        events = self._load_history_events(character, history_uid)
+        if not messages and not events:
             self._clear_history_transcript("這段聊天目前還沒有訊息。")
             return
 
         for child in self.transcript_frame.winfo_children():
             child.destroy()
 
+        timeline: list[dict] = []
+        for message in messages:
+            timeline.append({"kind": "message", **message})
+        for event in events:
+            timeline.append({"kind": "event", **event})
+        timeline.sort(key=self._history_timeline_sort_key)
+
         assistant_name = character.conf_name or "她"
-        for row, message in enumerate(messages):
-            role = str(message.get("role") or "").strip().lower()
+        for row, item in enumerate(timeline):
+            if item.get("kind") == "event":
+                self._append_history_event(row=row, event=item)
+                continue
+
+            role = str(item.get("role") or "").strip().lower()
             is_user = role in {"human", "user"}
             self._append_history_bubble(
                 row=row,
                 speaker="你" if is_user else assistant_name,
-                content=str(message.get("content") or ""),
-                timestamp=str(message.get("timestamp") or ""),
+                content=str(item.get("content") or ""),
+                timestamp=str(item.get("timestamp") or ""),
                 is_user=is_user,
             )
 
@@ -2355,7 +2575,8 @@ class LauncherApp(ctk.CTk):
     def _on_history_selected(self) -> None:
         self._force_new_history_on_start = False
         self._sync_history_status_label()
-        self._refresh_history_transcript(force=True)
+        self._refresh_history_list()
+        self._apply_selected_history_in_background()
 
     def _after_history_created(self, new_uid: str) -> None:
         self._force_new_history_on_start = False
@@ -2367,6 +2588,470 @@ class LauncherApp(ctk.CTk):
         self._force_new_history_on_start = False
         self._sync_history_status_label()
         self._refresh_history_transcript(force=True)
+
+    def _apply_selected_history_in_background(self) -> None:
+        selected_character = self._selected_character()
+        desired_history_uid = self.history_var.get().strip()
+        if (
+            not selected_character
+            or not desired_history_uid
+            or not port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.2)
+        ):
+            return
+
+        threading.Thread(
+            target=lambda: self._apply_history_choice(
+                wait_for_client=False,
+                selected_character=selected_character,
+                desired_history_uid=desired_history_uid,
+                force_new=False,
+            ),
+            daemon=True,
+        ).start()
+
+    def _set_clickable(self, widget, command) -> None:
+        try:
+            widget.configure(cursor="hand2")
+        except Exception:
+            pass
+        try:
+            widget.bind("<Button-1>", lambda _event: command())
+        except Exception:
+            pass
+
+    def _append_history_select_card(
+        self,
+        *,
+        row: int,
+        uid: str,
+        record: HistoryRecord,
+        selected: bool,
+    ) -> None:
+        card = ctk.CTkFrame(
+            self.history_frame,
+            corner_radius=14,
+            fg_color=PALETTE["panel_bg"] if selected else PALETTE["panel_alt"],
+            border_width=2 if selected else 1,
+            border_color=PALETTE["accent_blue"] if selected else PALETTE["panel_border"],
+        )
+        card.grid(sticky="ew", padx=(10, 12), pady=(8 if row == 0 else 6, 0))
+        card.grid_columnconfigure(0, weight=1)
+
+        stamp = _format_history_timestamp(record.timestamp)
+        meta_text = stamp
+        if record.is_empty:
+            meta_text = f"{stamp}  ·  空白" if stamp else "空白"
+
+        title = ctk.CTkLabel(
+            card,
+            text=record.title or "新對話",
+            font=ui_font(12, "bold"),
+            text_color=PALETTE["text"],
+            anchor="w",
+            justify="left",
+            wraplength=360,
+        )
+        title.grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 2))
+
+        preview_text = _compact_history_text(record.preview, 96)
+        if preview_text:
+            preview = ctk.CTkLabel(
+                card,
+                text=preview_text,
+                font=ui_font(10),
+                text_color=PALETTE["muted"],
+                anchor="w",
+                justify="left",
+                wraplength=360,
+            )
+            preview.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 2))
+        else:
+            preview = None
+
+        if meta_text:
+            meta = ctk.CTkLabel(
+                card,
+                text=meta_text,
+                font=ui_font(10),
+                text_color=PALETTE["accent_blue_hover"] if selected else PALETTE["muted"],
+                anchor="w",
+            )
+            meta.grid(row=2, column=0, sticky="w", padx=12, pady=(0, 10))
+        else:
+            meta = None
+
+        def select_history() -> None:
+            if self.history_var.get().strip() != uid or self._force_new_history_on_start:
+                self.history_var.set(uid)
+                self._on_history_selected()
+
+        self._set_clickable(card, select_history)
+        self._set_clickable(title, select_history)
+        if preview is not None:
+            self._set_clickable(preview, select_history)
+        if meta is not None:
+            self._set_clickable(meta, select_history)
+        self._history_radio_buttons.append(card)
+
+    def _memory_path_for_character(
+        self, character: Optional[CharacterRecord] = None
+    ) -> Optional[Path]:
+        character = character or self._selected_character()
+        if not character or not character.conf_uid:
+            return None
+        return (
+            self.cfg.open_llm_dir
+            / "memories"
+            / "characters"
+            / character.conf_uid
+            / "long_term.json"
+        )
+
+    def _new_memory_store(self, character: CharacterRecord) -> dict:
+        now = datetime.datetime.now().isoformat(timespec="seconds")
+        return {
+            "version": 1,
+            "scope": "character",
+            "conf_uid": character.conf_uid,
+            "created_at": now,
+            "updated_at": now,
+            "entries": [],
+        }
+
+    def _load_character_memory_store(
+        self, character: Optional[CharacterRecord] = None
+    ) -> dict:
+        character = character or self._selected_character()
+        if not character:
+            return {"entries": []}
+        path = self._memory_path_for_character(character)
+        if path is None or not path.exists():
+            return self._new_memory_store(character)
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            self.log(f"[{log_ts()}] 角色記憶讀取失敗：{exc}")
+            return self._new_memory_store(character)
+        if not isinstance(payload, dict):
+            return self._new_memory_store(character)
+        if not isinstance(payload.get("entries"), list):
+            payload["entries"] = []
+        payload.setdefault("version", 1)
+        payload.setdefault("scope", "character")
+        payload.setdefault("conf_uid", character.conf_uid)
+        payload.setdefault("created_at", datetime.datetime.now().isoformat(timespec="seconds"))
+        payload.setdefault("updated_at", payload.get("created_at"))
+        return payload
+
+    def _save_character_memory_store(
+        self, store: dict, character: Optional[CharacterRecord] = None
+    ) -> bool:
+        character = character or self._selected_character()
+        path = self._memory_path_for_character(character)
+        if character is None or path is None:
+            return False
+        now = datetime.datetime.now().isoformat(timespec="seconds")
+        store["updated_at"] = now
+        store.setdefault("conf_uid", character.conf_uid)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(".json.tmp")
+        tmp_path.write_text(
+            json.dumps(store, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        os.replace(tmp_path, path)
+        return True
+
+    def _compact_memory_entries(self, store: dict) -> tuple[bool, int]:
+        entries = store.get("entries")
+        if not isinstance(entries, list):
+            store["entries"] = []
+            return True, 0
+
+        merged: list[dict] = []
+        changed = False
+        before_count = len(entries)
+        now = datetime.datetime.now().isoformat(timespec="seconds")
+        for raw_entry in entries:
+            if not isinstance(raw_entry, dict):
+                changed = True
+                continue
+            content = " ".join(str(raw_entry.get("content") or "").split()).strip()
+            if not content:
+                changed = True
+                continue
+            entry = dict(raw_entry)
+            if entry.get("content") != content:
+                entry["content"] = content
+                changed = True
+            entry.setdefault("id", uuid.uuid4().hex)
+            entry.setdefault("scope", "character")
+            entry.setdefault("memory_type", _classify_memory_text(content))
+            entry.setdefault("enabled", True)
+            entry.setdefault("confidence", 0.8)
+            entry.setdefault("importance", 0.7)
+            entry.setdefault("source", "launcher")
+            entry.setdefault("source_history_uid", "")
+            entry.setdefault("created_at", now)
+            entry.setdefault("updated_at", entry.get("created_at", now))
+
+            key = _normalize_token(content)
+            existing = next(
+                (
+                    item
+                    for item in merged
+                    if _normalize_token(str(item.get("content") or "")) == key
+                    or (
+                        len(key) > 16
+                        and (
+                            key in _normalize_token(str(item.get("content") or ""))
+                            or _normalize_token(str(item.get("content") or "")) in key
+                        )
+                    )
+                ),
+                None,
+            )
+            if existing:
+                changed = True
+                if bool(entry.get("enabled", True)) and not bool(existing.get("enabled", True)):
+                    existing["enabled"] = True
+                if float(entry.get("importance") or 0) >= float(existing.get("importance") or 0):
+                    existing["content"] = entry["content"]
+                    existing["memory_type"] = entry.get("memory_type", existing.get("memory_type", "fact"))
+                    existing["source"] = entry.get("source", existing.get("source", "launcher"))
+                    existing["source_history_uid"] = entry.get(
+                        "source_history_uid",
+                        existing.get("source_history_uid", ""),
+                    )
+                existing["confidence"] = max(
+                    float(existing.get("confidence") or 0),
+                    float(entry.get("confidence") or 0),
+                )
+                existing["importance"] = max(
+                    float(existing.get("importance") or 0),
+                    float(entry.get("importance") or 0),
+                )
+                existing["updated_at"] = max(
+                    str(existing.get("updated_at") or ""),
+                    str(entry.get("updated_at") or ""),
+                ) or now
+                continue
+
+            merged.append(entry)
+
+        merged.sort(
+            key=lambda item: (
+                bool(item.get("enabled", True)),
+                float(item.get("importance") or 0),
+                str(item.get("updated_at") or ""),
+            ),
+            reverse=True,
+        )
+        if merged != entries:
+            changed = True
+        store["entries"] = merged
+        return changed, max(0, before_count - len(merged))
+
+    def _selected_memory_record(self) -> Optional[MemoryRecord]:
+        return self.memory_records.get(self.memory_var.get().strip())
+
+    def _refresh_memory_list(self) -> None:
+        if not hasattr(self, "memory_frame"):
+            return
+        for child in self.memory_frame.winfo_children():
+            child.destroy()
+        self._memory_radio_buttons = []
+        self.memory_records = {}
+
+        character = self._selected_character()
+        if not character:
+            self.memory_var.set("")
+            ctk.CTkLabel(
+                self.memory_frame,
+                text="請先選擇角色，這裡才會顯示角色長期記憶。",
+                text_color=PALETTE["muted"],
+                anchor="w",
+                justify="left",
+                wraplength=300,
+                font=ui_font(12),
+            ).grid(sticky="ew", padx=12, pady=(12, 12))
+            self.memory_status_label.configure(text="尚未選擇角色。")
+            return
+
+        store = self._load_character_memory_store(character)
+        entries = store.get("entries") if isinstance(store, dict) else []
+        if not isinstance(entries, list):
+            entries = []
+
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            entry_id = str(entry.get("id") or "").strip()
+            content = str(entry.get("content") or "").strip()
+            if not entry_id or not content:
+                continue
+            record = MemoryRecord(
+                entry_id=entry_id,
+                content=content,
+                memory_type=str(entry.get("memory_type") or "fact"),
+                enabled=bool(entry.get("enabled", True)),
+                updated_at=str(entry.get("updated_at") or ""),
+            )
+            self.memory_records[entry_id] = record
+
+        current = self.memory_var.get().strip()
+        if self.memory_records:
+            if current not in self.memory_records:
+                self.memory_var.set(next(iter(self.memory_records)))
+        else:
+            self.memory_var.set("")
+
+        if not self.memory_records:
+            ctk.CTkLabel(
+                self.memory_frame,
+                text="目前沒有角色長期記憶。對話中說「請記住...」或手動新增後會出現在這裡。",
+                text_color=PALETTE["muted"],
+                anchor="w",
+                justify="left",
+                wraplength=300,
+                font=ui_font(12),
+            ).grid(sticky="ew", padx=12, pady=(12, 12))
+        else:
+            for entry_id, record in self.memory_records.items():
+                status = "ON" if record.enabled else "OFF"
+                label = (
+                    f"[{status}] ({record.memory_type}) "
+                    f"{_compact_history_text(record.content, max_len=96)}"
+                )
+                radio = ctk.CTkRadioButton(
+                    self.memory_frame,
+                    text=label,
+                    variable=self.memory_var,
+                    value=entry_id,
+                    command=self._on_memory_selected,
+                    height=28,
+                    radiobutton_width=18,
+                    radiobutton_height=18,
+                    font=ui_font(12, "bold"),
+                    text_color=PALETTE["text"] if record.enabled else PALETTE["muted"],
+                    border_color=PALETTE["panel_border"],
+                    hover_color=PALETTE["accent_blue"],
+                    fg_color=PALETTE["accent_lavender"] if record.enabled else PALETTE["warning"],
+                )
+                radio.grid(sticky="ew", padx=12, pady=(10, 0))
+                self._memory_radio_buttons.append(radio)
+
+        enabled_count = sum(1 for item in self.memory_records.values() if item.enabled)
+        self.memory_status_label.configure(
+            text=f"目前角色：{character.conf_name}，共 {len(self.memory_records)} 條，啟用 {enabled_count} 條。"
+        )
+
+    def _on_memory_selected(self) -> None:
+        record = self._selected_memory_record()
+        if record:
+            self.memory_status_label.configure(
+                text=f"已選擇：{_compact_history_text(record.content, max_len=120)}"
+            )
+
+    def on_add_memory(self) -> None:
+        character = self._selected_character()
+        if not character:
+            messagebox.showinfo("角色記憶", "請先選擇角色。")
+            return
+        dialog = ctk.CTkInputDialog(
+            text="輸入要加入目前角色的長期記憶：",
+            title="新增角色記憶",
+        )
+        content = (dialog.get_input() or "").strip()
+        if not content:
+            return
+        store = self._load_character_memory_store(character)
+        entries = store.setdefault("entries", [])
+        if not isinstance(entries, list):
+            entries = []
+            store["entries"] = entries
+        now = datetime.datetime.now().isoformat(timespec="seconds")
+        entries.append(
+            {
+                "id": uuid.uuid4().hex,
+                "scope": "character",
+                "memory_type": _classify_memory_text(content),
+                "content": content,
+                "enabled": True,
+                "confidence": 0.95,
+                "importance": 0.75,
+                "source": "manual",
+                "source_history_uid": "",
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+        self._compact_memory_entries(store)
+        self._save_character_memory_store(store, character)
+        self._refresh_memory_list()
+        self._update_panels()
+        self._notify_memory_prompt_refresh()
+        self.log(f"[{log_ts()}] 已新增角色記憶：{_compact_history_text(content, 48)}")
+
+    def on_toggle_memory(self) -> None:
+        character = self._selected_character()
+        record = self._selected_memory_record()
+        if not character or not record:
+            messagebox.showinfo("角色記憶", "請先選擇一條記憶。")
+            return
+        store = self._load_character_memory_store(character)
+        for entry in store.get("entries", []):
+            if isinstance(entry, dict) and str(entry.get("id") or "") == record.entry_id:
+                entry["enabled"] = not bool(entry.get("enabled", True))
+                entry["updated_at"] = datetime.datetime.now().isoformat(timespec="seconds")
+                break
+        self._save_character_memory_store(store, character)
+        self._refresh_memory_list()
+        self._update_panels()
+        self._notify_memory_prompt_refresh()
+
+    def on_delete_memory(self) -> None:
+        character = self._selected_character()
+        record = self._selected_memory_record()
+        if not character or not record:
+            messagebox.showinfo("角色記憶", "請先選擇一條記憶。")
+            return
+        if not messagebox.askyesno(
+            "刪除角色記憶",
+            f"確定要刪除這條記憶嗎？\n\n{record.content}",
+        ):
+            return
+        store = self._load_character_memory_store(character)
+        entries = store.get("entries", [])
+        if isinstance(entries, list):
+            store["entries"] = [
+                entry
+                for entry in entries
+                if not (
+                    isinstance(entry, dict)
+                    and str(entry.get("id") or "") == record.entry_id
+                )
+            ]
+        self._save_character_memory_store(store, character)
+        self._refresh_memory_list()
+        self._update_panels()
+        self._notify_memory_prompt_refresh()
+        self.log(f"[{log_ts()}] 已刪除角色記憶。")
+
+    def on_compact_memory(self) -> None:
+        character = self._selected_character()
+        if not character:
+            messagebox.showinfo("角色記憶", "請先選擇角色。")
+            return
+        store = self._load_character_memory_store(character)
+        changed, removed_count = self._compact_memory_entries(store)
+        if changed:
+            self._save_character_memory_store(store, character)
+        self._refresh_memory_list()
+        self._update_panels()
+        if changed:
+            self._notify_memory_prompt_refresh()
+        self.log(f"[{log_ts()}] 角色記憶已整理，合併/移除 {removed_count} 條。")
 
     def _refresh_history_list(self) -> None:
         for child in self.history_frame.winfo_children():
@@ -2397,28 +3082,14 @@ class LauncherApp(ctk.CTk):
             )
             empty.grid(sticky="ew", padx=12, pady=(12, 12))
         else:
-            for uid, record in self.history_records.items():
-                stamp = _format_history_timestamp(record.timestamp)
-                label = record.title
-                if stamp:
-                    label = f"{label}  ·  {stamp}"
-                radio = ctk.CTkRadioButton(
-                    self.history_frame,
-                    text=label,
-                    variable=self.history_var,
-                    value=uid,
-                    command=self._on_history_selected,
-                    height=28,
-                    radiobutton_width=18,
-                    radiobutton_height=18,
-                    font=ui_font(12, "bold"),
-                    text_color=PALETTE["text"],
-                    border_color=PALETTE["panel_border"],
-                    hover_color=PALETTE["accent_blue"],
-                    fg_color=PALETTE["accent_lavender"],
+            selected_uid = self.history_var.get().strip()
+            for row, (uid, record) in enumerate(self.history_records.items()):
+                self._append_history_select_card(
+                    row=row,
+                    uid=uid,
+                    record=record,
+                    selected=(uid == selected_uid and not self._force_new_history_on_start),
                 )
-                radio.grid(sticky="ew", padx=12, pady=(10, 0))
-                self._history_radio_buttons.append(radio)
 
         self._sync_history_status_label()
         self._refresh_history_transcript(force=True)
@@ -2471,6 +3142,7 @@ class LauncherApp(ctk.CTk):
             self.character_var.set("")
             self.history_records.clear()
             self._refresh_history_list()
+            self._refresh_memory_list()
             self._update_panels()
         self.log(f"[{log_ts()}] 角色列表已更新，共 {len(self.character_records)} 份設定。")
 
@@ -2570,6 +3242,7 @@ class LauncherApp(ctk.CTk):
         self._apply_character_default_project()
         self._force_new_history_on_start = False
         self._refresh_history_list()
+        self._refresh_memory_list()
         self._update_panels()
 
     def _on_project_changed(self) -> None:
@@ -2776,6 +3449,27 @@ class LauncherApp(ctk.CTk):
 
     def _launcher_api_url(self, path: str) -> str:
         return f"{self.cfg.llm_url}{path}"
+
+    def _notify_memory_prompt_refresh(self) -> None:
+        if not port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.1):
+            return
+
+        def runner() -> None:
+            try:
+                http_post_json(
+                    self._launcher_api_url("/launcher/refresh-memory"),
+                    {"trigger_source": "launcher-memory-ui"},
+                    timeout=5.0,
+                )
+                self.log(f"[{log_ts()}] 角色記憶 prompt 已刷新。")
+            except urllib.error.HTTPError as exc:
+                code, payload, _raw = self._decode_http_error(exc)
+                error = str(payload.get("error") or payload.get("message") or exc)
+                self.log(f"[{log_ts()}] 角色記憶 prompt 暫未刷新（HTTP {code}）：{error}")
+            except Exception as exc:
+                self.log(f"[{log_ts()}] 角色記憶 prompt 刷新失敗：{exc}")
+
+        threading.Thread(target=runner, daemon=True).start()
 
     def _decode_http_error(
         self, exc: urllib.error.HTTPError
@@ -3169,13 +3863,13 @@ class LauncherApp(ctk.CTk):
             self.log(f"[{log_ts()}] 讀取聊天狀態失敗：{exc}")
             return False
         if not status or not status.get("target_client_uid"):
-            self.log(f"[{log_ts()}] 前端尚未連線，聊天選擇暫時無法套用。")
+            self.log(f"[{log_ts()}] 前端尚未連線，聊天選擇暫時無法同步。")
             return False
 
         active_conf_uid = str(status.get("conf_uid") or status.get("default_conf_uid") or "").strip()
         if selected_character.conf_uid and active_conf_uid and selected_character.conf_uid != active_conf_uid:
             self.log(
-                f"[{log_ts()}] 目前執行中的角色與聊天列表角色不同，請先套用角色後再切換聊天。"
+                f"[{log_ts()}] 目前執行中的角色與聊天列表角色不同，請先啟用角色後再切換聊天。"
             )
             return False
 
@@ -3252,8 +3946,7 @@ class LauncherApp(ctk.CTk):
 
         self._force_new_history_on_start = True
         self.history_var.set("")
-        self._sync_history_status_label()
-        self._refresh_history_transcript(force=True)
+        self._refresh_history_list()
 
         if not port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.2):
             self.log(f"[{log_ts()}] 已標記為新增聊天，會在啟動角色時建立。")
