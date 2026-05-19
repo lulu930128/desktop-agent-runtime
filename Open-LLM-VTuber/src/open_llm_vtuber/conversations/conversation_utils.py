@@ -1,9 +1,15 @@
 import asyncio
 import base64
+from datetime import datetime, timezone
+import gzip
+import hashlib
 import io
 import re
 import copy
+import struct
+import tarfile
 from typing import Optional, Union, Any, List, Dict
+import zipfile
 import numpy as np
 import json
 from loguru import logger
@@ -358,6 +364,7 @@ def create_batch_input(
                 name=str(file.get("name") or "uploaded-file"),
                 data=str(file.get("data") or ""),
                 mime_type=str(file.get("mime_type") or file.get("type") or ""),
+                kind=str(file.get("kind") or "") or None,
             )
             for file in (files or [])
             if isinstance(file, dict)
@@ -411,6 +418,699 @@ def _audio_bytes_to_float32(data: bytes, mime_type: str = "") -> np.ndarray:
         return np.array([], dtype=np.float32)
 
 
+MAX_TEXT_ATTACHMENT_CHARS = 12000
+MAX_ARCHIVE_ENTRIES = 80
+MAX_ARCHIVE_TEXT_FILES = 8
+MAX_ARCHIVE_MEMBER_BYTES = 256 * 1024
+MAX_ARCHIVE_MEMBER_TEXT_CHARS = 1800
+MAX_BINARY_STRING_SCAN_BYTES = 4 * 1024 * 1024
+MAX_BINARY_STRINGS = 80
+
+TEXT_ATTACHMENT_EXTENSIONS = {
+    ".txt",
+    ".md",
+    ".json",
+    ".jsonl",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".csv",
+    ".tsv",
+    ".log",
+    ".env",
+    ".gitignore",
+    ".xml",
+}
+
+CODE_ATTACHMENT_EXTENSIONS = {
+    ".py",
+    ".js",
+    ".mjs",
+    ".cjs",
+    ".ts",
+    ".tsx",
+    ".jsx",
+    ".html",
+    ".css",
+    ".scss",
+    ".c",
+    ".cc",
+    ".cpp",
+    ".h",
+    ".hpp",
+    ".cs",
+    ".java",
+    ".go",
+    ".rs",
+    ".php",
+    ".rb",
+    ".lua",
+    ".sql",
+    ".swift",
+    ".kt",
+    ".kts",
+    ".dart",
+    ".vue",
+    ".svelte",
+    ".r",
+    ".pl",
+    ".bat",
+    ".cmd",
+    ".ps1",
+    ".sh",
+}
+
+ARCHIVE_ATTACHMENT_EXTENSIONS = {".zip", ".tar", ".tgz", ".tar.gz", ".gz"}
+BINARY_ATTACHMENT_EXTENSIONS = {".exe", ".dll", ".bin", ".dat"}
+ARCHIVE_ATTACHMENT_MIME_TYPES = {
+    "application/zip",
+    "application/x-zip-compressed",
+    "application/x-tar",
+    "application/gzip",
+    "application/x-gzip",
+}
+BINARY_ATTACHMENT_MIME_TYPES = {
+    "application/octet-stream",
+    "application/vnd.microsoft.portable-executable",
+    "application/x-msdownload",
+    "application/x-dosexec",
+}
+
+PE_MACHINE_TYPES = {
+    0x014C: "x86",
+    0x0200: "Intel Itanium",
+    0x8664: "x64",
+    0x01C0: "ARM",
+    0x01C4: "ARMv7",
+    0xAA64: "ARM64",
+}
+
+PE_SUBSYSTEM_TYPES = {
+    1: "Native",
+    2: "Windows GUI",
+    3: "Windows CUI",
+    7: "POSIX CUI",
+    9: "Windows CE GUI",
+    10: "EFI application",
+    11: "EFI boot service driver",
+    12: "EFI runtime driver",
+    14: "Xbox",
+}
+
+
+def _file_extension(name: str) -> str:
+    lower_name = str(name or "").lower()
+    if lower_name.endswith(".tar.gz"):
+        return ".tar.gz"
+    dot_index = lower_name.rfind(".")
+    return lower_name[dot_index:] if dot_index >= 0 else ""
+
+
+def _safe_display_name(name: str, fallback: str = "uploaded-file") -> str:
+    normalized = str(name or fallback).replace("\\", "/").split("/")[-1].strip()
+    return normalized[:160] or fallback
+
+
+def format_uploaded_file_display_text(
+    input_text: str,
+    files: Optional[List[Dict[str, Any]]],
+) -> str:
+    """Build the user-visible message without exposing internal file analysis."""
+    base_text = str(input_text or "").strip()
+    if not files:
+        return base_text
+
+    file_names = [
+        _safe_display_name(file.get("name") or f"file-{index}", f"file-{index}")
+        for index, file in enumerate(files, start=1)
+        if isinstance(file, dict)
+    ]
+    if not file_names:
+        return base_text
+
+    attachment_text = "附件：" + "、".join(file_names)
+    return "\n".join(part for part in [base_text, attachment_text] if part)
+
+
+def _format_byte_size(size: int) -> str:
+    value = max(0, int(size or 0))
+    if value >= 1024 * 1024:
+        return f"{value / 1024 / 1024:.2f} MB"
+    if value >= 1024:
+        return f"{value / 1024:.1f} KB"
+    return f"{value} B"
+
+
+def _truncate_text(text: str, limit: int) -> str:
+    normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "")
+    normalized = normalized.strip()
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[:limit].rstrip() + "\n...[truncated]"
+
+
+def _text_control_ratio(text: str) -> float:
+    sample = str(text or "")[:4000]
+    if not sample:
+        return 0.0
+    controls = sum(1 for char in sample if ord(char) < 32 and char not in "\n\r\t")
+    return controls / max(1, len(sample))
+
+
+def _decode_text_bytes(raw_bytes: bytes) -> tuple[bool, str, str]:
+    if not raw_bytes:
+        return True, "", "empty"
+
+    sample = raw_bytes[:4096]
+    encodings = ["utf-8-sig", "utf-16", "cp950", "gb18030", "shift_jis"]
+    if len(sample) >= 8:
+        odd_nulls = sum(1 for index in range(1, len(sample), 2) if sample[index] == 0)
+        even_nulls = sum(1 for index in range(0, len(sample), 2) if sample[index] == 0)
+        half_len = max(1, len(sample) // 2)
+        if odd_nulls / half_len > 0.35 and even_nulls / half_len < 0.1:
+            encodings.insert(0, "utf-16-le")
+
+    for encoding in encodings:
+        try:
+            text = raw_bytes.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+        except Exception:
+            continue
+        if _text_control_ratio(text) <= 0.08:
+            return True, text, encoding
+
+    printable_bytes = sum(
+        1 for byte in sample if byte in (9, 10, 13) or 32 <= byte <= 126 or byte >= 128
+    )
+    if printable_bytes / max(1, len(sample)) >= 0.88:
+        text = raw_bytes.decode("utf-8", errors="replace")
+        return _text_control_ratio(text) <= 0.08, text, "utf-8-replace"
+
+    return False, "", "binary"
+
+
+def _classify_uploaded_file(
+    file: Dict[str, Any],
+    name: str,
+    mime_type: str,
+    raw_bytes: bytes,
+) -> str:
+    normalized_mime = str(mime_type or "").strip().lower()
+    extension = _file_extension(name)
+    if normalized_mime.startswith("image/"):
+        return "image"
+    if normalized_mime.startswith("audio/"):
+        return "audio"
+    if extension in CODE_ATTACHMENT_EXTENSIONS:
+        return "code"
+    if extension in TEXT_ATTACHMENT_EXTENSIONS or normalized_mime.startswith("text/"):
+        return "text"
+    if extension in ARCHIVE_ATTACHMENT_EXTENSIONS or normalized_mime in ARCHIVE_ATTACHMENT_MIME_TYPES:
+        return "archive"
+    if extension in BINARY_ATTACHMENT_EXTENSIONS or normalized_mime in BINARY_ATTACHMENT_MIME_TYPES:
+        return "binary"
+    if normalized_mime in {"application/json", "application/xml", "application/x-yaml", "application/toml"}:
+        return "text"
+    if raw_bytes.startswith(b"MZ") or raw_bytes.startswith(b"\x7fELF"):
+        return "binary"
+
+    explicit_kind = str(file.get("kind") or "").strip().lower()
+    if explicit_kind in {"image", "audio", "text", "code", "archive", "binary"}:
+        return explicit_kind
+
+    is_text, _, _ = _decode_text_bytes(raw_bytes[: min(len(raw_bytes), MAX_ARCHIVE_MEMBER_BYTES)])
+    return "text" if is_text else "binary"
+
+
+def _is_audio_upload(file: Dict[str, Any]) -> bool:
+    kind = str(file.get("kind") or "").strip().lower()
+    mime_type = str(file.get("mime_type") or file.get("type") or "").strip().lower()
+    return kind == "audio" or mime_type.startswith("audio/")
+
+
+def _summarize_text_attachment(
+    name: str,
+    raw_bytes: bytes,
+    kind: str,
+    max_chars: int = MAX_TEXT_ATTACHMENT_CHARS,
+) -> str:
+    is_text, text, encoding = _decode_text_bytes(raw_bytes)
+    header = [
+        f"[File: {name}]",
+        f"- kind: {kind}",
+        f"- size: {_format_byte_size(len(raw_bytes))}",
+    ]
+    if not is_text:
+        header.append("- result: binary-looking content; static binary summary is safer")
+        return "\n".join(header)
+
+    excerpt = _truncate_text(text, max_chars)
+    line_count = text.count("\n") + (1 if text else 0)
+    header.extend(
+        [
+            f"- encoding: {encoding}",
+            f"- lines: {line_count}",
+            "- excerpt:",
+            excerpt or "[empty file]",
+        ]
+    )
+    return "\n".join(header)
+
+
+def _is_safe_archive_member(name: str) -> bool:
+    normalized = str(name or "").replace("\\", "/")
+    if not normalized or normalized.startswith("/") or re.match(r"^[A-Za-z]:", normalized):
+        return False
+    return all(part not in {"", ".", ".."} for part in normalized.split("/"))
+
+
+def _archive_member_kind(name: str, raw_bytes: bytes) -> str:
+    extension = _file_extension(name)
+    if extension in CODE_ATTACHMENT_EXTENSIONS:
+        return "code"
+    if extension in TEXT_ATTACHMENT_EXTENSIONS:
+        return "text"
+    is_text, _, _ = _decode_text_bytes(raw_bytes)
+    return "text" if is_text else "binary"
+
+
+def _sample_archive_member_text(name: str, raw_bytes: bytes) -> Optional[str]:
+    kind = _archive_member_kind(name, raw_bytes)
+    if kind not in {"text", "code"}:
+        return None
+    is_text, text, encoding = _decode_text_bytes(raw_bytes)
+    if not is_text:
+        return None
+    return "\n".join(
+        [
+            f"[Archive text sample: {name}]",
+            f"- kind: {kind}",
+            f"- encoding: {encoding}",
+            "- excerpt:",
+            _truncate_text(text, MAX_ARCHIVE_MEMBER_TEXT_CHARS) or "[empty file]",
+        ]
+    )
+
+
+def _summarize_zip_archive(name: str, raw_bytes: bytes) -> str:
+    with zipfile.ZipFile(io.BytesIO(raw_bytes)) as archive:
+        entries = archive.infolist()
+        entry_lines: List[str] = []
+        text_samples: List[str] = []
+
+        for info in entries[:MAX_ARCHIVE_ENTRIES]:
+            suffix = "/" if info.is_dir() else ""
+            entry_lines.append(f"  - {info.filename}{suffix} ({_format_byte_size(info.file_size)})")
+
+        for info in entries:
+            if len(text_samples) >= MAX_ARCHIVE_TEXT_FILES:
+                break
+            if info.is_dir() or not _is_safe_archive_member(info.filename):
+                continue
+            if info.file_size > MAX_ARCHIVE_MEMBER_BYTES:
+                continue
+            try:
+                with archive.open(info) as member:
+                    member_bytes = member.read(MAX_ARCHIVE_MEMBER_BYTES + 1)
+            except Exception:
+                continue
+            if len(member_bytes) > MAX_ARCHIVE_MEMBER_BYTES:
+                continue
+            sample = _sample_archive_member_text(info.filename, member_bytes)
+            if sample:
+                text_samples.append(sample)
+
+    lines = [
+        f"[Archive: {name}]",
+        "- type: zip",
+        f"- size: {_format_byte_size(len(raw_bytes))}",
+        f"- entries: {len(entries)}",
+        "- entry list:",
+        *(entry_lines or ["  [empty archive]"]),
+    ]
+    if len(entries) > MAX_ARCHIVE_ENTRIES:
+        lines.append(f"  ...{len(entries) - MAX_ARCHIVE_ENTRIES} more entries")
+    if text_samples:
+        lines.extend(["- extracted text samples:", *text_samples])
+    return "\n".join(lines)
+
+
+def _summarize_tar_archive(name: str, raw_bytes: bytes) -> str:
+    with tarfile.open(fileobj=io.BytesIO(raw_bytes), mode="r:*") as archive:
+        members = archive.getmembers()
+        entry_lines: List[str] = []
+        text_samples: List[str] = []
+
+        for member in members[:MAX_ARCHIVE_ENTRIES]:
+            suffix = "/" if member.isdir() else ""
+            entry_lines.append(f"  - {member.name}{suffix} ({_format_byte_size(member.size)})")
+
+        for member in members:
+            if len(text_samples) >= MAX_ARCHIVE_TEXT_FILES:
+                break
+            if not member.isfile() or not _is_safe_archive_member(member.name):
+                continue
+            if member.size > MAX_ARCHIVE_MEMBER_BYTES:
+                continue
+            try:
+                extracted = archive.extractfile(member)
+                if extracted is None:
+                    continue
+                member_bytes = extracted.read(MAX_ARCHIVE_MEMBER_BYTES + 1)
+            except Exception:
+                continue
+            if len(member_bytes) > MAX_ARCHIVE_MEMBER_BYTES:
+                continue
+            sample = _sample_archive_member_text(member.name, member_bytes)
+            if sample:
+                text_samples.append(sample)
+
+    lines = [
+        f"[Archive: {name}]",
+        "- type: tar",
+        f"- size: {_format_byte_size(len(raw_bytes))}",
+        f"- entries: {len(members)}",
+        "- entry list:",
+        *(entry_lines or ["  [empty archive]"]),
+    ]
+    if len(members) > MAX_ARCHIVE_ENTRIES:
+        lines.append(f"  ...{len(members) - MAX_ARCHIVE_ENTRIES} more entries")
+    if text_samples:
+        lines.extend(["- extracted text samples:", *text_samples])
+    return "\n".join(lines)
+
+
+def _summarize_gzip_member(name: str, raw_bytes: bytes) -> str:
+    try:
+        with gzip.GzipFile(fileobj=io.BytesIO(raw_bytes)) as archive:
+            member_bytes = archive.read(MAX_ARCHIVE_MEMBER_BYTES + 1)
+    except Exception as exc:
+        return "\n".join(
+            [
+                f"[Archive: {name}]",
+                "- type: gzip",
+                f"- size: {_format_byte_size(len(raw_bytes))}",
+                f"- result: unable to inspect gzip payload ({exc})",
+            ]
+        )
+
+    truncated = len(member_bytes) > MAX_ARCHIVE_MEMBER_BYTES
+    if truncated:
+        member_bytes = member_bytes[:MAX_ARCHIVE_MEMBER_BYTES]
+    inner_name = name[:-3] if name.lower().endswith(".gz") else f"{name}.content"
+    sample = _sample_archive_member_text(inner_name, member_bytes)
+    lines = [
+        f"[Archive: {name}]",
+        "- type: gzip",
+        f"- compressed size: {_format_byte_size(len(raw_bytes))}",
+        f"- sampled payload size: {_format_byte_size(len(member_bytes))}",
+    ]
+    if truncated:
+        lines.append("- note: payload sample was truncated")
+    if sample:
+        lines.extend(["- extracted text sample:", sample])
+    else:
+        lines.append("- result: payload is not readable text in the sampled range")
+    return "\n".join(lines)
+
+
+def _summarize_archive_attachment(name: str, raw_bytes: bytes) -> str:
+    try:
+        if zipfile.is_zipfile(io.BytesIO(raw_bytes)):
+            return _summarize_zip_archive(name, raw_bytes)
+    except Exception:
+        pass
+
+    try:
+        return _summarize_tar_archive(name, raw_bytes)
+    except tarfile.TarError:
+        if _file_extension(name) == ".gz":
+            return _summarize_gzip_member(name, raw_bytes)
+    except Exception as exc:
+        logger.warning(f"Archive attachment analysis failed for {name}: {exc}")
+
+    return "\n".join(
+        [
+            f"[Archive: {name}]",
+            f"- size: {_format_byte_size(len(raw_bytes))}",
+            "- result: unsupported or damaged archive; no files were extracted",
+        ]
+    )
+
+
+def _unpack_from(fmt: str, raw_bytes: bytes, offset: int) -> tuple:
+    size = struct.calcsize(fmt)
+    if offset < 0 or offset + size > len(raw_bytes):
+        raise ValueError("offset out of range")
+    return struct.unpack_from(fmt, raw_bytes, offset)
+
+
+def _read_c_string(raw_bytes: bytes, offset: int, max_len: int = 512) -> str:
+    if offset < 0 or offset >= len(raw_bytes):
+        return ""
+    end = min(len(raw_bytes), offset + max_len)
+    zero_index = raw_bytes.find(b"\x00", offset, end)
+    if zero_index >= 0:
+        end = zero_index
+    return raw_bytes[offset:end].decode("ascii", errors="replace").strip()
+
+
+def _pe_rva_to_offset(sections: List[Dict[str, int]], rva: int, size_of_headers: int) -> Optional[int]:
+    if 0 <= rva < size_of_headers:
+        return rva
+    for section in sections:
+        start = int(section.get("virtual_address") or 0)
+        span = max(int(section.get("virtual_size") or 0), int(section.get("raw_size") or 0))
+        if start <= rva < start + span:
+            offset = int(section.get("raw_pointer") or 0) + (rva - start)
+            return offset if 0 <= offset < 2**31 else None
+    return None
+
+
+def _parse_pe_imports(
+    raw_bytes: bytes,
+    sections: List[Dict[str, int]],
+    import_rva: int,
+    size_of_headers: int,
+    is_pe64: bool,
+) -> Dict[str, List[str]]:
+    imports: Dict[str, List[str]] = {}
+    if not import_rva:
+        return imports
+
+    descriptor_offset = _pe_rva_to_offset(sections, import_rva, size_of_headers)
+    if descriptor_offset is None:
+        return imports
+
+    thunk_size = 8 if is_pe64 else 4
+    ordinal_mask = 0x8000000000000000 if is_pe64 else 0x80000000
+
+    for descriptor_index in range(64):
+        offset = descriptor_offset + descriptor_index * 20
+        try:
+            original_thunk, _, _, name_rva, first_thunk = _unpack_from("<IIIII", raw_bytes, offset)
+        except ValueError:
+            break
+        if not any([original_thunk, name_rva, first_thunk]):
+            break
+
+        name_offset = _pe_rva_to_offset(sections, name_rva, size_of_headers)
+        dll_name = _read_c_string(raw_bytes, name_offset or -1, 256) or f"dll_{descriptor_index}"
+        thunk_rva = original_thunk or first_thunk
+        thunk_offset = _pe_rva_to_offset(sections, thunk_rva, size_of_headers)
+        functions: List[str] = []
+        if thunk_offset is not None:
+            for function_index in range(80):
+                try:
+                    if is_pe64:
+                        (thunk_value,) = _unpack_from("<Q", raw_bytes, thunk_offset + function_index * thunk_size)
+                    else:
+                        (thunk_value,) = _unpack_from("<I", raw_bytes, thunk_offset + function_index * thunk_size)
+                except ValueError:
+                    break
+                if thunk_value == 0:
+                    break
+                if thunk_value & ordinal_mask:
+                    functions.append(f"ordinal:{thunk_value & 0xFFFF}")
+                    continue
+                hint_name_offset = _pe_rva_to_offset(sections, int(thunk_value), size_of_headers)
+                function_name = _read_c_string(raw_bytes, (hint_name_offset or -2) + 2, 256)
+                if function_name:
+                    functions.append(function_name)
+                if len(functions) >= 40:
+                    break
+        imports[dll_name] = functions
+    return imports
+
+
+def _parse_pe_summary(raw_bytes: bytes) -> List[str]:
+    try:
+        if len(raw_bytes) < 0x40 or raw_bytes[:2] != b"MZ":
+            return []
+        (pe_offset,) = _unpack_from("<I", raw_bytes, 0x3C)
+        if pe_offset <= 0 or raw_bytes[pe_offset : pe_offset + 4] != b"PE\x00\x00":
+            return ["- PE: invalid PE signature"]
+
+        coff_offset = pe_offset + 4
+        machine, section_count, timestamp, _, _, optional_size, characteristics = _unpack_from(
+            "<HHIIIHH", raw_bytes, coff_offset
+        )
+        optional_offset = coff_offset + 20
+        (magic,) = _unpack_from("<H", raw_bytes, optional_offset)
+        is_pe64 = magic == 0x20B
+        pe_format = "PE32+" if is_pe64 else "PE32" if magic == 0x10B else f"unknown optional magic 0x{magic:X}"
+        (entry_point_rva,) = _unpack_from("<I", raw_bytes, optional_offset + 16)
+        if is_pe64:
+            (image_base,) = _unpack_from("<Q", raw_bytes, optional_offset + 24)
+            data_directory_offset = optional_offset + 112
+        else:
+            (image_base,) = _unpack_from("<I", raw_bytes, optional_offset + 28)
+            data_directory_offset = optional_offset + 96
+        (size_of_headers,) = _unpack_from("<I", raw_bytes, optional_offset + 60)
+        (subsystem,) = _unpack_from("<H", raw_bytes, optional_offset + 68)
+        import_rva, import_size = _unpack_from("<II", raw_bytes, data_directory_offset + 8)
+
+        sections: List[Dict[str, int]] = []
+        section_offset = optional_offset + optional_size
+        for index in range(section_count):
+            current_offset = section_offset + index * 40
+            (
+                raw_name,
+                virtual_size,
+                virtual_address,
+                raw_size,
+                raw_pointer,
+                _,
+                _,
+                _,
+                _,
+                section_characteristics,
+            ) = _unpack_from("<8sIIIIIIHHI", raw_bytes, current_offset)
+            section_name = raw_name.split(b"\x00", 1)[0].decode("ascii", errors="replace") or f"section_{index}"
+            sections.append(
+                {
+                    "name": section_name,
+                    "virtual_size": int(virtual_size),
+                    "virtual_address": int(virtual_address),
+                    "raw_size": int(raw_size),
+                    "raw_pointer": int(raw_pointer),
+                    "characteristics": int(section_characteristics),
+                }
+            )
+
+        timestamp_text = "unknown"
+        if timestamp:
+            try:
+                timestamp_text = datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat()
+            except Exception:
+                timestamp_text = f"raw:{timestamp}"
+
+        lines = [
+            f"- PE: {pe_format} {PE_MACHINE_TYPES.get(machine, hex(machine))}",
+            f"- subsystem: {PE_SUBSYSTEM_TYPES.get(subsystem, str(subsystem))}",
+            f"- timestamp: {timestamp_text}",
+            f"- characteristics: 0x{characteristics:04X}",
+            f"- entry point RVA: 0x{entry_point_rva:X}",
+            f"- image base: 0x{image_base:X}",
+            f"- sections: {section_count}",
+        ]
+
+        for section in sections[:12]:
+            lines.append(
+                "  - "
+                f"{section['name']}: "
+                f"VA 0x{section['virtual_address']:X}, "
+                f"VSZ {_format_byte_size(section['virtual_size'])}, "
+                f"RAW {_format_byte_size(section['raw_size'])}"
+            )
+        if section_count > 12:
+            lines.append(f"  ...{section_count - 12} more sections")
+
+        imports = _parse_pe_imports(raw_bytes, sections, import_rva, size_of_headers, is_pe64)
+        if imports:
+            lines.append(f"- import table: RVA 0x{import_rva:X}, size {_format_byte_size(import_size)}")
+            for dll_name, functions in list(imports.items())[:18]:
+                preview = ", ".join(functions[:18]) if functions else "[names unavailable]"
+                if len(functions) > 18:
+                    preview += f", ...{len(functions) - 18} more"
+                lines.append(f"  - {dll_name}: {preview}")
+            if len(imports) > 18:
+                lines.append(f"  ...{len(imports) - 18} more DLLs")
+        else:
+            lines.append("- import table: not found or not parseable")
+        return lines
+    except Exception as exc:
+        logger.warning(f"PE static analysis failed: {exc}")
+        return ["- PE: parse failed"]
+
+
+def _extract_printable_strings(raw_bytes: bytes) -> List[str]:
+    sample = raw_bytes[:MAX_BINARY_STRING_SCAN_BYTES]
+    candidates: List[str] = []
+    for match in re.finditer(rb"[ -~]{4,}", sample):
+        candidates.append(match.group(0).decode("ascii", errors="replace"))
+    for match in re.finditer(rb"(?:[\x20-\x7E]\x00){4,}", sample):
+        try:
+            candidates.append(match.group(0).decode("utf-16-le", errors="replace"))
+        except Exception:
+            continue
+
+    interesting_pattern = re.compile(
+        r"(https?://|www\.|\.dll\b|\.exe\b|\.bat\b|\.ps1\b|cmd\.exe|powershell|"
+        r"CreateProcess|LoadLibrary|GetProcAddress|Reg(Open|Set|Query)|HKEY_|HKLM|HKCU|"
+        r"Software\\|AppData|Temp\\|C:\\|/bin/|/usr/)",
+        re.IGNORECASE,
+    )
+    seen = set()
+    interesting: List[str] = []
+    fallback: List[str] = []
+    for candidate in candidates:
+        cleaned = re.sub(r"\s+", " ", candidate).strip()
+        if len(cleaned) < 4 or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        target = interesting if interesting_pattern.search(cleaned) else fallback
+        target.append(cleaned[:240])
+        if len(interesting) >= MAX_BINARY_STRINGS:
+            break
+
+    result = interesting[:MAX_BINARY_STRINGS]
+    if len(result) < min(30, MAX_BINARY_STRINGS):
+        result.extend(fallback[: min(30, MAX_BINARY_STRINGS) - len(result)])
+    return result[:MAX_BINARY_STRINGS]
+
+
+def _summarize_binary_attachment(name: str, raw_bytes: bytes, mime_type: str) -> str:
+    sha256 = hashlib.sha256(raw_bytes).hexdigest()
+    md5 = hashlib.md5(raw_bytes).hexdigest()
+    magic = raw_bytes[:16].hex(" ")
+    lines = [
+        f"[Binary: {name}]",
+        "- analysis: static only; the file was not executed",
+        f"- mime: {mime_type or 'unknown'}",
+        f"- size: {_format_byte_size(len(raw_bytes))}",
+        f"- sha256: {sha256}",
+        f"- md5: {md5}",
+        f"- magic bytes: {magic or '[empty]'}",
+    ]
+
+    if raw_bytes.startswith(b"MZ"):
+        lines.extend(_parse_pe_summary(raw_bytes))
+    elif raw_bytes.startswith(b"\x7fELF"):
+        lines.append("- format: ELF executable or shared object")
+
+    strings = _extract_printable_strings(raw_bytes)
+    if strings:
+        lines.append("- notable strings:")
+        lines.extend(f"  - {text}" for text in strings)
+    else:
+        lines.append("- notable strings: none found in sampled bytes")
+    return "\n".join(lines)
+
+
 async def transcribe_audio_files(
     files: Optional[List[Dict[str, Any]]],
     asr_engine: Optional[ASRInterface],
@@ -422,8 +1122,7 @@ async def transcribe_audio_files(
     audio_items = [
         file
         for file in files
-        if isinstance(file, dict)
-        and str(file.get("mime_type") or file.get("type") or "").lower().startswith("audio/")
+        if isinstance(file, dict) and _is_audio_upload(file)
     ][:3]
 
     for index, file in enumerate(audio_items, start=1):
@@ -450,6 +1149,55 @@ async def transcribe_audio_files(
             notes.append(f"- {name}: {text}")
         else:
             notes.append(f"- {name}: [未辨識到清楚語音]")
+    return notes
+
+
+async def summarize_uploaded_files(
+    files: Optional[List[Dict[str, Any]]],
+    asr_engine: Optional[ASRInterface],
+) -> List[str]:
+    if not files:
+        return []
+
+    notes: List[str] = []
+    audio_files = [file for file in files if isinstance(file, dict) and _is_audio_upload(file)]
+    audio_notes = await transcribe_audio_files(files, asr_engine)
+    if audio_notes:
+        notes.append("[Audio file transcription]\n" + "\n".join(audio_notes))
+    elif audio_files and asr_engine is None:
+        names = ", ".join(_safe_display_name(file.get("name") or "audio") for file in audio_files[:3])
+        notes.append(f"[Audio file transcription]\n- {names}: ASR engine is not available.")
+
+    for index, file in enumerate(files, start=1):
+        if not isinstance(file, dict) or _is_audio_upload(file):
+            continue
+
+        name = _safe_display_name(file.get("name") or f"file-{index}", f"file-{index}")
+        mime_hint = str(file.get("mime_type") or file.get("type") or "").strip().lower()
+        data_mime, raw_bytes = _decode_data_url(str(file.get("data") or ""))
+        mime_type = mime_hint or data_mime
+        if not raw_bytes:
+            notes.append(
+                "\n".join(
+                    [
+                        f"[File: {name}]",
+                        f"- mime: {mime_type or 'unknown'}",
+                        "- result: file payload could not be decoded",
+                    ]
+                )
+            )
+            continue
+
+        kind = _classify_uploaded_file(file, name, mime_type, raw_bytes)
+        if kind == "image":
+            continue
+        if kind in {"text", "code"}:
+            notes.append(_summarize_text_attachment(name, raw_bytes, kind))
+        elif kind == "archive":
+            notes.append(_summarize_archive_attachment(name, raw_bytes))
+        else:
+            notes.append(_summarize_binary_attachment(name, raw_bytes, mime_type))
+
     return notes
 
 

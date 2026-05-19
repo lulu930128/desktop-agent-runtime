@@ -44,11 +44,13 @@ class FileData:
         name: Original filename
         data: Base64 encoded file data
         mime_type: MIME type of the file
+        kind: Optional high-level category such as audio, code, archive, or binary
     """
 
     name: str
     data: str  # Base64 encoded
     mime_type: str
+    kind: Optional[str] = None
 
 
 @dataclass

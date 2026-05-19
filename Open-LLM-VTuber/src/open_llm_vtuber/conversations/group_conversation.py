@@ -9,9 +9,10 @@ from ..agent.output_types import AudioOutput, SentenceOutput
 
 from .conversation_utils import (
     create_batch_input,
+    format_uploaded_file_display_text,
     process_agent_output,
     process_user_input,
-    transcribe_audio_files,
+    summarize_uploaded_files,
     finalize_conversation_turn,
     cleanup_conversation,
     EMOJI_LIST,
@@ -81,7 +82,7 @@ async def process_group_conversation(
         )
 
         # Process initial input
-        input_text = await process_group_input(
+        display_input_text = await process_group_input(
             user_input=user_input,
             initiator_context=initiator_context,
             initiator_ws_send=client_connections[initiator_client_uid].send_text,
@@ -89,19 +90,21 @@ async def process_group_conversation(
             group_members=group_members,
             initiator_client_uid=initiator_client_uid,
         )
-        audio_notes = await transcribe_audio_files(
+        input_text = display_input_text
+        file_notes = await summarize_uploaded_files(
             files,
             initiator_context.asr_engine if initiator_context else None,
         )
-        if audio_notes:
+        if file_notes:
             input_text = "\n\n".join(
                 part
                 for part in [
                     input_text,
-                    "[Audio file transcription]\n" + "\n".join(audio_notes),
+                    "[Uploaded file analysis]\n" + "\n\n".join(file_notes),
                 ]
                 if part
             )
+        visible_input_text = format_uploaded_file_display_text(display_input_text, files)
 
         # Check if we should skip storing this input to history
         skip_history = metadata and metadata.get("skip_history", False)
@@ -113,7 +116,7 @@ async def process_group_conversation(
                     conf_uid=member_context.character_config.conf_uid,
                     history_uid=member_context.history_uid,
                     role="human",
-                    content=input_text,
+                    content=visible_input_text,
                     name=human_name,
                 )
         else:

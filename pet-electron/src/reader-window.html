@@ -266,7 +266,7 @@
             class="fileInput"
             id="fileInput"
             type="file"
-            accept="image/*,audio/*"
+            accept="image/*,audio/*,.txt,.md,.json,.jsonl,.yaml,.yml,.toml,.ini,.cfg,.csv,.tsv,.log,.env,.gitignore,.py,.js,.mjs,.cjs,.ts,.tsx,.jsx,.html,.css,.scss,.xml,.c,.cc,.cpp,.h,.hpp,.cs,.java,.go,.rs,.php,.rb,.lua,.sql,.swift,.kt,.kts,.dart,.vue,.svelte,.r,.pl,.bat,.cmd,.ps1,.sh,.zip,.tar,.tgz,.tar.gz,.gz,.exe,.dll,.bin,.dat"
             multiple
           />
         </div>
@@ -285,6 +285,78 @@
       const MAX_ATTACHMENTS = 6;
       const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
       const MAX_AUDIO_BYTES = 12 * 1024 * 1024;
+      const MAX_TEXT_BYTES = 4 * 1024 * 1024;
+      const MAX_ARCHIVE_BYTES = 24 * 1024 * 1024;
+      const MAX_BINARY_BYTES = 16 * 1024 * 1024;
+      const TEXT_EXTENSIONS = new Set([
+        ".txt",
+        ".md",
+        ".json",
+        ".jsonl",
+        ".yaml",
+        ".yml",
+        ".toml",
+        ".ini",
+        ".cfg",
+        ".csv",
+        ".tsv",
+        ".log",
+        ".env",
+        ".gitignore",
+        ".xml"
+      ]);
+      const CODE_EXTENSIONS = new Set([
+        ".py",
+        ".js",
+        ".mjs",
+        ".cjs",
+        ".ts",
+        ".tsx",
+        ".jsx",
+        ".html",
+        ".css",
+        ".scss",
+        ".c",
+        ".cc",
+        ".cpp",
+        ".h",
+        ".hpp",
+        ".cs",
+        ".java",
+        ".go",
+        ".rs",
+        ".php",
+        ".rb",
+        ".lua",
+        ".sql",
+        ".swift",
+        ".kt",
+        ".kts",
+        ".dart",
+        ".vue",
+        ".svelte",
+        ".r",
+        ".pl",
+        ".bat",
+        ".cmd",
+        ".ps1",
+        ".sh"
+      ]);
+      const ARCHIVE_EXTENSIONS = new Set([".zip", ".tar", ".tgz", ".tar.gz", ".gz"]);
+      const BINARY_EXTENSIONS = new Set([".exe", ".dll", ".bin", ".dat"]);
+      const ARCHIVE_MIME_TYPES = new Set([
+        "application/zip",
+        "application/x-zip-compressed",
+        "application/x-tar",
+        "application/gzip",
+        "application/x-gzip"
+      ]);
+      const BINARY_MIME_TYPES = new Set([
+        "application/octet-stream",
+        "application/vnd.microsoft.portable-executable",
+        "application/x-msdownload",
+        "application/x-dosexec"
+      ]);
 
       let currentState = {
         aiState: "idle",
@@ -306,6 +378,140 @@
         return `${value} B`;
       }
 
+      function getFileExtension(name) {
+        const lowerName = String(name || "").toLowerCase();
+        if (lowerName.endsWith(".tar.gz")) {
+          return ".tar.gz";
+        }
+        const dotIndex = lowerName.lastIndexOf(".");
+        return dotIndex >= 0 ? lowerName.slice(dotIndex) : "";
+      }
+
+      function guessMimeType(name, kind, fallback) {
+        const mimeType = String(fallback || "").toLowerCase();
+        if (mimeType) {
+          return mimeType;
+        }
+        const extension = getFileExtension(name);
+        const mimeByExtension = {
+          ".txt": "text/plain",
+          ".md": "text/markdown",
+          ".json": "application/json",
+          ".jsonl": "application/x-ndjson",
+          ".yaml": "application/x-yaml",
+          ".yml": "application/x-yaml",
+          ".toml": "application/toml",
+          ".ini": "text/plain",
+          ".cfg": "text/plain",
+          ".csv": "text/csv",
+          ".tsv": "text/tab-separated-values",
+          ".log": "text/plain",
+          ".env": "text/plain",
+          ".gitignore": "text/plain",
+          ".py": "text/x-python",
+          ".js": "text/javascript",
+          ".mjs": "text/javascript",
+          ".cjs": "text/javascript",
+          ".ts": "text/typescript",
+          ".tsx": "text/typescript",
+          ".jsx": "text/javascript",
+          ".html": "text/html",
+          ".css": "text/css",
+          ".scss": "text/x-scss",
+          ".c": "text/plain",
+          ".cc": "text/plain",
+          ".cpp": "text/plain",
+          ".h": "text/plain",
+          ".hpp": "text/plain",
+          ".cs": "text/plain",
+          ".java": "text/x-java-source",
+          ".go": "text/plain",
+          ".rs": "text/plain",
+          ".php": "text/x-php",
+          ".rb": "text/plain",
+          ".lua": "text/plain",
+          ".sql": "application/sql",
+          ".swift": "text/plain",
+          ".kt": "text/plain",
+          ".kts": "text/plain",
+          ".dart": "text/plain",
+          ".vue": "text/plain",
+          ".svelte": "text/plain",
+          ".r": "text/plain",
+          ".pl": "text/plain",
+          ".xml": "application/xml",
+          ".bat": "text/plain",
+          ".cmd": "text/plain",
+          ".ps1": "text/plain",
+          ".sh": "text/x-shellscript",
+          ".zip": "application/zip",
+          ".tar": "application/x-tar",
+          ".tgz": "application/gzip",
+          ".tar.gz": "application/gzip",
+          ".gz": "application/gzip",
+          ".exe": "application/vnd.microsoft.portable-executable",
+          ".dll": "application/vnd.microsoft.portable-executable",
+          ".bin": "application/octet-stream",
+          ".dat": "application/octet-stream"
+        };
+        return mimeByExtension[extension] || (kind === "binary" ? "application/octet-stream" : "application/octet-stream");
+      }
+
+      function classifyFile(file) {
+        const mimeType = String(file.type || "").toLowerCase();
+        const extension = getFileExtension(file.name);
+        if (mimeType.startsWith("image/")) {
+          return "image";
+        }
+        if (mimeType.startsWith("audio/")) {
+          return "audio";
+        }
+        if (CODE_EXTENSIONS.has(extension)) {
+          return "code";
+        }
+        if (TEXT_EXTENSIONS.has(extension) || mimeType.startsWith("text/")) {
+          return "text";
+        }
+        if (ARCHIVE_EXTENSIONS.has(extension) || ARCHIVE_MIME_TYPES.has(mimeType)) {
+          return "archive";
+        }
+        if (BINARY_EXTENSIONS.has(extension) || BINARY_MIME_TYPES.has(mimeType)) {
+          return "binary";
+        }
+        if (
+          ["application/json", "application/xml", "application/x-yaml", "application/toml"].includes(mimeType)
+        ) {
+          return "text";
+        }
+        return "";
+      }
+
+      function getAttachmentLimit(kind) {
+        if (kind === "image") {
+          return MAX_IMAGE_BYTES;
+        }
+        if (kind === "audio") {
+          return MAX_AUDIO_BYTES;
+        }
+        if (kind === "archive") {
+          return MAX_ARCHIVE_BYTES;
+        }
+        if (kind === "binary") {
+          return MAX_BINARY_BYTES;
+        }
+        return MAX_TEXT_BYTES;
+      }
+
+      function getAttachmentLabel(kind) {
+        if (kind === "image") return "圖片";
+        if (kind === "audio") return "音檔";
+        if (kind === "code") return "程式";
+        if (kind === "text") return "文字";
+        if (kind === "archive") return "壓縮";
+        if (kind === "binary") return "二進位";
+        return "檔案";
+      }
+
       function renderAttachments() {
         attachmentsBox.replaceChildren();
         attachments.forEach((item, index) => {
@@ -313,7 +519,7 @@
           chip.className = "chip";
 
           const label = document.createElement("span");
-          label.textContent = `${item.kind === "audio" ? "音檔" : "圖片"} ${item.name} ${compactFileSize(item.size)}`;
+          label.textContent = `${getAttachmentLabel(item.kind)} ${item.name} ${compactFileSize(item.size)}`;
 
           const remove = document.createElement("button");
           remove.type = "button";
@@ -378,14 +584,13 @@
             break;
           }
 
-          const mimeType = String(file.type || "").toLowerCase();
-          const isImage = mimeType.startsWith("image/");
-          const isAudio = mimeType.startsWith("audio/");
-          if (!isImage && !isAudio) {
+          const kind = classifyFile(file);
+          if (!kind) {
+            setStatusNotice(`${file.name} 暫不支援`);
             continue;
           }
 
-          const maxBytes = isImage ? MAX_IMAGE_BYTES : MAX_AUDIO_BYTES;
+          const maxBytes = getAttachmentLimit(kind);
           if (file.size > maxBytes) {
             setStatusNotice(`${file.name} 太大`);
             continue;
@@ -394,10 +599,10 @@
           try {
             const data = await readFileAsDataUrl(file);
             attachments.push({
-              kind: isAudio ? "audio" : "image",
+              kind,
               name: file.name,
               size: file.size,
-              mime_type: mimeType,
+              mime_type: guessMimeType(file.name, kind, file.type),
               data
             });
           } catch (error) {

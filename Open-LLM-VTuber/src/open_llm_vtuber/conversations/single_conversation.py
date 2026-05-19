@@ -9,7 +9,8 @@ from .conversation_utils import (
     process_agent_output,
     send_conversation_start_signals,
     process_user_input,
-    transcribe_audio_files,
+    format_uploaded_file_display_text,
+    summarize_uploaded_files,
     finalize_conversation_turn,
     cleanup_conversation,
     EMOJI_LIST,
@@ -276,19 +277,21 @@ async def process_single_conversation(
         logger.info(f"New Conversation Chain {session_emoji} started!")
 
         # Process user input
-        input_text = await process_user_input(
+        display_input_text = await process_user_input(
             user_input, context.asr_engine, websocket_send
         )
-        audio_notes = await transcribe_audio_files(files, context.asr_engine)
-        if audio_notes:
+        input_text = display_input_text
+        file_notes = await summarize_uploaded_files(files, context.asr_engine)
+        if file_notes:
             input_text = "\n\n".join(
                 part
                 for part in [
                     input_text,
-                    "[Audio file transcription]\n" + "\n".join(audio_notes),
+                    "[Uploaded file analysis]\n" + "\n\n".join(file_notes),
                 ]
                 if part
             )
+        visible_input_text = format_uploaded_file_display_text(display_input_text, files)
 
         # Create batch input
         batch_input = create_batch_input(
@@ -306,14 +309,16 @@ async def process_single_conversation(
                 conf_uid=context.character_config.conf_uid,
                 history_uid=context.history_uid,
                 role="human",
-                content=input_text,
+                content=visible_input_text,
                 name=context.character_config.human_name,
             )
 
         if skip_history:
             logger.debug("Skipping storing user input to history (proactive speak)")
 
-        logger.info(f"User input: {input_text}")
+        logger.info(f"User input: {visible_input_text}")
+        if file_notes:
+            logger.debug(f"Uploaded file analysis added to agent input: {len(file_notes)} section(s)")
         if images:
             logger.info(f"With {len(images)} images")
         if files:
@@ -398,11 +403,11 @@ async def process_single_conversation(
             )
             logger.info(f"AI response: {full_response}")
 
-        if context.history_uid and not skip_history and input_text:
+        if context.history_uid and not skip_history and visible_input_text:
             memory_changed, memory_notes = process_character_memory_turn(
                 conf_uid=context.character_config.conf_uid,
                 history_uid=context.history_uid,
-                user_text=input_text,
+                user_text=visible_input_text,
                 assistant_text=full_response,
             )
             if memory_changed:

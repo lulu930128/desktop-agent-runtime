@@ -1,7 +1,7 @@
 import "./styles.css";
 import { PetLive2DRenderer } from "./live2d/pet-live2d-renderer";
 
-const RENDERER_BUILD_TAG = "custom-renderer-2026-05-17b";
+const RENDERER_BUILD_TAG = "custom-renderer-2026-05-20-max-fps";
 const MODEL_ZOOM_STORAGE_KEY = "kuroPetModelZoomScale";
 const DEFAULT_OUTFIT_PARAMETER_ID = "Param10";
 console.info("[pet-renderer] boot", { build: RENDERER_BUILD_TAG });
@@ -91,6 +91,17 @@ type SpeechLipSyncEnvelope = {
 
 function normalizeText(value: unknown): string {
   return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function buildVisibleInputText(text: string, attachments: UserAttachmentPayload[] = []): string {
+  const attachmentNames = (Array.isArray(attachments) ? attachments : [])
+    .map((item, index) => String(item?.name || `file-${index + 1}`).trim())
+    .filter(Boolean);
+  if (!attachmentNames.length) {
+    return text;
+  }
+
+  return [text, `附件：${attachmentNames.join("、")}`].filter(Boolean).join("\n");
 }
 
 function mergeTextFragments(parts: string[]): string {
@@ -301,7 +312,7 @@ function buildSpeechLipSyncEnvelope(audioBase64: string): SpeechLipSyncEnvelope 
     }
 
     const duration = frameCount / sampleRate;
-    const frameRate = 30;
+    const frameRate = 60;
     const envelopeLength = Math.max(1, Math.ceil(duration * frameRate));
     const rmsValues: number[] = [];
     const windowSamples = Math.max(1, Math.floor(sampleRate * 0.032));
@@ -555,6 +566,7 @@ class BackendClient {
     attachments: UserAttachmentPayload[] = []
   ): Promise<{ ok: boolean; error?: string; text?: string }> {
     const normalized = normalizeText(text);
+    const visibleText = buildVisibleInputText(normalized, attachments);
     const normalizedAttachments = this.normalizeAttachments(attachments);
     if (!normalized && normalizedAttachments.images.length === 0 && normalizedAttachments.files.length === 0) {
       return { ok: false, error: "empty-text" };
@@ -578,11 +590,11 @@ class BackendClient {
     this.stopAudioPlayback(true);
     this.resetPlaybackTurn();
     this.updateState({
-      latestUserText: normalized,
+      latestUserText: visibleText,
       latestAssistantText: "",
       aiState: "thinking"
     });
-    return { ok: true, text: normalized };
+    return { ok: true, text: visibleText };
   }
 
   public sendInterrupt(): void {
@@ -990,10 +1002,11 @@ class BackendClient {
       }
 
       const data = String(item.data || "");
-      const mimeType = String(item.mime_type || item.type || "").toLowerCase();
+      const requestedKind = String(item.kind || "").toLowerCase();
+      const mimeType = String(item.mime_type || item.type || "").toLowerCase() || "application/octet-stream";
       const name = String(item.name || "uploaded-file").trim() || "uploaded-file";
       const size = Number(item.size) || 0;
-      if (!data.startsWith("data:") || !mimeType) {
+      if (!data.startsWith("data:")) {
         continue;
       }
 
@@ -1003,9 +1016,9 @@ class BackendClient {
           data,
           mime_type: mimeType
         });
-      } else if (mimeType.startsWith("audio/")) {
+      } else {
         files.push({
-          kind: "audio",
+          kind: requestedKind || (mimeType.startsWith("audio/") ? "audio" : "file"),
           name,
           data,
           mime_type: mimeType,

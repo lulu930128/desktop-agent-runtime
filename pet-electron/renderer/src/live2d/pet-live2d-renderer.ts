@@ -18,6 +18,8 @@ type DrawableBounds = {
   bottom: number;
 };
 
+const FORCE_MAX_RENDER_FPS = true;
+
 let cubismInitialized = false;
 
 function ensureCubismReady() {
@@ -387,6 +389,10 @@ export class PetLive2DRenderer {
   }
 
   private getTargetFps(): number {
+    if (FORCE_MAX_RENDER_FPS) {
+      return Number.POSITIVE_INFINITY;
+    }
+
     if (document.hidden) {
       return 2;
     }
@@ -414,6 +420,11 @@ export class PetLive2DRenderer {
 
   private scheduleNextFrame(): void {
     if (this.disposed || this.rafId !== null || this.renderTimerId !== null) {
+      return;
+    }
+
+    if (FORCE_MAX_RENDER_FPS) {
+      this.rafId = window.requestAnimationFrame(this.renderFrame);
       return;
     }
 

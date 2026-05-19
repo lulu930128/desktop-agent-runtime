@@ -273,12 +273,15 @@ class BasicMemoryAgent(AgentInterface):
             for file_data in input_data.files:
                 mime_type = str(getattr(file_data, "mime_type", "") or "").strip()
                 name = str(getattr(file_data, "name", "") or "uploaded-file").strip()
+                kind = str(getattr(file_data, "kind", "") or "").strip()
                 if mime_type.startswith("audio/"):
                     file_notes.append(
                         f"- Audio file attached: {name}. If a transcription is available, it is included in the user text above."
                     )
                 else:
-                    file_notes.append(f"- File attached: {name} ({mime_type or 'unknown type'}).")
+                    file_notes.append(
+                        f"- File attached: {name} ({kind or mime_type or 'unknown type'}). If readable, a bounded static analysis summary is included in the user text above."
+                    )
             message_parts.append("\n" + "\n".join(file_notes))
 
         return "\n".join(message_parts).strip()

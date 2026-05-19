@@ -135,6 +135,35 @@
         }
       ]
     },
+    "file_attachments": {
+      "title": "File Attachments",
+      "description": "Uploaded file understanding. Text/code files are summarized, archives are safely listed with small text samples, and binaries/executables receive static analysis only.",
+      "intent_keywords": [
+        "附件",
+        "上傳檔案",
+        "這個檔案",
+        "程式碼檔",
+        "壓縮檔",
+        "解包",
+        "二進位",
+        "執行檔",
+        "exe",
+        "dll",
+        "bin",
+        "zip",
+        "tar",
+        "gz",
+        "py",
+        "uploaded file",
+        "attachment",
+        "archive",
+        "binary",
+        "executable",
+        "static analysis"
+      ],
+      "default_tools": [],
+      "tools": []
+    },
     "media": {
       "title": "Media",
       "description": "Image/audio attachment understanding. Use web research when visual content needs external lookup or verification.",
