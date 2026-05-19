@@ -284,7 +284,7 @@ function buildSpeechLipSyncEnvelope(audioBase64: string): SpeechLipSyncEnvelope 
     }
 
     const duration = frameCount / sampleRate;
-    const frameRate = 60;
+    const frameRate = 30;
     const envelopeLength = Math.max(1, Math.ceil(duration * frameRate));
     const rmsValues: number[] = [];
     const windowSamples = Math.max(1, Math.floor(sampleRate * 0.032));
@@ -355,6 +355,7 @@ class BackendClient {
   private speechData: Uint8Array<ArrayBuffer> | null;
   private speechEnvelope: SpeechLipSyncEnvelope | null;
   private lipSyncFrameId: number | null;
+  private lipSyncTimerId: number | null;
   private lipSyncLevel: number;
   private speechFallbackStartedAt: number;
 
@@ -391,6 +392,7 @@ class BackendClient {
     this.speechData = null;
     this.speechEnvelope = null;
     this.lipSyncFrameId = null;
+    this.lipSyncTimerId = null;
     this.lipSyncLevel = 0;
     this.speechFallbackStartedAt = 0;
   }
@@ -744,6 +746,10 @@ class BackendClient {
       window.cancelAnimationFrame(this.lipSyncFrameId);
       this.lipSyncFrameId = null;
     }
+    if (this.lipSyncTimerId !== null) {
+      window.clearTimeout(this.lipSyncTimerId);
+      this.lipSyncTimerId = null;
+    }
 
     try {
       this.speechSource?.disconnect();
@@ -770,14 +776,17 @@ class BackendClient {
   }
 
   private scheduleSpeechLipSyncFrame(): void {
-    if (this.lipSyncFrameId !== null) {
+    if (this.lipSyncFrameId !== null || this.lipSyncTimerId !== null) {
       return;
     }
 
-    this.lipSyncFrameId = window.requestAnimationFrame(() => {
-      this.lipSyncFrameId = null;
-      this.updateSpeechLipSync();
-    });
+    this.lipSyncTimerId = window.setTimeout(() => {
+      this.lipSyncTimerId = null;
+      this.lipSyncFrameId = window.requestAnimationFrame(() => {
+        this.lipSyncFrameId = null;
+        this.updateSpeechLipSync();
+      });
+    }, 33);
   }
 
   private getSpeechFallbackTarget(): number {
@@ -1378,14 +1387,18 @@ const rendererState: RendererState = {
   browserPanelEnabled: false
 };
 
+let live2dRenderer: PetLive2DRenderer | null = null;
+
 const reportState = (patch: Partial<RendererState>) => {
   Object.assign(rendererState, patch);
+  live2dRenderer?.setActivityState(rendererState.aiState);
   window.__kuroPetRendererState = { ...rendererState };
   window.kuroPetElectron.reportFrontendState({ ...rendererState });
 };
 
 const initialConfig = window.kuroPetElectron.getInitialConfig();
 const renderer = new PetLive2DRenderer(canvas);
+live2dRenderer = renderer;
 renderer.setZoomScale(resolveInitialZoomScale(initialConfig.zoomScale));
 storeModelZoomScale(renderer.getZoomScale());
 window.kuroPetElectron.setPetWindowZoom(renderer.getZoomScale());
@@ -1446,6 +1459,7 @@ function setModelHoverState(nextHover: boolean): void {
   }
   hoverOnModel = nextHover;
   canvas.style.cursor = draggingModel ? "grabbing" : hoverOnModel ? "grab" : "default";
+  renderer.setPointerActive(hoverOnModel || draggingModel);
   window.kuroPetElectron.updateComponentHover("live2d-model", hoverOnModel);
 }
 
@@ -1471,6 +1485,7 @@ canvas.addEventListener("pointerdown", (event) => {
 
   draggingModel = true;
   canvas.style.cursor = "grabbing";
+  renderer.setPointerActive(true);
   renderer.setDragPointFromCanvas(event.clientX, event.clientY);
   event.preventDefault();
   window.kuroPetElectron.startWindowDrag(event.screenX, event.screenY);
@@ -1504,6 +1519,7 @@ window.addEventListener("pointermove", (event) => {
 window.addEventListener("pointerup", () => {
   draggingModel = false;
   renderer.resetDragPoint();
+  renderer.setPointerActive(hoverOnModel);
   canvas.style.cursor = hoverOnModel ? "grab" : "default";
   window.kuroPetElectron.endWindowDrag();
 });
@@ -1513,6 +1529,14 @@ canvas.addEventListener("pointerleave", () => {
     return;
   }
   setModelHoverState(false);
+  renderer.setPointerActive(false);
+  renderer.resetDragPoint();
+});
+
+window.addEventListener("blur", () => {
+  draggingModel = false;
+  setModelHoverState(false);
+  renderer.setPointerActive(false);
   renderer.resetDragPoint();
 });
 

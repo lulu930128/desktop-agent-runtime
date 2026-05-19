@@ -127,6 +127,9 @@ PALETTE = {
 
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+LOG_DRAIN_INTERVAL_MS = 220
+LOG_DRAIN_MAX_LINES = 60
+STATUS_TICK_INTERVAL_MS = 2200
 
 EXPRESSION_BASE_PARAMETERS: Dict[str, float] = {
     "Param6": 0,
@@ -403,6 +406,73 @@ def _format_history_timestamp(raw: str) -> str:
         return raw[:16]
 
 
+def _is_assistant_history_role(role: str) -> bool:
+    return (role or "").strip().lower() in {"ai", "assistant"}
+
+
+def _history_event_detail(event: dict) -> dict:
+    detail = event.get("detail")
+    if isinstance(detail, dict):
+        return detail
+    if isinstance(detail, str) and detail.strip():
+        try:
+            parsed = json.loads(detail)
+        except Exception:
+            return {}
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
+
+
+def _history_tool_name(event: dict) -> str:
+    detail = _history_event_detail(event)
+    tool_name = str(detail.get("tool_name") or "").strip()
+    if tool_name:
+        return tool_name
+
+    title = str(event.get("title") or "").strip()
+    for prefix in ("工具：", "工具:", "Tool：", "Tool:"):
+        if title.startswith(prefix):
+            tool_name = title[len(prefix) :].strip()
+            if tool_name:
+                return tool_name
+
+    summary = str(event.get("summary") or "").strip()
+    if summary:
+        first = summary.split()[0].strip("：:，,")
+        if first:
+            return first
+    return "tool"
+
+
+def _format_history_tool_event_inline(event: dict) -> str:
+    status = str(event.get("status") or "").strip().lower()
+    tool_name = _history_tool_name(event)
+    tool_key = tool_name.lower()
+    is_search_tool = (
+        "search" in tool_key
+        or tool_key in {"smart_search_web", "search_web", "fetch_content"}
+    )
+    subject = "搜尋" if is_search_tool else "工具"
+    status_text = {
+        "completed": "完成",
+        "ok": "完成",
+        "error": "錯誤",
+        "blocked": "被擋下",
+        "skipped": "略過",
+    }.get(status, status or "狀態")
+    return f"{subject}{status_text} · {tool_name}"
+
+
+def _format_history_tool_events_inline(events: list[dict]) -> str:
+    labels = [
+        _format_history_tool_event_inline(event)
+        for event in events
+        if isinstance(event, dict)
+    ]
+    return "　".join(label for label in labels if label)
+
+
 class LauncherApp(ctk.CTk):
     def __init__(self, cfg: AppConfig):
         super().__init__()
@@ -437,6 +507,9 @@ class LauncherApp(ctk.CTk):
         )
 
         self._prompt_texts: Dict[str, str] = {}
+        self._prompt_texts_signature = ""
+        self._preview_asset_cache: Dict[tuple[str, str], tuple[Optional[Path], str]] = {}
+        self._preview_photo_cache: Dict[tuple[str, int, int, int, int], PhotoImage] = {}
         self.selection_view_var = ctk.StringVar(value="角色")
         self.preview_mode_var = ctk.StringVar(value="角色預覽")
         self.prompt_view_var = ctk.StringVar(value="角色")
@@ -448,6 +521,12 @@ class LauncherApp(ctk.CTk):
         self._preview_photo: Optional[PhotoImage] = None
         self._force_new_history_on_start = False
         self._transcript_signature = ""
+        self._status_probe_in_flight = False
+        self._pet_status_in_flight = False
+        self._panel_update_after_id: Optional[str] = None
+        self._character_change_after_id: Optional[str] = None
+        self._history_list_signature = ""
+        self._history_list_selected_uid = ""
         self._pet_shell_online = False
         self._runtime_history_uid = ""
         self.pet_toggle_vars: Dict[str, ctk.StringVar] = {}
@@ -463,7 +542,7 @@ class LauncherApp(ctk.CTk):
         self._refresh_character_list()
         self._refresh_outfit_list()
         self._refresh_project_list()
-        self.after(120, self._drain_log_queue)
+        self.after(LOG_DRAIN_INTERVAL_MS, self._drain_log_queue)
         self.after(600, self._tick_status)
 
     def _apply_window_icon(self) -> None:
@@ -2003,12 +2082,7 @@ class LauncherApp(ctk.CTk):
         try:
             self._log_q.put_nowait(strip_ansi_and_ctrl(str(message)))
         except Exception:
-            return
-        if threading.get_ident() == self._main_thread_id:
-            try:
-                self.after_idle(self._drain_log_queue)
-            except Exception:
-                pass
+            pass
 
     def _set_textbox(self, box: ctk.CTkTextbox, text: str) -> None:
         box.configure(state="normal")
@@ -2019,28 +2093,44 @@ class LauncherApp(ctk.CTk):
 
     def _drain_log_queue(self) -> None:
         drained = 0
+        lines: list[str] = []
         self.log_box.configure(state="normal")
-        while drained < 250:
+        while drained < LOG_DRAIN_MAX_LINES:
             try:
                 line = self._log_q.get_nowait()
             except Exception:
                 break
-            self.log_box.insert("end", line + "\n")
-            self.log_box.see("end")
+            lines.append(line)
             drained += 1
+        if lines:
+            self.log_box.insert("end", "\n".join(lines) + "\n")
+            self.log_box.see("end")
         self.log_box.configure(state="disabled")
-        self.after(120, self._drain_log_queue)
+        self.after(LOG_DRAIN_INTERVAL_MS, self._drain_log_queue)
 
     def _tick_status(self) -> None:
-        bridge_ok = port_is_open(self.cfg.bridge_host, self.cfg.bridge_port, 0.1)
-        tts_ok = port_is_open(self.cfg.tts_host, self.cfg.tts_port, 0.1)
-        llm_ok = port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.1)
-        self.badges["Bridge"].set_status(bridge_ok)
-        self.badges["TTS"].set_status(tts_ok)
-        self.badges["LLM"].set_status(llm_ok)
+        if not self._status_probe_in_flight:
+            self._status_probe_in_flight = True
+            threading.Thread(target=self._status_probe_worker, daemon=True).start()
         self._refresh_history_transcript()
         self._tick_pet_shell_status()
-        self.after(800, self._tick_status)
+        self.after(STATUS_TICK_INTERVAL_MS, self._tick_status)
+
+    def _status_probe_worker(self) -> None:
+        try:
+            status = {
+                "bridge": port_is_open(self.cfg.bridge_host, self.cfg.bridge_port, 0.1),
+                "tts": port_is_open(self.cfg.tts_host, self.cfg.tts_port, 0.1),
+                "llm": port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.1),
+            }
+            self.after(0, lambda s=status: self._apply_status_probe(s))
+        finally:
+            self._status_probe_in_flight = False
+
+    def _apply_status_probe(self, status: dict) -> None:
+        self.badges["Bridge"].set_status(bool(status.get("bridge")))
+        self.badges["TTS"].set_status(bool(status.get("tts")))
+        self.badges["LLM"].set_status(bool(status.get("llm")))
 
     def _load_live2d_catalog(self) -> Dict[str, dict]:
         model_dict_path = self.cfg.open_llm_dir / "model_dict.json"
@@ -2134,19 +2224,48 @@ class LauncherApp(ctk.CTk):
 
     def _resolve_preview_asset(self, character: CharacterRecord) -> tuple[Optional[Path], str]:
         outfit_id = self.outfit_var.get().strip() if hasattr(self, "outfit_var") else "normal"
+        cache_key = (character.conf_uid or str(character.yaml_path), outfit_id)
+        cached = self._preview_asset_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         outfit_texture = self._preferred_outfit_texture(character, outfit_id)
         if outfit_texture:
-            return outfit_texture, "Live2D texture"
+            result = (outfit_texture, "Live2D texture")
+            self._preview_asset_cache[cache_key] = result
+            return result
 
         avatar = self._find_avatar_preview(character)
         if avatar:
-            return avatar, "角色圖預覽"
+            result = (avatar, "角色圖預覽")
+            self._preview_asset_cache[cache_key] = result
+            return result
         live2d = self._find_live2d_preview(character, outfit_id)
         if live2d:
-            return live2d, "Live2D 素材預覽"
-        return None, "尚未找到可用預覽"
+            result = (live2d, "Live2D 素材預覽")
+            self._preview_asset_cache[cache_key] = result
+            return result
+        result = (None, "尚未找到可用預覽")
+        self._preview_asset_cache[cache_key] = result
+        return result
 
     def _load_preview_photo(self, image_path: Path, max_width: int = 420, max_height: int = 292) -> Optional[PhotoImage]:
+        try:
+            stat = image_path.stat()
+        except OSError:
+            return None
+
+        cache_key = (
+            str(image_path),
+            stat.st_mtime_ns,
+            stat.st_size,
+            max_width,
+            max_height,
+        )
+        cached = self._preview_photo_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         try:
             photo = PhotoImage(file=str(image_path))
         except Exception:
@@ -2156,6 +2275,9 @@ class LauncherApp(ctk.CTk):
         scale = max(scale_x, scale_y)
         if scale > 1:
             photo = photo.subsample(scale, scale)
+        if len(self._preview_photo_cache) >= 12:
+            self._preview_photo_cache.clear()
+        self._preview_photo_cache[cache_key] = photo
         return photo
 
     def _update_character_preview(self, character: Optional[CharacterRecord]) -> None:
@@ -2290,6 +2412,7 @@ class LauncherApp(ctk.CTk):
                         max_len=120,
                     ),
                     "timestamp": str(item.get("timestamp") or "").strip(),
+                    "detail": item.get("detail"),
                 }
             )
         return events
@@ -2434,6 +2557,7 @@ class LauncherApp(ctk.CTk):
         content: str,
         timestamp: str,
         is_user: bool,
+        events: Optional[list[dict]] = None,
     ) -> None:
         lane = ctk.CTkFrame(self.transcript_frame, fg_color="transparent")
         lane.grid(row=row, column=0, sticky="ew", padx=10, pady=(10 if row == 0 else 2, 6))
@@ -2471,6 +2595,22 @@ class LauncherApp(ctk.CTk):
             wraplength=380,
         ).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 4))
 
+        next_row = 2
+        event_text = ""
+        if not is_user and events:
+            event_text = _format_history_tool_events_inline(events)
+        if event_text:
+            ctk.CTkLabel(
+                bubble,
+                text=event_text,
+                font=ui_font(10),
+                text_color=PALETTE["accent_blue_hover"],
+                justify="left",
+                anchor="w",
+                wraplength=360,
+            ).grid(row=next_row, column=0, sticky="w", padx=12, pady=(0, 4))
+            next_row += 1
+
         if timestamp:
             ctk.CTkLabel(
                 bubble,
@@ -2478,9 +2618,9 @@ class LauncherApp(ctk.CTk):
                 font=ui_font(10),
                 text_color=PALETTE["muted"],
                 anchor="e" if is_user else "w",
-            ).grid(row=2, column=0, sticky="e" if is_user else "w", padx=12, pady=(0, 10))
+            ).grid(row=next_row, column=0, sticky="e" if is_user else "w", padx=12, pady=(0, 10))
         else:
-            bubble.grid_rowconfigure(2, minsize=8)
+            bubble.grid_rowconfigure(next_row, minsize=8)
 
     def _append_history_event(self, *, row: int, event: dict) -> None:
         event_type = str(event.get("type") or "").strip()
@@ -2488,6 +2628,21 @@ class LauncherApp(ctk.CTk):
         title = str(event.get("title") or "").strip()
         summary = str(event.get("summary") or "").strip()
         timestamp = str(event.get("timestamp") or "").strip()
+
+        if event_type == "tool_call":
+            lane = ctk.CTkFrame(self.transcript_frame, fg_color="transparent")
+            lane.grid(row=row, column=0, sticky="ew", padx=10, pady=(2, 2))
+            lane.grid_columnconfigure(0, weight=1)
+            ctk.CTkLabel(
+                lane,
+                text=_format_history_tool_event_inline(event),
+                font=ui_font(10),
+                text_color=PALETTE["accent_blue_hover"],
+                anchor="w",
+                justify="left",
+                wraplength=420,
+            ).grid(row=0, column=0, sticky="w", padx=(28, 12), pady=(0, 0))
+            return
 
         if not title:
             if event_type.startswith("memory"):
@@ -2591,9 +2746,26 @@ class LauncherApp(ctk.CTk):
             child.destroy()
 
         timeline: list[dict] = []
+        message_items: list[dict] = []
         for message in messages:
-            timeline.append({"kind": "message", **message})
+            item = {"kind": "message", "_events": [], **message}
+            message_items.append(item)
+            timeline.append(item)
         for event in events:
+            if event.get("type") == "tool_call":
+                event_ts = str(event.get("timestamp") or "")
+                target_message = None
+                for message_item in message_items:
+                    role = str(message_item.get("role") or "")
+                    if not _is_assistant_history_role(role):
+                        continue
+                    message_ts = str(message_item.get("timestamp") or "")
+                    if not event_ts or not message_ts or message_ts >= event_ts:
+                        target_message = message_item
+                        break
+                if target_message is not None:
+                    target_message.setdefault("_events", []).append(event)
+                    continue
             timeline.append({"kind": "event", **event})
         timeline.sort(key=self._history_timeline_sort_key)
 
@@ -2611,6 +2783,7 @@ class LauncherApp(ctk.CTk):
                 content=str(item.get("content") or ""),
                 timestamp=str(item.get("timestamp") or ""),
                 is_user=is_user,
+                events=item.get("_events") if not is_user else None,
             )
 
         try:
@@ -3035,7 +3208,7 @@ class LauncherApp(ctk.CTk):
         self._compact_memory_entries(store)
         self._save_character_memory_store(store, character)
         self._refresh_memory_list()
-        self._update_panels()
+        self._schedule_panel_update()
         self._notify_memory_prompt_refresh()
         self.log(f"[{log_ts()}] 已新增角色記憶：{_compact_history_text(content, 48)}")
 
@@ -3053,7 +3226,7 @@ class LauncherApp(ctk.CTk):
                 break
         self._save_character_memory_store(store, character)
         self._refresh_memory_list()
-        self._update_panels()
+        self._schedule_panel_update()
         self._notify_memory_prompt_refresh()
 
     def on_delete_memory(self) -> None:
@@ -3080,7 +3253,7 @@ class LauncherApp(ctk.CTk):
             ]
         self._save_character_memory_store(store, character)
         self._refresh_memory_list()
-        self._update_panels()
+        self._schedule_panel_update()
         self._notify_memory_prompt_refresh()
         self.log(f"[{log_ts()}] 已刪除角色記憶。")
 
@@ -3094,17 +3267,56 @@ class LauncherApp(ctk.CTk):
         if changed:
             self._save_character_memory_store(store, character)
         self._refresh_memory_list()
-        self._update_panels()
+        self._schedule_panel_update()
         if changed:
             self._notify_memory_prompt_refresh()
         self.log(f"[{log_ts()}] 角色記憶已整理，合併/移除 {removed_count} 條。")
 
-    def _refresh_history_list(self) -> None:
+    def _history_list_signature_for_character(
+        self,
+        character: Optional[CharacterRecord],
+    ) -> str:
+        history_dir = self._history_dir_for_character(character)
+        if history_dir is None or not history_dir.exists():
+            return "no-history-dir"
+
+        parts: list[str] = []
+        try:
+            paths = sorted(history_dir.glob("*.json"))
+        except Exception:
+            return "history-dir-error"
+        for path in paths:
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            parts.append(f"{path.name}:{stat.st_mtime_ns}:{stat.st_size}")
+        return "|".join(parts)
+
+    def _refresh_history_list(self, *, force: bool = False) -> None:
+        character = self._selected_character()
+        selected_uid = self.history_var.get().strip()
+        signature = (
+            f"{character.conf_uid if character else 'none'}:"
+            f"{self._history_list_signature_for_character(character)}:"
+            f"new={self._force_new_history_on_start}"
+        )
+        if (
+            not force
+            and signature == self._history_list_signature
+            and selected_uid == self._history_list_selected_uid
+        ):
+            self._sync_history_status_label()
+            self._refresh_history_transcript()
+            return
+
+        self._history_list_signature = signature
+        self._history_list_selected_uid = selected_uid
+
         for child in self.history_frame.winfo_children():
             child.destroy()
         self._history_radio_buttons = []
 
-        character = self._selected_character()
         self.history_records = self._load_history_records(character)
         current = self.history_var.get().strip()
 
@@ -3138,6 +3350,7 @@ class LauncherApp(ctk.CTk):
                 )
 
         self._sync_history_status_label()
+        self._history_list_selected_uid = self.history_var.get().strip()
         self._refresh_history_transcript(force=True)
 
     def _refresh_character_list(self) -> None:
@@ -3189,7 +3402,7 @@ class LauncherApp(ctk.CTk):
             self.history_records.clear()
             self._refresh_history_list()
             self._refresh_memory_list()
-            self._update_panels()
+            self._schedule_panel_update()
         self.log(f"[{log_ts()}] 角色列表已更新，共 {len(self.character_records)} 份設定。")
 
     def _refresh_outfit_list(self) -> None:
@@ -3261,7 +3474,7 @@ class LauncherApp(ctk.CTk):
         else:
             self.project_var.set("")
         self._apply_character_default_project()
-        self._update_panels()
+        self._schedule_panel_update()
         self.log(f"[{log_ts()}] 專案列表已更新，共 {len(self.project_records)} 份設定。")
 
     def _selected_character(self) -> Optional[CharacterRecord]:
@@ -3284,15 +3497,40 @@ class LauncherApp(ctk.CTk):
                     return
         self.project_var.set(next(iter(self.project_records)))
 
-    def _on_character_changed(self) -> None:
-        self._apply_character_default_project()
-        self._force_new_history_on_start = False
-        self._refresh_history_list()
-        self._refresh_memory_list()
+    def _schedule_panel_update(self, delay_ms: int = 80) -> None:
+        if self._panel_update_after_id is not None:
+            try:
+                self.after_cancel(self._panel_update_after_id)
+            except Exception:
+                pass
+        self._panel_update_after_id = self.after(delay_ms, self._run_scheduled_panel_update)
+
+    def _run_scheduled_panel_update(self) -> None:
+        self._panel_update_after_id = None
         self._update_panels()
 
+    def _schedule_character_change(self) -> None:
+        if self._character_change_after_id is not None:
+            try:
+                self.after_cancel(self._character_change_after_id)
+            except Exception:
+                pass
+        self._character_change_after_id = self.after(40, self._run_scheduled_character_change)
+
+    def _run_scheduled_character_change(self) -> None:
+        self._character_change_after_id = None
+        self._apply_character_default_project()
+        self._force_new_history_on_start = False
+        self._history_list_signature = ""
+        self._refresh_history_list(force=True)
+        self._refresh_memory_list()
+        self._schedule_panel_update(20)
+
+    def _on_character_changed(self) -> None:
+        self._schedule_character_change()
+
     def _on_project_changed(self) -> None:
-        self._update_panels()
+        self._schedule_panel_update()
 
     def _selected_outfit_payload(self) -> tuple[str, str, int]:
         outfit_id = self.outfit_var.get().strip() or "normal"
@@ -3391,24 +3629,54 @@ class LauncherApp(ctk.CTk):
             f"[{log_ts()}] 思考力已設定：{value}（{thinking_power}，下次啟動或熱切換 runtime 後生效）"
         )
 
-    def _on_prompt_segment_changed(self, _value: str) -> None:
-        self._refresh_prompt_view()
+    def _file_signature(self, path: Optional[Path]) -> str:
+        if path is None:
+            return ""
+        try:
+            stat = path.stat()
+        except OSError:
+            return f"{path}:missing"
+        return f"{path}:{stat.st_mtime_ns}:{stat.st_size}"
 
-    def _refresh_prompt_view(self) -> None:
-        key_map = {
-            "角色": "persona",
-            "專案": "project",
-            "工具": "tool",
-            "限制": "policy",
-            "格式": "contract",
-        }
-        selected_key = key_map.get(self.prompt_view_var.get(), "persona")
-        self._set_textbox(self.prompt_box, self._prompt_texts.get(selected_key, ""))
+    def _prompt_context_signature(
+        self,
+        character: Optional[CharacterRecord],
+        project: Optional[ProjectDefinition],
+    ) -> str:
+        parts = [
+            self.character_var.get(),
+            self.project_var.get(),
+            self._file_signature(self.cfg.open_llm_dir / "tool_catalog.json"),
+            self._file_signature(
+                self.cfg.open_llm_dir / "prompts" / "utils" / "runtime_policy_prompt.txt"
+            ),
+            self._file_signature(self.cfg.open_llm_dir / "tool_policy.json"),
+            self._file_signature(self.cfg.open_llm_dir / "conversation_strategies.json"),
+            self._file_signature(
+                self.cfg.open_llm_dir / "prompts" / "utils" / "response_contract_prompt.txt"
+            ),
+        ]
+        if character:
+            parts.append(
+                self._file_signature(
+                    _resolve_repo_path(self.cfg.open_llm_dir, character.persona_prompt_path)
+                )
+            )
+            parts.append(self._file_signature(self._memory_path_for_character(character)))
+        if project:
+            parts.append(self._file_signature(project.project_prompt_path))
+            parts.append(self._file_signature(project.tool_prompt_path))
+        return "|".join(parts)
 
-    def _update_panels(self) -> None:
+    def _invalidate_prompt_cache(self) -> None:
+        self._prompt_texts_signature = ""
+
+    def _ensure_prompt_texts_current(self) -> None:
         character = self._selected_character()
         project = self._selected_project()
-        self._update_character_preview(character)
+        signature = self._prompt_context_signature(character, project)
+        if signature == self._prompt_texts_signature:
+            return
 
         persona_text = ""
         memory_text = ""
@@ -3469,7 +3737,29 @@ class LauncherApp(ctk.CTk):
             "policy": policy_text,
             "contract": contract_text,
         }
+        self._prompt_texts_signature = signature
+
+    def _on_prompt_segment_changed(self, _value: str) -> None:
         self._refresh_prompt_view()
+
+    def _refresh_prompt_view(self) -> None:
+        self._ensure_prompt_texts_current()
+        key_map = {
+            "角色": "persona",
+            "專案": "project",
+            "工具": "tool",
+            "限制": "policy",
+            "格式": "contract",
+        }
+        selected_key = key_map.get(self.prompt_view_var.get(), "persona")
+        self._set_textbox(self.prompt_box, self._prompt_texts.get(selected_key, ""))
+
+    def _update_panels(self) -> None:
+        character = self._selected_character()
+        self._update_character_preview(character)
+        self._invalidate_prompt_cache()
+        if self.preview_mode_var.get() != "角色預覽":
+            self._refresh_prompt_view()
 
     def _ensure_bridge_on_start(self) -> None:
         if not os.environ.get("OPENAI_API_KEY", "").strip():
@@ -4392,9 +4682,23 @@ class LauncherApp(ctk.CTk):
     def _tick_pet_shell_status(self) -> None:
         if not hasattr(self, "pet_status_label"):
             return
+        if self._pet_status_in_flight:
+            return
+        self._pet_status_in_flight = True
+        threading.Thread(target=self._pet_shell_status_worker, daemon=True).start()
+
+    def _pet_shell_status_worker(self) -> None:
         try:
             status = http_get_json(self._pet_control_endpoint("/status"), timeout=0.35)
-        except Exception:
+        except Exception as exc:
+            self.after(0, lambda e=exc: self._finish_pet_shell_status(None, e))
+            return
+
+        self.after(0, lambda s=status: self._finish_pet_shell_status(s, None))
+
+    def _finish_pet_shell_status(self, status: Optional[dict], error: Optional[Exception]) -> None:
+        self._pet_status_in_flight = False
+        if error is not None or not isinstance(status, dict):
             self._set_pet_shell_online(False, "桌寵 shell 離線")
             return
 

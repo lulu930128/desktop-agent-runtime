@@ -63,12 +63,21 @@ export class PetLive2DRenderer {
   private model: LAppModel | null;
   private modelDescriptor: ModelDescriptor | null;
   private rafId: number | null;
+  private renderTimerId: number | null;
   private disposed: boolean;
   private zoomScale: number;
   private outfitParameterId: string | null;
   private outfitParameterIndex: number | null;
   private outfitValue: number;
   private expressionParameters: Record<string, number>;
+  private aiState: string;
+  private pointerActive: boolean;
+  private forceActiveUntilMs: number;
+  private cachedDrawableBounds: DrawableBounds | null;
+  private cachedDrawableBoundsAtMs: number;
+  private lastResizeWidth: number;
+  private lastResizeHeight: number;
+  private lastResizeDpr: number;
 
   public constructor(canvas: HTMLCanvasElement) {
     ensureCubismReady();
@@ -82,12 +91,21 @@ export class PetLive2DRenderer {
     this.model = null;
     this.modelDescriptor = null;
     this.rafId = null;
+    this.renderTimerId = null;
     this.disposed = false;
     this.zoomScale = 1.0;
     this.outfitParameterId = null;
     this.outfitParameterIndex = null;
     this.outfitValue = 0;
     this.expressionParameters = {};
+    this.aiState = "idle";
+    this.pointerActive = false;
+    this.forceActiveUntilMs = 0;
+    this.cachedDrawableBounds = null;
+    this.cachedDrawableBoundsAtMs = 0;
+    this.lastResizeWidth = -1;
+    this.lastResizeHeight = -1;
+    this.lastResizeDpr = -1;
     this.renderFrame = this.renderFrame.bind(this);
     this.start();
   }
@@ -105,6 +123,8 @@ export class PetLive2DRenderer {
       sizeHint: normalizedScale
     };
     this.modelDescriptor = descriptor;
+    this.invalidateDrawableBounds();
+    this.bumpActivity(1800);
 
     const { modelDir, fileName } = splitModelUrl(modelUrl);
     const nextModel = new LAppModel();
@@ -127,7 +147,11 @@ export class PetLive2DRenderer {
   }
 
   public resize(): void {
-    this.subdelegate.resize();
+    this.lastResizeWidth = -1;
+    this.lastResizeHeight = -1;
+    this.lastResizeDpr = -1;
+    this.resizeIfNeeded();
+    this.bumpActivity(600);
   }
 
   public setZoomScale(nextZoomScale: number): number {
@@ -136,6 +160,7 @@ export class PetLive2DRenderer {
     }
 
     this.zoomScale = Math.min(2.25, Math.max(0.55, nextZoomScale));
+    this.bumpActivity(800);
     return this.zoomScale;
   }
 
@@ -145,6 +170,27 @@ export class PetLive2DRenderer {
 
   public setLipSyncValue(value: number): void {
     this.model?.setExternalLipSyncValue(value);
+    if (Number(value) > 0.02) {
+      this.bumpActivity(260);
+    }
+  }
+
+  public setActivityState(aiState: string): void {
+    const normalized = String(aiState || "idle").trim().toLowerCase() || "idle";
+    if (this.aiState === normalized) {
+      return;
+    }
+    this.aiState = normalized;
+    this.bumpActivity(
+      normalized === "speaking" || normalized === "listening" ? 1200 : 600
+    );
+  }
+
+  public setPointerActive(active: boolean): void {
+    this.pointerActive = Boolean(active);
+    if (this.pointerActive) {
+      this.bumpActivity(1200);
+    }
   }
 
   public setOutfitParameter(
@@ -170,6 +216,7 @@ export class PetLive2DRenderer {
       0.85,
       this.outfitParameterIndex
     );
+    this.bumpActivity(900);
   }
 
   public setExpressionParameters(parameters: Record<string, number>): void {
@@ -194,6 +241,7 @@ export class PetLive2DRenderer {
     for (const [parameterId, value] of Object.entries(nextParameters)) {
       this.model?.setExternalParameterTarget(parameterId, value, 0.35);
     }
+    this.bumpActivity(900);
   }
 
   public setDragPointFromCanvas(clientX: number, clientY: number): void {
@@ -213,11 +261,13 @@ export class PetLive2DRenderer {
     const clampedY = clampDragPoint(dragY);
     this.model.setDragging(clampedX, clampedY);
     this.model.setExternalLookTarget(clampedX, clampedY);
+    this.bumpActivity(700);
   }
 
   public resetDragPoint(): void {
     this.model?.setDragging(0, 0);
     this.model?.setExternalLookTarget(0, 0);
+    this.bumpActivity(300);
   }
 
   public adjustZoomByWheel(deltaY: number): number {
@@ -290,6 +340,10 @@ export class PetLive2DRenderer {
       window.cancelAnimationFrame(this.rafId);
       this.rafId = null;
     }
+    if (this.renderTimerId !== null) {
+      window.clearTimeout(this.renderTimerId);
+      this.renderTimerId = null;
+    }
     this.releaseCurrentModel();
     this.subdelegate.release();
   }
@@ -297,6 +351,10 @@ export class PetLive2DRenderer {
   private start(): void {
     if (this.rafId !== null) {
       window.cancelAnimationFrame(this.rafId);
+    }
+    if (this.renderTimerId !== null) {
+      window.clearTimeout(this.renderTimerId);
+      this.renderTimerId = null;
     }
     this.rafId = window.requestAnimationFrame(this.renderFrame);
   }
@@ -313,6 +371,91 @@ export class PetLive2DRenderer {
     }
 
     this.model = null;
+    this.invalidateDrawableBounds();
+  }
+
+  private bumpActivity(durationMs: number): void {
+    this.forceActiveUntilMs = Math.max(
+      this.forceActiveUntilMs,
+      performance.now() + Math.max(0, durationMs)
+    );
+  }
+
+  private invalidateDrawableBounds(): void {
+    this.cachedDrawableBounds = null;
+    this.cachedDrawableBoundsAtMs = 0;
+  }
+
+  private getTargetFps(): number {
+    if (document.hidden) {
+      return 2;
+    }
+
+    const now = performance.now();
+    if (this.pointerActive || now < this.forceActiveUntilMs) {
+      return 30;
+    }
+
+    if (this.aiState === "speaking") {
+      return 30;
+    }
+    if (this.aiState === "listening") {
+      return 24;
+    }
+    if (
+      this.aiState === "thinking" ||
+      this.aiState === "connecting" ||
+      this.aiState === "interrupted"
+    ) {
+      return 18;
+    }
+    return 12;
+  }
+
+  private scheduleNextFrame(): void {
+    if (this.disposed || this.rafId !== null || this.renderTimerId !== null) {
+      return;
+    }
+
+    const delayMs = Math.max(16, Math.round(1000 / this.getTargetFps()));
+    this.renderTimerId = window.setTimeout(() => {
+      this.renderTimerId = null;
+      if (!this.disposed) {
+        this.rafId = window.requestAnimationFrame(this.renderFrame);
+      }
+    }, delayMs);
+  }
+
+  private resizeIfNeeded(): void {
+    const rect = this.canvas.getBoundingClientRect();
+    const width = Math.max(0, Math.round(rect.width));
+    const height = Math.max(0, Math.round(rect.height));
+    const dpr = window.devicePixelRatio || 1;
+
+    if (
+      width === this.lastResizeWidth &&
+      height === this.lastResizeHeight &&
+      Math.abs(dpr - this.lastResizeDpr) < 0.001
+    ) {
+      return;
+    }
+
+    this.lastResizeWidth = width;
+    this.lastResizeHeight = height;
+    this.lastResizeDpr = dpr;
+    this.subdelegate.resize();
+    this.invalidateDrawableBounds();
+  }
+
+  private getDrawableBounds(readyModel: LAppModel): DrawableBounds | null {
+    const now = performance.now();
+    if (this.cachedDrawableBounds && now - this.cachedDrawableBoundsAtMs < 1200) {
+      return this.cachedDrawableBounds;
+    }
+
+    this.cachedDrawableBounds = this.measureDrawableBounds(readyModel);
+    this.cachedDrawableBoundsAtMs = now;
+    return this.cachedDrawableBounds;
   }
 
   private measureDrawableBounds(readyModel: LAppModel): DrawableBounds | null {
@@ -361,17 +504,18 @@ export class PetLive2DRenderer {
   }
 
   private renderFrame(): void {
+    this.rafId = null;
     if (this.disposed) {
       return;
     }
 
     LAppPal.updateTime();
-    this.subdelegate.resize();
+    this.resizeIfNeeded();
 
     const gl = this.subdelegate.getGlManager().getGl();
     if (gl.isContextLost()) {
       console.warn("[pet-renderer] WebGL context lost; waiting for recovery.");
-      this.rafId = window.requestAnimationFrame(this.renderFrame);
+      this.scheduleNextFrame();
       return;
     }
 
@@ -412,7 +556,7 @@ export class PetLive2DRenderer {
 
         matrix.setHeight(targetHeight);
 
-        const bounds = this.measureDrawableBounds(readyModel);
+        const bounds = this.getDrawableBounds(readyModel);
         if (bounds) {
           const centerX = (bounds.left + bounds.right) / 2;
           const centerY = (bounds.top + bounds.bottom) / 2;
@@ -433,6 +577,6 @@ export class PetLive2DRenderer {
         .getInstance()
         .releaseStaleRenderTextures(gl);
     }
-    this.rafId = window.requestAnimationFrame(this.renderFrame);
+    this.scheduleNextFrame();
   }
 }
