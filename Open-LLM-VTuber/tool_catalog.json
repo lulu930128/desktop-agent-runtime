@@ -22,6 +22,7 @@
         {
           "name": "get_current_time",
           "level": "light",
+          "capabilities": ["time"],
           "risk": "read_only",
           "when": "Use when the answer depends on the current local time or timezone."
         }
@@ -59,24 +60,28 @@
         {
           "name": "search_web",
           "level": "light",
+          "capabilities": ["web_research", "current_info"],
           "risk": "read_only",
           "when": "Use for a quick first pass when titles, snippets, and URLs are enough."
         },
         {
           "name": "advanced_search_web",
           "level": "deep",
+          "capabilities": ["web_research", "current_info", "source_verification"],
           "risk": "read_only",
           "when": "Use for source-sensitive research, latest/current questions, official documentation, comparison, or any answer that should cite evidence."
         },
         {
           "name": "smart_search_web",
           "level": "search",
+          "capabilities": ["web_research", "current_info"],
           "risk": "read_only",
           "when": "Compatibility search tool for practical, time-sensitive, multi-source, or comparison questions."
         },
         {
           "name": "fetch_content",
           "level": "read",
+          "capabilities": ["url", "source_verification"],
           "risk": "read_only",
           "when": "Use after a candidate URL is known and the page body needs verification."
         }
@@ -112,24 +117,28 @@
         {
           "name": "list_allowed_roots",
           "level": "light",
+          "capabilities": ["local_files"],
           "risk": "read_only",
           "when": "Use when the assistant needs to know which local roots are readable."
         },
         {
           "name": "list_directory",
           "level": "light",
+          "capabilities": ["local_files"],
           "risk": "read_only",
           "when": "Use to inspect folder structure before reading specific files."
         },
         {
           "name": "search_files",
           "level": "search",
+          "capabilities": ["local_files"],
           "risk": "read_only",
           "when": "Use to find names, settings, functions, errors, or prompt fragments."
         },
         {
           "name": "read_text_file",
           "level": "read",
+          "capabilities": ["local_files"],
           "risk": "read_only",
           "when": "Use after a file path is known and text content is needed."
         }
@@ -216,12 +225,14 @@
         {
           "name": "advanced_search_web",
           "level": "deep",
+          "capabilities": ["media_lookup", "web_research", "source_verification"],
           "risk": "read_only",
           "when": "Use after visually inspecting an attached image and deriving textual search terms for objects, products, locations, visible text, sources, facts, or fictional/illustrated/anime/game/VTuber characters that need external verification. Do not use it to identify a private real person by face."
         },
         {
           "name": "search_web",
           "level": "light",
+          "capabilities": ["media_lookup", "web_research"],
           "risk": "read_only",
           "when": "Use for a quick visual follow-up search when the image gives a clear textual query."
         }

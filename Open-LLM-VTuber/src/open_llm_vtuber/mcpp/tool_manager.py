@@ -86,6 +86,9 @@ class ToolManager:
     def get_last_route(self) -> ToolRoute | None:
         return self._last_route
 
+    def get_last_route_prompt(self) -> str:
+        return self._tool_catalog.format_route_prompt(self._last_route)
+
     def disable(self) -> None:
         """Disable native API tool exposure while keeping raw tools for prompt mode."""
         self._formatted_tools_openai = []

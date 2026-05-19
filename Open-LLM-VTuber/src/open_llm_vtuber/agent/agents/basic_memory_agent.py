@@ -334,19 +334,27 @@ class BasicMemoryAgent(AgentInterface):
 
         return messages
 
+    def _compose_tool_system_prompt(self, route_prompt: str = "") -> str:
+        route_text = str(route_prompt or "").strip()
+        if not route_text:
+            return self._system
+        return f"{self._system}\n\n{route_text}"
+
     async def _claude_tool_interaction_loop(
         self,
         initial_messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]],
+        route_prompt: str = "",
     ) -> AsyncIterator[Union[str, Dict[str, Any]]]:
         """Handle Claude interaction loop with tool support."""
         messages = initial_messages.copy()
         current_turn_text = ""
         pending_tool_calls = []
         current_assistant_message_content = []
+        system_prompt = self._compose_tool_system_prompt(route_prompt)
 
         while True:
-            stream = self._llm.chat_completion(messages, self._system, tools=tools)
+            stream = self._llm.chat_completion(messages, system_prompt, tools=tools)
             pending_tool_calls.clear()
             current_assistant_message_content.clear()
 
@@ -451,6 +459,7 @@ class BasicMemoryAgent(AgentInterface):
         self,
         initial_messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]],
+        route_prompt: str = "",
     ) -> AsyncIterator[Union[str, Dict[str, Any]]]:
         """Handle OpenAI interaction with tool support."""
         messages = initial_messages.copy()
@@ -462,14 +471,14 @@ class BasicMemoryAgent(AgentInterface):
             if self.prompt_mode_flag:
                 if self._mcp_prompt_string:
                     current_system_prompt = (
-                        f"{self._system}\n\n{self._mcp_prompt_string}"
+                        f"{self._compose_tool_system_prompt(route_prompt)}\n\n{self._mcp_prompt_string}"
                     )
                 else:
                     logger.warning("Prompt mode active but mcp_prompt_string is empty!")
-                    current_system_prompt = self._system
+                    current_system_prompt = self._compose_tool_system_prompt(route_prompt)
                 tools_for_api = None
             else:
-                current_system_prompt = self._system
+                current_system_prompt = self._compose_tool_system_prompt(route_prompt)
                 tools_for_api = tools
 
             stream = self._llm.chat_completion(
@@ -649,6 +658,7 @@ class BasicMemoryAgent(AgentInterface):
             messages = self._to_messages(input_data)
             tools = None
             tool_mode = None
+            route_prompt = ""
             llm_supports_native_tools = False
 
             if self._use_mcpp and self._tool_manager:
@@ -677,13 +687,22 @@ class BasicMemoryAgent(AgentInterface):
                         f"No candidate tools selected for '{tool_mode}' mode: {reason}"
                     )
                     tool_mode = None
+                elif llm_supports_native_tools:
+                    route_prompt = self._tool_manager.get_last_route_prompt()
+                    route = self._tool_manager.get_last_route()
+                    if route:
+                        logger.info(
+                            "Tool planner route: "
+                            f"intent={route.intent.labels if route.intent else []}, "
+                            f"tools={route.tool_names}"
+                        )
 
             if self._use_mcpp and tool_mode == "Claude":
                 logger.debug(
                     f"Starting Claude tool interaction loop with {len(tools)} tools."
                 )
                 async for output in self._claude_tool_interaction_loop(
-                    messages, tools if tools else []
+                    messages, tools if tools else [], route_prompt=route_prompt
                 ):
                     yield output
                 return
@@ -692,7 +711,7 @@ class BasicMemoryAgent(AgentInterface):
                     f"Starting OpenAI tool interaction loop with {len(tools)} tools."
                 )
                 async for output in self._openai_tool_interaction_loop(
-                    messages, tools if tools else []
+                    messages, tools if tools else [], route_prompt=route_prompt
                 ):
                     yield output
                 return
