@@ -36,13 +36,13 @@
       }
 
       body {
-        padding: 14px;
+        padding: 8px;
       }
 
       .shell {
         width: 100%;
         height: 100%;
-        border-radius: 18px;
+        border-radius: 16px;
         background: linear-gradient(180deg, rgba(241, 245, 249, 0.96), rgba(233, 238, 245, 0.94));
         border: 1px solid var(--border);
         box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
@@ -53,7 +53,7 @@
       }
 
       .titlebar {
-        height: 42px;
+        height: 34px;
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -93,18 +93,19 @@
 
       .content {
         display: grid;
-        grid-template-rows: minmax(112px, 1fr) auto;
-        gap: 10px;
-        padding: 0 14px 14px;
+        grid-template-rows: minmax(64px, 1fr) auto;
+        gap: 8px;
+        padding: 0 10px 10px;
         flex: 1;
         min-height: 0;
       }
 
       .reply {
-        border-radius: 16px;
+        min-height: 0;
+        border-radius: 14px;
         background: var(--panel);
         border: 1px solid var(--border);
-        padding: 14px 16px;
+        padding: 12px 14px;
         font-size: 14px;
         line-height: 1.55;
         white-space: pre-wrap;
@@ -116,14 +117,15 @@
       }
 
       .composer {
-        border-radius: 16px;
+        border-radius: 14px;
         background: var(--panel);
         border: 1px solid var(--border);
-        padding: 8px;
+        padding: 6px;
         display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 8px;
-        align-items: end;
+        grid-template-columns: auto 1fr auto;
+        grid-template-rows: auto auto;
+        gap: 6px;
+        align-items: center;
       }
 
       textarea {
@@ -135,25 +137,54 @@
         color: var(--text);
         font: inherit;
         line-height: 1.5;
-        min-height: 44px;
-        max-height: 64px;
+        min-height: 38px;
+        max-height: 70px;
+        padding: 8px 2px;
+        grid-column: 2;
+        grid-row: 2;
       }
 
       textarea::placeholder {
         color: #94a3b8;
       }
 
-      .send {
-        align-self: stretch;
-        min-width: 76px;
+      .attach {
+        grid-column: 1;
+        grid-row: 2;
+        width: 38px;
+        height: 38px;
         border: 0;
-        border-radius: 14px;
+        border-radius: 12px;
+        background: rgba(148, 163, 184, 0.16);
+        color: var(--text);
+        font: inherit;
+        font-size: 22px;
+        line-height: 1;
+        cursor: pointer;
+      }
+
+      .attach:hover {
+        background: rgba(148, 163, 184, 0.24);
+      }
+
+      .attach:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+
+      .send {
+        grid-column: 3;
+        grid-row: 2;
+        align-self: stretch;
+        min-width: 64px;
+        border: 0;
+        border-radius: 12px;
         background: var(--accent);
         color: white;
         font: inherit;
         font-weight: 700;
         cursor: pointer;
-        padding: 0 16px;
+        padding: 0 12px;
       }
 
       .send:hover {
@@ -163,6 +194,55 @@
       .send:disabled {
         opacity: 0.55;
         cursor: default;
+      }
+
+      .attachments {
+        grid-column: 1 / -1;
+        grid-row: 1;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        min-height: 0;
+      }
+
+      .attachments:empty {
+        display: none;
+      }
+
+      .chip {
+        max-width: 100%;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        border-radius: 999px;
+        background: rgba(59, 130, 246, 0.1);
+        color: #1d4ed8;
+        font-size: 11px;
+        line-height: 1.2;
+        padding: 5px 7px;
+      }
+
+      .chip span {
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .chip button {
+        width: 16px;
+        height: 16px;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+        padding: 0;
+        line-height: 16px;
+      }
+
+      .fileInput {
+        display: none;
       }
     </style>
   </head>
@@ -178,8 +258,17 @@
       <div class="content">
         <div class="reply empty" id="replyBox">這裡會顯示最新一次回覆。</div>
         <div class="composer">
+          <div class="attachments" id="attachments"></div>
+          <button class="attach" id="attachBtn" type="button" aria-label="選擇檔案">+</button>
           <textarea id="inputBox" placeholder="輸入訊息..." spellcheck="false"></textarea>
           <button class="send" id="sendBtn" type="button">送出</button>
+          <input
+            class="fileInput"
+            id="fileInput"
+            type="file"
+            accept="image/*,audio/*"
+            multiple
+          />
         </div>
       </div>
     </div>
@@ -188,18 +277,62 @@
       const replyBox = document.getElementById("replyBox");
       const inputBox = document.getElementById("inputBox");
       const sendBtn = document.getElementById("sendBtn");
+      const attachBtn = document.getElementById("attachBtn");
+      const fileInput = document.getElementById("fileInput");
+      const attachmentsBox = document.getElementById("attachments");
       const statusLabel = document.getElementById("status");
       const closeBtn = document.getElementById("closeBtn");
+      const MAX_ATTACHMENTS = 6;
+      const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+      const MAX_AUDIO_BYTES = 12 * 1024 * 1024;
 
       let currentState = {
         aiState: "idle",
         latestAssistantText: "",
         sending: false
       };
+      let attachments = [];
+      let statusNotice = "";
+      let statusNoticeTimer = 0;
+
+      function compactFileSize(size) {
+        const value = Number(size) || 0;
+        if (value >= 1024 * 1024) {
+          return `${(value / 1024 / 1024).toFixed(1)} MB`;
+        }
+        if (value >= 1024) {
+          return `${Math.round(value / 1024)} KB`;
+        }
+        return `${value} B`;
+      }
+
+      function renderAttachments() {
+        attachmentsBox.replaceChildren();
+        attachments.forEach((item, index) => {
+          const chip = document.createElement("div");
+          chip.className = "chip";
+
+          const label = document.createElement("span");
+          label.textContent = `${item.kind === "audio" ? "音檔" : "圖片"} ${item.name} ${compactFileSize(item.size)}`;
+
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.setAttribute("aria-label", "移除檔案");
+          remove.textContent = "×";
+          remove.addEventListener("click", () => {
+            attachments = attachments.filter((_, itemIndex) => itemIndex !== index);
+            renderAttachments();
+            render();
+          });
+
+          chip.append(label, remove);
+          attachmentsBox.appendChild(chip);
+        });
+      }
 
       function render(state) {
         currentState = { ...currentState, ...(state || {}) };
-        statusLabel.textContent = currentState.aiState || "idle";
+        statusLabel.textContent = statusNotice || currentState.aiState || "idle";
 
         const text = String(currentState.latestAssistantText || "").trim();
         if (text) {
@@ -211,30 +344,102 @@
         }
 
         sendBtn.disabled = currentState.sending;
+        attachBtn.disabled = currentState.sending;
+      }
+
+      function setStatusNotice(message) {
+        statusNotice = String(message || "");
+        if (statusNoticeTimer) {
+          window.clearTimeout(statusNoticeTimer);
+        }
+        if (statusNotice) {
+          statusNoticeTimer = window.setTimeout(() => {
+            statusNotice = "";
+            statusNoticeTimer = 0;
+            render();
+          }, 2200);
+        }
+        render();
+      }
+
+      function readFileAsDataUrl(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(reader.error || new Error("file-read-failed"));
+          reader.readAsDataURL(file);
+        });
+      }
+
+      async function addFiles(fileList) {
+        const files = Array.from(fileList || []);
+        for (const file of files) {
+          if (attachments.length >= MAX_ATTACHMENTS) {
+            break;
+          }
+
+          const mimeType = String(file.type || "").toLowerCase();
+          const isImage = mimeType.startsWith("image/");
+          const isAudio = mimeType.startsWith("audio/");
+          if (!isImage && !isAudio) {
+            continue;
+          }
+
+          const maxBytes = isImage ? MAX_IMAGE_BYTES : MAX_AUDIO_BYTES;
+          if (file.size > maxBytes) {
+            setStatusNotice(`${file.name} 太大`);
+            continue;
+          }
+
+          try {
+            const data = await readFileAsDataUrl(file);
+            attachments.push({
+              kind: isAudio ? "audio" : "image",
+              name: file.name,
+              size: file.size,
+              mime_type: mimeType,
+              data
+            });
+          } catch (error) {
+            console.warn("[kuro-reader] file read failed", error);
+          }
+        }
+        renderAttachments();
+        render();
       }
 
       async function sendCurrentText() {
         const text = inputBox.value.trim();
-        if (!text || currentState.sending) {
+        if ((!text && attachments.length === 0) || currentState.sending) {
           return;
         }
 
         render({ sending: true });
         try {
-          const result = await window.kuroReader.sendText(text);
+          const result = await window.kuroReader.sendText(text, attachments);
           if (result && result.ok) {
             inputBox.value = "";
+            attachments = [];
+            renderAttachments();
           } else {
             console.warn("[kuro-reader] send failed", result);
+            setStatusNotice(result && result.error ? result.error : "send failed");
           }
         } catch (error) {
           console.warn("[kuro-reader] send exception", error);
+          setStatusNotice("send failed");
         } finally {
           render({ sending: false });
         }
       }
 
       sendBtn.addEventListener("click", sendCurrentText);
+      attachBtn.addEventListener("click", () => fileInput.click());
+      fileInput.addEventListener("change", () => {
+        addFiles(fileInput.files).finally(() => {
+          fileInput.value = "";
+        });
+      });
       closeBtn.addEventListener("click", () => window.kuroReader.closeWindow());
       inputBox.addEventListener("keydown", (event) => {
         if (event.key === "Enter" && !event.shiftKey) {

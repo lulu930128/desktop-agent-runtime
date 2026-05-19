@@ -149,6 +149,9 @@ class ToolCatalog:
         if _looks_like_public_web_request(normalized_text):
             scores["web_research"] = scores.get("web_research", 0) + 5
 
+        if _looks_like_visual_lookup_request(normalized_text):
+            scores["web_research"] = scores.get("web_research", 0) + 4
+
         if re.search(r"(?i)\b[A-Z]:[\\/]|(?:^|[\s`'\"])[./\\][\w.-]+|\.py\b|\.json\b|\.ya?ml\b|\.log\b", normalized_text):
             scores["local_files"] = scores.get("local_files", 0) + 5
 
@@ -233,6 +236,66 @@ def _looks_like_public_web_request(text: str) -> bool:
             text,
         )
     )
+
+
+def _looks_like_visual_lookup_request(text: str) -> bool:
+    visual_markers = [
+        "visual input instructions",
+        "attached visual context",
+        "attached image",
+        "image data",
+        "screenshot",
+        "圖片",
+        "照片",
+        "截圖",
+    ]
+    if not any(marker in text for marker in visual_markers):
+        return False
+
+    lookup_terms = [
+        "查",
+        "搜",
+        "找",
+        "哪裡",
+        "在哪",
+        "來源",
+        "這是什麼",
+        "是什麼",
+        "角色",
+        "人物",
+        "動漫",
+        "動畫",
+        "漫畫",
+        "虛擬主播",
+        "遊戲角色",
+        "吉祥物",
+        "立繪",
+        "二次元",
+        "品牌",
+        "型號",
+        "產品",
+        "地點",
+        "辨識",
+        "官方",
+        "價格",
+        "identify",
+        "what is",
+        "where is",
+        "source",
+        "search",
+        "lookup",
+        "brand",
+        "model",
+        "product",
+        "location",
+        "character",
+        "anime",
+        "manga",
+        "vtuber",
+        "virtual youtuber",
+        "game character",
+    ]
+    return any(term in text for term in lookup_terms)
 
 
 def normalize_thinking_power(value: str) -> str:

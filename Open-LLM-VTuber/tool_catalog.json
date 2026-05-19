@@ -54,7 +54,7 @@
         "documentation",
         "docs"
       ],
-      "default_tools": ["smart_search_web"],
+      "default_tools": ["advanced_search_web"],
       "tools": [
         {
           "name": "search_web",
@@ -63,10 +63,16 @@
           "when": "Use for a quick first pass when titles, snippets, and URLs are enough."
         },
         {
-          "name": "smart_search_web",
+          "name": "advanced_search_web",
           "level": "deep",
           "risk": "read_only",
-          "when": "Use for practical, time-sensitive, multi-source, or comparison questions."
+          "when": "Use for source-sensitive research, latest/current questions, official documentation, comparison, or any answer that should cite evidence."
+        },
+        {
+          "name": "smart_search_web",
+          "level": "search",
+          "risk": "read_only",
+          "when": "Compatibility search tool for practical, time-sensitive, multi-source, or comparison questions."
         },
         {
           "name": "fetch_content",
@@ -131,21 +137,66 @@
     },
     "media": {
       "title": "Media",
-      "description": "Reserved category for image, OCR, audio transcription, and media metadata tools.",
+      "description": "Image/audio attachment understanding. Use web research when visual content needs external lookup or verification.",
       "intent_keywords": [
         "圖片",
         "截圖",
         "照片",
+        "這張圖",
+        "這張照片",
+        "這是什麼",
+        "哪裡",
+        "辨識",
+        "角色",
+        "人物角色",
+        "動漫",
+        "動畫",
+        "漫畫",
+        "VTuber",
+        "Vtuber",
+        "虛擬主播",
+        "遊戲角色",
+        "吉祥物",
+        "立繪",
+        "二次元",
+        "品牌",
+        "型號",
+        "產品",
+        "來源",
         "OCR",
         "音檔",
         "錄音",
         "transcribe",
         "image",
         "screenshot",
+        "photo",
+        "identify",
+        "what is this",
+        "where is this",
+        "visual search",
+        "character",
+        "anime",
+        "manga",
+        "game character",
+        "virtual youtuber",
+        "vtuber",
         "audio"
       ],
-      "default_tools": [],
-      "tools": []
+      "default_tools": ["advanced_search_web"],
+      "tools": [
+        {
+          "name": "advanced_search_web",
+          "level": "deep",
+          "risk": "read_only",
+          "when": "Use after visually inspecting an attached image and deriving textual search terms for objects, products, locations, visible text, sources, facts, or fictional/illustrated/anime/game/VTuber characters that need external verification. Do not use it to identify a private real person by face."
+        },
+        {
+          "name": "search_web",
+          "level": "light",
+          "risk": "read_only",
+          "when": "Use for a quick visual follow-up search when the image gives a clear textual query."
+        }
+      ]
     },
     "memory": {
       "title": "Memory",

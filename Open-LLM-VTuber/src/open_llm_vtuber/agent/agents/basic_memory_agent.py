@@ -243,7 +243,10 @@ class BasicMemoryAgent(AgentInterface):
                 "- Do not claim that you cannot see images, cannot view the screen, or cannot analyze image content when image data is attached.",
                 "- If the user asks whether you can see the image or screen, answer yes for this still attached frame, then briefly describe what is visible.",
                 "- You cannot continuously monitor the user's screen or camera; you only have the still frame(s) attached to this turn.",
-                "- Do not identify a real person's identity. If a person or character appears, describe visible non-identifying details, objects, UI, text, or scene layout instead.",
+                "- Do not identify or name a real private person from a face or body. For real people, describe non-identifying visible details only.",
+                "- Fictional, illustrated, anime, manga, game, mascot, and VTuber avatar characters may be identified or searched when the user asks; state uncertainty when the match is only visual similarity.",
+                "- If the user asks to search, identify a fictional character/object/product/place, read visible text, find a source, compare with public information, or verify a fact from the image, infer concise textual search terms from visible details and use web research when available.",
+                "- Do not use web research to identify a private real person by face; it may be used for public objects, locations, products, documents, UI, logos, visible text, and fictional/illustrated characters.",
                 "- Do not add a generic closing question after describing the image. Stop naturally unless the user asked for a next step.",
                 "",
                 "[Attached visual context]",
@@ -264,6 +267,19 @@ class BasicMemoryAgent(AgentInterface):
                     )
 
             message_parts.append("\n" + "\n".join(image_notes))
+
+        if input_data.files:
+            file_notes = ["[Attached file context]"]
+            for file_data in input_data.files:
+                mime_type = str(getattr(file_data, "mime_type", "") or "").strip()
+                name = str(getattr(file_data, "name", "") or "uploaded-file").strip()
+                if mime_type.startswith("audio/"):
+                    file_notes.append(
+                        f"- Audio file attached: {name}. If a transcription is available, it is included in the user text above."
+                    )
+                else:
+                    file_notes.append(f"- File attached: {name} ({mime_type or 'unknown type'}).")
+            message_parts.append("\n" + "\n".join(file_notes))
 
         return "\n".join(message_parts).strip()
 

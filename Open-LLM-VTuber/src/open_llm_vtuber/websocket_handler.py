@@ -59,6 +59,7 @@ class WSMessage(TypedDict, total=False):
     text: Optional[str]
     audio: Optional[List[float]]
     images: Optional[List[str]]
+    files: Optional[List[dict]]
     history_uid: Optional[str]
     force_new: Optional[bool]
     file: Optional[str]

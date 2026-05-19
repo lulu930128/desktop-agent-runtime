@@ -441,6 +441,17 @@ class ToolExecutor:
             else:
                 args["max_results"] = min(_as_int(args.get("max_results"), 5), 5)
                 args["fetch_top_pages"] = min(_as_int(args.get("fetch_top_pages"), 2), 2)
+        elif tool_name == "advanced_search_web":
+            args["depth"] = power
+            if power == "fast":
+                args["max_results"] = min(_as_int(args.get("max_results"), 4), 4)
+                args["fetch_top_pages"] = min(_as_int(args.get("fetch_top_pages"), 0), 1)
+            elif power == "deep":
+                args["max_results"] = min(max(_as_int(args.get("max_results"), 10), 8), 12)
+                args["fetch_top_pages"] = min(max(_as_int(args.get("fetch_top_pages"), 4), 3), 5)
+            else:
+                args["max_results"] = min(_as_int(args.get("max_results"), 6), 6)
+                args["fetch_top_pages"] = min(_as_int(args.get("fetch_top_pages"), 2), 2)
         elif tool_name == "fetch_content":
             if power == "fast":
                 args["max_chars"] = min(_as_int(args.get("max_chars"), 1800), 2000)

@@ -44,7 +44,15 @@ declare global {
     };
     __kuroPetRendererState?: Record<string, unknown>;
     __kuroPetSendTextInput?: (
-      text: string
+      text: string,
+      attachments?: Array<{
+        kind?: string;
+        name?: string;
+        data?: string;
+        mime_type?: string;
+        type?: string;
+        size?: number;
+      }>
     ) => Promise<{ ok: boolean; error?: string; text?: string }>;
     __kuroPetApplyBackendConfig?: (
       baseUrl: string,

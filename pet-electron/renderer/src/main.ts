@@ -61,9 +61,26 @@ type BackendConfig = {
 };
 
 type BackendImagePayload = {
-  source: "camera" | "screen";
+  source: "camera" | "screen" | "upload";
   data: string;
   mime_type: string;
+};
+
+type BackendFilePayload = {
+  name: string;
+  data: string;
+  mime_type: string;
+  size?: number;
+  kind?: string;
+};
+
+type UserAttachmentPayload = {
+  kind?: string;
+  name?: string;
+  data?: string;
+  mime_type?: string;
+  type?: string;
+  size?: number;
 };
 
 type SpeechLipSyncEnvelope = {
@@ -533,9 +550,13 @@ class BackendClient {
     return { ...this.config };
   }
 
-  public async sendText(text: string): Promise<{ ok: boolean; error?: string; text?: string }> {
+  public async sendText(
+    text: string,
+    attachments: UserAttachmentPayload[] = []
+  ): Promise<{ ok: boolean; error?: string; text?: string }> {
     const normalized = normalizeText(text);
-    if (!normalized) {
+    const normalizedAttachments = this.normalizeAttachments(attachments);
+    if (!normalized && normalizedAttachments.images.length === 0 && normalizedAttachments.files.length === 0) {
       return { ok: false, error: "empty-text" };
     }
 
@@ -544,11 +565,13 @@ class BackendClient {
     }
 
     const images = await this.captureEnabledImages();
+    images.push(...normalizedAttachments.images);
     this.socket.send(
       JSON.stringify({
         type: "text-input",
-        text: normalized,
-        ...(images.length ? { images } : {})
+        text: normalized || "請分析我附上的檔案。",
+        ...(images.length ? { images } : {}),
+        ...(normalizedAttachments.files.length ? { files: normalizedAttachments.files } : {})
       })
     );
     this.resetAssistantTurn();
@@ -951,6 +974,47 @@ class BackendClient {
       images.push(screenFrame);
     }
     return images;
+  }
+
+  private normalizeAttachments(attachments: UserAttachmentPayload[]): {
+    images: BackendImagePayload[];
+    files: BackendFilePayload[];
+  } {
+    const images: BackendImagePayload[] = [];
+    const files: BackendFilePayload[] = [];
+    const items = Array.isArray(attachments) ? attachments.slice(0, 6) : [];
+
+    for (const item of items) {
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+
+      const data = String(item.data || "");
+      const mimeType = String(item.mime_type || item.type || "").toLowerCase();
+      const name = String(item.name || "uploaded-file").trim() || "uploaded-file";
+      const size = Number(item.size) || 0;
+      if (!data.startsWith("data:") || !mimeType) {
+        continue;
+      }
+
+      if (mimeType.startsWith("image/")) {
+        images.push({
+          source: "upload",
+          data,
+          mime_type: mimeType
+        });
+      } else if (mimeType.startsWith("audio/")) {
+        files.push({
+          kind: "audio",
+          name,
+          data,
+          mime_type: mimeType,
+          size
+        });
+      }
+    }
+
+    return { images, files };
   }
 
   private async startMicrophoneCapture(): Promise<{ ok: boolean; error?: string }> {
@@ -1434,7 +1498,8 @@ const client = new BackendClient(
   reportState
 );
 
-window.__kuroPetSendTextInput = (text: string) => client.sendText(text);
+window.__kuroPetSendTextInput = (text: string, attachments: UserAttachmentPayload[] = []) =>
+  client.sendText(text, attachments);
 window.__kuroPetApplyBackendConfig = (baseUrl: string, wsUrl: string, reconnect = true) =>
   client.applyConfig(baseUrl, wsUrl, reconnect);
 

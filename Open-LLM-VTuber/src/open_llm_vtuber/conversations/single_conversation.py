@@ -9,6 +9,7 @@ from .conversation_utils import (
     process_agent_output,
     send_conversation_start_signals,
     process_user_input,
+    transcribe_audio_files,
     finalize_conversation_turn,
     cleanup_conversation,
     EMOJI_LIST,
@@ -242,6 +243,7 @@ async def process_single_conversation(
     client_uid: str,
     user_input: Union[str, np.ndarray],
     images: Optional[List[Dict[str, Any]]] = None,
+    files: Optional[List[Dict[str, Any]]] = None,
     session_emoji: str = np.random.choice(EMOJI_LIST),
     metadata: Optional[Dict[str, Any]] = None,
 ) -> str:
@@ -253,6 +255,7 @@ async def process_single_conversation(
         client_uid: Client unique identifier
         user_input: Text or audio input from user
         images: Optional list of image data
+        files: Optional list of uploaded file data
         session_emoji: Emoji identifier for the conversation
         metadata: Optional metadata for special processing flags
 
@@ -276,11 +279,22 @@ async def process_single_conversation(
         input_text = await process_user_input(
             user_input, context.asr_engine, websocket_send
         )
+        audio_notes = await transcribe_audio_files(files, context.asr_engine)
+        if audio_notes:
+            input_text = "\n\n".join(
+                part
+                for part in [
+                    input_text,
+                    "[Audio file transcription]\n" + "\n".join(audio_notes),
+                ]
+                if part
+            )
 
         # Create batch input
         batch_input = create_batch_input(
             input_text=input_text,
             images=images,
+            files=files,
             from_name=context.character_config.human_name,
             metadata=metadata,
         )
@@ -302,6 +316,8 @@ async def process_single_conversation(
         logger.info(f"User input: {input_text}")
         if images:
             logger.info(f"With {len(images)} images")
+        if files:
+            logger.info(f"With {len(files)} uploaded files")
 
         try:
             # agent.chat yields Union[SentenceOutput, Dict[str, Any]]

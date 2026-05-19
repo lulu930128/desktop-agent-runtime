@@ -34,6 +34,11 @@ const BASE_PET_WINDOW_HEIGHT = DEFAULT_PET_BOUNDS.height;
 const MIN_PET_WINDOW_WIDTH = 280;
 const MIN_PET_WINDOW_HEIGHT = 420;
 const MIN_PET_VISIBLE_MARGIN = 80;
+const MIN_READER_WINDOW_WIDTH = 360;
+const MIN_READER_WINDOW_HEIGHT = 236;
+const MAX_READER_ATTACHMENTS = 6;
+const MAX_READER_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_READER_AUDIO_BYTES = 12 * 1024 * 1024;
 
 let mainWindow = null;
 let readerWindow = null;
@@ -236,7 +241,14 @@ function clampBoundsToVirtualDesktopWithOverflow(bounds, visibleMargin = 120) {
 }
 
 function clampReaderBounds(bounds) {
-  return clampBoundsToVirtualDesktopWithOverflow(bounds, 160);
+  return clampBoundsToVirtualDesktopWithOverflow(
+    {
+      ...bounds,
+      width: Math.max(MIN_READER_WINDOW_WIDTH, Number(bounds.width) || MIN_READER_WINDOW_WIDTH),
+      height: Math.max(MIN_READER_WINDOW_HEIGHT, Number(bounds.height) || MIN_READER_WINDOW_HEIGHT)
+    },
+    160
+  );
 }
 
 function scaleBoundsAroundCenter(bounds, scaleRatio) {
@@ -507,33 +519,107 @@ async function applyRendererBackendConfig(baseUrl, wsUrl, reload = true) {
   return payload || {};
 }
 
-async function sendTextToFrontend(text) {
+function estimateDataUrlBytes(dataUrl) {
+  const raw = String(dataUrl || "");
+  const commaIndex = raw.indexOf(",");
+  const payload = commaIndex >= 0 ? raw.slice(commaIndex + 1) : raw;
+  return Math.floor((payload.length * 3) / 4);
+}
+
+function normalizeReaderAttachments(attachments) {
+  const input = Array.isArray(attachments) ? attachments : [];
+  const output = [];
+  const errors = [];
+
+  for (const item of input.slice(0, MAX_READER_ATTACHMENTS)) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    const data = String(item.data || "");
+    const mimeType = String(item.mime_type || item.type || "").trim().toLowerCase();
+    const name = path.basename(String(item.name || "uploaded-file")).slice(0, 160) || "uploaded-file";
+    const size = Number(item.size) || estimateDataUrlBytes(data);
+
+    if (!data.startsWith("data:") || !mimeType) {
+      errors.push(`${name}: invalid attachment payload`);
+      continue;
+    }
+
+    if (mimeType.startsWith("image/")) {
+      if (size > MAX_READER_IMAGE_BYTES) {
+        errors.push(`${name}: image is too large`);
+        continue;
+      }
+      output.push({
+        kind: "image",
+        name,
+        data,
+        mime_type: mimeType,
+        size
+      });
+    } else if (mimeType.startsWith("audio/")) {
+      if (size > MAX_READER_AUDIO_BYTES) {
+        errors.push(`${name}: audio is too large`);
+        continue;
+      }
+      output.push({
+        kind: "audio",
+        name,
+        data,
+        mime_type: mimeType,
+        size
+      });
+    } else {
+      errors.push(`${name}: unsupported file type`);
+    }
+  }
+
+  if (input.length > MAX_READER_ATTACHMENTS) {
+    errors.push(`Only the first ${MAX_READER_ATTACHMENTS} files were attached.`);
+  }
+
+  return { attachments: output, errors };
+}
+
+async function sendTextToFrontend(text, attachments = []) {
   const normalized = String(text || "").trim();
-  if (!normalized) {
+  const normalizedAttachments = normalizeReaderAttachments(attachments);
+  if (!normalized && !normalizedAttachments.attachments.length) {
     return { ok: false, error: "empty-text" };
+  }
+  if (normalizedAttachments.errors.length && !normalizedAttachments.attachments.length) {
+    return {
+      ok: false,
+      error: normalizedAttachments.errors.join("; ")
+    };
   }
 
   const result =
-    (await executeRenderer(`((rawText) => {
+    (await executeRenderer(`((rawText, rawAttachments) => {
       const text = String(rawText || "").trim();
-      if (!text) {
+      const attachments = Array.isArray(rawAttachments) ? rawAttachments : [];
+      if (!text && attachments.length === 0) {
         return { ok: false, error: "empty-text" };
       }
 
       if (typeof window.__kuroPetSendTextInput === "function") {
-        return window.__kuroPetSendTextInput(text);
+        return window.__kuroPetSendTextInput(text, attachments);
       }
 
       return { ok: false, error: "frontend-bridge-missing" };
-    })(${JSON.stringify(normalized)});`)) || { ok: false, error: "renderer-unavailable" };
+    })(${JSON.stringify(normalized)}, ${JSON.stringify(normalizedAttachments.attachments)});`)) || { ok: false, error: "renderer-unavailable" };
 
   if (result.ok) {
     updateFrontendState({
-      latestUserText: normalized,
+      latestUserText: normalized || "[附件]",
       aiState: "thinking"
     });
   }
 
+  if (normalizedAttachments.errors.length) {
+    result.warnings = normalizedAttachments.errors;
+  }
   return result;
 }
 
@@ -1282,8 +1368,8 @@ function createReaderWindow() {
     y: bounds.y,
     width: bounds.width,
     height: bounds.height,
-    minWidth: 340,
-    minHeight: 180,
+    minWidth: MIN_READER_WINDOW_WIDTH,
+    minHeight: MIN_READER_WINDOW_HEIGHT,
     show: false,
     frame: false,
     transparent: true,
@@ -1575,8 +1661,8 @@ function registerIpc() {
 
   ipcMain.handle("reader-get-state", () => getReaderStatePayload());
 
-  ipcMain.handle("reader-send-text", async (_event, text) => {
-    return sendTextToFrontend(text);
+  ipcMain.handle("reader-send-text", async (_event, text, attachments) => {
+    return sendTextToFrontend(text, attachments);
   });
 
   ipcMain.on("reader-close", () => {

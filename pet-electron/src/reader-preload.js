@@ -4,8 +4,8 @@ contextBridge.exposeInMainWorld("kuroReader", {
   getState() {
     return ipcRenderer.invoke("reader-get-state");
   },
-  sendText(text) {
-    return ipcRenderer.invoke("reader-send-text", text);
+  sendText(text, attachments) {
+    return ipcRenderer.invoke("reader-send-text", text, attachments || []);
   },
   closeWindow() {
     ipcRenderer.send("reader-close");

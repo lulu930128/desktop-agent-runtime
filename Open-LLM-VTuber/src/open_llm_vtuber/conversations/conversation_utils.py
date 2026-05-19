@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import io
 import re
 import copy
 from typing import Optional, Union, Any, List, Dict
@@ -314,7 +316,14 @@ from ..message_handler import message_handler
 from .types import WebSocketSend, BroadcastContext
 from .tts_manager import TTSTaskManager
 from ..agent.output_types import SentenceOutput, AudioOutput
-from ..agent.input_types import BatchInput, TextData, ImageData, TextSource, ImageSource
+from ..agent.input_types import (
+    BatchInput,
+    FileData,
+    TextData,
+    ImageData,
+    TextSource,
+    ImageSource,
+)
 from ..asr.asr_interface import ASRInterface
 from ..live2d_model import Live2dModel
 from ..tts.tts_interface import TTSInterface
@@ -327,6 +336,7 @@ def create_batch_input(
     images: Optional[List[Dict[str, Any]]],
     from_name: str,
     metadata: Optional[Dict[str, Any]] = None,
+    files: Optional[List[Dict[str, Any]]] = None,
 ) -> BatchInput:
     """Create batch input for agent processing"""
     return BatchInput(
@@ -343,8 +353,104 @@ def create_batch_input(
         ]
         if images
         else None,
+        files=[
+            FileData(
+                name=str(file.get("name") or "uploaded-file"),
+                data=str(file.get("data") or ""),
+                mime_type=str(file.get("mime_type") or file.get("type") or ""),
+            )
+            for file in (files or [])
+            if isinstance(file, dict)
+        ]
+        if files
+        else None,
         metadata=metadata,
     )
+
+
+def _decode_data_url(data: str) -> tuple[str, bytes]:
+    raw = str(data or "").strip()
+    if not raw:
+        return "", b""
+
+    match = re.match(r"^data:([^;,]+)?(?:;[^,]*)?,(.*)$", raw, re.DOTALL)
+    if match:
+        mime_type = (match.group(1) or "").strip()
+        payload = match.group(2) or ""
+    else:
+        mime_type = ""
+        payload = raw
+
+    try:
+        return mime_type, base64.b64decode(payload, validate=False)
+    except Exception:
+        return mime_type, b""
+
+
+def _audio_bytes_to_float32(data: bytes, mime_type: str = "") -> np.ndarray:
+    if not data:
+        return np.array([], dtype=np.float32)
+
+    try:
+        from pydub import AudioSegment
+
+        fmt = ""
+        if "/" in mime_type:
+            fmt = mime_type.split("/", 1)[1].split(";", 1)[0].lower()
+            if fmt == "mpeg":
+                fmt = "mp3"
+            elif fmt == "x-wav":
+                fmt = "wav"
+
+        audio = AudioSegment.from_file(io.BytesIO(data), format=fmt or None)
+        audio = audio.set_channels(1).set_frame_rate(16000).set_sample_width(2)
+        samples = np.frombuffer(audio.raw_data, dtype=np.int16).astype(np.float32)
+        return samples / 32768.0
+    except Exception as exc:
+        logger.warning(f"Audio attachment decode failed: {exc}")
+        return np.array([], dtype=np.float32)
+
+
+async def transcribe_audio_files(
+    files: Optional[List[Dict[str, Any]]],
+    asr_engine: Optional[ASRInterface],
+) -> List[str]:
+    if not files or asr_engine is None:
+        return []
+
+    notes: List[str] = []
+    audio_items = [
+        file
+        for file in files
+        if isinstance(file, dict)
+        and str(file.get("mime_type") or file.get("type") or "").lower().startswith("audio/")
+    ][:3]
+
+    for index, file in enumerate(audio_items, start=1):
+        name = str(file.get("name") or f"audio-{index}").strip() or f"audio-{index}"
+        mime_hint = str(file.get("mime_type") or file.get("type") or "").strip()
+        mime_type, raw_bytes = _decode_data_url(str(file.get("data") or ""))
+        mime_type = mime_type or mime_hint
+        if not raw_bytes:
+            notes.append(f"- {name}: [音檔讀取失敗，沒有可用資料]")
+            continue
+
+        audio = _audio_bytes_to_float32(raw_bytes, mime_type)
+        if audio.size == 0:
+            notes.append(f"- {name}: [音檔格式暫時無法解析，建議使用 WAV/MP3]")
+            continue
+
+        try:
+            text = (await asr_engine.async_transcribe_np(audio)).strip()
+        except Exception as exc:
+            logger.warning(f"Audio attachment transcription failed for {name}: {exc}")
+            text = ""
+
+        if text:
+            notes.append(f"- {name}: {text}")
+        else:
+            notes.append(f"- {name}: [未辨識到清楚語音]")
+    return notes
 
 
 async def process_agent_output(

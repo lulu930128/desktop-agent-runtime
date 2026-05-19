@@ -14,6 +14,10 @@
       "mode": "read_only",
       "category": "web"
     },
+    "advanced_search_web": {
+      "mode": "read_only",
+      "category": "web"
+    },
     "fetch_content": {
       "mode": "read_only",
       "category": "web",
