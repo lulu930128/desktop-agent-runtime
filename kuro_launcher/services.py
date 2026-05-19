@@ -1,5 +1,4 @@
 import os
-import sys
 import json
 import shutil
 from pathlib import Path
@@ -46,8 +45,14 @@ def start_bridge(cfg: AppConfig, logger_cb, *, logs_root: Path, run_id: str | No
         logger_cb(f"[{log_ts()}] Bridge 已在跑：{cfg.bridge_host}:{cfg.bridge_port}（沿用現有）")
         return None
 
+    try:
+        bridge_python = _env_python(cfg.env_llm)
+    except Exception as exc:
+        logger_cb(f"[{log_ts()}] Bridge Python 取得失敗：{exc}")
+        return None
+
     cmd = [
-        sys.executable, "-m", "uvicorn", "deeplx_bridge:app",
+        bridge_python, "-m", "uvicorn", "deeplx_bridge:app",
         "--host", cfg.bridge_host, "--port", str(cfg.bridge_port),
         "--no-use-colors",
     ]

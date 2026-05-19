@@ -375,18 +375,34 @@ async def render_openai_spoken_short(text: str, style_prompt_ja: str = "") -> Di
 
     base_rules = (
         "You are a speech renderer for a VTuber desktop assistant.\n"
+        "You are NOT the assistant answering the user. Only transform the already-written reply into a spoken Japanese line.\n"
         "Input is Traditional Chinese (or mixed). Produce:\n"
         "1) ja: Natural spoken Japanese suitable for TTS.\n"
         f"   - Keep it short (<= {SPOKEN_MAX_CHARS} Japanese characters ideally).\n"
         "   - NO bullet lists, NO step numbers (1./2./-), NO headings.\n"
         "   - If the input is long or contains lists, summarize into 1-2 spoken sentences.\n"
+        "   - Preserve the meaning; do not add new facts, advice, greetings, self-introductions, or follow-up questions.\n"
+        "   - Do not add generic service closings such as '他に手伝うことはある？' unless the input explicitly says that.\n"
+        "   - If the input mentions tools, permissions, errors, URLs, code names, or file paths, keep the meaning but make it speakable.\n"
         "   - Do not include Chinese characters that are not common in Japanese; avoid mixing languages.\n"
         "2) emotion: one of [neutral, joy, smirk, surprise, anger, sadness, fear, disgust].\n"
         "Return ONLY a valid JSON object: {\"ja\":\"...\",\"emotion\":\"...\"}.\n"
     )
 
     if style_prompt_ja:
-        base_rules += "\nCharacter style:\n" + style_prompt_ja.strip() + "\n"
+        base_rules += (
+            "\nCharacter style, lower priority than meaning preservation:\n"
+            + style_prompt_ja.strip()
+            + "\n"
+        )
+
+    base_rules += (
+        "\nHard preservation rules:\n"
+        "- The Japanese spoken line must match the input subtitle's meaning.\n"
+        "- Do not add the user's name, a nickname, or any vocative unless the input explicitly contains it.\n"
+        "- Do not add greetings, affection, reassurance, roleplay lines, or follow-up questions unless the input explicitly contains them.\n"
+        "- Character style may adjust tone only; it must not add content.\n"
+    )
 
     body = {
         "model": OPENAI_MODEL,

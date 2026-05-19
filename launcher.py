@@ -789,7 +789,7 @@ class LauncherApp(ctk.CTk):
         preview_body.grid_rowconfigure(1, weight=1)
         self.preview_segment = ctk.CTkSegmentedButton(
             preview_body,
-            values=["角色預覽", "角色", "專案", "工具", "格式"],
+            values=["角色預覽", "角色", "專案", "工具", "限制", "格式"],
             variable=self.preview_mode_var,
             command=self._on_preview_mode_changed,
             fg_color=PALETTE["accent_soft"],
@@ -1224,7 +1224,7 @@ class LauncherApp(ctk.CTk):
         ).grid(row=0, column=0, sticky="w")
         self.prompt_segment = ctk.CTkSegmentedButton(
             prompt_head,
-            values=["角色", "專案", "工具", "格式"],
+            values=["角色", "專案", "工具", "限制", "格式"],
             variable=self.prompt_view_var,
             command=self._on_prompt_segment_changed,
             fg_color=PALETTE["accent_soft"],
@@ -1239,7 +1239,7 @@ class LauncherApp(ctk.CTk):
         self.prompt_segment.grid(row=0, column=1, sticky="e")
         ctk.CTkLabel(
             prompt_head,
-            text="人格、專案與工具提示詞可直接比對。",
+            text="人格、專案、工具與限制提示詞可直接比對。",
             text_color=PALETTE["muted"],
             font=ui_font(12),
         ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
@@ -3343,6 +3343,7 @@ class LauncherApp(ctk.CTk):
             "角色": "persona",
             "專案": "project",
             "工具": "tool",
+            "限制": "policy",
             "格式": "contract",
         }
         selected_key = key_map.get(self.prompt_view_var.get(), "persona")
@@ -3357,6 +3358,17 @@ class LauncherApp(ctk.CTk):
         memory_text = ""
         project_text = ""
         tool_text = ""
+        policy_prompt_text = _read_text_maybe(
+            self.cfg.open_llm_dir / "prompts" / "utils" / "runtime_policy_prompt.txt"
+        )
+        policy_json_text = _read_text_maybe(self.cfg.open_llm_dir / "tool_policy.json")
+        policy_text = policy_prompt_text
+        if policy_json_text.strip():
+            policy_text = (
+                f"{policy_prompt_text.rstrip()}\n\n[tool_policy.json]\n{policy_json_text}"
+                if policy_prompt_text.strip()
+                else policy_json_text
+            )
         contract_text = _read_text_maybe(
             self.cfg.open_llm_dir / "prompts" / "utils" / "response_contract_prompt.txt"
         )
@@ -3384,6 +3396,7 @@ class LauncherApp(ctk.CTk):
             "memory": memory_text,
             "project": project_text,
             "tool": tool_text,
+            "policy": policy_text,
             "contract": contract_text,
         }
         self._refresh_prompt_view()

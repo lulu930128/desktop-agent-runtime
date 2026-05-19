@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "default_mode": "blocked",
+  "tools": {
+    "get_current_time": {
+      "mode": "read_only",
+      "category": "web"
+    },
+    "search_web": {
+      "mode": "read_only",
+      "category": "web"
+    },
+    "smart_search_web": {
+      "mode": "read_only",
+      "category": "web"
+    },
+    "fetch_content": {
+      "mode": "read_only",
+      "category": "web",
+      "url_args": ["url"],
+      "block_private_urls": true
+    },
+    "list_allowed_roots": {
+      "mode": "read_only",
+      "category": "filesystem"
+    },
+    "list_directory": {
+      "mode": "read_only",
+      "category": "filesystem",
+      "path_args": ["path"],
+      "allow_hidden": false
+    },
+    "search_files": {
+      "mode": "read_only",
+      "category": "filesystem",
+      "path_args": ["path"],
+      "allow_hidden": false
+    },
+    "read_text_file": {
+      "mode": "read_only",
+      "category": "filesystem",
+      "path_args": ["path"],
+      "allow_hidden": false
+    }
+  },
+  "filesystem": {
+    "deny_path_patterns": [
+      "*.env",
+      "*.env.*",
+      "*/.env",
+      "*/.env.*",
+      "*.pem",
+      "*.key",
+      "*.pfx",
+      "*.p12",
+      "*id_rsa*",
+      "*id_ed25519*",
+      "*api_key*",
+      "*apikey*",
+      "*secret*",
+      "*password*",
+      "*credential*",
+      "*/AppData/Local/Google/Chrome/User Data/*",
+      "*/AppData/Local/Microsoft/Edge/User Data/*",
+      "*/AppData/Roaming/Mozilla/Firefox/Profiles/*",
+      "*/Cookies",
+      "*/Login Data"
+    ],
+    "deny_path_parts": [
+      ".git",
+      ".ssh",
+      ".gnupg",
+      "keyrings"
+    ]
+  },
+  "web": {
+    "blocked_hostnames": [
+      "localhost",
+      "127.0.0.1",
+      "::1",
+      "0.0.0.0"
+    ],
+    "block_private_networks": true
+  }
+}

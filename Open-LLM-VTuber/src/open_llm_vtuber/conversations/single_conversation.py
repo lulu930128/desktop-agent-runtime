@@ -198,6 +198,10 @@ def _store_tool_status_event(
         summary = f"{tool_name} 發生錯誤"
         if content_preview:
             summary = f"{summary}：{content_preview}"
+    elif status == "blocked":
+        summary = f"{tool_name} 被限制層擋下"
+        if content_preview:
+            summary = f"{summary}：{content_preview}"
     else:
         summary = f"{tool_name} 狀態：{status}"
 

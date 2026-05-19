@@ -528,6 +528,14 @@ class ServiceContext:
                 prompt_loader.load_util(response_contract_name),
             )
 
+        runtime_policy_name = tool_prompts.get("runtime_policy_prompt", "")
+        if runtime_policy_name:
+            self._append_prompt_section(
+                parts,
+                "Runtime Policy",
+                prompt_loader.load_util(runtime_policy_name),
+            )
+
         effective_persona = persona_prompt
         if character_config.persona_prompt_path:
             effective_persona = self._load_optional_prompt_path(
@@ -570,6 +578,7 @@ class ServiceContext:
 
         reserved_names = {
             "response_contract_prompt",
+            "runtime_policy_prompt",
             "live2d_expression_prompt",
             "group_conversation_prompt",
             "proactive_speak_prompt",

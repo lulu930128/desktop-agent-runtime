@@ -13,6 +13,7 @@ from typing import (
 from .types import ToolCallObject
 from .mcp_client import MCPClient
 from .tool_manager import ToolManager
+from .tool_policy_manager import ToolPolicy
 
 
 class ToolExecutor:
@@ -23,6 +24,7 @@ class ToolExecutor:
     ):
         self._mcp_client = mcp_client
         self._tool_manager = tool_manager
+        self._tool_policy = ToolPolicy.load_default()
 
     def parse_tool_call(self, call: Union[Dict[str, Any], ToolCallObject]) -> tuple:
         """Parse tool call from different formats.
@@ -202,6 +204,34 @@ class ToolExecutor:
                 if formatted_result:
                     tool_results_for_llm.append(formatted_result)
                 continue  # Skip execution logic for this call
+
+            policy_decision = self._tool_policy.check(tool_name, tool_input)
+            if not policy_decision.allowed:
+                logger.warning(
+                    f"Tool call blocked by runtime policy: {tool_name}: {policy_decision.reason}"
+                )
+                status_update = {
+                    "type": "tool_call_status",
+                    "tool_id": tool_id,
+                    "tool_name": tool_name or "Unknown Tool",
+                    "status": policy_decision.status,
+                    "content": policy_decision.reason,
+                    "timestamp": datetime.datetime.now(
+                        datetime.timezone.utc
+                    ).isoformat()
+                    + "Z",
+                }
+                yield status_update
+
+                formatted_result = self.format_tool_result(
+                    caller_mode,
+                    tool_id,
+                    f"Tool call blocked by runtime policy: {policy_decision.reason}",
+                    True,
+                )
+                if formatted_result:
+                    tool_results_for_llm.append(formatted_result)
+                continue
 
             # Yield 'running' status before execution
             yield {
