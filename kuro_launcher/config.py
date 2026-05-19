@@ -193,7 +193,7 @@ def load_config(config_path: Path) -> AppConfig:
         llm_provider_env=str(llm.get("provider_env", "KURO_LLM_PROVIDER")),
         llm_default_provider=str(llm.get("default_provider", "openai_llm")),
         openai_model_env=str(openai.get("model_env", "OPENAI_LLM_MODEL")),
-        openai_default_model=str(openai.get("default_model", "gpt-4o")),
+        openai_default_model=str(openai.get("default_model", "gpt-5-mini")),
         openai_temp_env=str(openai.get("temperature_env", "OPENAI_LLM_TEMPERATURE")),
         openai_inject_key_env=str(
             openai.get("inject_key_env", "OPENAI_LLM_INJECT_KEY")

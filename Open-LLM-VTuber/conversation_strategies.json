@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "strategies": {
+    "fast": {
+      "title": "Fast",
+      "description": "Prioritize latency and directness for casual or simple turns.",
+      "rules": [
+        "Answer directly with the minimum useful context.",
+        "Do not expand into alternatives, caveats, or long explanations unless the user asks.",
+        "Ask a clarifying question only when the task is blocked.",
+        "For web research, prefer shallow search and fewer fetched pages."
+      ]
+    },
+    "normal": {
+      "title": "Normal",
+      "description": "Balanced reasoning for everyday assistant work.",
+      "rules": [
+        "Lead with the answer or recommendation.",
+        "Include the key reason or tradeoff when it helps the user decide.",
+        "Keep the reply compact, but do not omit important constraints.",
+        "For web research, use standard search depth and source checking."
+      ]
+    },
+    "deep": {
+      "title": "Deep",
+      "description": "More careful reasoning for planning, debugging, decisions, and verification.",
+      "rules": [
+        "Before answering, internally check the user's goal, assumptions, missing context, risks, and alternatives.",
+        "Do not reveal hidden chain-of-thought; provide only a clear final answer.",
+        "Prefer a concrete recommendation when enough context exists.",
+        "Mention uncertainty, risk, or verification gaps when they matter.",
+        "For web research, use deeper source checking and fetch more primary content when tools are needed."
+      ]
+    }
+  }
+}

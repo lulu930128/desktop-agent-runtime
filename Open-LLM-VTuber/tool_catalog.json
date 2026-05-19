@@ -1,0 +1,185 @@
+{
+  "version": 1,
+  "routing": {
+    "default_behavior": "no_tools_until_needed",
+    "max_candidate_tools": 6
+  },
+  "categories": {
+    "time": {
+      "title": "Time",
+      "description": "Current date, time, and timezone checks.",
+      "intent_keywords": [
+        "現在幾點",
+        "現在時間",
+        "今天日期",
+        "時區",
+        "current time",
+        "what time",
+        "timezone"
+      ],
+      "default_tools": ["get_current_time"],
+      "tools": [
+        {
+          "name": "get_current_time",
+          "level": "light",
+          "risk": "read_only",
+          "when": "Use when the answer depends on the current local time or timezone."
+        }
+      ]
+    },
+    "web_research": {
+      "title": "Web Research",
+      "description": "Public web search, source reading, and time-sensitive verification.",
+      "intent_keywords": [
+        "搜尋",
+        "查詢",
+        "查證",
+        "最新",
+        "即時",
+        "新聞",
+        "價格",
+        "營業",
+        "版本",
+        "官方文件",
+        "API 文件",
+        "資料來源",
+        "source",
+        "search",
+        "latest",
+        "today",
+        "current",
+        "recent",
+        "news",
+        "price",
+        "documentation",
+        "docs"
+      ],
+      "default_tools": ["smart_search_web"],
+      "tools": [
+        {
+          "name": "search_web",
+          "level": "light",
+          "risk": "read_only",
+          "when": "Use for a quick first pass when titles, snippets, and URLs are enough."
+        },
+        {
+          "name": "smart_search_web",
+          "level": "deep",
+          "risk": "read_only",
+          "when": "Use for practical, time-sensitive, multi-source, or comparison questions."
+        },
+        {
+          "name": "fetch_content",
+          "level": "read",
+          "risk": "read_only",
+          "when": "Use after a candidate URL is known and the page body needs verification."
+        }
+      ]
+    },
+    "local_files": {
+      "title": "Local Files",
+      "description": "Read-only project, prompt, config, and log inspection.",
+      "intent_keywords": [
+        "資料夾",
+        "檔案",
+        "專案",
+        "程式碼",
+        "設定",
+        "設定檔",
+        "prompt",
+        "launcher",
+        "config",
+        "log",
+        "error",
+        "traceback",
+        "讀",
+        "掃",
+        "比對",
+        "搜尋檔案",
+        "找檔案",
+        "read file",
+        "list directory",
+        "search files"
+      ],
+      "default_tools": ["search_files", "read_text_file"],
+      "tools": [
+        {
+          "name": "list_allowed_roots",
+          "level": "light",
+          "risk": "read_only",
+          "when": "Use when the assistant needs to know which local roots are readable."
+        },
+        {
+          "name": "list_directory",
+          "level": "light",
+          "risk": "read_only",
+          "when": "Use to inspect folder structure before reading specific files."
+        },
+        {
+          "name": "search_files",
+          "level": "search",
+          "risk": "read_only",
+          "when": "Use to find names, settings, functions, errors, or prompt fragments."
+        },
+        {
+          "name": "read_text_file",
+          "level": "read",
+          "risk": "read_only",
+          "when": "Use after a file path is known and text content is needed."
+        }
+      ]
+    },
+    "media": {
+      "title": "Media",
+      "description": "Reserved category for image, OCR, audio transcription, and media metadata tools.",
+      "intent_keywords": [
+        "圖片",
+        "截圖",
+        "照片",
+        "OCR",
+        "音檔",
+        "錄音",
+        "transcribe",
+        "image",
+        "screenshot",
+        "audio"
+      ],
+      "default_tools": [],
+      "tools": []
+    },
+    "memory": {
+      "title": "Memory",
+      "description": "Reserved category for searching, proposing, writing, and forgetting long-term memories.",
+      "intent_keywords": [
+        "記憶",
+        "記住",
+        "忘記",
+        "偏好",
+        "memory",
+        "remember",
+        "forget",
+        "preference"
+      ],
+      "default_tools": [],
+      "tools": []
+    },
+    "runtime_control": {
+      "title": "Runtime Control",
+      "description": "Reserved category for launcher/runtime status and controlled restart actions.",
+      "intent_keywords": [
+        "重啟",
+        "啟動",
+        "停止",
+        "狀態",
+        "bridge",
+        "LLM server",
+        "TTS",
+        "runtime",
+        "restart",
+        "status"
+      ],
+      "default_tools": [],
+      "tools": []
+    }
+  }
+}

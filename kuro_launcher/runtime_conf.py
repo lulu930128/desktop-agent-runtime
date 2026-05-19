@@ -6,6 +6,22 @@ from .project_manager import load_project_definition
 from .utils import deep_merge, read_yaml_file, sanitize_ascii, write_yaml_file
 
 
+def _normalize_thinking_power(value: str) -> str:
+    normalized = (value or "normal").strip().lower()
+    aliases = {
+        "quick": "fast",
+        "light": "fast",
+        "fast": "fast",
+        "normal": "normal",
+        "medium": "normal",
+        "default": "normal",
+        "deep": "deep",
+        "depth": "deep",
+        "high": "deep",
+    }
+    return aliases.get(normalized, "normal")
+
+
 def _resolve_repo_path(repo_root: Path, raw_path: str) -> str:
     raw_path = (raw_path or "").strip()
     if not raw_path:
@@ -45,6 +61,7 @@ def build_runtime_conf(
     openai_inject_key_env: str,
     openai_api_key_env: str,
     openai_fallback_key_env: str,
+    thinking_power: str = "normal",
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     base_conf_path = find_base_conf(open_llm_dir)
     base = read_yaml_file(base_conf_path)
@@ -55,6 +72,7 @@ def build_runtime_conf(
     merged.setdefault("system_config", {})
     merged["system_config"]["host"] = llm_host
     merged["system_config"]["port"] = llm_port
+    merged["system_config"]["thinking_power"] = _normalize_thinking_power(thinking_power)
     tool_prompts = merged["system_config"].setdefault("tool_prompts", {})
     if isinstance(tool_prompts, dict):
         tool_prompts.setdefault("response_contract_prompt", "response_contract_prompt")

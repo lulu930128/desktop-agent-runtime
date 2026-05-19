@@ -143,7 +143,7 @@ character_config:
 
       openai_llm:
         llm_api_key: 'Your Open AI API key' # OpenAI API 密钥
-        model: 'gpt-4o' # 使用的模型
+        model: 'gpt-5-mini' # 使用的模型
         temperature: 1.0 # 温度，介于 0 到 2 之间
 
       gemini_llm:

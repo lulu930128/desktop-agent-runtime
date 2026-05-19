@@ -14,6 +14,7 @@ from .types import ToolCallObject
 from .mcp_client import MCPClient
 from .tool_manager import ToolManager
 from .tool_policy_manager import ToolPolicy
+from .tool_catalog_manager import normalize_thinking_power
 
 
 class ToolExecutor:
@@ -21,10 +22,12 @@ class ToolExecutor:
         self,
         mcp_client: MCPClient,
         tool_manager: ToolManager,
+        thinking_power: str = "normal",
     ):
         self._mcp_client = mcp_client
         self._tool_manager = tool_manager
         self._tool_policy = ToolPolicy.load_default()
+        self._thinking_power = normalize_thinking_power(thinking_power)
 
     def parse_tool_call(self, call: Union[Dict[str, Any], ToolCallObject]) -> tuple:
         """Parse tool call from different formats.
@@ -204,6 +207,8 @@ class ToolExecutor:
                 if formatted_result:
                     tool_results_for_llm.append(formatted_result)
                 continue  # Skip execution logic for this call
+
+            tool_input = self._apply_thinking_power(tool_name, tool_input)
 
             policy_decision = self._tool_policy.check(tool_name, tool_input)
             if not policy_decision.allowed:
@@ -410,3 +415,45 @@ class ToolExecutor:
                 is_error = True
 
         return is_error, text_content, metadata, content_items
+
+    def _apply_thinking_power(self, tool_name: str, tool_input: Any) -> Any:
+        """Clamp web-search tool arguments according to launcher thinking power."""
+        if not isinstance(tool_input, dict):
+            return tool_input
+
+        args = dict(tool_input)
+        power = self._thinking_power
+
+        if tool_name == "search_web":
+            if power == "fast":
+                args["max_results"] = min(_as_int(args.get("max_results"), 3), 3)
+            elif power == "deep":
+                args["max_results"] = min(max(_as_int(args.get("max_results"), 8), 8), 10)
+            else:
+                args["max_results"] = min(_as_int(args.get("max_results"), 5), 5)
+        elif tool_name == "smart_search_web":
+            if power == "fast":
+                args["max_results"] = min(_as_int(args.get("max_results"), 3), 3)
+                args["fetch_top_pages"] = 0
+            elif power == "deep":
+                args["max_results"] = min(max(_as_int(args.get("max_results"), 8), 6), 8)
+                args["fetch_top_pages"] = min(max(_as_int(args.get("fetch_top_pages"), 3), 3), 3)
+            else:
+                args["max_results"] = min(_as_int(args.get("max_results"), 5), 5)
+                args["fetch_top_pages"] = min(_as_int(args.get("fetch_top_pages"), 2), 2)
+        elif tool_name == "fetch_content":
+            if power == "fast":
+                args["max_chars"] = min(_as_int(args.get("max_chars"), 1800), 2000)
+            elif power == "deep":
+                args["max_chars"] = min(max(_as_int(args.get("max_chars"), 10000), 8000), 12000)
+            else:
+                args["max_chars"] = min(_as_int(args.get("max_chars"), 4000), 5000)
+
+        return args
+
+
+def _as_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default

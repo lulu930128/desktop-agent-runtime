@@ -217,6 +217,17 @@ EXPRESSION_ID_TO_LABEL = {
     for expression_id, item in EXPRESSION_PRESETS.items()
 }
 
+THINKING_POWER_LABEL_TO_ID = {
+    "快速": "fast",
+    "普通": "normal",
+    "深度": "deep",
+}
+THINKING_POWER_ID_TO_LABEL = {
+    thinking_id: label
+    for label, thinking_id in THINKING_POWER_LABEL_TO_ID.items()
+}
+THINKING_POWER_LABELS = list(THINKING_POWER_LABEL_TO_ID.keys())
+
 FONT_UI = "Microsoft JhengHei UI"
 FONT_MONO = "Cascadia Mono"
 
@@ -417,6 +428,9 @@ class LauncherApp(ctk.CTk):
         self.memory_var = ctk.StringVar(value="")
         self.outfit_var = ctk.StringVar(value="normal")
         self.expression_var = ctk.StringVar(value=EXPRESSION_ID_TO_LABEL["neutral"])
+        self.thinking_power_var = ctk.StringVar(
+            value=THINKING_POWER_ID_TO_LABEL["normal"]
+        )
         self.pet_base_url_var = ctk.StringVar(value=self.cfg.llm_url)
         self.pet_ws_url_var = ctk.StringVar(
             value=f"ws://{self.cfg.llm_host}:{self.cfg.llm_port}/client-ws"
@@ -1953,6 +1967,38 @@ class LauncherApp(ctk.CTk):
             corner_radius=10,
         ).grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=8)
 
+        thinking_shell = ctk.CTkFrame(
+            pet_button_bar,
+            corner_radius=14,
+            fg_color=PALETTE["panel_bg"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+        )
+        thinking_shell.grid(row=6, column=0, sticky="ew", padx=(0, 0), pady=(0, 8))
+        thinking_shell.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(
+            thinking_shell,
+            text="思考力",
+            font=ui_font(12, "bold"),
+            text_color=PALETTE["text"],
+        ).grid(row=0, column=0, sticky="w", padx=(12, 8), pady=8)
+        ctk.CTkOptionMenu(
+            thinking_shell,
+            values=THINKING_POWER_LABELS,
+            variable=self.thinking_power_var,
+            command=self._on_thinking_power_changed,
+            fg_color=PALETTE["panel_alt"],
+            button_color=PALETTE["accent_blue"],
+            button_hover_color=PALETTE["accent_blue_hover"],
+            dropdown_fg_color=PALETTE["panel_bg"],
+            dropdown_hover_color=PALETTE["accent_soft"],
+            text_color=PALETTE["text"],
+            font=ui_font(12, "bold"),
+            dropdown_font=ui_font(12),
+            height=30,
+            corner_radius=10,
+        ).grid(row=0, column=1, sticky="ew", padx=(0, 8), pady=8)
+
     def log(self, message: str) -> None:
         try:
             self._log_q.put_nowait(strip_ansi_and_ctrl(str(message)))
@@ -3297,6 +3343,10 @@ class LauncherApp(ctk.CTk):
         parameters.update(preset.get("parameters") or {})
         return expression_id, str(preset.get("label") or label), parameters
 
+    def _selected_thinking_power(self) -> str:
+        label = self.thinking_power_var.get().strip() or THINKING_POWER_ID_TO_LABEL["normal"]
+        return THINKING_POWER_LABEL_TO_ID.get(label, "normal")
+
     def _apply_selected_expression(self, *, wait_for_shell: bool = False) -> None:
         expression_id, expression_label, parameters = self._selected_expression_payload()
 
@@ -3335,6 +3385,12 @@ class LauncherApp(ctk.CTk):
     def _on_expression_changed(self, _value: str) -> None:
         self._apply_selected_expression()
 
+    def _on_thinking_power_changed(self, value: str) -> None:
+        thinking_power = THINKING_POWER_LABEL_TO_ID.get(value, "normal")
+        self.log(
+            f"[{log_ts()}] 思考力已設定：{value}（{thinking_power}，下次啟動或熱切換 runtime 後生效）"
+        )
+
     def _on_prompt_segment_changed(self, _value: str) -> None:
         self._refresh_prompt_view()
 
@@ -3358,16 +3414,24 @@ class LauncherApp(ctk.CTk):
         memory_text = ""
         project_text = ""
         tool_text = ""
+        catalog_text = _read_text_maybe(self.cfg.open_llm_dir / "tool_catalog.json")
         policy_prompt_text = _read_text_maybe(
             self.cfg.open_llm_dir / "prompts" / "utils" / "runtime_policy_prompt.txt"
         )
         policy_json_text = _read_text_maybe(self.cfg.open_llm_dir / "tool_policy.json")
+        strategy_text = _read_text_maybe(self.cfg.open_llm_dir / "conversation_strategies.json")
         policy_text = policy_prompt_text
         if policy_json_text.strip():
             policy_text = (
                 f"{policy_prompt_text.rstrip()}\n\n[tool_policy.json]\n{policy_json_text}"
                 if policy_prompt_text.strip()
                 else policy_json_text
+            )
+        if strategy_text.strip():
+            policy_text = (
+                f"{policy_text.rstrip()}\n\n[conversation_strategies.json]\n{strategy_text}"
+                if policy_text.strip()
+                else f"[conversation_strategies.json]\n{strategy_text}"
             )
         contract_text = _read_text_maybe(
             self.cfg.open_llm_dir / "prompts" / "utils" / "response_contract_prompt.txt"
@@ -3390,6 +3454,12 @@ class LauncherApp(ctk.CTk):
         if project:
             project_text = _read_text_maybe(project.project_prompt_path)
             tool_text = _read_text_maybe(project.tool_prompt_path)
+            if catalog_text.strip():
+                tool_text = (
+                    f"{tool_text.rstrip()}\n\n[tool_catalog.json]\n{catalog_text}"
+                    if tool_text.strip()
+                    else f"[tool_catalog.json]\n{catalog_text}"
+                )
 
         self._prompt_texts = {
             "persona": persona_text,
@@ -3813,6 +3883,7 @@ class LauncherApp(ctk.CTk):
                 openai_inject_key_env=self.cfg.openai_inject_key_env,
                 openai_api_key_env=self.cfg.openai_api_key_env,
                 openai_fallback_key_env=self.cfg.openai_fallback_key_env,
+                thinking_power=self._selected_thinking_power(),
             )
             write_runtime_conf(self.cfg.runtime_conf_path, runtime_conf)
             conf_uid = str(char_cfg.get("conf_uid") or "").strip()
@@ -3831,6 +3902,7 @@ class LauncherApp(ctk.CTk):
             self.log(
                 f"[{log_ts()}] tool_prompt_path: {char_cfg.get('tool_prompt_path', '')}"
             )
+            self.log(f"[{log_ts()}] thinking_power: {self._selected_thinking_power()}")
             return runtime_conf, char_cfg
         except Exception as exc:
             self.log(f"[{log_ts()}] 準備 runtime conf 失敗：{exc}")
@@ -4100,6 +4172,7 @@ class LauncherApp(ctk.CTk):
                 openai_inject_key_env=self.cfg.openai_inject_key_env,
                 openai_api_key_env=self.cfg.openai_api_key_env,
                 openai_fallback_key_env=self.cfg.openai_fallback_key_env,
+                thinking_power=self._selected_thinking_power(),
             )
             write_runtime_conf(self.cfg.runtime_conf_path, runtime_conf)
             conf_uid = (char_cfg.get("conf_uid") or "").strip()
@@ -4110,6 +4183,7 @@ class LauncherApp(ctk.CTk):
             self.log(f"[{log_ts()}] persona_prompt_path: {char_cfg.get('persona_prompt_path', '')}")
             self.log(f"[{log_ts()}] project_prompt_path: {char_cfg.get('project_prompt_path', '')}")
             self.log(f"[{log_ts()}] tool_prompt_path: {char_cfg.get('tool_prompt_path', '')}")
+            self.log(f"[{log_ts()}] thinking_power: {self._selected_thinking_power()}")
         except Exception as exc:
             self.log(f"[{log_ts()}] 建立 runtime conf 失敗：{exc}")
             return

@@ -22,6 +22,7 @@ from .asr.asr_factory import ASRFactory
 from .tts.tts_factory import TTSFactory
 from .vad.vad_factory import VADFactory
 from .agent.agent_factory import AgentFactory
+from .agent.conversation_strategy_manager import ConversationStrategy
 from .translate.translate_factory import TranslateFactory
 from .character_memory_manager import format_character_memories_for_prompt
 
@@ -80,6 +81,7 @@ class ServiceContext:
 
         # the system prompt is a combination of the persona prompt and live2d expression prompt
         self.system_prompt: str = None
+        self._agent_signature: tuple[str, ...] | None = None
 
         # Store the generated MCP prompt string (if MCP enabled)
         self.mcp_prompt: str = ""
@@ -122,6 +124,11 @@ class ServiceContext:
         self.tool_executor = None
         self.json_detector = None
         self.mcp_prompt = ""
+        thinking_power = (
+            getattr(self.system_config, "thinking_power", "normal")
+            if self.system_config
+            else "normal"
+        )
 
         if use_mcpp and enabled_servers:
             # 1. Initialize ServerRegistry
@@ -160,7 +167,13 @@ class ServiceContext:
                     formatted_tools_openai=openai_tools,
                     formatted_tools_claude=claude_tools,
                     initial_tools_dict=raw_tools_dict,
+                    thinking_power=thinking_power,
                 )
+                catalog_prompt = self.tool_manager.get_tool_catalog_prompt()
+                if catalog_prompt:
+                    self.mcp_prompt = (
+                        f"{catalog_prompt}\n\nAvailable tool details:\n{mcp_prompt_string}"
+                    )
                 logger.info("ToolManager initialized with dynamically fetched tools.")
 
             except Exception as e:
@@ -185,7 +198,11 @@ class ServiceContext:
 
             # 5. Initialize ToolExecutor
             if self.mcp_client and self.tool_manager:
-                self.tool_executor = ToolExecutor(self.mcp_client, self.tool_manager)
+                self.tool_executor = ToolExecutor(
+                    self.mcp_client,
+                    self.tool_manager,
+                    thinking_power=thinking_power,
+                )
                 logger.info("ToolExecutor initialized for this session.")
             else:
                 logger.warning(
@@ -274,8 +291,7 @@ class ServiceContext:
         if not self.config:
             self.config = config
 
-        if not self.system_config:
-            self.system_config = config.system_config
+        self.system_config = config.system_config or self.system_config
 
         if not self.character_config:
             self.character_config = config.character_config
@@ -381,7 +397,7 @@ class ServiceContext:
 
     def _prompt_signature(self, character_config: CharacterConfig | None) -> tuple[str, ...]:
         if character_config is None:
-            return ("", "", "", "", "", "")
+            return ("", "", "", "", "", "", "", "")
         return (
             character_config.persona_prompt or "",
             character_config.persona_prompt_path or "",
@@ -389,6 +405,8 @@ class ServiceContext:
             character_config.tool_prompt_path or "",
             character_config.response_style_prompt_path or "",
             character_config.active_project_id or "",
+            getattr(self.system_config, "thinking_power", "normal") if self.system_config else "normal",
+            self.mcp_prompt or "",
         )
 
     async def init_agent(
@@ -401,13 +419,13 @@ class ServiceContext:
         logger.info(f"Initializing Agent: {agent_config.conversation_agent_choice}")
 
         effective_character_config = character_config or self.character_config
+        next_agent_signature = self._prompt_signature(effective_character_config)
 
         if (
             self.agent_engine is not None
             and self.character_config is not None
             and agent_config == self.character_config.agent_config
-            and self._prompt_signature(effective_character_config)
-            == self._prompt_signature(self.character_config)
+            and next_agent_signature == self._agent_signature
         ):
             logger.debug("Agent already initialized with the same config.")
             return
@@ -441,6 +459,7 @@ class ServiceContext:
             # Save the current configuration
             self.character_config.agent_config = agent_config
             self.system_prompt = system_prompt
+            self._agent_signature = next_agent_signature
 
         except Exception as e:
             logger.error(f"Failed to initialize agent: {e}")
@@ -535,6 +554,17 @@ class ServiceContext:
                 "Runtime Policy",
                 prompt_loader.load_util(runtime_policy_name),
             )
+
+        thinking_power = (
+            getattr(self.system_config, "thinking_power", "normal")
+            if self.system_config
+            else "normal"
+        )
+        self._append_prompt_section(
+            parts,
+            "Conversation Strategy",
+            ConversationStrategy.load_default().render(thinking_power),
+        )
 
         effective_persona = persona_prompt
         if character_config.persona_prompt_path:

@@ -12,6 +12,7 @@ class SystemConfig(I18nMixin):
     port: int = Field(..., alias="port")
     config_alts_dir: str = Field(..., alias="config_alts_dir")
     tool_prompts: Dict[str, str] = Field(..., alias="tool_prompts")
+    thinking_power: str = Field("normal", alias="thinking_power")
     enable_proxy: bool = Field(False, alias="enable_proxy")
 
     DESCRIPTIONS: ClassVar[Dict[str, Description]] = {
@@ -25,6 +26,10 @@ class SystemConfig(I18nMixin):
             en="Tool prompts to be inserted into persona prompt",
             zh="要插入到角色提示词中的工具提示词",
         ),
+        "thinking_power": Description(
+            en="Assistant thinking and search depth",
+            zh="助理思考與搜尋深度",
+        ),
         "enable_proxy": Description(
             en="Enable proxy mode for multiple clients",
             zh="启用代理模式以支持多个客户端使用一个 ws 连接",
@@ -36,4 +41,17 @@ class SystemConfig(I18nMixin):
         port = values.port
         if port < 0 or port > 65535:
             raise ValueError("Port must be between 0 and 65535")
+        thinking_power = (values.thinking_power or "normal").strip().lower()
+        aliases = {
+            "quick": "fast",
+            "light": "fast",
+            "fast": "fast",
+            "normal": "normal",
+            "medium": "normal",
+            "default": "normal",
+            "deep": "deep",
+            "depth": "deep",
+            "high": "deep",
+        }
+        values.thinking_power = aliases.get(thinking_power, "normal")
         return values

@@ -626,6 +626,7 @@ class BasicMemoryAgent(AgentInterface):
             self.reset_interrupt()
             self.prompt_mode_flag = False
 
+            request_text_for_tools = self._to_text_prompt(input_data)
             messages = self._to_messages(input_data)
             tools = None
             tool_mode = None
@@ -635,11 +636,15 @@ class BasicMemoryAgent(AgentInterface):
                 tools = None
                 if isinstance(self._llm, ClaudeAsyncLLM):
                     tool_mode = "Claude"
-                    tools = self._formatted_tools_claude
+                    tools = self._tool_manager.get_formatted_tools(
+                        "Claude", request_text=request_text_for_tools
+                    )
                     llm_supports_native_tools = True
                 elif isinstance(self._llm, OpenAICompatibleAsyncLLM):
                     tool_mode = "OpenAI"
-                    tools = self._formatted_tools_openai
+                    tools = self._tool_manager.get_formatted_tools(
+                        "OpenAI", request_text=request_text_for_tools
+                    )
                     llm_supports_native_tools = True
                 else:
                     logger.warning(
@@ -647,9 +652,12 @@ class BasicMemoryAgent(AgentInterface):
                     )
 
                 if llm_supports_native_tools and not tools:
-                    logger.warning(
-                        f"No tools available/formatted for '{tool_mode}' mode, despite MCP being enabled."
+                    route = self._tool_manager.get_last_route()
+                    reason = route.reason if route else "No tools available."
+                    logger.debug(
+                        f"No candidate tools selected for '{tool_mode}' mode: {reason}"
                     )
+                    tool_mode = None
 
             if self._use_mcpp and tool_mode == "Claude":
                 logger.debug(

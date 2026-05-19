@@ -3,6 +3,7 @@ system_config:
   conf_version: 'v1.2.1'
   host: 'localhost' # use 0.0.0.0 if you want other devices to access this page
   port: 23456
+  thinking_power: 'normal' # fast / normal / deep. Controls assistant reasoning and web-search depth.
   # New setting for alternative configurations
   config_alts_dir: 'characters'
   # Tool prompts that will be appended to the persona prompt
@@ -144,7 +145,7 @@ character_config:
 
       openai_llm:
         llm_api_key: 'Your Open AI API key'
-        model: 'gpt-4o'
+        model: 'gpt-5-mini'
         temperature: 1.0 # value between 0 to 2
 
       gemini_llm:
