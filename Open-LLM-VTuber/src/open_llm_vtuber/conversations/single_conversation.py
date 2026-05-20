@@ -27,8 +27,15 @@ from ..service_context import ServiceContext
 # Uses local bridge service: POST /translate {text: "..."} -> {code:200,data:"..."}
 # =========================
 import os
+from pathlib import Path
 import urllib.request
 import urllib.error
+from ..speech_pronunciation import (
+    PronunciationEntry,
+    collect_pronunciation_entries,
+    merge_pronunciation_entries,
+    normalize_pronunciation_entries,
+)
 
 
 class BridgeSpeechEngine:
@@ -43,11 +50,21 @@ class BridgeSpeechEngine:
       { "code":200, "data":"...ja...", "emotion":"joy" }
     """
 
-    def __init__(self, style_prompt_ja: str = "", endpoint: str | None = None, timeout_s: float = 18.0) -> None:
+    def __init__(
+        self,
+        style_prompt_ja: str = "",
+        endpoint: str | None = None,
+        timeout_s: float = 18.0,
+        pronunciation_entries: list[PronunciationEntry] | None = None,
+    ) -> None:
         self.endpoint = (endpoint or os.getenv("BRIDGE_RENDER_URL", "http://127.0.0.1:1188/render_spoken")).strip()
         self.timeout_s = float(timeout_s)
         self.style_prompt_ja = (style_prompt_ja or "").strip()
+        self.pronunciation_entries = normalize_pronunciation_entries(pronunciation_entries or [])
         self.last_emotion: str = "neutral"
+        self.last_provider: str = ""
+        self.last_pronunciation_hits: list[str] = []
+        self.last_speech_repaired: bool = False
 
     def translate(self, text: str) -> str:
         t = (text or "").strip()
@@ -58,6 +75,8 @@ class BridgeSpeechEngine:
         payload = {"text": t, "mode": "spoken_short"}
         if self.style_prompt_ja:
             payload["style_prompt_ja"] = self.style_prompt_ja
+        if self.pronunciation_entries:
+            payload["pronunciation"] = self.pronunciation_entries
 
         req = urllib.request.Request(
             self.endpoint,
@@ -71,13 +90,23 @@ class BridgeSpeechEngine:
             obj = json.loads(raw) if raw else {}
             if isinstance(obj, dict):
                 self.last_emotion = (obj.get("emotion") or "neutral").strip() or "neutral"
+                self.last_provider = (obj.get("provider") or "").strip()
+                hits = obj.get("pronunciation_hits")
+                self.last_pronunciation_hits = [str(item) for item in hits] if isinstance(hits, list) else []
+                self.last_speech_repaired = bool(obj.get("speech_repaired"))
                 out = (obj.get("data") or "").strip()
                 return out
             self.last_emotion = "neutral"
+            self.last_provider = ""
+            self.last_pronunciation_hits = []
+            self.last_speech_repaired = False
             return ""
         except Exception as e:
             logger.warning(f"BridgeSpeechEngine render failed: {e}")
             self.last_emotion = "neutral"
+            self.last_provider = ""
+            self.last_pronunciation_hits = []
+            self.last_speech_repaired = False
             return ""
 
         req = urllib.request.Request(
@@ -97,68 +126,122 @@ class BridgeSpeechEngine:
             return ""
 
 
-def _load_speech_style_prompt(context: "ServiceContext") -> str:
-    """
-    Load per-character Japanese speech style prompt from model_dict.json.
+def _open_llm_root() -> Path:
+    return Path(__file__).resolve().parents[3]
 
-    Priority:
-    1) env MODEL_DICT_PATH
-    2) project_root/model_dict.json (cwd)
-    3) fallback: empty string
 
-    Selection key:
-    - context.character_config.live2d_model_name if present
-    - else context.character_config.conf_name
-    - else context.character_config.character_name
-    """
-    import os
-    import json
-    from pathlib import Path
+def _repo_root() -> Path:
+    return _open_llm_root().parent
 
-    name_key = ""
-    try:
-        name_key = getattr(context.character_config, "live2d_model_name", "") or ""
-        if not name_key:
-            name_key = getattr(context.character_config, "conf_name", "") or ""
-        if not name_key:
-            name_key = getattr(context.character_config, "character_name", "") or ""
-    except Exception:
-        name_key = ""
 
-    candidates = []
+def _character_keys(context: "ServiceContext") -> list[str]:
+    keys: list[str] = []
+    for attr in ("live2d_model_name", "conf_uid", "conf_name", "character_name"):
+        try:
+            value = str(getattr(context.character_config, attr, "") or "").strip()
+        except Exception:
+            value = ""
+        if value and value not in keys:
+            keys.append(value)
+    return keys
+
+
+def _model_dict_candidates() -> list[Path]:
+    candidates: list[Path] = []
     env_path = os.getenv("MODEL_DICT_PATH", "").strip()
     if env_path:
         candidates.append(Path(env_path))
-    # Common project-root relative locations
     candidates.append(Path.cwd() / "model_dict.json")
-    candidates.append(Path(__file__).resolve().parents[2] / "model_dict.json")  # .../src/open_llm_vtuber -> project
-    candidates.append(Path(__file__).resolve().parents[1] / "model_dict.json")
+    candidates.append(_open_llm_root() / "model_dict.json")
+    candidates.append(_repo_root() / "model_dict.json")
+    return candidates
 
-    model_items = None
-    for p in candidates:
+
+def _read_json_file(path: Path) -> Any:
+    try:
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.warning(f"Failed to read JSON file {path}: {exc}")
+    return None
+
+
+def _load_model_dict_items() -> list[dict[str, Any]]:
+    for path in _model_dict_candidates():
         try:
-            if p.exists():
-                model_items = json.loads(p.read_text(encoding="utf-8"))
-                break
+            payload = _read_json_file(path)
         except Exception:
             continue
+        if isinstance(payload, list):
+            return [item for item in payload if isinstance(item, dict)]
+    return []
 
-    if not isinstance(model_items, list):
-        return ""
 
-    # Find by name
+def _find_model_dict_item(context: "ServiceContext") -> dict[str, Any] | None:
+    character_keys = {key.strip() for key in _character_keys(context)}
+    model_items = _load_model_dict_items()
     for item in model_items:
-        if not isinstance(item, dict):
-            continue
-        if (item.get("name") or "").strip() == name_key:
-            return (item.get("speech_style_prompt_ja") or "").strip()
+        if str(item.get("name") or "").strip() in character_keys:
+            return item
+    return None
 
-    # Fallback: first item with speech_style_prompt_ja
-    for item in model_items:
-        if isinstance(item, dict) and item.get("speech_style_prompt_ja"):
-            return str(item.get("speech_style_prompt_ja")).strip()
 
+def _load_speech_style_prompt(context: "ServiceContext") -> str:
+    """Load per-character Japanese speech style prompt from model_dict.json."""
+    item = _find_model_dict_item(context)
+    if item and item.get("speech_style_prompt_ja"):
+        return str(item.get("speech_style_prompt_ja")).strip()
+    for fallback in _load_model_dict_items():
+        if fallback.get("speech_style_prompt_ja"):
+            return str(fallback.get("speech_style_prompt_ja")).strip()
     return ""
+
+
+def _load_tts_pronunciation_entries(context: "ServiceContext") -> list[PronunciationEntry]:
+    project_id = str(getattr(context.character_config, "active_project_id", "") or "").strip()
+    character_keys = _character_keys(context)
+    open_llm_root = _open_llm_root()
+    repo_root = _repo_root()
+
+    entry_groups: list[list[PronunciationEntry]] = []
+
+    env_paths = [
+        item.strip()
+        for item in os.getenv("KURO_TTS_PRONUNCIATION_PATH", "").split(os.pathsep)
+        if item.strip()
+    ]
+    candidate_paths = [Path(item) for item in env_paths]
+    candidate_paths.extend(
+        [
+            open_llm_root / "tts_pronunciation.json",
+            repo_root / "tts_pronunciation.json",
+        ]
+    )
+    if project_id:
+        candidate_paths.append(repo_root / "projects" / project_id / "tts_pronunciation.json")
+
+    for path in candidate_paths:
+        payload = _read_json_file(path)
+        if payload:
+            entry_groups.append(
+                collect_pronunciation_entries(
+                    payload,
+                    character_keys=character_keys,
+                    project_id=project_id,
+                )
+            )
+
+    model_item = _find_model_dict_item(context)
+    if model_item:
+        entry_groups.append(
+            collect_pronunciation_entries(
+                model_item.get("pronunciation") or model_item.get("tts_pronunciation"),
+                character_keys=character_keys,
+                project_id=project_id,
+            )
+        )
+
+    return merge_pronunciation_entries(*entry_groups)
 
 
 # Import necessary types from agent outputs
@@ -273,7 +356,13 @@ async def process_single_conversation(
 
     # Ensure translate_engine is always available for legacy/plain-text path.
     # Route-A (structured) will mainly use tts_ja directly and rarely needs this.
-    translate_engine_to_use = BridgeSpeechEngine(style_prompt_ja=_load_speech_style_prompt(context))
+    pronunciation_entries = _load_tts_pronunciation_entries(context)
+    if pronunciation_entries:
+        logger.info(f"Loaded {len(pronunciation_entries)} TTS pronunciation entries.")
+    translate_engine_to_use = BridgeSpeechEngine(
+        style_prompt_ja=_load_speech_style_prompt(context),
+        pronunciation_entries=pronunciation_entries,
+    )
 
     try:
         # Send initial signals

@@ -8,7 +8,7 @@ import json
 import logging
 import re
 import traceback
-from typing import Dict, Any
+from typing import Dict, Any, List, Tuple
 
 app = FastAPI()
 
@@ -345,6 +345,139 @@ async def _translate_impl(payload: Dict[str, Any]) -> Dict[str, Any]:
 # =======================
 EMOTION_KEYS = ["neutral","joy","smirk","surprise","anger","sadness","fear","disgust"]
 SPOKEN_MAX_CHARS = int(os.getenv("SPOKEN_MAX_CHARS", "120"))
+ENABLE_SPEECH_REPAIR = os.getenv("ENABLE_SPEECH_REPAIR", "1").strip().lower() in ("1", "true", "yes", "y")
+_JA_SENTENCE_MARKERS = (
+    "です",
+    "ます",
+    "ました",
+    "ません",
+    "だよ",
+    "だね",
+    "だな",
+    "だ。",
+    "だ、",
+    "だと",
+    "だっ",
+    "する",
+    "して",
+    "した",
+    "でき",
+    "れる",
+    "ない",
+    "ある",
+    "いる",
+    "これは",
+    "それは",
+    "この",
+    "その",
+    "は",
+    "が",
+    "を",
+    "に",
+    "で",
+    "と",
+    "も",
+    "から",
+    "まで",
+    "けど",
+    "ので",
+    "なら",
+    "ね",
+    "よ",
+    "かな",
+    "ください",
+    "しょう",
+)
+
+
+def _clean_pronunciation_text(value: Any, max_len: int = 120) -> str:
+    text = str(value or "").strip()
+    text = re.sub(r"\s+", " ", text)
+    return text[:max_len].strip()
+
+
+def _normalize_pronunciation_entries(raw: Any) -> List[Dict[str, Any]]:
+    entries: List[Dict[str, Any]] = []
+    if not raw:
+        return entries
+    if isinstance(raw, dict):
+        if "surface" in raw and "reading" in raw:
+            surface = _clean_pronunciation_text(raw.get("surface"))
+            reading = _clean_pronunciation_text(raw.get("reading"))
+            aliases = raw.get("aliases")
+            clean_aliases = [
+                _clean_pronunciation_text(alias)
+                for alias in aliases
+                if _clean_pronunciation_text(alias)
+            ] if isinstance(aliases, list) else []
+            if surface and reading and surface != reading:
+                entries.append({"surface": surface, "reading": reading, "aliases": clean_aliases})
+            return entries
+        for key, value in raw.items():
+            if isinstance(value, str):
+                surface = _clean_pronunciation_text(key)
+                reading = _clean_pronunciation_text(value)
+                if surface and reading and surface != reading:
+                    entries.append({"surface": surface, "reading": reading, "aliases": []})
+            elif isinstance(value, dict):
+                item = dict(value)
+                item.setdefault("surface", key)
+                entries.extend(_normalize_pronunciation_entries(item))
+        return entries
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, dict):
+                entries.extend(_normalize_pronunciation_entries(item))
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                entries.extend(_normalize_pronunciation_entries({"surface": item[0], "reading": item[1]}))
+    return entries
+
+
+def _pronunciation_surfaces(entry: Dict[str, Any]) -> List[str]:
+    surfaces = [_clean_pronunciation_text(entry.get("surface"))]
+    aliases = entry.get("aliases")
+    if isinstance(aliases, list):
+        surfaces.extend(_clean_pronunciation_text(alias) for alias in aliases)
+    return [surface for surface in surfaces if surface]
+
+
+def _pronunciation_pattern(surface: str) -> re.Pattern:
+    escaped = re.escape(surface)
+    if re.fullmatch(r"[A-Za-z0-9_.+\-#/]+", surface):
+        return re.compile(rf"(?<![A-Za-z0-9_]){escaped}(?![A-Za-z0-9_])", re.IGNORECASE)
+    return re.compile(escaped)
+
+
+def _apply_pronunciation(text: str, entries: List[Dict[str, Any]]) -> Tuple[str, List[str]]:
+    if not text or not entries:
+        return text or "", []
+    result = text
+    hits: List[str] = []
+    replacements: List[Tuple[str, str]] = []
+    for entry in entries:
+        reading = _clean_pronunciation_text(entry.get("reading"))
+        if not reading:
+            continue
+        for surface in _pronunciation_surfaces(entry):
+            if surface and surface != reading:
+                replacements.append((surface, reading))
+    replacements.sort(key=lambda item: len(item[0]), reverse=True)
+    for surface, reading in replacements:
+        result, count = _pronunciation_pattern(surface).subn(reading, result)
+        if count:
+            hits.append(surface)
+    return result, hits
+
+
+def _format_pronunciation_prompt(entries: List[Dict[str, Any]], max_entries: int = 40) -> str:
+    lines: List[str] = []
+    for entry in entries[:max_entries]:
+        surface = _clean_pronunciation_text(entry.get("surface"))
+        reading = _clean_pronunciation_text(entry.get("reading"))
+        if surface and reading:
+            lines.append(f"- {surface} => {reading}")
+    return "\n".join(lines)
+
 
 def _safe_json_parse(s: str) -> Dict[str, Any]:
     try:
@@ -360,7 +493,70 @@ def _safe_json_parse(s: str) -> Dict[str, Any]:
                 return {}
         return {}
 
-async def render_openai_spoken_short(text: str, style_prompt_ja: str = "") -> Dict[str, Any]:
+
+def _count_kana(s: str) -> int:
+    return sum(1 for ch in s or "" if 0x3040 <= ord(ch) <= 0x30FF or 0x31F0 <= ord(ch) <= 0x31FF)
+
+
+def _count_cjk(s: str) -> int:
+    return sum(1 for ch in s or "" if 0x4E00 <= ord(ch) <= 0x9FFF)
+
+
+def _cleanup_spoken_ja(ja: str, pronunciation_entries: List[Dict[str, Any]] | None = None) -> Tuple[str, List[str]]:
+    text = (ja or "").replace("\ufeff", "").strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"```\s*$", "", text)
+    text = re.sub(r"^\s*[-•]\s*", "", text)
+    text = re.sub(r"\b\d+\s*[.)．、:：]\s*", "", text)
+    text = re.sub(r"[（(【\[]\s*(?:ため息|嘆息|笑い|sigh|breath|laugh)[^（）()\[\]【】]{0,20}\s*[）)】\]]", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"(?i)(?:^|[\s、。！？,.!?])(?:はぁ+|はあ+|ふぅ+|ふう+|ハァ+|フゥ+|sigh+)(?:[\s、。！？,.!?]|$)", " ", text)
+    text = re.sub(r"\s+", " ", text).strip(" 、。！？,.!?")
+    text, pronunciation_hits = _apply_pronunciation(text, pronunciation_entries or [])
+    text = re.sub(r"\s+", " ", text).strip(" 、。！？,.!?")
+    return text, pronunciation_hits
+
+
+def _spoken_japanese_quality_issue(ja: str) -> str:
+    text = (ja or "").strip()
+    if not text:
+        return "empty"
+
+    kana = _count_kana(text)
+    cjk = _count_cjk(text)
+    latin = len(re.findall(r"[A-Za-z]", text))
+    digits = len(re.findall(r"\d", text))
+
+    if kana == 0 and cjk > 4:
+        return "no_kana"
+    if latin > 8 and latin > kana:
+        return "latin_leak"
+    if digits > 12 and digits > kana:
+        return "dense_numbers"
+    if re.search(r"[這個麼嗎妳們裡讓說話語會應該與為於後臺台檔號訊]", text) and kana / max(1, kana + cjk) < 0.55:
+        return "looks_chinese"
+
+    # Names or very short confirmations may be valid without a full sentence shape.
+    if len(text) <= 8:
+        return ""
+
+    no_space = re.sub(r"\s+", "", text)
+    has_marker = any(marker in no_space for marker in _JA_SENTENCE_MARKERS)
+    has_sentence_end = bool(re.search(r"(です|ます|ました|ません|だよ|だね|だな|だ|よ|ね|かな|ください|しょう)[。！？!?]?$", no_space))
+    if not (has_marker or has_sentence_end):
+        return "not_sentence_like"
+
+    words = [part for part in text.split(" ") if part]
+    if len(words) >= 5 and kana < 8:
+        return "fragmented_tokens"
+
+    return ""
+
+
+async def render_openai_spoken_short(
+    text: str,
+    style_prompt_ja: str = "",
+    pronunciation_entries: List[Dict[str, Any]] | None = None,
+) -> Dict[str, Any]:
     """
     Returns dict: {"ja": "...", "emotion": "..."}.
     Uses ONE OpenAI call to generate short spoken Japanese + emotion classification.
@@ -386,11 +582,23 @@ async def render_openai_spoken_short(text: str, style_prompt_ja: str = "") -> Di
         "   - If the input mentions tools, permissions, errors, URLs, code names, or file paths, keep the meaning but make it speakable.\n"
         "   - Do not include Chinese characters that are not common in Japanese; avoid mixing languages.\n"
         "   - Do not output sighs, breaths, laughter, stage directions, or non-verbal sounds such as 'はぁ', 'ふぅ', '(ため息)', or 'sigh'.\n"
-        "   - If the input starts with a user's name or nickname as a vocative, omit that vocative in the spoken line unless it is semantically necessary.\n"
+        "   - If the input contains a person, character, project, product, or tool name, preserve it when it matters.\n"
         "   - Never transform a person name into an emotion sound, filler, breath, or sigh.\n"
         "2) emotion: one of [neutral, joy, smirk, surprise, anger, sadness, fear, disgust].\n"
         "Return ONLY a valid JSON object: {\"ja\":\"...\",\"emotion\":\"...\"}.\n"
     )
+
+    pronunciation_entries = _normalize_pronunciation_entries(pronunciation_entries or [])
+    pronunciation_prompt = _format_pronunciation_prompt(pronunciation_entries)
+    if pronunciation_prompt:
+        base_rules += (
+            "\nMandatory pronunciation dictionary:\n"
+            + pronunciation_prompt
+            + "\nRules for this dictionary:\n"
+            "- When a listed surface appears in the input or would appear in the output, use the listed Japanese reading exactly.\n"
+            "- Do not guess another reading for listed names.\n"
+            "- Keep these readings as spoken words, not as emotion or sound-effect tokens.\n"
+        )
 
     if style_prompt_ja:
         base_rules += (
@@ -403,31 +611,34 @@ async def render_openai_spoken_short(text: str, style_prompt_ja: str = "") -> Di
         "\nHard preservation rules:\n"
         "- The Japanese spoken line must match the input subtitle's meaning.\n"
         "- Do not add the user's name, a nickname, or any vocative unless the input explicitly contains it.\n"
+        "- If an explicitly present name has a dictionary reading, pronounce it with that reading.\n"
         "- Do not add greetings, affection, reassurance, roleplay lines, or follow-up questions unless the input explicitly contains them.\n"
         "- Character style may adjust tone only; it must not add content.\n"
         "- Voice output must contain only words to be spoken. No breath marks, no sighs, no laughter tokens, no bracketed actions.\n"
     )
 
-    body = {
-        "model": OPENAI_MODEL,
-        "instructions": base_rules,
-        "input": text,
-        "max_output_tokens": 512,
-        "store": False,
-    }
+    async def call_renderer(input_text: str, instructions: str) -> tuple[str, Dict[str, Any]]:
+        body = {
+            "model": OPENAI_MODEL,
+            "instructions": instructions,
+            "input": input_text,
+            "max_output_tokens": 512,
+            "store": False,
+        }
 
-    async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
-        r = await client.post(OPENAI_RESPONSES_URL, headers=headers, json=body)
+        async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
+            r = await client.post(OPENAI_RESPONSES_URL, headers=headers, json=body)
 
-    if r.status_code != 200:
-        raise RuntimeError(f"OpenAI HTTP {r.status_code}: {r.text[:800]}")
+        if r.status_code != 200:
+            raise RuntimeError(f"OpenAI HTTP {r.status_code}: {r.text[:800]}")
 
-    data = r.json()
-    out_raw = _extract_output_text(data).replace("\ufeff", "").strip()
-    if not out_raw:
-        raise RuntimeError("OpenAI empty output_text for render_spoken.")
+        data = r.json()
+        out_raw = _extract_output_text(data).replace("\ufeff", "").strip()
+        if not out_raw:
+            raise RuntimeError("OpenAI empty output_text for render_spoken.")
+        return out_raw, _safe_json_parse(out_raw)
 
-    obj = _safe_json_parse(out_raw)
+    out_raw, obj = await call_renderer(text, base_rules)
     ja = (obj.get("ja") or "").strip()
     emo = _canonical_emotion(obj.get("emotion"))
 
@@ -441,18 +652,52 @@ async def render_openai_spoken_short(text: str, style_prompt_ja: str = "") -> Di
     if emo not in EMOTION_KEYS:
         emo = "neutral"
 
-    # Ensure no bullet/step markers leak into spoken output
-    ja = re.sub(r"^\s*[-•]\s*", "", ja)
-    ja = re.sub(r"\b\d+\s*[.)．、:：]\s*", "", ja)
-    ja = re.sub(r"[（(【\[]\s*(?:ため息|嘆息|笑い|sigh|breath|laugh)[^（）()\[\]【】]{0,20}\s*[）)】\]]", " ", ja, flags=re.IGNORECASE)
-    ja = re.sub(r"(?i)(?:^|[\s、。！？,.!?])(?:はぁ+|はあ+|ふぅ+|ふう+|ハァ+|フゥ+|sigh+)(?:[\s、。！？,.!?]|$)", " ", ja)
-    ja = re.sub(r"\s+", " ", ja).strip(" 、。！？,.!?")
+    ja, pronunciation_hits = _cleanup_spoken_ja(ja, pronunciation_entries)
+    quality_issue = _spoken_japanese_quality_issue(ja)
+    repaired = False
+    if quality_issue and ENABLE_SPEECH_REPAIR:
+        repair_rules = (
+            base_rules
+            + "\nRepair mode:\n"
+            "- The previous Japanese line was rejected because it was not a grammatical spoken sentence.\n"
+            "- Rewrite it as one natural, complete Japanese spoken sentence.\n"
+            "- Use normal Japanese particles and endings such as は, が, を, に, です, ます, だよ, ね when appropriate.\n"
+            "- Do not output isolated words, dictionary fragments, romanized text, Chinese text, or a sequence of nouns.\n"
+            "- Preserve the original Chinese meaning only.\n"
+            "- Return ONLY the JSON object.\n"
+        )
+        repair_input = (
+            f"Original Traditional Chinese input:\n{text}\n\n"
+            f"Rejected Japanese candidate:\n{ja}\n\n"
+            f"Rejection reason: {quality_issue}"
+        )
+        try:
+            repair_raw, repair_obj = await call_renderer(repair_input, repair_rules)
+            repair_ja = (repair_obj.get("ja") or "").strip()
+            repair_emo = _canonical_emotion(repair_obj.get("emotion"))
+            if not repair_ja and is_mostly_japanese(repair_raw):
+                repair_ja = repair_raw
+            repair_ja, repair_hits = _cleanup_spoken_ja(repair_ja, pronunciation_entries)
+            repair_issue = _spoken_japanese_quality_issue(repair_ja)
+            if repair_ja and not repair_issue:
+                ja = repair_ja
+                pronunciation_hits = sorted(set([*pronunciation_hits, *repair_hits]))
+                emo = repair_emo if repair_emo in EMOTION_KEYS else emo
+                quality_issue = ""
+                repaired = True
+            else:
+                logger.warning("Speech repair still failed: reason=%s ja=%r", repair_issue, repair_ja[:200])
+        except Exception as exc:
+            logger.warning("Speech repair failed: %s", exc)
+
+    if quality_issue:
+        raise RuntimeError(f"render_spoken produced low-quality Japanese ({quality_issue}): {ja[:200]!r}")
 
     # Hard truncate to prevent long TTS queues
     if len(ja) > SPOKEN_MAX_CHARS * 2:
         ja = ja[:SPOKEN_MAX_CHARS * 2].rstrip()
 
-    return {"ja": ja, "emotion": emo}
+    return {"ja": ja, "emotion": emo, "pronunciation_hits": pronunciation_hits, "repaired": repaired}
 
 
 def _canonical_emotion(e: Any) -> str:
@@ -505,6 +750,9 @@ async def render_spoken(req: Request):
     payload = await req.json()
     text = (payload.get("text") or "").replace("\ufeff", "").strip()
     style_prompt_ja = (payload.get("style_prompt_ja") or "").strip()
+    pronunciation_entries = _normalize_pronunciation_entries(
+        payload.get("pronunciation") or payload.get("pronunciation_entries") or []
+    )
     mode = (payload.get("mode") or "spoken_short").strip().lower()
 
     if not text:
@@ -512,14 +760,26 @@ async def render_spoken(req: Request):
 
     # If already Japanese (true Japanese sentence), return as-is and neutral emotion (cheap path)
     if is_mostly_japanese(text):
-        return json_utf8({"code": 200, "data": text, "emotion": "neutral", "provider": "skip-ja"})
+        out, hits = _apply_pronunciation(text, pronunciation_entries)
+        return json_utf8({"code": 200, "data": out, "emotion": "neutral", "provider": "skip-ja", "pronunciation_hits": hits})
 
     errors: Dict[str, str] = {}
 
     # Primary: OpenAI render spoken short
     try:
-        obj = await render_openai_spoken_short(text, style_prompt_ja=style_prompt_ja)
-        return json_utf8({"code": 200, "data": obj["ja"], "emotion": obj["emotion"], "provider": f"openai:{OPENAI_MODEL}:render_spoken"})
+        obj = await render_openai_spoken_short(
+            text,
+            style_prompt_ja=style_prompt_ja,
+            pronunciation_entries=pronunciation_entries,
+        )
+        return json_utf8({
+            "code": 200,
+            "data": obj["ja"],
+            "emotion": obj["emotion"],
+            "provider": f"openai:{OPENAI_MODEL}:render_spoken",
+            "pronunciation_hits": obj.get("pronunciation_hits", []),
+            "speech_repaired": bool(obj.get("repaired")),
+        })
     except Exception as e:
         errors["openai"] = str(e)
         logger.error("OpenAI render_spoken failed: %s", errors["openai"])
@@ -529,7 +789,8 @@ async def render_spoken(req: Request):
     if ENABLE_OLLAMA_FALLBACK:
         try:
             out = await translate_ollama_to_ja(text)
-            return json_utf8({"code": 200, "data": out, "emotion": "neutral", "provider": f"ollama:{OLLAMA_MODEL}:translate_only", "errors": errors})
+            out, hits = _apply_pronunciation(out, pronunciation_entries)
+            return json_utf8({"code": 200, "data": out, "emotion": "neutral", "provider": f"ollama:{OLLAMA_MODEL}:translate_only", "pronunciation_hits": hits, "errors": errors})
         except Exception as e:
             errors["ollama_translate"] = str(e)
             logger.error("Ollama translate_only failed: %s", errors["ollama_translate"])
@@ -538,7 +799,8 @@ async def render_spoken(req: Request):
     # Fallback: OpenAI translate only (no emotion)
     try:
         out = await translate_openai_to_ja(text)
-        return json_utf8({"code": 200, "data": out, "emotion": "neutral", "provider": f"openai:{OPENAI_MODEL}:translate_only", "errors": errors})
+        out, hits = _apply_pronunciation(out, pronunciation_entries)
+        return json_utf8({"code": 200, "data": out, "emotion": "neutral", "provider": f"openai:{OPENAI_MODEL}:translate_only", "pronunciation_hits": hits, "errors": errors})
     except Exception as e:
         errors["translate_only"] = str(e)
         logger.error("Fallback translate_only failed: %s", errors["translate_only"])
@@ -547,8 +809,10 @@ async def render_spoken(req: Request):
     if ENABLE_DEEPLX_FALLBACK:
         try:
             out = await translate_deeplx_to_ja(text)
-            return json_utf8({"code": 200, "data": out, "emotion": "neutral", "provider": "deeplx", "errors": errors})
+            out, hits = _apply_pronunciation(out, pronunciation_entries)
+            return json_utf8({"code": 200, "data": out, "emotion": "neutral", "provider": "deeplx", "pronunciation_hits": hits, "errors": errors})
         except Exception as e:
             errors["deeplx"] = str(e)
 
-    return json_utf8({"code": 200, "data": text, "emotion": "neutral", "provider": "fallback-original", "errors": errors})
+    out, hits = _apply_pronunciation(text, pronunciation_entries)
+    return json_utf8({"code": 200, "data": out, "emotion": "neutral", "provider": "fallback-original", "pronunciation_hits": hits, "errors": errors})

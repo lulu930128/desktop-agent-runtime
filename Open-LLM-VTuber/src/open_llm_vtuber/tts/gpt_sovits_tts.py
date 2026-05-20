@@ -24,6 +24,15 @@ def _debug_dump_paths() -> tuple[Path, Path]:
     )
 
 
+def _safe_speed_factor(value, default: float = 1.0) -> float:
+    try:
+        speed = float(value)
+    except (TypeError, ValueError):
+        return default
+    # Match GPT-SoVITS UI range. Values outside this range often sound unstable.
+    return max(0.6, min(1.65, speed))
+
+
 class TTSEngine(TTSInterface):
     def __init__(
         self,
@@ -36,6 +45,7 @@ class TTSEngine(TTSInterface):
         batch_size: str = "1",
         media_type: str = "wav",
         streaming_mode: str = "false",
+        speed_factor: float = 1.0,
     ):
         self.api_url = api_url
         self.text_lang = text_lang
@@ -46,6 +56,7 @@ class TTSEngine(TTSInterface):
         self.batch_size = batch_size
         self.media_type = media_type
         self.streaming_mode = streaming_mode
+        self.speed_factor = _safe_speed_factor(speed_factor)
 
     def generate_audio(self, text, file_name_no_ext=None):
         file_name = self.generate_cache_file_name(file_name_no_ext, self.media_type)
@@ -67,6 +78,7 @@ class TTSEngine(TTSInterface):
                 if str(self.streaming_mode).lower() in ["1", "true", "yes"]
                 else "false"
             ),
+            "speed_factor": self.speed_factor,
         }
 
         dump_path, response_dump_path = _debug_dump_paths()

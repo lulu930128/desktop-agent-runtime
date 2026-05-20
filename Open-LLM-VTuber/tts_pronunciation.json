@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "global": [
+    {
+      "surface": "Kuro",
+      "reading": "クロ",
+      "aliases": ["kuro", "小黑"],
+      "category": "character"
+    },
+    {
+      "surface": "瑠璃",
+      "reading": "るり",
+      "aliases": ["るり", "Lulu", "lulu", "ルル"],
+      "category": "person"
+    },
+    {
+      "surface": "Thomas",
+      "reading": "トーマス",
+      "aliases": ["thomas"],
+      "category": "person"
+    },
+    {
+      "surface": "Open-LLM-VTuber",
+      "reading": "オープン エルエルエム ブイチューバー",
+      "category": "project"
+    },
+    {
+      "surface": "GPT-SoVITS",
+      "reading": "ジーピーティー ソビッツ",
+      "category": "tool"
+    },
+    {
+      "surface": "Live2D",
+      "reading": "ライブツーディー",
+      "category": "tool"
+    },
+    {
+      "surface": "VTuber",
+      "reading": "ブイチューバー",
+      "category": "term"
+    },
+    {
+      "surface": "TTS",
+      "reading": "ティーティーエス",
+      "category": "term"
+    },
+    {
+      "surface": "LLM",
+      "reading": "エルエルエム",
+      "category": "term"
+    },
+    {
+      "surface": "API",
+      "reading": "エーピーアイ",
+      "category": "term"
+    },
+    {
+      "surface": "launcher",
+      "reading": "ランチャー",
+      "aliases": ["Launcher"],
+      "category": "tool"
+    },
+    {
+      "surface": "SiglusCounter",
+      "reading": "シグラス カウンター",
+      "category": "tool"
+    }
+  ],
+  "characters": {
+    "kuro": [
+      {
+        "surface": "クロ",
+        "reading": "クロ",
+        "category": "character"
+      }
+    ]
+  },
+  "projects": {}
+}

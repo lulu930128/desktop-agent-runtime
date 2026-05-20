@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 import gzip
 import hashlib
 import io
+import os
+from pathlib import Path
 import re
 import copy
 import struct
@@ -13,6 +15,12 @@ import zipfile
 import numpy as np
 import json
 from loguru import logger
+
+from ..speech_pronunciation import (
+    PronunciationEntry,
+    apply_pronunciation,
+    contains_pronunciation_surface,
+)
 
 # =========================
 # Protocol-2 helpers (tags / zh display / ja tts)
@@ -234,9 +242,11 @@ def _remove_stage_directions(text: str) -> str:
     return s
 
 
-def _strip_speech_prefixes(text: str) -> str:
+def _strip_speech_prefixes(text: str, *, strip_leading_vocative: bool = False) -> str:
     """Remove labels and leading direct-address names before speech rendering."""
     s = _SPEECH_LABEL_RE.sub("", text or "").strip()
+    if not strip_leading_vocative:
+        return s
     match = _LEADING_VOCATIVE_RE.match(s)
     if match:
         name = match.group(1)
@@ -253,11 +263,15 @@ def _is_trivial_speech_text(text: str) -> bool:
     return len(core) == 0
 
 
-def _looks_like_display_only_line(text: str) -> bool:
+def _looks_like_display_only_line(
+    text: str,
+    pronunciation_entries: list[PronunciationEntry] | None = None,
+) -> bool:
     """Detect lines that should remain visible but not be sent to speech rendering."""
     s = (text or "").strip()
     if not s:
         return True
+    has_known_pronunciation = contains_pronunciation_surface(s, pronunciation_entries)
 
     cjk = _count_matches(_CJK_RE, s)
     latin = _count_matches(_LATIN_RE, s)
@@ -272,7 +286,7 @@ def _looks_like_display_only_line(text: str) -> bool:
         return True
     if re.match(r"^\s*\|?[-: ]{3,}\|", s):
         return True
-    if cjk == 0 and (latin > 0 or digits > 0):
+    if cjk == 0 and (latin > 0 or digits > 0) and not has_known_pronunciation:
         return True
     if symbols >= 6 and cjk < 12:
         return True
@@ -281,10 +295,14 @@ def _looks_like_display_only_line(text: str) -> bool:
     return False
 
 
-def _speech_line_is_useful(text: str) -> bool:
+def _speech_line_is_useful(
+    text: str,
+    pronunciation_entries: list[PronunciationEntry] | None = None,
+) -> bool:
     s = _compact_speech_text(text)
     if not s or _is_trivial_speech_text(s):
         return False
+    has_known_pronunciation = contains_pronunciation_surface(s, pronunciation_entries)
 
     cjk = _count_matches(_CJK_RE, s)
     kana = sum(
@@ -295,7 +313,7 @@ def _speech_line_is_useful(text: str) -> bool:
     latin = _count_matches(_LATIN_RE, s)
     digits = _count_matches(_DIGIT_RE, s)
 
-    if cjk + kana == 0:
+    if cjk + kana == 0 and not has_known_pronunciation:
         return False
     if latin > 24 and cjk < 10:
         return False
@@ -304,14 +322,20 @@ def _speech_line_is_useful(text: str) -> bool:
     return True
 
 
-def _sanitize_speech_line(text: str) -> str:
+def _sanitize_speech_line(
+    text: str,
+    pronunciation_entries: list[PronunciationEntry] | None = None,
+) -> str:
     """Remove visual-only fragments from a line while keeping speakable meaning."""
-    if _looks_like_display_only_line(text):
+    if _looks_like_display_only_line(text, pronunciation_entries):
         return ""
 
     s = text or ""
     s = _remove_stage_directions(s)
-    s = _strip_speech_prefixes(s)
+    s = _strip_speech_prefixes(
+        s,
+        strip_leading_vocative=not contains_pronunciation_surface(s, pronunciation_entries),
+    )
     s = _FENCED_CODE_RE.sub(" ", s)
     s = _MARKDOWN_LINK_RE.sub(r"\1", s)
     s = _PAREN_URL_RE.sub("", s)
@@ -329,16 +353,22 @@ def _sanitize_speech_line(text: str) -> str:
     s = re.sub(r"^\s*[-•*+]\s*", "", s)
     s = _compact_speech_text(s)
 
-    if not _speech_line_is_useful(s):
+    if not _speech_line_is_useful(s, pronunciation_entries):
         return ""
     return s
 
 
-def _sanitize_rendered_japanese_for_tts(text: str) -> str:
+def _finalize_rendered_japanese_for_tts(
+    text: str,
+    pronunciation_entries: list[PronunciationEntry] | None = None,
+) -> tuple[str, str, list[str]]:
     """Final guard before the Japanese line reaches the TTS engine."""
     s = _compact_speech_text(_remove_stage_directions(text or ""))
     if not s:
-        return ""
+        return "", "empty", []
+
+    s, pronunciation_hits = apply_pronunciation(s, pronunciation_entries)
+    s = _compact_speech_text(s)
 
     # Remove non-verbal sigh/breath tokens that some renderers produce from names or emotion cues.
     previous = None
@@ -354,7 +384,7 @@ def _sanitize_rendered_japanese_for_tts(text: str) -> str:
     s = _compact_speech_text(s)
 
     if not s or _is_trivial_speech_text(s):
-        return ""
+        return "", "trivial", pronunciation_hits
     kana = sum(
         1
         for ch in s
@@ -366,20 +396,84 @@ def _sanitize_rendered_japanese_for_tts(text: str) -> str:
 
     if kana == 0 and not (cjk <= 4 and latin == 0 and digits == 0 and not _TRADITIONAL_CHINESE_HINT_RE.search(s)):
         logger.warning(f"Rendered speech rejected because it has no kana: {s[:120]!r}")
-        return ""
+        return "", "no_kana", pronunciation_hits
     if _TRADITIONAL_CHINESE_HINT_RE.search(s) and kana / max(1, kana + cjk) < 0.55:
         logger.warning(f"Rendered speech rejected because it still looks Chinese: {s[:120]!r}")
-        return ""
+        return "", "looks_chinese", pronunciation_hits
     if latin > 8 and latin > kana:
         logger.warning(f"Rendered speech rejected because latin text leaked into TTS: {s[:120]!r}")
-        return ""
+        return "", "latin_leak", pronunciation_hits
     if digits > 12 and digits > kana:
         logger.warning(f"Rendered speech rejected because dense numbers leaked into TTS: {s[:120]!r}")
-        return ""
+        return "", "dense_numbers", pronunciation_hits
     if not _is_safe_japanese_tts(s):
         logger.warning(f"Rendered speech rejected as unsafe for Japanese TTS: {s[:120]!r}")
-        return ""
-    return s
+        return "", "unsafe_japanese", pronunciation_hits
+    return s, "ok", pronunciation_hits
+
+
+def _sanitize_rendered_japanese_for_tts(
+    text: str,
+    pronunciation_entries: list[PronunciationEntry] | None = None,
+) -> str:
+    return _finalize_rendered_japanese_for_tts(text, pronunciation_entries)[0]
+
+
+def _compact_tts_debug_text(text: str, max_len: int = 220) -> str:
+    compact = " ".join(str(text or "").replace("\r", " ").replace("\n", " ").split())
+    if len(compact) <= max_len:
+        return compact
+    return compact[: max_len - 1].rstrip(" ，、。,.!?！？；;:：") + "…"
+
+
+def _tts_debug_enabled() -> bool:
+    return os.getenv("KURO_TTS_DEBUG", "1").strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _tts_pipeline_log_path() -> Path:
+    logs_root = (os.getenv("KURO_LAUNCHER_LOGS_DIR", "") or "").strip()
+    base_dir = Path(logs_root) if logs_root else (Path.cwd().parent / "launcher_logs").resolve()
+    base_dir.mkdir(parents=True, exist_ok=True)
+    return base_dir / "tts_pipeline.jsonl"
+
+
+def _log_tts_pipeline(
+    *,
+    speech_source: str,
+    rendered_ja: str,
+    final_tts: str,
+    guard_reason: str,
+    provider: str,
+    pronunciation_hits: list[str],
+    speech_repaired: bool = False,
+) -> None:
+    if not _tts_debug_enabled():
+        return
+    logger.info(
+        "[tts-pipeline] provider={} guard={} repaired={} pronunciation_hits={} source={!r} rendered={!r} final={!r}",
+        provider or "unknown",
+        guard_reason or "unknown",
+        speech_repaired,
+        pronunciation_hits,
+        _compact_tts_debug_text(speech_source),
+        _compact_tts_debug_text(rendered_ja),
+        _compact_tts_debug_text(final_tts),
+    )
+    try:
+        payload = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "provider": provider or "unknown",
+            "guard": guard_reason or "unknown",
+            "speech_repaired": speech_repaired,
+            "pronunciation_hits": pronunciation_hits,
+            "source": _compact_tts_debug_text(speech_source, max_len=800),
+            "rendered_ja": _compact_tts_debug_text(rendered_ja, max_len=800),
+            "final_tts": _compact_tts_debug_text(final_tts, max_len=800),
+        }
+        with _tts_pipeline_log_path().open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    except Exception as exc:
+        logger.warning(f"Failed to write TTS pipeline log: {exc}")
 
 
 def _trim_speech_source(text: str, max_chars: int = 420) -> str:
@@ -405,7 +499,11 @@ def _trim_speech_source(text: str, max_chars: int = 420) -> str:
     return text[:max_chars].rstrip("，、；：,.!?！？ ") + "。"
 
 
-def _build_speech_source(display_text: str, tts_text: str) -> str:
+def _build_speech_source(
+    display_text: str,
+    tts_text: str,
+    pronunciation_entries: list[PronunciationEntry] | None = None,
+) -> str:
     """Build the Chinese source text that is safe to translate into spoken Japanese.
 
     The display lane keeps the original subtitle. This speech lane removes or skips
@@ -420,7 +518,7 @@ def _build_speech_source(display_text: str, tts_text: str) -> str:
 
     parts: list[str] = []
     for raw_line in re.split(r"\r\n?|\n", source):
-        line = _sanitize_speech_line(raw_line)
+        line = _sanitize_speech_line(raw_line, pronunciation_entries)
         if line:
             parts.append(line)
 
@@ -1375,6 +1473,7 @@ async def handle_sentence_output(
     pending_tags: List[str] = []
     last_display = None
     last_actions = None
+    pronunciation_entries = getattr(translate_engine, "pronunciation_entries", []) if translate_engine else []
 
     async def _emit_emotion_from_key(key: str) -> None:
         k = _canonicalize_emotion(key)
@@ -1429,7 +1528,11 @@ async def handle_sentence_output(
         if clean_disp:
             full_response += clean_disp
             full_zh += clean_disp
-            speech_source = _build_speech_source(clean_disp, str(tts_text or ""))
+            speech_source = _build_speech_source(
+                clean_disp,
+                str(tts_text or ""),
+                pronunciation_entries,
+            )
             if speech_source:
                 speech_zh_parts.append(speech_source)
             last_display = display_text
@@ -1462,10 +1565,24 @@ async def handle_sentence_output(
     if full_zh_text and not speech_zh_text:
         logger.info("Speech-source lane is empty after sanitizing; display-only response will stay silent.")
 
-    spoken_ja = _sanitize_rendered_japanese_for_tts(await _render_spoken_ja(speech_zh_text))
+    rendered_ja = await _render_spoken_ja(speech_zh_text)
+    spoken_ja, tts_guard_reason, pronunciation_hits = _finalize_rendered_japanese_for_tts(
+        rendered_ja,
+        pronunciation_entries,
+    )
     if spoken_ja and spoken_ja.strip() == speech_zh_text:
         logger.warning("Speech renderer returned the original subtitle text; skip voice lane to avoid feeding zh text into ja TTS.")
         spoken_ja = ""
+        tts_guard_reason = "same_as_source"
+    _log_tts_pipeline(
+        speech_source=speech_zh_text,
+        rendered_ja=rendered_ja,
+        final_tts=spoken_ja,
+        guard_reason=tts_guard_reason,
+        provider=getattr(translate_engine, "last_provider", "") if translate_engine else "",
+        pronunciation_hits=pronunciation_hits,
+        speech_repaired=bool(getattr(translate_engine, "last_speech_repaired", False)) if translate_engine else False,
+    )
     emotion_key = getattr(translate_engine, "last_emotion", "") if translate_engine else ""
 
     # Prefer bridge-derived emotion; fallback to inline tags; else neutral

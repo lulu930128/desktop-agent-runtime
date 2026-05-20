@@ -245,6 +245,7 @@ def probe_tts(
         "batch_size": str(gsv.get("batch_size") or "1"),
         "media_type": str(gsv.get("media_type") or "wav"),
         "streaming_mode": "false",
+        "speed_factor": str(gsv.get("speed_factor") or "1.0"),
     }
 
     url = api_url + ("&" if "?" in api_url else "?") + urllib.parse.urlencode(payload)

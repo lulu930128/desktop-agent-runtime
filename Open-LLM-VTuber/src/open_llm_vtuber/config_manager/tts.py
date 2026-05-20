@@ -181,6 +181,7 @@ class GPTSoVITSConfig(I18nMixin):
     batch_size: str = Field(..., alias="batch_size")
     media_type: str = Field(..., alias="media_type")
     streaming_mode: str = Field(..., alias="streaming_mode")
+    speed_factor: float = Field(1.0, alias="speed_factor")
 
     DESCRIPTIONS: ClassVar[Dict[str, Description]] = {
         "api_url": Description(
@@ -198,6 +199,7 @@ class GPTSoVITSConfig(I18nMixin):
         "batch_size": Description(en="Batch size for processing", zh="处理批次大小"),
         "media_type": Description(en="Output media type", zh="输出媒体类型"),
         "streaming_mode": Description(en="Enable streaming mode", zh="启用流式模式"),
+        "speed_factor": Description(en="Speech speed multiplier", zh="语速倍数"),
     }
 
 
