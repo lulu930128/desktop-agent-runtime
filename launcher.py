@@ -123,6 +123,7 @@ PALETTE = {
     "accent_soft": "#e0edff",
     "success": "#38bdf8",
     "warning": "#f59e0b",
+    "danger": "#ef4444",
 }
 
 
@@ -748,6 +749,20 @@ class LauncherApp(ctk.CTk):
         ).pack(side="left", padx=(0, 6))
         ctk.CTkButton(
             history_actions,
+            text="刪除",
+            width=56,
+            height=28,
+            corner_radius=10,
+            command=self.on_delete_history,
+            fg_color=PALETTE["panel_alt"],
+            hover_color=PALETTE["danger"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+            text_color=PALETTE["text"],
+            font=ui_font(11, "bold"),
+        ).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(
+            history_actions,
             text="更新",
             width=56,
             height=28,
@@ -1190,6 +1205,20 @@ class LauncherApp(ctk.CTk):
             command=self.on_new_history,
             fg_color=PALETTE["panel_alt"],
             hover_color=PALETTE["accent_soft"],
+            border_width=1,
+            border_color=PALETTE["panel_border"],
+            text_color=PALETTE["text"],
+            font=ui_font(11, "bold"),
+        ).pack(side="left", padx=(0, 6))
+        ctk.CTkButton(
+            history_actions,
+            text="刪除",
+            width=56,
+            height=28,
+            corner_radius=10,
+            command=self.on_delete_history,
+            fg_color=PALETTE["panel_alt"],
+            hover_color=PALETTE["danger"],
             border_width=1,
             border_color=PALETTE["panel_border"],
             text_color=PALETTE["text"],
@@ -2329,6 +2358,67 @@ class LauncherApp(ctk.CTk):
             return None
         return history_path.with_suffix(".events.jsonl")
 
+    def _safe_history_delete_paths(
+        self, character: Optional[CharacterRecord], history_uid: str
+    ) -> list[Path]:
+        history_dir = self._history_dir_for_character(character)
+        history_path = self._history_file_for_character(character, history_uid)
+        event_path = self._history_event_file_for_character(character, history_uid)
+        if history_dir is None or history_path is None:
+            return []
+
+        try:
+            root = history_dir.resolve()
+        except OSError:
+            return []
+
+        paths: list[Path] = []
+        for path in (history_path, event_path):
+            if path is None:
+                continue
+            try:
+                resolved = path.resolve()
+                resolved.relative_to(root)
+            except (OSError, ValueError):
+                continue
+            paths.append(path)
+        return paths
+
+    def _delete_history_files(
+        self, character: Optional[CharacterRecord], history_uid: str
+    ) -> int:
+        deleted = 0
+        for path in self._safe_history_delete_paths(character, history_uid):
+            try:
+                if path.exists():
+                    path.unlink()
+                    deleted += 1
+            except OSError as exc:
+                self.log(f"[{log_ts()}] 刪除聊天檔案失敗：{path.name} / {exc}")
+        return deleted
+
+    def _runtime_current_history_uid(self) -> str:
+        if not port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.2):
+            return self._runtime_history_uid
+        try:
+            status = http_get_json(
+                self._launcher_api_url("/launcher/status"),
+                timeout=2.0,
+            )
+        except Exception:
+            return self._runtime_history_uid
+        status_payload = status if isinstance(status, dict) else {}
+        renderer = status_payload.get("renderer")
+        renderer = renderer if isinstance(renderer, dict) else {}
+        history_uid = str(
+            status_payload.get("current_history_uid")
+            or renderer.get("currentHistoryUid")
+            or renderer.get("current_history_uid")
+            or self._runtime_history_uid
+            or ""
+        ).strip()
+        return history_uid
+
     def _normalize_history_message_content(self, content) -> str:
         if isinstance(content, str):
             return content.strip()
@@ -2548,6 +2638,25 @@ class LauncherApp(ctk.CTk):
             font=ui_font(12),
         )
         empty.grid(row=0, column=0, sticky="ew", padx=12, pady=(12, 12))
+        self._scroll_history_transcript_to_top()
+
+    def _scroll_history_transcript_to_top(self) -> None:
+        if not hasattr(self, "transcript_frame"):
+            return
+
+        def reset_scroll() -> None:
+            try:
+                self.transcript_frame.update_idletasks()
+                self.transcript_frame._parent_canvas.yview_moveto(0.0)
+            except Exception:
+                pass
+
+        reset_scroll()
+        try:
+            self.after(0, reset_scroll)
+            self.after(60, reset_scroll)
+        except Exception:
+            pass
 
     def _append_history_bubble(
         self,
@@ -2786,10 +2895,7 @@ class LauncherApp(ctk.CTk):
                 events=item.get("_events") if not is_user else None,
             )
 
-        try:
-            self.transcript_frame._parent_canvas.yview_moveto(1.0)
-        except Exception:
-            pass
+        self._scroll_history_transcript_to_top()
 
     def _on_history_selected(self) -> None:
         self._force_new_history_on_start = False
@@ -4336,6 +4442,61 @@ class LauncherApp(ctk.CTk):
             ),
             daemon=True,
         ).start()
+
+    def on_delete_history(self) -> None:
+        selected_character = self._selected_character()
+        record = self._selected_history_record()
+        history_uid = self.history_var.get().strip()
+        if not selected_character:
+            messagebox.showinfo("聊天記錄", "請先選擇角色。")
+            return
+        if not record or not history_uid:
+            messagebox.showinfo("聊天記錄", "請先選擇要刪除的聊天。")
+            return
+
+        title = record.title or "未命名聊天"
+        preview = f"\n\n{record.preview}" if record.preview else ""
+        active_history_uid = self._runtime_current_history_uid()
+        is_active_runtime_history = history_uid and history_uid == active_history_uid
+        active_note = (
+            "\n\n這是目前執行中的聊天，刪除後會切換到新的聊天。"
+            if is_active_runtime_history
+            else ""
+        )
+        if not messagebox.askyesno(
+            "刪除聊天記錄",
+            f"確定要刪除這段聊天嗎？\n\n{title}{preview}{active_note}",
+        ):
+            return
+
+        deleted_count = self._delete_history_files(selected_character, history_uid)
+        if deleted_count <= 0:
+            messagebox.showwarning("聊天記錄", "找不到可刪除的聊天檔案。")
+            self._refresh_history_list(force=True)
+            return
+
+        self._history_list_signature = ""
+        if self.history_var.get().strip() == history_uid:
+            self.history_var.set("")
+        if self._runtime_history_uid == history_uid:
+            self._runtime_history_uid = ""
+
+        if is_active_runtime_history:
+            self._force_new_history_on_start = True
+            if port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.2):
+                threading.Thread(
+                    target=lambda: self._apply_history_choice(
+                        wait_for_client=False,
+                        selected_character=selected_character,
+                        desired_history_uid="",
+                        force_new=True,
+                    ),
+                    daemon=True,
+                ).start()
+
+        self._refresh_history_list(force=True)
+        self._schedule_panel_update()
+        self.log(f"[{log_ts()}] 已刪除聊天記錄：{title}")
 
     def on_toggle_bridge(self) -> None:
         threading.Thread(target=self._toggle_bridge_flow, daemon=True).start()

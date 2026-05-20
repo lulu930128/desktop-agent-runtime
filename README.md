@@ -1,169 +1,197 @@
 # Kuro Desktop Agent Runtime
 
-這份 repo 把 `launcher`、`Open-LLM-VTuber`、`gpt_sovits`、`bridge`、角色 prompt、專案 prompt 放在同一個工作區，方便直接當成一份完整專案維護。
+Kuro 是一套本地桌面助理 runtime。它把 launcher、Open-LLM-VTuber、GPT-SoVITS、Live2D 桌寵、記憶系統、工具路由、檔案理解與專案 prompt 收在同一個工作區裡。
 
-目前的路徑原則是：
+這個專案的目標不是「讓聊天機器人說話」而已，而是做出一個可以被控制、可以記住脈絡、可以使用工具、可以用字幕與語音表現自己的角色助理。
 
-1. 進 git 的設定檔盡量使用 **repo 相對路徑**
-2. `launcher` 在執行時再把需要的路徑轉成 **絕對路徑**
-3. 本機秘密、log、模型權重、音檔、runtime 暫存檔維持在 `.gitignore`
+## 作品定位
 
-## 啟動
+Kuro 的核心概念是「有邊界的角色助理」：
 
-```powershell
-cd <repo-root>
-.\envs\kuro-llm310\python.exe .\launcher.py
+- 角色人格由 persona 管理，不讓工具、搜尋或語音模型隨意改寫角色。
+- 專案脈絡由 project prompt 管理，讓同一個角色可以進入不同工作情境。
+- 思考力控制推理與搜尋深度，而不是改變角色身份。
+- 工具先經過分類與權限政策，再交給模型選擇候選工具。
+- 記憶不是把所有聊天塞回 prompt，而是依照查詢、範圍、衝突與 token budget 篩選。
+- 表現層分成字幕、TTS 與 Live2D，避免技術資料被硬塞進語音。
+
+## 使用體驗
+
+- 在 launcher 選擇角色、衣服、專案、聊天紀錄與思考力。
+- 平常可以直接聊天；需要即時資訊時走網路搜尋；需要維護專案時讀本地檔案。
+- 可以上傳圖片、音檔、文字、程式碼、壓縮檔或二進位檔。可執行檔只做靜態分析，不執行。
+- 工具狀態顯示在當次對話底下，讓搜尋、檔案讀取、記憶事件跟回覆保持同一個上下文。
+- 每個角色都有獨立聊天紀錄與長期記憶，方便之後切回來延續。
+
+## 核心流程
+
+```mermaid
+flowchart TD
+    U["使用者輸入<br/>文字 / 圖片 / 音檔 / 檔案"] --> L["Launcher<br/>角色 / 專案 / 聊天 / 思考力"]
+    L --> C["Runtime Config<br/>合併角色、專案、工具、記憶設定"]
+    C --> A["Open-LLM-VTuber Agent"]
+
+    A --> M["記憶讀取<br/>query-aware / scope / token budget"]
+    A --> R["工具路由<br/>catalog / policy / search depth"]
+    A --> F["附件分析<br/>media / text / archive / binary"]
+
+    M --> P["Prompt Stack<br/>contract + persona + project + strategy"]
+    R --> P
+    F --> P
+
+    P --> O["助理輸出<br/>字幕文字 / TTS 文字 / 表情動作"]
+    O --> H["聊天紀錄<br/>訊息 + 工具事件 + 記憶事件"]
+    O --> T["TTS Lane<br/>GPT-SoVITS / speech filtering"]
+    O --> D["Presentation Lane<br/>Live2D / 桌寵 / 字幕"]
+
+    H --> W["記憶寫入<br/>assistant outcome / scope / conflict / soft delete"]
+    W --> M
 ```
 
-也可以直接使用根目錄的 `桌寵啟動器.vbs`。
+## Launcher
 
-## 路徑規則
+`launcher.py` 是 Kuro 的控制室。它負責組合 runtime config、啟停服務、切換角色與專案、管理聊天紀錄、操作記憶，以及把桌寵控制放在對話旁邊。
 
-- `kuro_launcher.settings.yaml` 使用 `${HERE}` 當 repo root
-- 角色 YAML 內的 `ref_audio_path` 使用 `voices/<角色ID>/...`
-- `compose.yaml` 的 bind mount 使用相對路徑
-- `launcher` 會在產生 runtime 設定時，把需要的音檔路徑轉成絕對路徑
-- `gpt_sovits_tts.py` 的 debug dump 不再綁死某一台機器的目錄
+Launcher 會讓目前狀態保持可見：
 
-## 重要檔案
+- `Bridge`、`LLM`、`TTS`、桌寵狀態。
+- 角色、衣服、專案、聊天、記憶分頁。
+- 思考力選擇：`快速`、`普通`、`深度`。
+- 工具事件以小型文字顯示在當次對話下方。
+- 聊天紀錄可新增、切換、刷新與刪除。
 
-- `kuro_launcher.settings.yaml`
-- `launcher.py`
-- `kuro_launcher/runtime_conf.py`
-- `kuro_launcher/services.py`
-- `Open-LLM-VTuber/characters/*.yaml`
-- `Open-LLM-VTuber/model_dict.json`
-- `Open-LLM-VTuber/prompts/persona/*.txt`
-- `Open-LLM-VTuber/prompts/utils/response_contract_prompt.txt`
-- `projects/<project_id>/project.yaml`
-- `projects/<project_id>/prompts/project_prompt.txt`
-- `projects/<project_id>/prompts/tool_prompt.txt`
-- `voices/<角色ID>/ref.wav`
-- `voices/<角色ID>/ref6s.wav`
-- `gpt_sovits/GPT_SoVITS/configs/tts_infer_<角色ID>.yaml`
+## Prompt 與思考力
 
-## Prompt 分層
-
-目前 system prompt 會依序組成：
+Kuro 採用分層 prompt，而不是把所有規則塞進單一角色 prompt：
 
 1. `System Contract`
 2. `Character Persona`
 3. `Project Context`
 4. `Tool Use Policy`
-5. `Expression Contract`
+5. `Conversation Strategy`
+6. `Expression / Response Contract`
 
-其中：
+思考力只影響對話策略。它決定模型要多快回覆、是否需要多做驗證、搜尋要做到多深、回答要多完整；它不應該改變角色人格。
 
-- 角色人格放在 `Open-LLM-VTuber/prompts/persona/*.txt`
-- 專案 prompt 放在 `projects/<project_id>/prompts/project_prompt.txt`
-- tool prompt 放在 `projects/<project_id>/prompts/tool_prompt.txt`
-- 系統輸出格式放在 `Open-LLM-VTuber/prompts/utils/response_contract_prompt.txt`
+角色人格放在：
 
-## 角色與專案
+- `Open-LLM-VTuber/prompts/persona/`
+- `Open-LLM-VTuber/characters/*.yaml`
 
-### 角色
+專案脈絡放在：
 
-角色設定檔位於：
+- `projects/<project_id>/project.yaml`
+- `projects/<project_id>/prompts/project_prompt.txt`
+- `projects/<project_id>/prompts/tool_prompt.txt`
 
-- `Open-LLM-VTuber/characters/`
+## 記憶模型
 
-每個角色至少會關聯到：
+記憶是助理能力，不是聊天紀錄的全文回放。
 
-- `conf_name`
-- `conf_uid`
-- `live2d_model_name`
-- `persona_prompt_path`
-- `default_project_id`
-- `agent_config`
-- `tts_config`
+```mermaid
+flowchart LR
+    Q["目前這輪對話"] --> RP["Read Plan"]
+    RP --> SR["Scope Filter<br/>global / character / project / thread / runtime"]
+    SR --> SC["Relevance Scoring"]
+    SC --> TB["Token Budget Pack"]
+    TB --> CTX["送入模型的記憶上下文"]
 
-### 專案
+    A["助理回覆"] --> WP["Write Plan"]
+    Q --> WP
+    WP --> CF["Conflict Check"]
+    CF --> ST["active / superseded / pending / disabled"]
+    ST --> DB["long_term.json"]
+```
 
-專案設定位於：
+長期記憶支援：
 
-- `projects/`
+- Query-aware retrieval：依照目前問題挑選相關記憶。
+- Scope levels：區分使用者、角色、專案、聊天與 runtime。
+- Assistant outcome：把助理推導出的有用結論納入寫入判斷。
+- Conflict handling：新舊資訊衝突時保留狀態，而不是直接覆蓋或重複。
+- Soft delete：刪除與停用可以留下可追蹤狀態。
 
-目前範例專案：
+## 工具模型
 
-- `projects/desktop-agent-runtime/project.yaml`
+工具不是全部丟給模型自由挑。Kuro 先判斷能力分類，再從候選工具中選擇。
 
-## 記憶規則
+目前工具能力分成：
 
-目前記憶維持 **一個角色一份**，不因切換專案分離。  
-也就是說，同一角色在不同專案下會延續同一份角色記憶。
+- Web research：輕量搜尋、深度搜尋、來源驗證與頁面讀取。
+- Local files：允許根目錄、資料夾列表、文字搜尋與文字讀取。
+- Media and attachments：圖片、音檔、文字、壓縮檔與二進位靜態分析。
+- Runtime control：保留給 launcher/runtime 狀態與受控操作。
+- Memory：保留給記住、忘記、整理與記憶維護。
 
-## 短期聊天
+工具政策預設為 read-only。金鑰、私密設定、瀏覽器個人資料、憑證、私有網路與敏感路徑會被限制層擋下。
 
-目前短期記憶以 **一個 JSON = 一段聊天 thread** 的方式運作：
+## 表現層
 
-- `chat_history/<conf_uid>/` 下面每個 `history_uid.json` 都是一段聊天
-- `history_uid` 仍然使用 `時間戳 + uuid`，作為穩定的內部 ID
-- 每個聊天檔第一筆是 `metadata`，用來保存：
-  - `title`
-  - `summary_short`
-  - `created_at / updated_at / last_opened_at`
-  - `message_count`
-- 第一次有使用者訊息後，系統會自動用第一段內容產生聊天標題
+Kuro 把「顯示給使用者看的內容」和「送進語音模型的內容」分開。
 
-啟動前端時，後端會優先接回該角色最近一次的聊天，而不是每次都直接建立新 JSON。  
-真的要開新聊天時，再由前端或 launcher 明確建立新的 thread。
+- 字幕可以保留網址、引用、技術名詞、英文片段與數值。
+- TTS 只讀適合語音的句子，避免日文聲線硬讀中文、英文、URL 或診斷資料。
+- Live2D/桌寵接收表情與動作提示，不承擔角色人格邏輯。
 
-## Launcher
+這樣可以讓畫面資訊完整，同時讓語音保持乾淨、穩定、符合角色。
 
-目前 `launcher` 已改成 `CustomTkinter`，主要負責：
+## 專案結構
 
-- 選角色
-- 選專案
-- 預覽 prompt
-- 啟動 / 停止 / 重啟各服務
-- 查看 log
+```text
+C:\kuro
+|-- launcher.py                         # Launcher 與控制面板
+|-- kuro_launcher.settings.yaml          # 路徑、port、模型預設
+|-- kuro_launcher/                       # Runtime config 與服務 helper
+|-- Open-LLM-VTuber/                     # Agent、對話、工具、記憶、TTS bridge
+|-- projects/                            # 專案 prompt 與 tool prompt
+|-- voices/                              # 角色參考音檔
+|-- gpt_sovits/                          # GPT-SoVITS runtime
+|-- pet-electron/                        # 桌寵 shell
+|-- bridges/                             # 翻譯與 bridge service
+|-- launcher_logs/                       # Launcher log
+|-- 暫存區/                              # 圖片與音檔暫存區，不放程式碼
+```
 
-## Idle 熱切換
+## 啟動
 
-目前 `launcher` 已支援「在後端仍然執行時，於 idle 狀態下切換角色 / 專案」：
+```powershell
+cd C:\kuro
+.\envs\kuro-llm310\python.exe .\launcher.py
+```
 
-- 如果 `LLM` 尚未啟動，會走原本的冷啟動流程
-- 如果 `LLM` 已經在執行，`launcher` 會先詢問後端目前能不能熱切換
-- 只有在沒有對話進行中、沒有多人成員群組衝突時，熱切換才會放行
-- 切換角色時，`launcher` 會視需要重載 `TTS`，但不會自動把整個 `LLM / Electron` 全部重開
-- 如果目前執行中的後端版本還沒有熱切換 API，`launcher` 會提示先手動停止再啟動一次
+Launcher 會讀取 `kuro_launcher.settings.yaml`，產生 Open-LLM-VTuber runtime config，並協調本地服務。
 
-目前這一版的設計原則是：
+桌面捷徑流程可使用：
 
-- `idle` 才能切
-- 不偷偷重啟整套前端
-- 專案切換不分離記憶，仍然維持「一角色一份記憶」
+```text
+桌寵啟動器.vbs
+```
 
-## Git 注意事項
+## 擴充點
 
-建議提交的內容：
+- 新角色：`Open-LLM-VTuber/characters/` 與 `Open-LLM-VTuber/prompts/persona/`
+- 新專案：`projects/`
+- 工具路由：`Open-LLM-VTuber/tool_catalog.json`
+- 工具限制：`Open-LLM-VTuber/tool_policy.json`
+- 對話策略：`Open-LLM-VTuber/src/open_llm_vtuber/agent/conversation_strategy_manager.py`
+- 記憶系統：`Open-LLM-VTuber/src/open_llm_vtuber/character_memory_manager.py`
 
-- 角色 YAML
-- persona / project / tool prompt
-- `model_dict.json`
-- `tts_infer_<角色ID>.yaml`
-- 專案設定
-- 程式碼與文件
+## Repo 邊界
 
-不要提交的內容：
+適合進 git：
+
+- source code
+- prompt
+- character/project config
+- tool catalog/policy
+- runtime helper
+
+不適合進 git：
 
 - `.env`
 - API key
-- `launcher_logs/`
-- `Open-LLM-VTuber/conf.launcher_runtime.yaml`
-- `voices/**/*.wav`
-- `*.ckpt`
-- `*.pth`
-- `gpt_sovits/GPT_weights*/`
-- `gpt_sovits/SoVITS_weights*/`
-- `gpt_sovits/GPT_SoVITS/pretrained_models/`
-- 本機暫存資料夾
-
-## 目前方向
-
-這份專案現在的設計目標是：
-
-- repo 可以被 clone 到任意路徑
-- 角色 prompt、專案 prompt、tool prompt 可獨立調整
-- `launcher` 負責把相對路徑整理成執行時需要的配置
-- 使用者後續可以直接把這份 repo 當模板延伸自己的角色與專案
+- launcher log
+- runtime 產物
+- 參考音檔
+- 模型權重
+- 暫存圖片與音檔

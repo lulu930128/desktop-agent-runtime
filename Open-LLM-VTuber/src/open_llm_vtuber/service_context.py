@@ -576,7 +576,11 @@ class ServiceContext:
         self._append_prompt_section(
             parts,
             "Character Memory",
-            format_character_memories_for_prompt(character_config.conf_uid),
+            format_character_memories_for_prompt(
+                character_config.conf_uid,
+                max_entries=8,
+                token_budget=600,
+            ),
         )
 
         self._append_prompt_section(

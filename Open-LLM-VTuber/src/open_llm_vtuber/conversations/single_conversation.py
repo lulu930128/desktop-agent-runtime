@@ -224,7 +224,11 @@ def _store_tool_status_event(
 
 
 def _memory_event_summary(memory_notes: List[str]) -> str:
-    upserts = sum(1 for note in memory_notes if note == "upsert")
+    upserts = sum(
+        1
+        for note in memory_notes
+        if note == "upsert" or note.startswith("upsert:")
+    )
     disabled = sum(
         int(note.split(":", 1)[1])
         for note in memory_notes

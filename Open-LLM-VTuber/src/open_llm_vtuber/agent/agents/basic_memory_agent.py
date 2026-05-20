@@ -29,6 +29,7 @@ from ...mcpp.tool_manager import ToolManager
 from ...mcpp.json_detector import StreamJSONDetector
 from ...mcpp.types import ToolCallObject
 from ...mcpp.tool_executor import ToolExecutor
+from ...character_memory_manager import format_character_memories_for_prompt
 
 
 class BasicMemoryAgent(AgentInterface):
@@ -68,6 +69,10 @@ class BasicMemoryAgent(AgentInterface):
         self._tool_executor = tool_executor
         self._mcp_prompt_string = mcp_prompt_string
         self._json_detector = StreamJSONDetector()
+        self._memory_conf_uid = ""
+        self._memory_history_uid = ""
+        self._short_term_memory_token_budget = 4200
+        self._short_term_memory_min_recent_messages = 8
 
         self._formatted_tools_openai = []
         self._formatted_tools_claude = []
@@ -174,8 +179,58 @@ class BasicMemoryAgent(AgentInterface):
 
         self._memory.append(message_data)
 
+    @staticmethod
+    def _estimate_text_tokens(text: str) -> int:
+        if not text:
+            return 0
+        return max(1, len(text) // 3)
+
+    @staticmethod
+    def _message_text_for_budget(message: Dict[str, Any]) -> str:
+        content = message.get("content", "")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    parts.append(str(item.get("text") or ""))
+            return " ".join(parts)
+        return str(content or "")
+
+    def _pack_short_term_memory(self) -> List[Dict[str, Any]]:
+        if not self._memory:
+            return []
+
+        selected_reversed: List[Dict[str, Any]] = []
+        used_tokens = 0
+        omitted = 0
+        reversed_memory = list(reversed(self._memory))
+        for index, message in enumerate(reversed_memory):
+            text = self._message_text_for_budget(message)
+            message_tokens = self._estimate_text_tokens(text) + 8
+            should_keep = (
+                used_tokens + message_tokens <= self._short_term_memory_token_budget
+                or len(selected_reversed) < self._short_term_memory_min_recent_messages
+            )
+            if not should_keep:
+                omitted = len(reversed_memory) - index
+                break
+            selected_reversed.append(message)
+            used_tokens += message_tokens
+
+        if omitted:
+            logger.debug(
+                "Short-term memory budget omitted "
+                f"{omitted} older messages; kept={len(selected_reversed)}, "
+                f"estimated_tokens={used_tokens}."
+            )
+        return list(reversed(selected_reversed))
+
     def set_memory_from_history(self, conf_uid: str, history_uid: str) -> None:
         """Load memory from chat history."""
+        self._memory_conf_uid = conf_uid or ""
+        self._memory_history_uid = history_uid or ""
         messages = get_history(conf_uid, history_uid)
 
         self._memory = []
@@ -288,7 +343,7 @@ class BasicMemoryAgent(AgentInterface):
 
     def _to_messages(self, input_data: BatchInput) -> List[Dict[str, Any]]:
         """Prepare messages for LLM API call."""
-        messages = self._memory.copy()
+        messages = self._pack_short_term_memory()
         user_content = []
         text_prompt = self._to_text_prompt(input_data)
         if text_prompt:
@@ -334,24 +389,47 @@ class BasicMemoryAgent(AgentInterface):
 
         return messages
 
-    def _compose_tool_system_prompt(self, route_prompt: str = "") -> str:
+    def _format_relevant_memory_prompt(self, query_text: str) -> str:
+        if not self._memory_conf_uid:
+            return ""
+        try:
+            return format_character_memories_for_prompt(
+                self._memory_conf_uid,
+                query_text=query_text,
+                max_entries=12,
+                token_budget=900,
+            )
+        except Exception as exc:
+            logger.warning(f"Failed to build relevant memory prompt: {exc}")
+            return ""
+
+    def _compose_tool_system_prompt(
+        self,
+        route_prompt: str = "",
+        memory_prompt: str = "",
+    ) -> str:
+        sections = [self._system]
+        memory_text = str(memory_prompt or "").strip()
         route_text = str(route_prompt or "").strip()
-        if not route_text:
-            return self._system
-        return f"{self._system}\n\n{route_text}"
+        if memory_text:
+            sections.append(memory_text)
+        if route_text:
+            sections.append(route_text)
+        return "\n\n".join(sections)
 
     async def _claude_tool_interaction_loop(
         self,
         initial_messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]],
         route_prompt: str = "",
+        memory_prompt: str = "",
     ) -> AsyncIterator[Union[str, Dict[str, Any]]]:
         """Handle Claude interaction loop with tool support."""
         messages = initial_messages.copy()
         current_turn_text = ""
         pending_tool_calls = []
         current_assistant_message_content = []
-        system_prompt = self._compose_tool_system_prompt(route_prompt)
+        system_prompt = self._compose_tool_system_prompt(route_prompt, memory_prompt)
 
         while True:
             stream = self._llm.chat_completion(messages, system_prompt, tools=tools)
@@ -460,6 +538,7 @@ class BasicMemoryAgent(AgentInterface):
         initial_messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]],
         route_prompt: str = "",
+        memory_prompt: str = "",
     ) -> AsyncIterator[Union[str, Dict[str, Any]]]:
         """Handle OpenAI interaction with tool support."""
         messages = initial_messages.copy()
@@ -470,15 +549,25 @@ class BasicMemoryAgent(AgentInterface):
         while True:
             if self.prompt_mode_flag:
                 if self._mcp_prompt_string:
+                    composed_prompt = self._compose_tool_system_prompt(
+                        route_prompt,
+                        memory_prompt,
+                    )
                     current_system_prompt = (
-                        f"{self._compose_tool_system_prompt(route_prompt)}\n\n{self._mcp_prompt_string}"
+                        f"{composed_prompt}\n\n{self._mcp_prompt_string}"
                     )
                 else:
                     logger.warning("Prompt mode active but mcp_prompt_string is empty!")
-                    current_system_prompt = self._compose_tool_system_prompt(route_prompt)
+                    current_system_prompt = self._compose_tool_system_prompt(
+                        route_prompt,
+                        memory_prompt,
+                    )
                 tools_for_api = None
             else:
-                current_system_prompt = self._compose_tool_system_prompt(route_prompt)
+                current_system_prompt = self._compose_tool_system_prompt(
+                    route_prompt,
+                    memory_prompt,
+                )
                 tools_for_api = tools
 
             stream = self._llm.chat_completion(
@@ -659,7 +748,10 @@ class BasicMemoryAgent(AgentInterface):
             tools = None
             tool_mode = None
             route_prompt = ""
+            memory_prompt = self._format_relevant_memory_prompt(request_text_for_tools)
             llm_supports_native_tools = False
+            if memory_prompt:
+                logger.debug("Relevant memory prompt selected for this turn.")
 
             if self._use_mcpp and self._tool_manager:
                 tools = None
@@ -702,7 +794,10 @@ class BasicMemoryAgent(AgentInterface):
                     f"Starting Claude tool interaction loop with {len(tools)} tools."
                 )
                 async for output in self._claude_tool_interaction_loop(
-                    messages, tools if tools else [], route_prompt=route_prompt
+                    messages,
+                    tools if tools else [],
+                    route_prompt=route_prompt,
+                    memory_prompt=memory_prompt,
                 ):
                     yield output
                 return
@@ -711,13 +806,19 @@ class BasicMemoryAgent(AgentInterface):
                     f"Starting OpenAI tool interaction loop with {len(tools)} tools."
                 )
                 async for output in self._openai_tool_interaction_loop(
-                    messages, tools if tools else [], route_prompt=route_prompt
+                    messages,
+                    tools if tools else [],
+                    route_prompt=route_prompt,
+                    memory_prompt=memory_prompt,
                 ):
                     yield output
                 return
             else:
                 logger.info("Starting simple chat completion.")
-                token_stream = self._llm.chat_completion(messages, self._system)
+                system_prompt = self._compose_tool_system_prompt(
+                    memory_prompt=memory_prompt
+                )
+                token_stream = self._llm.chat_completion(messages, system_prompt)
                 complete_response = ""
                 async for event in token_stream:
                     text_chunk = ""
