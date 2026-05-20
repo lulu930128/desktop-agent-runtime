@@ -249,10 +249,22 @@
         "memory",
         "remember",
         "forget",
-        "preference"
+        "preference",
+        "previous conversation",
+        "past conversation",
+        "chat history",
+        "history"
       ],
-      "default_tools": [],
-      "tools": []
+      "default_tools": ["search_past_conversations"],
+      "tools": [
+        {
+          "name": "search_past_conversations",
+          "level": "search",
+          "capabilities": ["memory", "chat_history", "source_verification"],
+          "risk": "read_only",
+          "when": "Use when the user asks about previous chats, prior decisions, old context, or details that may exist in raw chat history but not in long-term memory."
+        }
+      ]
     },
     "runtime_control": {
       "title": "Runtime Control",

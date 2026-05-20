@@ -24,7 +24,6 @@ from .vad.vad_factory import VADFactory
 from .agent.agent_factory import AgentFactory
 from .agent.conversation_strategy_manager import ConversationStrategy
 from .translate.translate_factory import TranslateFactory
-from .character_memory_manager import format_character_memories_for_prompt
 
 from .config_manager import (
     Config,
@@ -572,16 +571,6 @@ class ServiceContext:
                 character_config.persona_prompt_path
             )
         self._append_prompt_section(parts, "Character Persona", effective_persona)
-
-        self._append_prompt_section(
-            parts,
-            "Character Memory",
-            format_character_memories_for_prompt(
-                character_config.conf_uid,
-                max_entries=8,
-                token_budget=600,
-            ),
-        )
 
         self._append_prompt_section(
             parts,

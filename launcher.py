@@ -8,9 +8,7 @@ import sys
 import threading
 import time
 import urllib.error
-import uuid
 import webbrowser
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -31,6 +29,9 @@ def _bootstrap_base_dir() -> Path:
 
 
 BASE_DIR = _bootstrap_base_dir()
+OPEN_LLM_SRC = BASE_DIR / "Open-LLM-VTuber" / "src"
+if OPEN_LLM_SRC.exists() and str(OPEN_LLM_SRC) not in sys.path:
+    sys.path.insert(0, str(OPEN_LLM_SRC))
 WINDOWS_APP_USER_MODEL_ID = "kuro.desktop-agent.launcher"
 
 
@@ -47,12 +48,19 @@ def _set_windows_app_user_model_id() -> None:
         pass
 
 from kuro_launcher.config import AppConfig, load_config
+from kuro_launcher.memory_support import (
+    ensure_character_memory_root as _ensure_character_memory_root,
+    format_character_memory_preview as _format_character_memory_preview,
+)
+from kuro_launcher.memory_panel import MemoryPanelMixin
 from kuro_launcher.procs import ManagedProc
 from kuro_launcher.project_manager import (
     ProjectDefinition,
     list_project_definitions,
 )
+from kuro_launcher.records import CharacterRecord, HistoryRecord, MemoryRecord
 from kuro_launcher.runtime_conf import build_runtime_conf, write_runtime_conf
+from kuro_launcher.runtime_logging import setup_runtime_logging as _setup_runtime_logging
 from kuro_launcher.services import (
     probe_tts,
     start_bridge,
@@ -73,411 +81,43 @@ from kuro_launcher.utils import (
     strip_ansi_and_ctrl,
     taskkill_tree,
 )
+from kuro_launcher.text_helpers import (
+    compact_history_text as _compact_history_text,
+    derive_history_title as _derive_history_title,
+    format_history_timestamp as _format_history_timestamp,
+    format_history_tool_event_inline as _format_history_tool_event_inline,
+    format_history_tool_events_inline as _format_history_tool_events_inline,
+    history_event_detail as _history_event_detail,
+    is_assistant_history_role as _is_assistant_history_role,
+    normalize_token as _normalize_token,
+    pretty_path as _pretty_path,
+    read_text_maybe as _read_text_maybe,
+    resolve_repo_path as _resolve_repo_path,
+)
+from kuro_launcher.ui_theme import (
+    EXPRESSION_BASE_PARAMETERS,
+    EXPRESSION_ID_TO_LABEL,
+    EXPRESSION_LABEL_TO_ID,
+    EXPRESSION_PRESETS,
+    IMAGE_EXTENSIONS,
+    LOG_DRAIN_INTERVAL_MS,
+    LOG_DRAIN_MAX_LINES,
+    PALETTE,
+    STATUS_TICK_INTERVAL_MS,
+    THINKING_POWER_ID_TO_LABEL,
+    THINKING_POWER_LABELS,
+    THINKING_POWER_LABEL_TO_ID,
+    StatusBadge,
+    mono_font,
+    ui_font,
+)
 
 
-@dataclass(frozen=True)
-class CharacterRecord:
-    yaml_path: Path
-    conf_name: str
-    conf_uid: str
-    live2d_model_name: str
-    avatar: str
-    persona_prompt_path: str
-    default_project_id: str
-
-
-@dataclass(frozen=True)
-class HistoryRecord:
-    uid: str
-    title: str
-    preview: str
-    timestamp: str
-    is_empty: bool
-
-
-@dataclass(frozen=True)
-class MemoryRecord:
-    entry_id: str
-    content: str
-    memory_type: str
-    enabled: bool
-    updated_at: str
-
-
-PALETTE = {
-    "app_bg": "#edf6ff",
-    "panel_bg": "#ffffff",
-    "panel_soft": "#f7fbff",
-    "panel_alt": "#f2f7ff",
-    "panel_border": "#d7e4f4",
-    "textbox_bg": "#fcfdff",
-    "textbox_border": "#d9e4f5",
-    "text": "#20304a",
-    "muted": "#64748b",
-    "accent_pink": "#f472b6",
-    "accent_pink_hover": "#ec4899",
-    "accent_blue": "#60a5fa",
-    "accent_blue_hover": "#3b82f6",
-    "accent_lavender": "#a78bfa",
-    "accent_lavender_hover": "#8b5cf6",
-    "accent_soft": "#e0edff",
-    "success": "#38bdf8",
-    "warning": "#f59e0b",
-    "danger": "#ef4444",
-}
-
-
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
-LOG_DRAIN_INTERVAL_MS = 220
-LOG_DRAIN_MAX_LINES = 60
-STATUS_TICK_INTERVAL_MS = 2200
-
-EXPRESSION_BASE_PARAMETERS: Dict[str, float] = {
-    "Param6": 0,
-    "Param7": 0,
-    "Param8": 0,
-    "Param9": 0,
-    "Param91": 0,
-    "Param92": 0,
-    "Param93": 0,
-    "Param94": 0,
-    "ParamCheek": 0,
-    "ParamEyeLSmile": 0,
-    "ParamEyeRSmile": 0,
-    "ParamMouthForm": 0,
-    "ParamBrowLY": 0,
-    "ParamBrowRY": 0,
-    "ParamBrowLForm": 0,
-    "ParamBrowRForm": 0,
-}
-
-EXPRESSION_PRESETS: Dict[str, dict] = {
-    "neutral": {"label": "一般", "parameters": {}},
-    "happy": {
-        "label": "開心",
-        "parameters": {
-            "Param6": 1,
-            "ParamCheek": 0.35,
-            "ParamEyeLSmile": 0.65,
-            "ParamEyeRSmile": 0.65,
-            "ParamMouthForm": 0.28,
-        },
-    },
-    "angry": {
-        "label": "生氣",
-        "parameters": {
-            "Param7": 1,
-            "ParamBrowLForm": -0.6,
-            "ParamBrowRForm": -0.6,
-            "ParamMouthForm": -0.32,
-        },
-    },
-    "sad": {
-        "label": "難過",
-        "parameters": {
-            "Param8": 1,
-            "ParamBrowLY": -0.25,
-            "ParamBrowRY": -0.25,
-            "ParamMouthForm": -0.42,
-        },
-    },
-    "cry": {
-        "label": "哭哭",
-        "parameters": {
-            "Param9": 1,
-            "Param91": 1,
-            "Param92": 1,
-            "Param93": 1,
-            "Param94": 1,
-            "ParamMouthForm": -0.4,
-        },
-    },
-    "shy": {
-        "label": "害羞",
-        "parameters": {
-            "Param6": 0.7,
-            "ParamCheek": 0.85,
-            "ParamEyeLSmile": 0.35,
-            "ParamEyeRSmile": 0.35,
-            "ParamMouthForm": 0.12,
-        },
-    },
-    "thinking": {
-        "label": "思考",
-        "parameters": {
-            "ParamBrowLY": 0.25,
-            "ParamBrowRY": 0.25,
-            "ParamMouthForm": -0.12,
-        },
-    },
-}
-
-EXPRESSION_LABEL_TO_ID = {
-    str(item["label"]): expression_id
-    for expression_id, item in EXPRESSION_PRESETS.items()
-}
-EXPRESSION_ID_TO_LABEL = {
-    expression_id: str(item["label"])
-    for expression_id, item in EXPRESSION_PRESETS.items()
-}
-
-THINKING_POWER_LABEL_TO_ID = {
-    "快速": "fast",
-    "普通": "normal",
-    "深度": "deep",
-}
-THINKING_POWER_ID_TO_LABEL = {
-    thinking_id: label
-    for label, thinking_id in THINKING_POWER_LABEL_TO_ID.items()
-}
-THINKING_POWER_LABELS = list(THINKING_POWER_LABEL_TO_ID.keys())
-
-FONT_UI = "Microsoft JhengHei UI"
-FONT_MONO = "Cascadia Mono"
-
-
-def ui_font(size: int, weight: str = "normal") -> ctk.CTkFont:
-    return ctk.CTkFont(family=FONT_UI, size=size, weight=weight)
-
-
-def mono_font(size: int, weight: str = "normal") -> ctk.CTkFont:
-    return ctk.CTkFont(family=FONT_MONO, size=size, weight=weight)
-
-
-class StatusBadge(ctk.CTkFrame):
-    def __init__(self, master, name: str):
-        super().__init__(
-            master,
-            corner_radius=18,
-            fg_color=PALETTE["panel_bg"],
-            border_width=1,
-            border_color=PALETTE["panel_border"],
-        )
-        self.grid_columnconfigure(1, weight=1)
-        self._name = name
-        self.dot = ctk.CTkLabel(self, text="●", text_color=PALETTE["warning"], width=18)
-        self.dot.grid(row=0, column=0, padx=(12, 6), pady=8)
-        self.label = ctk.CTkLabel(
-            self,
-            text=f"{name} · Offline",
-            font=ui_font(12, "bold"),
-            anchor="w",
-            text_color=PALETTE["text"],
-        )
-        self.label.grid(row=0, column=1, padx=(0, 12), sticky="w")
-
-    def set_status(self, online: bool) -> None:
-        self.dot.configure(text_color=PALETTE["success"] if online else PALETTE["warning"])
-        self.label.configure(text=f"{self._name} · {'Online' if online else 'Offline'}")
-
-
-def _setup_runtime_logging(log_dir: Path) -> Path:
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / "launcher.combined.log"
-
-    class _Tee:
-        def __init__(self, stream_a, stream_b):
-            self.stream_a = stream_a
-            self.stream_b = stream_b
-
-        def write(self, chunk):
-            try:
-                self.stream_a.write(chunk)
-            except Exception:
-                pass
-            try:
-                self.stream_b.write(chunk)
-            except Exception:
-                pass
-
-        def flush(self):
-            try:
-                self.stream_a.flush()
-            except Exception:
-                pass
-            try:
-                self.stream_b.flush()
-            except Exception:
-                pass
-
-    file_handle = open(log_path, "a", encoding="utf-8", buffering=1)
-    sys.stdout = _Tee(sys.stdout, file_handle)  # type: ignore[assignment]
-    sys.stderr = _Tee(sys.stderr, file_handle)  # type: ignore[assignment]
-    return log_path
-
-
-def _resolve_repo_path(repo_root: Path, raw_path: str) -> Optional[Path]:
-    raw_path = (raw_path or "").strip()
-    if not raw_path:
-        return None
-    candidate = Path(raw_path)
-    if candidate.is_absolute():
-        return candidate
-    return (repo_root / candidate).resolve()
-
-
-def _read_text_maybe(path: Optional[Path]) -> str:
-    if path is None or not path.exists():
-        return ""
-    encodings = ["utf-8", "utf-8-sig", "gbk", "gb2312", "cp936", "ascii"]
-    for encoding in encodings:
-        try:
-            return path.read_text(encoding=encoding)
-        except UnicodeDecodeError:
-            continue
-    return path.read_text(encoding="utf-8", errors="replace")
-
-
-def _format_character_memory_preview(open_llm_dir: Path, conf_uid: str) -> str:
-    conf_uid = (conf_uid or "").strip()
-    if not conf_uid:
-        return ""
-    memory_path = open_llm_dir / "memories" / "characters" / conf_uid / "long_term.json"
-    if not memory_path.exists():
-        return "目前沒有角色長期記憶。"
-    try:
-        payload = json.loads(memory_path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        return f"角色長期記憶讀取失敗：{exc}"
-
-    entries = payload.get("entries") if isinstance(payload, dict) else []
-    if not isinstance(entries, list) or not entries:
-        return "目前沒有角色長期記憶。"
-
-    lines: list[str] = []
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        marker = "ON" if entry.get("enabled", True) else "OFF"
-        memory_type = str(entry.get("memory_type") or "fact")
-        content = _compact_history_text(str(entry.get("content") or ""), max_len=180)
-        if content:
-            lines.append(f"[{marker}] ({memory_type}) {content}")
-    return "\n".join(lines).strip() or "目前沒有角色長期記憶。"
-
-
-def _pretty_path(path: Optional[Path], root: Path) -> str:
-    if path is None:
-        return "(未設定)"
-    try:
-        return str(path.resolve().relative_to(root)).replace("\\", "/")
-    except Exception:
-        return str(path)
-
-
-def _normalize_token(value: str) -> str:
-    return "".join(ch for ch in (value or "").lower() if ch.isalnum())
-
-
-def _classify_memory_text(content: str) -> str:
-    content = content or ""
-    if any(token in content for token in ("叫我", "稱呼我", "我的名字", "我是")):
-        return "identity"
-    if any(token in content for token in ("不要", "別再", "不喜歡", "討厭")):
-        return "boundary"
-    if any(token in content for token in ("以後", "之後", "預設", "固定", "都要", "都不要")):
-        return "instruction"
-    if any(token in content for token in ("喜歡", "希望", "偏好", "習慣", "想要")):
-        return "preference"
-    return "fact"
-
-
-def _compact_history_text(content: str, max_len: int = 72) -> str:
-    if not isinstance(content, str):
-        return ""
-    compact = " ".join(content.replace("\r", " ").replace("\n", " ").split())
-    compact = compact.strip(" \t\r\n\"'`")
-    if len(compact) <= max_len:
-        return compact
-    return compact[: max_len - 3].rstrip(" .,!?;:") + "..."
-
-
-def _derive_history_title(content: str) -> str:
-    return _compact_history_text(content, max_len=28)
-
-
-def _format_history_timestamp(raw: str) -> str:
-    raw = (raw or "").strip()
-    if not raw:
-        return ""
-    try:
-        dt = datetime.datetime.fromisoformat(raw)
-        return dt.strftime("%m/%d %H:%M")
-    except ValueError:
-        return raw[:16]
-
-
-def _is_assistant_history_role(role: str) -> bool:
-    return (role or "").strip().lower() in {"ai", "assistant"}
-
-
-def _history_event_detail(event: dict) -> dict:
-    detail = event.get("detail")
-    if isinstance(detail, dict):
-        return detail
-    if isinstance(detail, str) and detail.strip():
-        try:
-            parsed = json.loads(detail)
-        except Exception:
-            return {}
-        if isinstance(parsed, dict):
-            return parsed
-    return {}
-
-
-def _history_tool_name(event: dict) -> str:
-    detail = _history_event_detail(event)
-    tool_name = str(detail.get("tool_name") or "").strip()
-    if tool_name:
-        return tool_name
-
-    title = str(event.get("title") or "").strip()
-    for prefix in ("工具：", "工具:", "Tool：", "Tool:"):
-        if title.startswith(prefix):
-            tool_name = title[len(prefix) :].strip()
-            if tool_name:
-                return tool_name
-
-    summary = str(event.get("summary") or "").strip()
-    if summary:
-        first = summary.split()[0].strip("：:，,")
-        if first:
-            return first
-    return "tool"
-
-
-def _format_history_tool_event_inline(event: dict) -> str:
-    status = str(event.get("status") or "").strip().lower()
-    tool_name = _history_tool_name(event)
-    tool_key = tool_name.lower()
-    is_search_tool = (
-        "search" in tool_key
-        or tool_key in {"smart_search_web", "search_web", "fetch_content"}
-    )
-    subject = "搜尋" if is_search_tool else "工具"
-    status_text = {
-        "completed": "完成",
-        "ok": "完成",
-        "error": "錯誤",
-        "blocked": "被擋下",
-        "skipped": "略過",
-    }.get(status, status or "狀態")
-    return f"{subject}{status_text} · {tool_name}"
-
-
-def _format_history_tool_events_inline(events: list[dict]) -> str:
-    labels = [
-        _format_history_tool_event_inline(event)
-        for event in events
-        if isinstance(event, dict)
-    ]
-    return "　".join(label for label in labels if label)
-
-
-class LauncherApp(ctk.CTk):
+class LauncherApp(MemoryPanelMixin, ctk.CTk):
     def __init__(self, cfg: AppConfig):
         super().__init__()
         self.cfg = cfg
+        _ensure_character_memory_root(self.cfg.open_llm_dir)
         self.live2d_catalog = self._load_live2d_catalog()
 
         self.proc_bridge: Optional[ManagedProc] = None
@@ -832,6 +472,8 @@ class LauncherApp(ctk.CTk):
         for label, command, is_primary in [
             ("新增", self.on_add_memory, True),
             ("啟停", self.on_toggle_memory, False),
+            ("批准", self.on_approve_memory, False),
+            ("拒絕", self.on_reject_memory, False),
             ("刪除", self.on_delete_memory, False),
             ("整理", self.on_compact_memory, False),
             ("更新", self._refresh_memory_list, False),
@@ -3017,366 +2659,6 @@ class LauncherApp(ctk.CTk):
         if meta is not None:
             self._set_clickable(meta, select_history)
         self._history_radio_buttons.append(card)
-
-    def _memory_path_for_character(
-        self, character: Optional[CharacterRecord] = None
-    ) -> Optional[Path]:
-        character = character or self._selected_character()
-        if not character or not character.conf_uid:
-            return None
-        return (
-            self.cfg.open_llm_dir
-            / "memories"
-            / "characters"
-            / character.conf_uid
-            / "long_term.json"
-        )
-
-    def _new_memory_store(self, character: CharacterRecord) -> dict:
-        now = datetime.datetime.now().isoformat(timespec="seconds")
-        return {
-            "version": 1,
-            "scope": "character",
-            "conf_uid": character.conf_uid,
-            "created_at": now,
-            "updated_at": now,
-            "entries": [],
-        }
-
-    def _load_character_memory_store(
-        self, character: Optional[CharacterRecord] = None
-    ) -> dict:
-        character = character or self._selected_character()
-        if not character:
-            return {"entries": []}
-        path = self._memory_path_for_character(character)
-        if path is None or not path.exists():
-            return self._new_memory_store(character)
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except Exception as exc:
-            self.log(f"[{log_ts()}] 角色記憶讀取失敗：{exc}")
-            return self._new_memory_store(character)
-        if not isinstance(payload, dict):
-            return self._new_memory_store(character)
-        if not isinstance(payload.get("entries"), list):
-            payload["entries"] = []
-        payload.setdefault("version", 1)
-        payload.setdefault("scope", "character")
-        payload.setdefault("conf_uid", character.conf_uid)
-        payload.setdefault("created_at", datetime.datetime.now().isoformat(timespec="seconds"))
-        payload.setdefault("updated_at", payload.get("created_at"))
-        return payload
-
-    def _save_character_memory_store(
-        self, store: dict, character: Optional[CharacterRecord] = None
-    ) -> bool:
-        character = character or self._selected_character()
-        path = self._memory_path_for_character(character)
-        if character is None or path is None:
-            return False
-        now = datetime.datetime.now().isoformat(timespec="seconds")
-        store["updated_at"] = now
-        store.setdefault("conf_uid", character.conf_uid)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = path.with_suffix(".json.tmp")
-        tmp_path.write_text(
-            json.dumps(store, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        os.replace(tmp_path, path)
-        return True
-
-    def _compact_memory_entries(self, store: dict) -> tuple[bool, int]:
-        entries = store.get("entries")
-        if not isinstance(entries, list):
-            store["entries"] = []
-            return True, 0
-
-        merged: list[dict] = []
-        changed = False
-        before_count = len(entries)
-        now = datetime.datetime.now().isoformat(timespec="seconds")
-        for raw_entry in entries:
-            if not isinstance(raw_entry, dict):
-                changed = True
-                continue
-            content = " ".join(str(raw_entry.get("content") or "").split()).strip()
-            if not content:
-                changed = True
-                continue
-            entry = dict(raw_entry)
-            if entry.get("content") != content:
-                entry["content"] = content
-                changed = True
-            entry.setdefault("id", uuid.uuid4().hex)
-            entry.setdefault("scope", "character")
-            entry.setdefault("memory_type", _classify_memory_text(content))
-            entry.setdefault("enabled", True)
-            entry.setdefault("confidence", 0.8)
-            entry.setdefault("importance", 0.7)
-            entry.setdefault("source", "launcher")
-            entry.setdefault("source_history_uid", "")
-            entry.setdefault("created_at", now)
-            entry.setdefault("updated_at", entry.get("created_at", now))
-
-            key = _normalize_token(content)
-            existing = next(
-                (
-                    item
-                    for item in merged
-                    if _normalize_token(str(item.get("content") or "")) == key
-                    or (
-                        len(key) > 16
-                        and (
-                            key in _normalize_token(str(item.get("content") or ""))
-                            or _normalize_token(str(item.get("content") or "")) in key
-                        )
-                    )
-                ),
-                None,
-            )
-            if existing:
-                changed = True
-                if bool(entry.get("enabled", True)) and not bool(existing.get("enabled", True)):
-                    existing["enabled"] = True
-                if float(entry.get("importance") or 0) >= float(existing.get("importance") or 0):
-                    existing["content"] = entry["content"]
-                    existing["memory_type"] = entry.get("memory_type", existing.get("memory_type", "fact"))
-                    existing["source"] = entry.get("source", existing.get("source", "launcher"))
-                    existing["source_history_uid"] = entry.get(
-                        "source_history_uid",
-                        existing.get("source_history_uid", ""),
-                    )
-                existing["confidence"] = max(
-                    float(existing.get("confidence") or 0),
-                    float(entry.get("confidence") or 0),
-                )
-                existing["importance"] = max(
-                    float(existing.get("importance") or 0),
-                    float(entry.get("importance") or 0),
-                )
-                existing["updated_at"] = max(
-                    str(existing.get("updated_at") or ""),
-                    str(entry.get("updated_at") or ""),
-                ) or now
-                continue
-
-            merged.append(entry)
-
-        merged.sort(
-            key=lambda item: (
-                bool(item.get("enabled", True)),
-                float(item.get("importance") or 0),
-                str(item.get("updated_at") or ""),
-            ),
-            reverse=True,
-        )
-        if merged != entries:
-            changed = True
-        store["entries"] = merged
-        return changed, max(0, before_count - len(merged))
-
-    def _selected_memory_record(self) -> Optional[MemoryRecord]:
-        return self.memory_records.get(self.memory_var.get().strip())
-
-    def _refresh_memory_list(self) -> None:
-        if not hasattr(self, "memory_frame"):
-            return
-        for child in self.memory_frame.winfo_children():
-            child.destroy()
-        self._memory_radio_buttons = []
-        self.memory_records = {}
-
-        character = self._selected_character()
-        if not character:
-            self.memory_var.set("")
-            ctk.CTkLabel(
-                self.memory_frame,
-                text="請先選擇角色，這裡才會顯示角色長期記憶。",
-                text_color=PALETTE["muted"],
-                anchor="w",
-                justify="left",
-                wraplength=300,
-                font=ui_font(12),
-            ).grid(sticky="ew", padx=12, pady=(12, 12))
-            self.memory_status_label.configure(text="尚未選擇角色。")
-            return
-
-        store = self._load_character_memory_store(character)
-        entries = store.get("entries") if isinstance(store, dict) else []
-        if not isinstance(entries, list):
-            entries = []
-
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            entry_id = str(entry.get("id") or "").strip()
-            content = str(entry.get("content") or "").strip()
-            if not entry_id or not content:
-                continue
-            record = MemoryRecord(
-                entry_id=entry_id,
-                content=content,
-                memory_type=str(entry.get("memory_type") or "fact"),
-                enabled=bool(entry.get("enabled", True)),
-                updated_at=str(entry.get("updated_at") or ""),
-            )
-            self.memory_records[entry_id] = record
-
-        current = self.memory_var.get().strip()
-        if self.memory_records:
-            if current not in self.memory_records:
-                self.memory_var.set(next(iter(self.memory_records)))
-        else:
-            self.memory_var.set("")
-
-        if not self.memory_records:
-            ctk.CTkLabel(
-                self.memory_frame,
-                text="目前沒有角色長期記憶。對話中說「請記住...」或手動新增後會出現在這裡。",
-                text_color=PALETTE["muted"],
-                anchor="w",
-                justify="left",
-                wraplength=300,
-                font=ui_font(12),
-            ).grid(sticky="ew", padx=12, pady=(12, 12))
-        else:
-            for entry_id, record in self.memory_records.items():
-                status = "ON" if record.enabled else "OFF"
-                label = (
-                    f"[{status}] ({record.memory_type}) "
-                    f"{_compact_history_text(record.content, max_len=96)}"
-                )
-                radio = ctk.CTkRadioButton(
-                    self.memory_frame,
-                    text=label,
-                    variable=self.memory_var,
-                    value=entry_id,
-                    command=self._on_memory_selected,
-                    height=28,
-                    radiobutton_width=18,
-                    radiobutton_height=18,
-                    font=ui_font(12, "bold"),
-                    text_color=PALETTE["text"] if record.enabled else PALETTE["muted"],
-                    border_color=PALETTE["panel_border"],
-                    hover_color=PALETTE["accent_blue"],
-                    fg_color=PALETTE["accent_lavender"] if record.enabled else PALETTE["warning"],
-                )
-                radio.grid(sticky="ew", padx=12, pady=(10, 0))
-                self._memory_radio_buttons.append(radio)
-
-        enabled_count = sum(1 for item in self.memory_records.values() if item.enabled)
-        self.memory_status_label.configure(
-            text=f"目前角色：{character.conf_name}，共 {len(self.memory_records)} 條，啟用 {enabled_count} 條。"
-        )
-
-    def _on_memory_selected(self) -> None:
-        record = self._selected_memory_record()
-        if record:
-            self.memory_status_label.configure(
-                text=f"已選擇：{_compact_history_text(record.content, max_len=120)}"
-            )
-
-    def on_add_memory(self) -> None:
-        character = self._selected_character()
-        if not character:
-            messagebox.showinfo("角色記憶", "請先選擇角色。")
-            return
-        dialog = ctk.CTkInputDialog(
-            text="輸入要加入目前角色的長期記憶：",
-            title="新增角色記憶",
-        )
-        content = (dialog.get_input() or "").strip()
-        if not content:
-            return
-        store = self._load_character_memory_store(character)
-        entries = store.setdefault("entries", [])
-        if not isinstance(entries, list):
-            entries = []
-            store["entries"] = entries
-        now = datetime.datetime.now().isoformat(timespec="seconds")
-        entries.append(
-            {
-                "id": uuid.uuid4().hex,
-                "scope": "character",
-                "memory_type": _classify_memory_text(content),
-                "content": content,
-                "enabled": True,
-                "confidence": 0.95,
-                "importance": 0.75,
-                "source": "manual",
-                "source_history_uid": "",
-                "created_at": now,
-                "updated_at": now,
-            }
-        )
-        self._compact_memory_entries(store)
-        self._save_character_memory_store(store, character)
-        self._refresh_memory_list()
-        self._schedule_panel_update()
-        self._notify_memory_prompt_refresh()
-        self.log(f"[{log_ts()}] 已新增角色記憶：{_compact_history_text(content, 48)}")
-
-    def on_toggle_memory(self) -> None:
-        character = self._selected_character()
-        record = self._selected_memory_record()
-        if not character or not record:
-            messagebox.showinfo("角色記憶", "請先選擇一條記憶。")
-            return
-        store = self._load_character_memory_store(character)
-        for entry in store.get("entries", []):
-            if isinstance(entry, dict) and str(entry.get("id") or "") == record.entry_id:
-                entry["enabled"] = not bool(entry.get("enabled", True))
-                entry["updated_at"] = datetime.datetime.now().isoformat(timespec="seconds")
-                break
-        self._save_character_memory_store(store, character)
-        self._refresh_memory_list()
-        self._schedule_panel_update()
-        self._notify_memory_prompt_refresh()
-
-    def on_delete_memory(self) -> None:
-        character = self._selected_character()
-        record = self._selected_memory_record()
-        if not character or not record:
-            messagebox.showinfo("角色記憶", "請先選擇一條記憶。")
-            return
-        if not messagebox.askyesno(
-            "刪除角色記憶",
-            f"確定要刪除這條記憶嗎？\n\n{record.content}",
-        ):
-            return
-        store = self._load_character_memory_store(character)
-        entries = store.get("entries", [])
-        if isinstance(entries, list):
-            store["entries"] = [
-                entry
-                for entry in entries
-                if not (
-                    isinstance(entry, dict)
-                    and str(entry.get("id") or "") == record.entry_id
-                )
-            ]
-        self._save_character_memory_store(store, character)
-        self._refresh_memory_list()
-        self._schedule_panel_update()
-        self._notify_memory_prompt_refresh()
-        self.log(f"[{log_ts()}] 已刪除角色記憶。")
-
-    def on_compact_memory(self) -> None:
-        character = self._selected_character()
-        if not character:
-            messagebox.showinfo("角色記憶", "請先選擇角色。")
-            return
-        store = self._load_character_memory_store(character)
-        changed, removed_count = self._compact_memory_entries(store)
-        if changed:
-            self._save_character_memory_store(store, character)
-        self._refresh_memory_list()
-        self._schedule_panel_update()
-        if changed:
-            self._notify_memory_prompt_refresh()
-        self.log(f"[{log_ts()}] 角色記憶已整理，合併/移除 {removed_count} 條。")
 
     def _history_list_signature_for_character(
         self,

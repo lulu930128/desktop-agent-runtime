@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import string
 import shutil
+import sys
 import subprocess
 from pathlib import Path
 from typing import Iterable
@@ -11,6 +12,16 @@ from mcp.server.fastmcp import FastMCP
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OPEN_LLM_ROOT = Path(__file__).resolve().parents[1]
+OPEN_LLM_SRC = OPEN_LLM_ROOT / "src"
+if str(OPEN_LLM_SRC) not in sys.path:
+    sys.path.insert(0, str(OPEN_LLM_SRC))
+
+try:
+    from open_llm_vtuber.conversation_history_index import (
+        search_past_conversations as _search_past_conversations,
+    )
+except Exception:
+    _search_past_conversations = None
 DEFAULT_ROOTS: dict[str, Path] = {
     "workspace": REPO_ROOT,
     "open_llm": OPEN_LLM_ROOT,
@@ -353,6 +364,64 @@ def search_files(
         lines.extend(matches)
     else:
         lines.append("No matches found.")
+    return "\n".join(lines)
+
+
+@mcp.tool(
+    name="search_past_conversations",
+    description=(
+        "Search raw snippets from previous chat histories for the same character. "
+        "Use this when the user asks what was discussed before, wants a prior "
+        "decision, or needs details that may not have been promoted to long-term memory."
+    ),
+)
+def search_past_conversations(
+    query: str,
+    conf_uid: str,
+    exclude_history_uid: str = "",
+    max_results: int = 5,
+) -> str:
+    query = _normalize(query)
+    conf_uid = _normalize(conf_uid)
+    if not query:
+        return "Past conversation search error: query is empty."
+    if not conf_uid:
+        return "Past conversation search error: conf_uid is required."
+    if _search_past_conversations is None:
+        return "Past conversation search error: conversation history index is unavailable."
+
+    try:
+        hits = _search_past_conversations(
+            conf_uid,
+            query,
+            exclude_history_uid=exclude_history_uid,
+            include_current_history=False,
+            max_snippets=max(1, min(int(max_results or 5), 12)),
+            token_budget=1200,
+        )
+    except Exception as exc:
+        return f"Past conversation search error: {exc}"
+
+    lines = [
+        "Past conversation search results:",
+        f"conf_uid: {conf_uid}",
+        f"query: {query}",
+        "",
+    ]
+    if not hits:
+        lines.append("No matching previous conversation snippets found.")
+        return "\n".join(lines)
+
+    for index, hit in enumerate(hits, start=1):
+        source = f"{hit.get('history_uid', '')}#{hit.get('message_index', '')}"
+        timestamp = str(hit.get("timestamp") or "")
+        role = str(hit.get("role") or "")
+        title = str(hit.get("title") or "")
+        content = _normalize(str(hit.get("content") or ""))
+        lines.append(f"{index}. source={source} role={role} time={timestamp}")
+        if title:
+            lines.append(f"   title: {title}")
+        lines.append(f"   snippet: {content}")
     return "\n".join(lines)
 
 

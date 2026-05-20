@@ -45,6 +45,10 @@
       "category": "filesystem",
       "path_args": ["path"],
       "allow_hidden": false
+    },
+    "search_past_conversations": {
+      "mode": "read_only",
+      "category": "memory"
     }
   },
   "filesystem": {

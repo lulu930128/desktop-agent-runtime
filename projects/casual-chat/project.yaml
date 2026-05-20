@@ -1,0 +1,8 @@
+project_id: casual-chat
+display_name: 普通聊天
+project_root: ../..
+prompts:
+  project_prompt: prompts/project_prompt.txt
+  tool_prompt: prompts/tool_prompt.txt
+  response_style_prompt: prompts/response_style_prompt.txt
+notes: Casual everyday chat mode for relaxed desktop companion conversations.

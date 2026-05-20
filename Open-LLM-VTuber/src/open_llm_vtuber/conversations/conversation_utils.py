@@ -174,6 +174,36 @@ _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _LATIN_RE = re.compile(r"[A-Za-z]")
 _DIGIT_RE = re.compile(r"\d")
 _DATA_SYMBOL_RE = re.compile(r"[{}\[\]<>\\/=|_$`~^]")
+_TRADITIONAL_CHINESE_HINT_RE = re.compile(r"[這個麼嗎妳們裡讓說話語會應該與為於後臺台檔號訊]")
+_SPEECH_LABEL_RE = re.compile(
+    r"^\s*(?:結論|重點|原因|建議|補充|提醒|目前|答案|說明|更新|工具|搜尋結果|資料來源|來源)\s*[:：]\s*"
+)
+_LEADING_VOCATIVE_RE = re.compile(
+    r"^\s*[「『\"]?([\w\u3040-\u30ff\u3400-\u9fff]{1,24})[」』\"]?\s*[，,、]\s*(?=\S)"
+)
+_STAGE_DIRECTION_KEYWORDS = (
+    "嘆氣",
+    "叹气",
+    "喘氣",
+    "喘气",
+    "呼吸",
+    "沉默",
+    "停頓",
+    "停顿",
+    "笑",
+    "苦笑",
+    "微笑",
+    "眨眼",
+    "sigh",
+    "breath",
+    "laugh",
+    "pause",
+    "silence",
+    "ため息",
+)
+_NON_SPEECH_JA_RE = re.compile(
+    r"(?i)(?:^|[\s、。！？,.!?])(?:はぁ+|はあ+|ふぅ+|ふう+|ハァ+|フゥ+|sigh+)(?:[\s、。！？,.!?]|$)"
+)
 
 
 def _count_matches(pattern: re.Pattern, text: str) -> int:
@@ -185,6 +215,37 @@ def _compact_speech_text(text: str) -> str:
     text = re.sub(r"\s+([，。！？、；：,.!?;:])", r"\1", text)
     text = re.sub(r"([（「『【])\s+", r"\1", text)
     return text.strip(" \t\r\n-•*+|")
+
+
+def _remove_stage_directions(text: str) -> str:
+    """Drop bracketed/non-verbal cues from the speech lane only."""
+    if not text:
+        return ""
+
+    def replace_if_stage_direction(match: re.Match) -> str:
+        inner = (match.group(1) or "").strip().lower()
+        if any(keyword.lower() in inner for keyword in _STAGE_DIRECTION_KEYWORDS):
+            return " "
+        return match.group(0)
+
+    s = str(text)
+    s = re.sub(r"[（(【\[]\s*([^（）()\[\]【】]{1,40})\s*[）)】\]]", replace_if_stage_direction, s)
+    s = re.sub(r"\*{1,3}\s*([^*\n]{1,40})\s*\*{1,3}", replace_if_stage_direction, s)
+    return s
+
+
+def _strip_speech_prefixes(text: str) -> str:
+    """Remove labels and leading direct-address names before speech rendering."""
+    s = _SPEECH_LABEL_RE.sub("", text or "").strip()
+    match = _LEADING_VOCATIVE_RE.match(s)
+    if match:
+        name = match.group(1)
+        rest = s[match.end():].strip()
+        # Treat short comma-prefixed tokens as direct address in the voice lane.
+        # The subtitle still keeps the name, but speech avoids making TTS read it as an emotion/sigh.
+        if rest and len(name) <= 24 and len(rest) >= 3:
+            s = rest
+    return s
 
 
 def _is_trivial_speech_text(text: str) -> bool:
@@ -249,6 +310,8 @@ def _sanitize_speech_line(text: str) -> str:
         return ""
 
     s = text or ""
+    s = _remove_stage_directions(s)
+    s = _strip_speech_prefixes(s)
     s = _FENCED_CODE_RE.sub(" ", s)
     s = _MARKDOWN_LINK_RE.sub(r"\1", s)
     s = _PAREN_URL_RE.sub("", s)
@@ -267,6 +330,54 @@ def _sanitize_speech_line(text: str) -> str:
     s = _compact_speech_text(s)
 
     if not _speech_line_is_useful(s):
+        return ""
+    return s
+
+
+def _sanitize_rendered_japanese_for_tts(text: str) -> str:
+    """Final guard before the Japanese line reaches the TTS engine."""
+    s = _compact_speech_text(_remove_stage_directions(text or ""))
+    if not s:
+        return ""
+
+    # Remove non-verbal sigh/breath tokens that some renderers produce from names or emotion cues.
+    previous = None
+    while previous != s:
+        previous = s
+        s = _NON_SPEECH_JA_RE.sub(" ", s)
+        s = _compact_speech_text(s)
+
+    s = re.sub(r"^\s*[（(【\[][^（）()\[\]【】]{1,40}[）)】\]]\s*", "", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"^[、。！？,.!?…〜~\s]+", "", s)
+    s = re.sub(r"[、,]\s*([。！？!?])", r"\1", s)
+    s = _compact_speech_text(s)
+
+    if not s or _is_trivial_speech_text(s):
+        return ""
+    kana = sum(
+        1
+        for ch in s
+        if 0x3040 <= ord(ch) <= 0x30FF or 0x31F0 <= ord(ch) <= 0x31FF
+    )
+    cjk = _count_matches(_CJK_RE, s)
+    latin = _count_matches(_LATIN_RE, s)
+    digits = _count_matches(_DIGIT_RE, s)
+
+    if kana == 0 and not (cjk <= 4 and latin == 0 and digits == 0 and not _TRADITIONAL_CHINESE_HINT_RE.search(s)):
+        logger.warning(f"Rendered speech rejected because it has no kana: {s[:120]!r}")
+        return ""
+    if _TRADITIONAL_CHINESE_HINT_RE.search(s) and kana / max(1, kana + cjk) < 0.55:
+        logger.warning(f"Rendered speech rejected because it still looks Chinese: {s[:120]!r}")
+        return ""
+    if latin > 8 and latin > kana:
+        logger.warning(f"Rendered speech rejected because latin text leaked into TTS: {s[:120]!r}")
+        return ""
+    if digits > 12 and digits > kana:
+        logger.warning(f"Rendered speech rejected because dense numbers leaked into TTS: {s[:120]!r}")
+        return ""
+    if not _is_safe_japanese_tts(s):
+        logger.warning(f"Rendered speech rejected as unsafe for Japanese TTS: {s[:120]!r}")
         return ""
     return s
 
@@ -1351,7 +1462,7 @@ async def handle_sentence_output(
     if full_zh_text and not speech_zh_text:
         logger.info("Speech-source lane is empty after sanitizing; display-only response will stay silent.")
 
-    spoken_ja = await _render_spoken_ja(speech_zh_text)
+    spoken_ja = _sanitize_rendered_japanese_for_tts(await _render_spoken_ja(speech_zh_text))
     if spoken_ja and spoken_ja.strip() == speech_zh_text:
         logger.warning("Speech renderer returned the original subtitle text; skip voice lane to avoid feeding zh text into ja TTS.")
         spoken_ja = ""

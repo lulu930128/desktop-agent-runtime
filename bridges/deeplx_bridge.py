@@ -385,6 +385,9 @@ async def render_openai_spoken_short(text: str, style_prompt_ja: str = "") -> Di
         "   - Do not add generic service closings such as '他に手伝うことはある？' unless the input explicitly says that.\n"
         "   - If the input mentions tools, permissions, errors, URLs, code names, or file paths, keep the meaning but make it speakable.\n"
         "   - Do not include Chinese characters that are not common in Japanese; avoid mixing languages.\n"
+        "   - Do not output sighs, breaths, laughter, stage directions, or non-verbal sounds such as 'はぁ', 'ふぅ', '(ため息)', or 'sigh'.\n"
+        "   - If the input starts with a user's name or nickname as a vocative, omit that vocative in the spoken line unless it is semantically necessary.\n"
+        "   - Never transform a person name into an emotion sound, filler, breath, or sigh.\n"
         "2) emotion: one of [neutral, joy, smirk, surprise, anger, sadness, fear, disgust].\n"
         "Return ONLY a valid JSON object: {\"ja\":\"...\",\"emotion\":\"...\"}.\n"
     )
@@ -402,6 +405,7 @@ async def render_openai_spoken_short(text: str, style_prompt_ja: str = "") -> Di
         "- Do not add the user's name, a nickname, or any vocative unless the input explicitly contains it.\n"
         "- Do not add greetings, affection, reassurance, roleplay lines, or follow-up questions unless the input explicitly contains them.\n"
         "- Character style may adjust tone only; it must not add content.\n"
+        "- Voice output must contain only words to be spoken. No breath marks, no sighs, no laughter tokens, no bracketed actions.\n"
     )
 
     body = {
@@ -440,6 +444,9 @@ async def render_openai_spoken_short(text: str, style_prompt_ja: str = "") -> Di
     # Ensure no bullet/step markers leak into spoken output
     ja = re.sub(r"^\s*[-•]\s*", "", ja)
     ja = re.sub(r"\b\d+\s*[.)．、:：]\s*", "", ja)
+    ja = re.sub(r"[（(【\[]\s*(?:ため息|嘆息|笑い|sigh|breath|laugh)[^（）()\[\]【】]{0,20}\s*[）)】\]]", " ", ja, flags=re.IGNORECASE)
+    ja = re.sub(r"(?i)(?:^|[\s、。！？,.!?])(?:はぁ+|はあ+|ふぅ+|ふう+|ハァ+|フゥ+|sigh+)(?:[\s、。！？,.!?]|$)", " ", ja)
+    ja = re.sub(r"\s+", " ", ja).strip(" 、。！？,.!?")
 
     # Hard truncate to prevent long TTS queues
     if len(ja) > SPOKEN_MAX_CHARS * 2:

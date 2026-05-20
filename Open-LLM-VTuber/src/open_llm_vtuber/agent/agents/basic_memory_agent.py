@@ -30,6 +30,7 @@ from ...mcpp.json_detector import StreamJSONDetector
 from ...mcpp.types import ToolCallObject
 from ...mcpp.tool_executor import ToolExecutor
 from ...character_memory_manager import format_character_memories_for_prompt
+from ...conversation_history_index import format_past_conversations_for_prompt
 
 
 class BasicMemoryAgent(AgentInterface):
@@ -392,16 +393,31 @@ class BasicMemoryAgent(AgentInterface):
     def _format_relevant_memory_prompt(self, query_text: str) -> str:
         if not self._memory_conf_uid:
             return ""
+        sections: list[str] = []
         try:
-            return format_character_memories_for_prompt(
+            character_memory_prompt = format_character_memories_for_prompt(
                 self._memory_conf_uid,
                 query_text=query_text,
                 max_entries=12,
                 token_budget=900,
             )
+            if character_memory_prompt:
+                sections.append(character_memory_prompt)
         except Exception as exc:
             logger.warning(f"Failed to build relevant memory prompt: {exc}")
-            return ""
+        try:
+            history_prompt = format_past_conversations_for_prompt(
+                self._memory_conf_uid,
+                query_text=query_text,
+                current_history_uid=self._memory_history_uid,
+                max_snippets=4,
+                token_budget=520,
+            )
+            if history_prompt:
+                sections.append(history_prompt)
+        except Exception as exc:
+            logger.warning(f"Failed to build cross-history memory prompt: {exc}")
+        return "\n\n".join(sections)
 
     def _compose_tool_system_prompt(
         self,

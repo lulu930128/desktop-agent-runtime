@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import os
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -10,6 +8,10 @@ from pathlib import Path
 from typing import Any, Literal, TypedDict
 
 from loguru import logger
+
+from .character_memory_repository import CharacterMemoryRepository
+from .character_memory_retriever import CharacterMemoryRetriever
+from .character_memory_sql_index import SQLiteMemoryIndex
 
 
 MemoryType = Literal[
@@ -111,6 +113,7 @@ SENSITIVE_PATTERNS = [
 ]
 
 SOURCE_PRIORITY = {
+    "manual": 105,
     "explicit": 100,
     "tool_verified": 90,
     "assistant_outcome_confirmed": 82,
@@ -119,76 +122,36 @@ SOURCE_PRIORITY = {
     "unknown": 10,
 }
 
+_MEMORY_REPOSITORY = CharacterMemoryRepository()
+_MEMORY_RETRIEVER = CharacterMemoryRetriever(index=SQLiteMemoryIndex())
+
 
 def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
 def _memory_root() -> Path:
-    root = os.getenv("KURO_MEMORY_ROOT", "").strip()
-    return Path(root) if root else Path("memories")
+    return _MEMORY_REPOSITORY.root()
 
 
 def _safe_path_component(value: str) -> str:
-    safe = os.path.basename((value or "").strip())
-    if not safe or safe in {".", ".."}:
-        raise ValueError("Invalid memory path component.")
-    if any(ch in safe for ch in '<>:"/\\|?*') or any(ord(ch) < 32 for ch in safe):
-        raise ValueError(f"Invalid characters in memory path component: {value}")
-    return safe
+    return _MEMORY_REPOSITORY.safe_path_component(value)
 
 
 def _store_path(conf_uid: str) -> Path:
-    safe_conf_uid = _safe_path_component(conf_uid)
-    return _memory_root() / "characters" / safe_conf_uid / "long_term.json"
+    return _MEMORY_REPOSITORY.store_path(conf_uid)
 
 
 def _empty_store(conf_uid: str) -> dict[str, Any]:
-    now = _now_iso()
-    return {
-        "version": 1,
-        "scope": "character",
-        "conf_uid": conf_uid,
-        "created_at": now,
-        "updated_at": now,
-        "entries": [],
-    }
+    return _MEMORY_REPOSITORY.empty_store(conf_uid)
 
 
 def _load_store(conf_uid: str) -> dict[str, Any]:
-    path = _store_path(conf_uid)
-    if not path.exists():
-        return _empty_store(conf_uid)
-
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        logger.error(f"Failed to load character memory store {path}: {exc}")
-        return _empty_store(conf_uid)
-
-    if not isinstance(data, dict):
-        return _empty_store(conf_uid)
-
-    data.setdefault("version", 1)
-    data.setdefault("scope", "character")
-    data.setdefault("conf_uid", conf_uid)
-    data.setdefault("created_at", _now_iso())
-    data.setdefault("updated_at", data.get("created_at") or _now_iso())
-    if not isinstance(data.get("entries"), list):
-        data["entries"] = []
-    return data
+    return _MEMORY_REPOSITORY.load(conf_uid)
 
 
 def _save_store(conf_uid: str, data: dict[str, Any]) -> None:
-    path = _store_path(conf_uid)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data["updated_at"] = _now_iso()
-    tmp_path = path.with_suffix(".json.tmp")
-    tmp_path.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    os.replace(tmp_path, path)
+    _MEMORY_REPOSITORY.save(conf_uid, data)
 
 
 def _clean_text(content: str, max_len: int = 260) -> str:
@@ -1080,6 +1043,118 @@ def compact_character_memories(conf_uid: str) -> tuple[bool, int]:
     return changed, max(0, before_count - after_count)
 
 
+def add_character_memory(
+    conf_uid: str,
+    content: str,
+    *,
+    memory_type: MemoryType | None = None,
+    scope_level: MemoryScopeLevel = "character",
+    source: str = "manual",
+    confidence: float = 0.95,
+    importance: float = 0.75,
+    status: MemoryStatus = "active",
+    evidence: dict[str, Any] | None = None,
+) -> bool:
+    """Add or update one long-term memory through the canonical store path."""
+    if not conf_uid:
+        return False
+    content = _clean_text(content, max_len=260)
+    if not content or _contains_sensitive_data(content):
+        return False
+
+    store = _load_store(conf_uid)
+    changed = _upsert_memory(
+        store,
+        content=content,
+        memory_type=memory_type or _classify_memory_type(content),
+        source=source,
+        history_uid="",
+        confidence=confidence,
+        importance=importance,
+        scope_level=scope_level,
+        evidence=evidence or {"source": "launcher"},
+        status=status,
+    )
+    if not changed:
+        return False
+
+    _compact_store(store)
+    _save_store(conf_uid, store)
+    return True
+
+
+def update_character_memory_status(
+    conf_uid: str,
+    entry_id: str,
+    status: MemoryStatus,
+) -> bool:
+    """Update lifecycle status for a memory entry.
+
+    Only active entries are enabled for prompt retrieval; all other lifecycle states
+    stay visible in the store but are excluded from prompts.
+    """
+    if not conf_uid or not entry_id:
+        return False
+    if status not in {
+        "active",
+        "superseded",
+        "disabled",
+        "pending_confirmation",
+        "pending_delete",
+    }:
+        return False
+
+    store = _load_store(conf_uid)
+    entries = store.get("entries")
+    if not isinstance(entries, list):
+        return False
+
+    now = _now_iso()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if str(entry.get("id") or "") != entry_id:
+            continue
+        enabled = status == "active"
+        changed = (
+            entry.get("status") != status
+            or bool(entry.get("enabled", True)) != enabled
+        )
+        entry["status"] = status
+        entry["enabled"] = enabled
+        entry["updated_at"] = now
+        if changed:
+            _save_store(conf_uid, store)
+        return changed
+    return False
+
+
+def delete_character_memory(conf_uid: str, entry_id: str) -> bool:
+    """Permanently remove one memory entry from the canonical store."""
+    if not conf_uid or not entry_id:
+        return False
+
+    store = _load_store(conf_uid)
+    entries = store.get("entries")
+    if not isinstance(entries, list):
+        return False
+
+    next_entries = [
+        entry
+        for entry in entries
+        if not (
+            isinstance(entry, dict)
+            and str(entry.get("id") or "") == entry_id
+        )
+    ]
+    if len(next_entries) == len(entries):
+        return False
+
+    store["entries"] = next_entries
+    _save_store(conf_uid, store)
+    return True
+
+
 def process_character_memory_turn(
     *,
     conf_uid: str,
@@ -1307,38 +1382,20 @@ def list_character_memories(
     entries = [
         entry
         for entry in store.get("entries", [])
-        if isinstance(entry, dict) and (not enabled_only or _is_active_memory(entry))
+        if isinstance(entry, dict)
     ]
 
     plan = read_plan
     if plan is None and query_text:
         plan = infer_memory_read_plan(query_text, max_entries=max_entries or 12)
 
-    if plan:
-        entries.sort(
-            key=lambda entry: (
-                _score_memory_for_plan(entry, plan),
-                str(entry.get("updated_at") or ""),
-            ),
-            reverse=True,
-        )
-        max_count = max_entries or plan.max_entries
-        budget = token_budget if token_budget is not None else plan.token_budget
-    else:
-        entries.sort(
-            key=lambda entry: (
-                float(entry.get("importance") or 0),
-                str(entry.get("updated_at") or ""),
-            ),
-            reverse=True,
-        )
-        max_count = max_entries or len(entries)
-        budget = token_budget
-
-    entries = _pack_memory_entries(
+    entries = _MEMORY_RETRIEVER.retrieve(
         entries,
-        max_entries=max(0, max_count),
-        token_budget=budget,
+        enabled_only=enabled_only,
+        read_plan=plan,
+        namespace=conf_uid,
+        max_entries=max_entries,
+        token_budget=token_budget,
     )
     return entries
 
@@ -1402,7 +1459,8 @@ def format_character_memories_for_preview(conf_uid: str, *, max_entries: int = 8
 
     lines: list[str] = []
     for entry in entries:
-        marker = "ON" if entry.get("enabled", True) else "OFF"
+        status = _entry_status(entry)
+        marker = "ACTIVE" if _is_active_memory(entry) else status.upper()
         memory_type = str(entry.get("memory_type") or "fact")
         content = _clean_text(str(entry.get("content") or ""), max_len=260)
         updated_at = str(entry.get("updated_at") or "")
