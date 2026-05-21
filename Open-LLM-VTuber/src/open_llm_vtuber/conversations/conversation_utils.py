@@ -127,6 +127,18 @@ def _contains_kana(text: str) -> bool:
             return True
     return False
 
+
+def _looks_like_json_artifact(text: str) -> bool:
+    s = (text or "").strip()
+    if not s:
+        return False
+    if _JSON_ARTIFACT_RE.search(s):
+        return True
+    if s.startswith('"') and s.endswith('"') and len(s) > 2:
+        return True
+    return False
+
+
 def _is_safe_japanese_tts(text: str) -> bool:
     """Return True if text is likely acceptable Japanese for TTS.
 
@@ -165,8 +177,9 @@ def _is_safe_japanese_tts(text: str) -> bool:
     if kana > 0:
         return True
 
-    # allow kanji-only short proper nouns; reject if it looks clearly Chinese
-    return not _looks_like_chinese(s)
+    # Kanji-only is risky for the Japanese TTS path; allow only tiny fixed phrases.
+    normalized = re.sub(r"[\s\u3000\u3001\u3002,.!?！？、。]+", "", s)
+    return normalized in _KANJI_ONLY_TTS_ALLOWLIST
 
 
 _URL_RE = re.compile(r"(?i)\b(?:https?://|www\.)[^\s，。！？、；;）)\]】>」』]+")
@@ -183,6 +196,18 @@ _LATIN_RE = re.compile(r"[A-Za-z]")
 _DIGIT_RE = re.compile(r"\d")
 _DATA_SYMBOL_RE = re.compile(r"[{}\[\]<>\\/=|_$`~^]")
 _TRADITIONAL_CHINESE_HINT_RE = re.compile(r"[這個麼嗎妳們裡讓說話語會應該與為於後臺台檔號訊]")
+_JSON_ARTIFACT_RE = re.compile(
+    r"(?:\\?\"(?:ja|emotion|data|provider|code|errors)\\?\"\s*:|[{}]|\\[nrt\"])",
+    re.IGNORECASE,
+)
+_KANJI_ONLY_TTS_ALLOWLIST = {
+    "\u5927\u4e08\u592b",  # daijoubu
+    "\u4e86\u89e3",  # ryoukai
+    "\u78ba\u8a8d\u4e2d",  # kakunin-chuu
+}
+_JA_TTS_SENTENCE_MARKERS_RE = re.compile(
+    r"[\u3040-\u309f](?:\u3067\u3059|\u307e\u3059|\u3060|\u306d|\u3088|\u304b|\u305f|\u308b|\u3066|\u306b|\u3092|\u304c|\u306f|\u3082|\u306e|\u3057)"
+)
 _SPEECH_LABEL_RE = re.compile(
     r"^\s*(?:結論|重點|原因|建議|補充|提醒|目前|答案|說明|更新|工具|搜尋結果|資料來源|來源)\s*[:：]\s*"
 )
@@ -366,6 +391,9 @@ def _finalize_rendered_japanese_for_tts(
     s = _compact_speech_text(_remove_stage_directions(text or ""))
     if not s:
         return "", "empty", []
+    if _looks_like_json_artifact(s):
+        logger.warning(f"Rendered speech rejected because it contains JSON artifacts: {s[:120]!r}")
+        return "", "json_artifact", []
 
     s, pronunciation_hits = apply_pronunciation(s, pronunciation_entries)
     s = _compact_speech_text(s)
@@ -383,6 +411,9 @@ def _finalize_rendered_japanese_for_tts(
     s = re.sub(r"[、,]\s*([。！？!?])", r"\1", s)
     s = _compact_speech_text(s)
 
+    if _looks_like_json_artifact(s):
+        logger.warning(f"Rendered speech rejected because it contains JSON artifacts: {s[:120]!r}")
+        return "", "json_artifact", pronunciation_hits
     if not s or _is_trivial_speech_text(s):
         return "", "trivial", pronunciation_hits
     kana = sum(
@@ -394,6 +425,11 @@ def _finalize_rendered_japanese_for_tts(
     latin = _count_matches(_LATIN_RE, s)
     digits = _count_matches(_DIGIT_RE, s)
 
+    if kana == 0:
+        normalized = re.sub(r"[\s\u3000\u3001\u3002,.!?！？、。]+", "", s)
+        if normalized not in _KANJI_ONLY_TTS_ALLOWLIST:
+            logger.warning(f"Rendered speech rejected because it has no kana: {s[:120]!r}")
+            return "", "no_kana", pronunciation_hits
     if kana == 0 and not (cjk <= 4 and latin == 0 and digits == 0 and not _TRADITIONAL_CHINESE_HINT_RE.search(s)):
         logger.warning(f"Rendered speech rejected because it has no kana: {s[:120]!r}")
         return "", "no_kana", pronunciation_hits
@@ -406,6 +442,20 @@ def _finalize_rendered_japanese_for_tts(
     if digits > 12 and digits > kana:
         logger.warning(f"Rendered speech rejected because dense numbers leaked into TTS: {s[:120]!r}")
         return "", "dense_numbers", pronunciation_hits
+    words = [part for part in s.split(" ") if part]
+    if len(words) >= 4 and kana < 8:
+        logger.warning(f"Rendered speech rejected because it looks like fragmented tokens: {s[:120]!r}")
+        return "", "fragmented_tokens", pronunciation_hits
+    if kana > 0 and len(s) > 8:
+        no_space = re.sub(r"\s+", "", s)
+        has_sentence_shape = bool(
+            _JA_TTS_SENTENCE_MARKERS_RE.search(no_space)
+            or re.search(r"[\u3002.!?！？]$", no_space)
+            or any(phrase in no_space for phrase in _KANJI_ONLY_TTS_ALLOWLIST)
+        )
+        if not has_sentence_shape and cjk >= 3 and kana < cjk:
+            logger.warning(f"Rendered speech rejected because it is not sentence-like Japanese: {s[:120]!r}")
+            return "", "not_sentence_like", pronunciation_hits
     if not _is_safe_japanese_tts(s):
         logger.warning(f"Rendered speech rejected as unsafe for Japanese TTS: {s[:120]!r}")
         return "", "unsafe_japanese", pronunciation_hits

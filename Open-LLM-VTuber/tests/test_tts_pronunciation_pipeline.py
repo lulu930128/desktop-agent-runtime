@@ -105,6 +105,38 @@ class TTSPipelineTest(unittest.TestCase):
             "",
         )
 
+    def test_bridge_parses_escaped_json_before_quality_check(self) -> None:
+        bridge = _load_bridge_module()
+
+        obj = bridge._safe_json_parse(
+            r'{\"ja\":\"\u3053\u308c\u306f\u305d\u306e\u307e\u307e\u76f4\u305b\u307e\u3059\u3002\",\"emotion\":\"neutral\"}'
+        )
+
+        self.assertEqual(obj["ja"], "これはそのまま直せます。")
+        self.assertEqual(
+            bridge._spoken_japanese_quality_issue(
+                r'{\"ja\":\"\u3053\u308c\u306f\u305d\u306e\u307e\u307e\u76f4\u305b\u307e\u3059\u3002\"}'
+            ),
+            "json_artifact",
+        )
+
+    def test_json_artifacts_and_single_kanji_are_rejected_before_tts(self) -> None:
+        final, reason, _hits = _finalize_rendered_japanese_for_tts(
+            r'{\"ja\":\"\u3053\u308c\u306f\u305d\u306e\u307e\u307e\u76f4\u305b\u307e\u3059\u3002\"}',
+            self.entries,
+        )
+
+        self.assertEqual(final, "")
+        self.assertEqual(reason, "json_artifact")
+
+        final, reason, _hits = _finalize_rendered_japanese_for_tts(
+            "\u4e00",
+            self.entries,
+        )
+
+        self.assertEqual(final, "")
+        self.assertEqual(reason, "no_kana")
+
 
 if __name__ == "__main__":
     unittest.main()

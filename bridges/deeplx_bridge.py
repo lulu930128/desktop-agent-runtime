@@ -388,6 +388,26 @@ _JA_SENTENCE_MARKERS = (
     "ください",
     "しょう",
 )
+_JSON_ARTIFACT_RE = re.compile(
+    r"(?:\\?\"(?:ja|emotion|data|provider|code|errors)\\?\"\s*:|[{}]|\\[nrt\"])",
+    re.IGNORECASE,
+)
+_KANJI_ONLY_SPEECH_ALLOWLIST = {
+    "\u5927\u4e08\u592b",  # daijoubu
+    "\u4e86\u89e3",      # ryoukai
+    "\u78ba\u8a8d\u4e2d",  # kakunin-chuu
+}
+
+
+def _looks_like_json_artifact(text: str) -> bool:
+    s = (text or "").strip()
+    if not s:
+        return False
+    if _JSON_ARTIFACT_RE.search(s):
+        return True
+    if s.startswith('"') and s.endswith('"') and len(s) > 2:
+        return True
+    return False
 
 
 def _clean_pronunciation_text(value: Any, max_len: int = 120) -> str:
@@ -480,18 +500,44 @@ def _format_pronunciation_prompt(entries: List[Dict[str, Any]], max_entries: int
 
 
 def _safe_json_parse(s: str) -> Dict[str, Any]:
-    try:
-        return json.loads(s)
-    except Exception:
-        # try slice from first { to last }
-        a = s.find("{")
-        b = s.rfind("}")
-        if a != -1 and b != -1 and b > a:
-            try:
-                return json.loads(s[a:b+1])
-            except Exception:
-                return {}
+    def try_load(candidate: str, depth: int = 0) -> Dict[str, Any] | None:
+        if depth > 2:
+            return None
+        try:
+            obj = json.loads(candidate)
+        except Exception:
+            return None
+        if isinstance(obj, dict):
+            return obj
+        if isinstance(obj, str):
+            return try_load(obj.strip(), depth + 1)
+        return None
+
+    raw = (s or "").strip()
+    if not raw:
         return {}
+
+    candidates = [raw]
+    if '\\"' in raw or "\\{" in raw or "\\n" in raw:
+        try:
+            candidates.append(raw.encode("utf-8").decode("unicode_escape"))
+        except Exception:
+            pass
+
+    for candidate in candidates:
+        obj = try_load(candidate)
+        if obj is not None:
+            return obj
+
+        # try slice from first { to last }
+        a = candidate.find("{")
+        b = candidate.rfind("}")
+        if a != -1 and b != -1 and b > a:
+            obj = try_load(candidate[a : b + 1])
+            if obj is not None:
+                return obj
+
+    return {}
 
 
 def _count_kana(s: str) -> int:
@@ -520,12 +566,18 @@ def _spoken_japanese_quality_issue(ja: str) -> str:
     text = (ja or "").strip()
     if not text:
         return "empty"
+    if _looks_like_json_artifact(text):
+        return "json_artifact"
 
     kana = _count_kana(text)
     cjk = _count_cjk(text)
     latin = len(re.findall(r"[A-Za-z]", text))
     digits = len(re.findall(r"\d", text))
 
+    if kana == 0:
+        normalized = re.sub(r"[\s\u3000\u3001\u3002,.!?！？、。]+", "", text)
+        if normalized not in _KANJI_ONLY_SPEECH_ALLOWLIST:
+            return "no_kana"
     if kana == 0 and cjk > 4:
         return "no_kana"
     if latin > 8 and latin > kana:
@@ -550,6 +602,17 @@ def _spoken_japanese_quality_issue(ja: str) -> str:
         return "fragmented_tokens"
 
     return ""
+
+
+def _prepare_spoken_output(
+    out: str,
+    pronunciation_entries: List[Dict[str, Any]] | None = None,
+) -> Tuple[str, List[str]]:
+    ja, hits = _cleanup_spoken_ja(out, pronunciation_entries or [])
+    issue = _spoken_japanese_quality_issue(ja)
+    if issue:
+        raise RuntimeError(f"low-quality spoken Japanese ({issue}): {ja[:200]!r}")
+    return ja, hits
 
 
 async def render_openai_spoken_short(
@@ -758,12 +821,15 @@ async def render_spoken(req: Request):
     if not text:
         return json_utf8({"code": 200, "data": "", "emotion": "neutral", "provider": "noop"})
 
+    errors: Dict[str, str] = {}
+
     # If already Japanese (true Japanese sentence), return as-is and neutral emotion (cheap path)
     if is_mostly_japanese(text):
-        out, hits = _apply_pronunciation(text, pronunciation_entries)
-        return json_utf8({"code": 200, "data": out, "emotion": "neutral", "provider": "skip-ja", "pronunciation_hits": hits})
-
-    errors: Dict[str, str] = {}
+        try:
+            out, hits = _prepare_spoken_output(text, pronunciation_entries)
+            return json_utf8({"code": 200, "data": out, "emotion": "neutral", "provider": "skip-ja", "pronunciation_hits": hits})
+        except Exception as e:
+            errors["skip_ja"] = str(e)
 
     # Primary: OpenAI render spoken short
     try:
@@ -789,7 +855,7 @@ async def render_spoken(req: Request):
     if ENABLE_OLLAMA_FALLBACK:
         try:
             out = await translate_ollama_to_ja(text)
-            out, hits = _apply_pronunciation(out, pronunciation_entries)
+            out, hits = _prepare_spoken_output(out, pronunciation_entries)
             return json_utf8({"code": 200, "data": out, "emotion": "neutral", "provider": f"ollama:{OLLAMA_MODEL}:translate_only", "pronunciation_hits": hits, "errors": errors})
         except Exception as e:
             errors["ollama_translate"] = str(e)
@@ -799,7 +865,7 @@ async def render_spoken(req: Request):
     # Fallback: OpenAI translate only (no emotion)
     try:
         out = await translate_openai_to_ja(text)
-        out, hits = _apply_pronunciation(out, pronunciation_entries)
+        out, hits = _prepare_spoken_output(out, pronunciation_entries)
         return json_utf8({"code": 200, "data": out, "emotion": "neutral", "provider": f"openai:{OPENAI_MODEL}:translate_only", "pronunciation_hits": hits, "errors": errors})
     except Exception as e:
         errors["translate_only"] = str(e)
@@ -809,10 +875,9 @@ async def render_spoken(req: Request):
     if ENABLE_DEEPLX_FALLBACK:
         try:
             out = await translate_deeplx_to_ja(text)
-            out, hits = _apply_pronunciation(out, pronunciation_entries)
+            out, hits = _prepare_spoken_output(out, pronunciation_entries)
             return json_utf8({"code": 200, "data": out, "emotion": "neutral", "provider": "deeplx", "pronunciation_hits": hits, "errors": errors})
         except Exception as e:
             errors["deeplx"] = str(e)
 
-    out, hits = _apply_pronunciation(text, pronunciation_entries)
-    return json_utf8({"code": 200, "data": out, "emotion": "neutral", "provider": "fallback-original", "pronunciation_hits": hits, "errors": errors})
+    return json_utf8({"code": 200, "data": "", "emotion": "neutral", "provider": "blocked-low-quality", "pronunciation_hits": [], "errors": errors})
