@@ -1493,7 +1493,7 @@ export class LAppModel extends CubismUserModel {
     for (let i = 0; i < count; i++) {
       if (this._modelSetting.getHitAreaName(i) == hitArenaName) {
         const drawId: CubismIdHandle = this._modelSetting.getHitAreaId(i);
-        return this.isHit(drawId, x, y);
+        return this.isTouchableDrawable(drawId) && this.isHit(drawId, x, y);
       }
     }
 
@@ -1508,12 +1508,28 @@ export class LAppModel extends CubismUserModel {
     const count = this._modelSetting.getHitAreasCount();
     for (let i = 0; i < count; i++) {
       const drawId = this._modelSetting.getHitAreaId(i);
-      if (this.isHit(drawId, x, y)) {
+      if (this.isTouchableDrawable(drawId) && this.isHit(drawId, x, y)) {
         return true;
       }
     }
 
     return false;
+  }
+
+  private isTouchableDrawable(drawableId: CubismIdHandle): boolean {
+    if (!this._model) {
+      return false;
+    }
+
+    const drawableIndex = this._model.getDrawableIndex(drawableId);
+    if (drawableIndex < 0) {
+      return false;
+    }
+
+    return (
+      this._model.getDrawableOpacity(drawableIndex) > 0.001 &&
+      this._model.getDrawableDynamicFlagIsVisible(drawableIndex)
+    );
   }
 
   public hitTestDrawableBounds(x: number, y: number): boolean {

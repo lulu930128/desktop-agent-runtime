@@ -101,6 +101,7 @@ export class PetLive2DRenderer {
   private forceActiveUntilMs: number;
   private cachedDrawableBounds: DrawableBounds | null;
   private cachedDrawableBoundsAtMs: number;
+  private dynamicDrawableBoundsUntilMs: number;
   private lastResizeWidth: number;
   private lastResizeHeight: number;
   private lastResizeDpr: number;
@@ -133,6 +134,7 @@ export class PetLive2DRenderer {
     this.forceActiveUntilMs = 0;
     this.cachedDrawableBounds = null;
     this.cachedDrawableBoundsAtMs = 0;
+    this.dynamicDrawableBoundsUntilMs = 0;
     this.lastResizeWidth = -1;
     this.lastResizeHeight = -1;
     this.lastResizeDpr = -1;
@@ -334,6 +336,7 @@ export class PetLive2DRenderer {
       0.85,
       this.outfitParameterIndex
     );
+    this.refreshDrawableBoundsDuringTransition(1100);
     this.bumpActivity(900);
   }
 
@@ -359,6 +362,7 @@ export class PetLive2DRenderer {
     for (const [parameterId, value] of Object.entries(nextParameters)) {
       this.model?.setExternalParameterTarget(parameterId, value, 0.35);
     }
+    this.refreshDrawableBoundsDuringTransition(600);
     this.bumpActivity(900);
   }
 
@@ -498,6 +502,14 @@ export class PetLive2DRenderer {
     this.cachedDrawableBoundsAtMs = 0;
   }
 
+  private refreshDrawableBoundsDuringTransition(durationMs: number): void {
+    this.invalidateDrawableBounds();
+    this.dynamicDrawableBoundsUntilMs = Math.max(
+      this.dynamicDrawableBoundsUntilMs,
+      performance.now() + Math.max(0, durationMs)
+    );
+  }
+
   private getTargetFps(): number {
     if (FORCE_MAX_RENDER_FPS) {
       return Number.POSITIVE_INFINITY;
@@ -568,12 +580,13 @@ export class PetLive2DRenderer {
   }
 
   private getDrawableBounds(readyModel: LAppModel): DrawableBounds | null {
-    if (this.cachedDrawableBounds) {
+    const now = performance.now();
+    if (this.cachedDrawableBounds && now >= this.dynamicDrawableBoundsUntilMs) {
       return this.cachedDrawableBounds;
     }
 
     this.cachedDrawableBounds = this.measureDrawableBounds(readyModel);
-    this.cachedDrawableBoundsAtMs = performance.now();
+    this.cachedDrawableBoundsAtMs = now;
     return this.cachedDrawableBounds;
   }
 

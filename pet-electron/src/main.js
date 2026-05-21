@@ -1,5 +1,6 @@
 ﻿const path = require("path");
 const fs = require("fs");
+const { spawn } = require("child_process");
 const {
   app,
   BrowserWindow,
@@ -21,6 +22,7 @@ const { createPetContextMenu, createTrayMenu } = require("./main-process/menus")
 const { createPetLogger } = require("./main-process/pet-logger");
 
 const APP_NAME = "Kuro Pet Electron";
+const APP_USER_MODEL_ID = "kuro.desktop-agent.pet";
 const TEMP_MAX_RENDER_PERFORMANCE = true;
 const CONTROL_HOST = process.env.KURO_PET_CONTROL_HOST || "127.0.0.1";
 const CONTROL_PORT = Number(process.env.KURO_PET_CONTROL_PORT || "23567");
@@ -52,6 +54,7 @@ let statePath = "";
 let hoveredComponents = new Map();
 let activeWindowDrag = null;
 let controlServer = null;
+const taskbarHiddenNativeHandles = new Set();
 let latestFrontendState = {
   wsConnected: false,
   aiState: "idle",
@@ -72,6 +75,11 @@ let latestFrontendState = {
 };
 
 const petLog = createPetLogger(app);
+
+app.setName(APP_NAME);
+if (process.platform === "win32") {
+  app.setAppUserModelId(APP_USER_MODEL_ID);
+}
 
 function normalizePetZoomScale(value) {
   const zoomScale = Number(value);
@@ -285,10 +293,176 @@ function applyIgnoreMouseState() {
 
   const shouldIgnore =
     appState.mode === "pet" &&
-    appState.forceIgnoreMouse &&
-    !Array.from(hoveredComponents.values()).some(Boolean);
+    (
+      appState.petGameMode ||
+      (
+        appState.forceIgnoreMouse &&
+        !Array.from(hoveredComponents.values()).some(Boolean)
+      )
+    );
 
   mainWindow.setIgnoreMouseEvents(shouldIgnore, { forward: true });
+}
+
+function applyPetFocusPolicy() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  mainWindow.setFocusable(appState.mode !== "pet");
+}
+
+function applyTaskbarPolicy() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.setSkipTaskbar(true);
+    hideWindowFromTaskbarNative(mainWindow);
+  }
+  if (readerWindow && !readerWindow.isDestroyed()) {
+    readerWindow.setSkipTaskbar(true);
+    hideWindowFromTaskbarNative(readerWindow);
+  }
+}
+
+function getNativeWindowHandleId(targetWindow) {
+  const handleBuffer = targetWindow.getNativeWindowHandle();
+  if (!Buffer.isBuffer(handleBuffer) || handleBuffer.length < 4) {
+    return "";
+  }
+
+  if (handleBuffer.length >= 8) {
+    return handleBuffer.readBigUInt64LE(0).toString();
+  }
+
+  return String(handleBuffer.readUInt32LE(0));
+}
+
+function hideWindowFromTaskbarNative(targetWindow) {
+  if (process.platform !== "win32" || !targetWindow || targetWindow.isDestroyed()) {
+    return;
+  }
+
+  const handleId = getNativeWindowHandleId(targetWindow);
+  if (!handleId || taskbarHiddenNativeHandles.has(handleId)) {
+    return;
+  }
+  taskbarHiddenNativeHandles.add(handleId);
+
+  const script = `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class KuroWindowStyles {
+  private const int GWL_EXSTYLE = -20;
+  private const long WS_EX_APPWINDOW = 0x00040000L;
+  private const long WS_EX_TOOLWINDOW = 0x00000080L;
+  private const UInt32 SWP_NOSIZE = 0x0001;
+  private const UInt32 SWP_NOMOVE = 0x0002;
+  private const UInt32 SWP_NOZORDER = 0x0004;
+  private const UInt32 SWP_NOACTIVATE = 0x0010;
+  private const UInt32 SWP_FRAMECHANGED = 0x0020;
+
+  [DllImport("user32.dll", EntryPoint = "GetWindowLong", SetLastError = true)]
+  private static extern int GetWindowLong32(IntPtr hWnd, int nIndex);
+
+  [DllImport("user32.dll", EntryPoint = "SetWindowLong", SetLastError = true)]
+  private static extern int SetWindowLong32(IntPtr hWnd, int nIndex, int dwNewLong);
+
+  [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr", SetLastError = true)]
+  private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
+
+  [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr", SetLastError = true)]
+  private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+  [DllImport("user32.dll", SetLastError = true)]
+  private static extern bool SetWindowPos(
+    IntPtr hWnd,
+    IntPtr hWndInsertAfter,
+    int X,
+    int Y,
+    int cx,
+    int cy,
+    UInt32 uFlags
+  );
+
+  public static void HideFromTaskbar(IntPtr hWnd) {
+    long exStyle = IntPtr.Size == 8
+      ? GetWindowLongPtr64(hWnd, GWL_EXSTYLE).ToInt64()
+      : GetWindowLong32(hWnd, GWL_EXSTYLE);
+    exStyle = (exStyle & ~WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW;
+    if (IntPtr.Size == 8) {
+      SetWindowLongPtr64(hWnd, GWL_EXSTYLE, new IntPtr(exStyle));
+    } else {
+      SetWindowLong32(hWnd, GWL_EXSTYLE, unchecked((int)exStyle));
+    }
+    SetWindowPos(
+      hWnd,
+      IntPtr.Zero,
+      0,
+      0,
+      0,
+      0,
+      SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED
+    );
+  }
+}
+"@
+[KuroWindowStyles]::HideFromTaskbar([IntPtr]::new([Int64]$env:KURO_WINDOW_HANDLE))
+`;
+
+  const child = spawn(
+    "powershell.exe",
+    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+    {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+      env: {
+        ...process.env,
+        KURO_WINDOW_HANDLE: handleId
+      }
+    }
+  );
+  child.unref();
+}
+
+function scheduleTaskbarPolicyRefresh() {
+  applyTaskbarPolicy();
+  setTimeout(applyTaskbarPolicy, 0);
+  setTimeout(applyTaskbarPolicy, 250);
+}
+
+function setPetGameMode(enabled) {
+  appState.petGameMode = Boolean(enabled);
+  saveCurrentState();
+  applyPetFocusPolicy();
+  applyIgnoreMouseState();
+  updateTrayMenu();
+  return appState.petGameMode;
+}
+
+function togglePetGameMode() {
+  return setPetGameMode(!appState.petGameMode);
+}
+
+function showPetWindow({ focus = true } = {}) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  if (appState.mode === "pet") {
+    applyPetFocusPolicy();
+    scheduleTaskbarPolicyRefresh();
+    mainWindow.showInactive();
+    return;
+  }
+
+  applyPetFocusPolicy();
+  scheduleTaskbarPolicyRefresh();
+  mainWindow.show();
+  if (focus) {
+    mainWindow.focus();
+  }
 }
 
 function setPetWindowZoom(zoomScale) {
@@ -374,7 +548,7 @@ async function executeRenderer(code) {
 }
 
 async function readRendererStatus() {
-  return (
+  const rendererStatus =
     (await executeRenderer(`(() => {
       if (window.__kuroPetRendererState) {
         return {
@@ -446,8 +620,12 @@ async function readRendererStatus() {
         wsBadge,
         buttonTexts
       };
-    })();`)) || {}
-  );
+    })();`)) || {};
+
+  return {
+    ...rendererStatus,
+    petGameMode: appState.petGameMode
+  };
 }
 
 async function applyRendererBackendConfig(baseUrl, wsUrl, reload = true) {
@@ -525,6 +703,7 @@ function setReaderVisible(visible) {
     }
   } else if (appState.readerVisible) {
     readerWindow.show();
+    scheduleTaskbarPolicyRefresh();
     readerWindow.focus();
   } else {
     readerWindow.hide();
@@ -637,13 +816,24 @@ async function handleControlAction(action, payload = {}) {
       return { ok: true, action };
     case "show-pet":
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.show();
-        mainWindow.focus();
+        showPetWindow();
       }
       return { ok: true, action };
     case "move-next-display":
       moveWindowToNextDisplay();
       return { ok: true, action };
+    case "set-game-mode":
+      return {
+        ok: true,
+        action,
+        petGameMode: setPetGameMode(Boolean(payload.enabled))
+      };
+    case "toggle-game-mode":
+      return {
+        ok: true,
+        action,
+        petGameMode: togglePetGameMode()
+      };
     default:
       return { ok: false, error: `Unknown action: ${action}` };
   }
@@ -672,12 +862,14 @@ function applyWindowMode(mode, { force = false } = {}) {
   } else {
     mainWindow.setAlwaysOnTop(false);
     mainWindow.setVisibleOnAllWorkspaces(false);
-    mainWindow.setSkipTaskbar(false);
+    mainWindow.setSkipTaskbar(true);
     mainWindow.setResizable(true);
     mainWindow.setMinimumSize(960, 640);
   }
 
   mainWindow.setBounds(targetBounds, false);
+  applyPetFocusPolicy();
+  applyTaskbarPolicy();
   if (nextMode === "pet") {
     broadcastPetHostState("pet-host-set");
   }
@@ -767,8 +959,7 @@ function showMainWindow() {
   if (!mainWindow) {
     return;
   }
-  mainWindow.show();
-  mainWindow.focus();
+  showPetWindow();
 }
 
 function toggleForceIgnoreMouse() {
@@ -789,6 +980,7 @@ function toggleReaderWindow() {
     readerWindow.hide();
   } else {
     readerWindow.show();
+    scheduleTaskbarPolicyRefresh();
     readerWindow.focus();
   }
 }
@@ -802,6 +994,7 @@ function reloadMainWindow() {
 function getMenuState() {
   return {
     forceIgnoreMouse: appState.forceIgnoreMouse,
+    petGameMode: appState.petGameMode,
     readerVisible: appState.readerVisible
   };
 }
@@ -810,6 +1003,7 @@ function getMenuActions() {
   return {
     showPet: showMainWindow,
     toggleIgnoreMouse: toggleForceIgnoreMouse,
+    toggleGameMode: togglePetGameMode,
     toggleReader: toggleReaderWindow,
     moveNextDisplay: moveWindowToNextDisplay,
     reloadFrontend: reloadMainWindow,
@@ -846,6 +1040,7 @@ function startControlServer() {
     getShellStatus: () => ({
       mode: appState.mode,
       forceIgnoreMouse: appState.forceIgnoreMouse,
+      petGameMode: appState.petGameMode,
       petSpanAllDisplays: appState.petSpanAllDisplays,
       petHostBounds: getPetHostBounds(),
       petAnchor: ensurePetAnchor(),
@@ -866,11 +1061,7 @@ function createTray() {
   const trayIcon = nativeImage.createFromPath(iconPath);
   tray = new Tray(trayIcon);
   tray.on("double-click", () => {
-    if (!mainWindow) {
-      return;
-    }
-    mainWindow.show();
-    mainWindow.focus();
+    showMainWindow();
   });
   updateTrayMenu();
 }
@@ -879,6 +1070,7 @@ function createReaderWindow() {
   if (readerWindow && !readerWindow.isDestroyed()) {
     if (appState.readerVisible) {
       readerWindow.show();
+      scheduleTaskbarPolicyRefresh();
       readerWindow.focus();
     }
     return;
@@ -899,6 +1091,7 @@ function createReaderWindow() {
     resizable: true,
     maximizable: false,
     minimizable: false,
+    skipTaskbar: true,
     fullscreenable: false,
     alwaysOnTop: true,
     title: `${APP_NAME} Reader`,
@@ -915,6 +1108,8 @@ function createReaderWindow() {
   readerWindow.setMenuBarVisibility(false);
   readerWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   readerWindow.setSkipTaskbar(true);
+  readerWindow.on("show", scheduleTaskbarPolicyRefresh);
+  readerWindow.on("restore", scheduleTaskbarPolicyRefresh);
 
   readerWindow.on("move", () => {
     if (!readerWindow || readerWindow.isDestroyed()) {
@@ -978,6 +1173,8 @@ function createWindow() {
     frame: false,
     show: false,
     resizable: false,
+    skipTaskbar: true,
+    focusable: false,
     fullscreenable: false,
     title: APP_NAME,
     icon: iconPath,
@@ -1003,6 +1200,9 @@ function createWindow() {
 
   mainWindow.setMenuBarVisibility(false);
   applyWindowMode(appState.mode, { force: true });
+  scheduleTaskbarPolicyRefresh();
+  mainWindow.on("show", scheduleTaskbarPolicyRefresh);
+  mainWindow.on("restore", scheduleTaskbarPolicyRefresh);
 
   mainWindow.on("move", () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1046,7 +1246,7 @@ function createWindow() {
     applyWindowMode("pet", { force: true });
     setTimeout(() => {
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.show();
+        showPetWindow({ focus: false });
       }
     }, 180);
   });
@@ -1061,7 +1261,7 @@ function createWindow() {
       ).catch((error) => petLog("Failed to load renderer missing page", error));
       setTimeout(() => {
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.show();
+          showPetWindow({ focus: false });
         }
       }, 180);
     }
@@ -1309,12 +1509,10 @@ if (!singleInstanceLock) {
     if (mainWindow.isMinimized()) {
       mainWindow.restore();
     }
-    mainWindow.show();
-    mainWindow.focus();
+    showPetWindow();
   });
 
   app.whenReady().then(() => {
-    app.setAppUserModelId(APP_NAME);
     session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
       callback(permission === "media" || permission === "display-capture");
     });

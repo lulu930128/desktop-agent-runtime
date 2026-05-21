@@ -7,6 +7,7 @@ const DEFAULT_STATE = {
   petSpanAllDisplays: true,
   petZoomScale: 1,
   petAnchor: null,
+  petGameMode: false,
   readerVisible: true,
   outfit: {
     outfitId: "normal",
@@ -62,6 +63,10 @@ function mergeState(candidate) {
 
   if (typeof candidate.petSpanAllDisplays === "boolean") {
     next.petSpanAllDisplays = candidate.petSpanAllDisplays;
+  }
+
+  if (typeof candidate.petGameMode === "boolean") {
+    next.petGameMode = candidate.petGameMode;
   }
 
   if (Number.isFinite(candidate.petZoomScale)) {

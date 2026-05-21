@@ -171,6 +171,7 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
         self._pet_shell_online = False
         self._runtime_history_uid = ""
         self.pet_toggle_vars: Dict[str, ctk.StringVar] = {}
+        self.pet_toggle_state_labels: Dict[str, ctk.CTkLabel] = {}
 
         self.title("Kuro Launcher")
         self._apply_window_icon()
@@ -1606,13 +1607,11 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
             text_color=PALETTE["success"] if var.get() == "on" else PALETTE["muted"],
         )
         state_label.grid(row=0, column=1, padx=(4, 10), pady=8)
+        self.pet_toggle_state_labels[action] = state_label
 
         def on_change() -> None:
             enabled = var.get() == "on"
-            state_label.configure(
-                text="ON" if enabled else "OFF",
-                text_color=PALETTE["success"] if enabled else PALETTE["muted"],
-            )
+            self._set_pet_toggle_state(action, enabled)
             mode = "啟用" if enabled else "停止"
             self._run_pet_command(
                 action,
@@ -1636,6 +1635,18 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
             switch_width=48,
             switch_height=24,
         ).grid(row=0, column=0, sticky="w", padx=(12, 4), pady=8)
+
+    def _set_pet_toggle_state(self, action: str, enabled: bool) -> None:
+        var = self.pet_toggle_vars.get(action)
+        if var is not None:
+            var.set("on" if enabled else "off")
+
+        state_label = self.pet_toggle_state_labels.get(action)
+        if state_label is not None:
+            state_label.configure(
+                text="ON" if enabled else "OFF",
+                text_color=PALETTE["success"] if enabled else PALETTE["muted"],
+            )
 
     def _configure_pet_control_bar(self, pet_button_bar: ctk.CTkFrame) -> None:
         for widget in pet_button_bar.winfo_children():
@@ -1684,6 +1695,14 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
             column=0,
             padx=(0, 0),
         )
+        self._pet_toggle_switch(
+            pet_button_bar,
+            "Game mode",
+            "set-game-mode",
+            row=5,
+            column=0,
+            padx=(0, 0),
+        )
 
         expression_shell = ctk.CTkFrame(
             pet_button_bar,
@@ -1692,7 +1711,7 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
             border_width=1,
             border_color=PALETTE["panel_border"],
         )
-        expression_shell.grid(row=5, column=0, sticky="ew", padx=(0, 0), pady=(0, 8))
+        expression_shell.grid(row=6, column=0, sticky="ew", padx=(0, 0), pady=(0, 8))
         expression_shell.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(
             expression_shell,
@@ -1724,7 +1743,7 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
             border_width=1,
             border_color=PALETTE["panel_border"],
         )
-        thinking_shell.grid(row=6, column=0, sticky="ew", padx=(0, 0), pady=(0, 8))
+        thinking_shell.grid(row=7, column=0, sticky="ew", padx=(0, 0), pady=(0, 8))
         thinking_shell.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(
             thinking_shell,
@@ -4064,13 +4083,12 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
             "toggle-camera": "cameraEnabled",
             "toggle-screen": "screenEnabled",
             "set-reader-visible": "readerVisible",
+            "set-game-mode": "petGameMode",
         }
         for action, key in state_map.items():
             if key not in renderer:
                 continue
-            var = self.pet_toggle_vars.get(action)
-            if var is not None:
-                var.set("on" if bool(renderer.get(key)) else "off")
+            self._set_pet_toggle_state(action, bool(renderer.get(key)))
 
         outfit_id = str(renderer.get("currentOutfitId") or "").strip()
         if outfit_id in {"normal", "hoodie"}:
@@ -4132,7 +4150,7 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
 
     def _pet_shell_status_worker(self) -> None:
         try:
-            status = http_get_json(self._pet_control_endpoint("/status"), timeout=0.35)
+            status = http_get_json(self._pet_control_endpoint("/status"), timeout=1.2)
         except Exception as exc:
             self.after(0, lambda e=exc: self._finish_pet_shell_status(None, e))
             return

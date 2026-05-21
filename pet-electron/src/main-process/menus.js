@@ -11,6 +11,12 @@ function buildCommonMenuItems(state, actions) {
       click: actions.toggleReader
     },
     {
+      label: "Game mode",
+      type: "checkbox",
+      checked: Boolean(state.petGameMode),
+      click: actions.toggleGameMode
+    },
+    {
       label: "移到下一個螢幕",
       click: actions.moveNextDisplay
     },
