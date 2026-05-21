@@ -5,6 +5,10 @@ import * as LAppDefine from "./lappdefine";
 import { LAppModel } from "./lappmodel";
 import { LAppPal } from "./lapppal";
 import { LAppSubdelegate } from "./lappsubdelegate";
+import {
+  Live2DDebugOverlay,
+  type Live2DInspectorSnapshot
+} from "./live2d-inspector";
 import { Live2DHitTester } from "./live2d-hit-tester";
 
 type ModelDescriptor = {
@@ -85,6 +89,7 @@ export class PetLive2DRenderer {
   private readonly canvas: HTMLCanvasElement;
   private readonly subdelegate: LAppSubdelegate;
   private readonly hitTester: Live2DHitTester;
+  private readonly debugOverlay: Live2DDebugOverlay;
   private model: LAppModel | null;
   private modelDescriptor: ModelDescriptor | null;
   private rafId: number | null;
@@ -118,6 +123,7 @@ export class PetLive2DRenderer {
     }
 
     this.hitTester = new Live2DHitTester();
+    this.debugOverlay = new Live2DDebugOverlay(canvas);
     this.model = null;
     this.modelDescriptor = null;
     this.rafId = null;
@@ -288,6 +294,43 @@ export class PetLive2DRenderer {
     return this.zoomScale;
   }
 
+  public setInspectorOverlayEnabled(enabled: boolean): boolean {
+    this.debugOverlay.setEnabled(Boolean(enabled));
+    this.bumpActivity(this.debugOverlay.isEnabled() ? 1200 : 200);
+    return this.debugOverlay.isEnabled();
+  }
+
+  public isInspectorOverlayEnabled(): boolean {
+    return this.debugOverlay.isEnabled();
+  }
+
+  public getInspectorSnapshot(
+    readyModel: LAppModel | null = this.getReadyModel(),
+    modelBounds: DrawableBounds | null | undefined = undefined
+  ): Live2DInspectorSnapshot {
+    const rect = this.canvas.getBoundingClientRect();
+    const resolvedBounds =
+      modelBounds === undefined && readyModel ? this.getDrawableBounds(readyModel) : modelBounds;
+
+    return {
+      ready: Boolean(readyModel),
+      overlayEnabled: this.debugOverlay.isEnabled(),
+      modelUrl: this.modelDescriptor?.modelUrl || "",
+      zoomScale: this.zoomScale,
+      hostBounds: { ...this.hostBounds },
+      anchorScreenPoint: { ...this.anchorScreenPoint },
+      canvas: {
+        width: this.canvas.width,
+        height: this.canvas.height,
+        clientWidth: Math.max(0, rect.width || this.canvas.clientWidth || 0),
+        clientHeight: Math.max(0, rect.height || this.canvas.clientHeight || 0),
+        devicePixelRatio: window.devicePixelRatio || 1
+      },
+      modelBounds: resolvedBounds || null,
+      model: readyModel?.getInspectorModelSnapshot() || null
+    };
+  }
+
   public setLipSyncValue(value: number): void {
     this.model?.setExternalLipSyncValue(value);
     if (Number(value) > 0.02) {
@@ -433,10 +476,7 @@ export class PetLive2DRenderer {
       return false;
     }
 
-    const readyModel =
-      this.model && typeof this.model.isReadyToRender === "function" && this.model.isReadyToRender()
-        ? this.model
-        : null;
+    const readyModel = this.getReadyModel();
     if (!readyModel) {
       return false;
     }
@@ -461,6 +501,7 @@ export class PetLive2DRenderer {
     }
     this.releaseCurrentModel();
     this.subdelegate.release();
+    this.debugOverlay.dispose();
   }
 
   private start(): void {
@@ -490,6 +531,14 @@ export class PetLive2DRenderer {
     this.hitTester.clear();
   }
 
+  private getReadyModel(): LAppModel | null {
+    return this.model &&
+      typeof this.model.isReadyToRender === "function" &&
+      this.model.isReadyToRender()
+      ? this.model
+      : null;
+  }
+
   private bumpActivity(durationMs: number): void {
     this.forceActiveUntilMs = Math.max(
       this.forceActiveUntilMs,
@@ -513,6 +562,10 @@ export class PetLive2DRenderer {
   private getTargetFps(): number {
     if (FORCE_MAX_RENDER_FPS) {
       return Number.POSITIVE_INFINITY;
+    }
+
+    if (this.debugOverlay.isEnabled()) {
+      return 30;
     }
 
     if (document.hidden) {
@@ -677,10 +730,7 @@ export class PetLive2DRenderer {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-    const readyModel =
-      this.model && typeof this.model.isReadyToRender === 'function' && this.model.isReadyToRender()
-        ? this.model
-        : null;
+    const readyModel = this.getReadyModel();
 
     if (readyModel?.getModel()) {
       CubismWebGLOffscreenManager.getInstance().beginFrameProcess(gl);
@@ -697,6 +747,7 @@ export class PetLive2DRenderer {
 
       readyModel.update();
 
+      let modelBounds: DrawableBounds | null = null;
       const matrix = readyModel.getModelMatrix();
       if (matrix && this.modelDescriptor) {
         matrix.loadIdentity();
@@ -710,10 +761,10 @@ export class PetLive2DRenderer {
 
         matrix.setHeight(targetHeight);
 
-        const bounds = this.getDrawableBounds(readyModel);
-        if (bounds) {
-          const centerX = (bounds.left + bounds.right) / 2;
-          const centerY = (bounds.top + bounds.bottom) / 2;
+        modelBounds = this.getDrawableBounds(readyModel);
+        if (modelBounds) {
+          const centerX = (modelBounds.left + modelBounds.right) / 2;
+          const centerY = (modelBounds.top + modelBounds.bottom) / 2;
           matrix.translate(
             anchorViewPoint.x - centerX * matrix.getScaleX(),
             anchorViewPoint.y - centerY * matrix.getScaleY()
@@ -725,14 +776,32 @@ export class PetLive2DRenderer {
       }
 
       this.hitTester.updateProjection(projection);
+      const overlayEnabled = this.debugOverlay.isEnabled();
+      const overlayProjection = overlayEnabled ? new CubismMatrix44() : null;
+      if (overlayProjection) {
+        overlayProjection.setMatrix(projection.getArray());
+      }
+      const overlaySnapshot = overlayEnabled
+        ? this.getInspectorSnapshot(readyModel, modelBounds)
+        : null;
       readyModel.draw(projection);
 
       CubismWebGLOffscreenManager.getInstance().endFrameProcess(gl);
       CubismWebGLOffscreenManager
         .getInstance()
         .releaseStaleRenderTextures(gl);
+
+      if (overlaySnapshot && overlayProjection && matrix) {
+        this.debugOverlay.render(overlaySnapshot, {
+          projection: overlayProjection,
+          modelMatrix: matrix
+        });
+      }
     } else {
       this.hitTester.clear();
+      if (this.debugOverlay.isEnabled()) {
+        this.debugOverlay.render(this.getInspectorSnapshot(null, null), null);
+      }
     }
     this.scheduleNextFrame();
   }

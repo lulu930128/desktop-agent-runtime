@@ -50,6 +50,16 @@ import { LAppWavFileHandler } from './lappwavfilehandler';
 import { CubismMoc } from '@framework/model/cubismmoc';
 import { CubismShaderManager_WebGL } from '@framework/rendering/cubismshader_webgl';
 import { LAppSubdelegate } from './lappsubdelegate';
+import type {
+  Live2DInspectorBounds,
+  Live2DInspectorDrawable,
+  Live2DInspectorExpression,
+  Live2DInspectorHitArea,
+  Live2DInspectorModelSnapshot,
+  Live2DInspectorMotionGroup,
+  Live2DInspectorParameter,
+  Live2DInspectorPart
+} from './live2d-inspector';
 
 function isAbsoluteAssetUrl(value: string): boolean {
   return /^(https?:|file:|blob:|data:)/i.test(String(value || '').trim());
@@ -212,6 +222,16 @@ function clampExternalParameterValue(value: number): number {
     return 0;
   }
   return Math.min(1, Math.max(-1, value));
+}
+
+function cubismIdToString(id: CubismIdHandle | null | undefined): string {
+  if (!id) {
+    return "";
+  }
+  if (typeof id.getString === "function") {
+    return id.getString();
+  }
+  return String(id);
 }
 
 type IdleWaveParameterSpec = {
@@ -1579,6 +1599,150 @@ export class LAppModel extends CubismUserModel {
     }
 
     return false;
+  }
+
+  public getInspectorModelSnapshot(): Live2DInspectorModelSnapshot | null {
+    if (!this._model || !this._modelSetting) {
+      return null;
+    }
+
+    const expressions: Live2DInspectorExpression[] = [];
+    for (let i = 0; i < this._modelSetting.getExpressionCount(); i += 1) {
+      const id = this._modelSetting.getExpressionName(i);
+      expressions.push({
+        index: i,
+        id,
+        fileName: this._modelSetting.getExpressionFileName(i),
+        loaded: this._expressions.get(id) != null
+      });
+    }
+
+    const motionGroups: Live2DInspectorMotionGroup[] = [];
+    for (let groupIndex = 0; groupIndex < this._modelSetting.getMotionGroupCount(); groupIndex += 1) {
+      const name = this._modelSetting.getMotionGroupName(groupIndex);
+      const motions = [];
+      for (let motionIndex = 0; motionIndex < this._modelSetting.getMotionCount(name); motionIndex += 1) {
+        motions.push({
+          index: motionIndex,
+          fileName: this._modelSetting.getMotionFileName(name, motionIndex),
+          soundFileName: this._modelSetting.getMotionSoundFileName(name, motionIndex),
+          fadeInSeconds: this._modelSetting.getMotionFadeInTimeValue(name, motionIndex),
+          fadeOutSeconds: this._modelSetting.getMotionFadeOutTimeValue(name, motionIndex),
+          loaded: this._motions.get(`${name}_${motionIndex}`) != null
+        });
+      }
+      motionGroups.push({ name, motions });
+    }
+
+    const hitAreas: Live2DInspectorHitArea[] = [];
+    for (let i = 0; i < this._modelSetting.getHitAreasCount(); i += 1) {
+      const drawableId = this._modelSetting.getHitAreaId(i);
+      const drawableIndex = this._model.getDrawableIndex(drawableId);
+      hitAreas.push({
+        index: i,
+        name: this._modelSetting.getHitAreaName(i),
+        drawableId: cubismIdToString(drawableId),
+        drawableIndex,
+        visible:
+          drawableIndex >= 0 && this._model.getDrawableDynamicFlagIsVisible(drawableIndex),
+        opacity:
+          drawableIndex >= 0 ? this._model.getDrawableOpacity(drawableIndex) : 0,
+        bounds: drawableIndex >= 0 ? this.measureDrawableBoundsByIndex(drawableIndex) : null
+      });
+    }
+
+    const parameters: Live2DInspectorParameter[] = [];
+    for (let i = 0; i < this._model.getParameterCount(); i += 1) {
+      parameters.push({
+        index: i,
+        id: cubismIdToString(this._model.getParameterId(i)),
+        value: this._model.getParameterValueByIndex(i),
+        defaultValue: this._model.getParameterDefaultValue(i),
+        minValue: this._model.getParameterMinimumValue(i),
+        maxValue: this._model.getParameterMaximumValue(i)
+      });
+    }
+
+    const parts: Live2DInspectorPart[] = [];
+    for (let i = 0; i < this._model.getPartCount(); i += 1) {
+      parts.push({
+        index: i,
+        id: cubismIdToString(this._model.getPartId(i)),
+        opacity: this._model.getPartOpacityByIndex(i)
+      });
+    }
+
+    const drawables: Live2DInspectorDrawable[] = [];
+    for (let i = 0; i < this._model.getDrawableCount(); i += 1) {
+      drawables.push({
+        index: i,
+        id: cubismIdToString(this._model.getDrawableId(i)),
+        opacity: this._model.getDrawableOpacity(i),
+        visible: this._model.getDrawableDynamicFlagIsVisible(i),
+        vertexCount: this._model.getDrawableVertexCount(i),
+        bounds: this.measureDrawableBoundsByIndex(i)
+      });
+    }
+
+    return {
+      canvasWidth: this._model.getCanvasWidth(),
+      canvasHeight: this._model.getCanvasHeight(),
+      pixelsPerUnit: this._model.getPixelsPerUnit(),
+      expressions,
+      motionGroups,
+      hitAreas,
+      parameters,
+      parts,
+      drawables,
+      eyeBlinkParameterIds: this._eyeBlinkIds.map(cubismIdToString),
+      lipSyncParameterIds: this._lipSyncIds.map(cubismIdToString),
+      features: {
+        ...LIVE2D_FEATURES,
+        hasPhysicsFile: safeModelSettingString(this._modelSetting, 'getPhysicsFileName') !== "",
+        hasPoseFile: safeModelSettingString(this._modelSetting, 'getPoseFileName') !== "",
+        hasUserDataFile: safeModelSettingString(this._modelSetting, 'getUserDataFile') !== ""
+      },
+      loadedExpressionCount: expressions.filter(expression => expression.loaded).length,
+      loadedMotionCount: this._motionCount
+    };
+  }
+
+  private measureDrawableBoundsByIndex(drawableIndex: number): Live2DInspectorBounds | null {
+    if (
+      !this._model ||
+      drawableIndex < 0 ||
+      drawableIndex >= this._model.getDrawableCount()
+    ) {
+      return null;
+    }
+
+    const vertexCount = this._model.getDrawableVertexCount(drawableIndex);
+    const vertices = this._model.getDrawableVertices(drawableIndex);
+    if (vertexCount <= 0 || !vertices) {
+      return null;
+    }
+
+    let left = Number.POSITIVE_INFINITY;
+    let right = Number.NEGATIVE_INFINITY;
+    let top = Number.POSITIVE_INFINITY;
+    let bottom = Number.NEGATIVE_INFINITY;
+    let hasVertex = false;
+
+    for (let vertexIndex = 0; vertexIndex < vertexCount; vertexIndex += 1) {
+      const x = vertices[vertexIndex * 2];
+      const y = vertices[vertexIndex * 2 + 1];
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        continue;
+      }
+
+      left = Math.min(left, x);
+      right = Math.max(right, x);
+      top = Math.min(top, y);
+      bottom = Math.max(bottom, y);
+      hasVertex = true;
+    }
+
+    return hasVertex ? { left, right, top, bottom } : null;
   }
 
   private finishMotionPreloadIfReady(): void {

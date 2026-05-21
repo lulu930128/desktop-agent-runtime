@@ -31,6 +31,7 @@ function startControlServer({
   host,
   port,
   readRendererStatus,
+  readLive2DInspectorSnapshot,
   getShellStatus,
   isReaderVisible,
   handleControlAction,
@@ -48,6 +49,17 @@ function startControlServer({
           ok: true,
           ...getShellStatus(),
           renderer
+        });
+        return;
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/live2d-inspector") {
+        const snapshot = typeof readLive2DInspectorSnapshot === "function"
+          ? await readLive2DInspectorSnapshot()
+          : null;
+        writeJson(res, 200, {
+          ok: Boolean(snapshot),
+          snapshot
         });
         return;
       }

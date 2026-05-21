@@ -1,3 +1,5 @@
+import type { Live2DInspectorSnapshot } from "./live2d/live2d-inspector";
+
 export {};
 
 declare global {
@@ -53,6 +55,7 @@ declare global {
           group?: string;
           motionIndex?: number | null;
           priority?: number;
+          live2dInspectorOverlayEnabled?: boolean;
           zoomScale?: number;
           petHostBounds?: {
             x: number;
@@ -85,5 +88,10 @@ declare global {
       wsUrl: string,
       reconnect?: boolean
     ) => { baseUrl: string; wsUrl: string };
+    __kuroLive2DInspector?: {
+      getSnapshot: () => Live2DInspectorSnapshot;
+      setOverlayEnabled: (enabled: boolean) => Live2DInspectorSnapshot;
+      toggleOverlay: () => Live2DInspectorSnapshot;
+    };
   }
 }

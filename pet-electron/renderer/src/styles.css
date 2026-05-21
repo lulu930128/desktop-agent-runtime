@@ -28,6 +28,13 @@ body {
   cursor: default;
 }
 
+.pet-renderer .live2d-debug-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
 .pet-renderer canvas:active {
   cursor: grabbing;
 }

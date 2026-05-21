@@ -20,6 +20,7 @@ export type RendererState = {
   cameraEnabled: boolean;
   screenEnabled: boolean;
   browserPanelEnabled: boolean;
+  live2dInspectorOverlayEnabled: boolean;
 };
 
 export type BackendConfig = {

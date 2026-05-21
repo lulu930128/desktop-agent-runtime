@@ -65,6 +65,11 @@ export function bindPetCommands({
         ? Number(payload.priority)
         : undefined;
       renderer.playMotion(group, motionIndex, priority);
+    } else if (payload.type === "live2d-inspector-set") {
+      const live2dInspectorOverlayEnabled = renderer.setInspectorOverlayEnabled(
+        Boolean(payload.enabled)
+      );
+      reportState({ live2dInspectorOverlayEnabled });
     } else if (payload.type === "pet-zoom-set") {
       renderer.setZoomScale(Number(payload.zoomScale));
     } else if (payload.type === "pet-host-set" || payload.type === "pet-anchor-set") {

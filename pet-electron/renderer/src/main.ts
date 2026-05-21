@@ -73,7 +73,8 @@ const rendererState: RendererState = {
   micEnabled: false,
   cameraEnabled: false,
   screenEnabled: false,
-  browserPanelEnabled: false
+  browserPanelEnabled: false,
+  live2dInspectorOverlayEnabled: false
 };
 
 let live2dRenderer: PetLive2DRenderer | null = null;
@@ -88,6 +89,21 @@ const reportState = (patch: Partial<RendererState>) => {
 const initialConfig = window.kuroPetElectron.getInitialConfig();
 const renderer = new PetLive2DRenderer(canvas);
 live2dRenderer = renderer;
+window.__kuroLive2DInspector = {
+  getSnapshot: () => renderer.getInspectorSnapshot(),
+  setOverlayEnabled: (enabled: boolean) => {
+    const live2dInspectorOverlayEnabled = renderer.setInspectorOverlayEnabled(enabled);
+    reportState({ live2dInspectorOverlayEnabled });
+    return renderer.getInspectorSnapshot();
+  },
+  toggleOverlay: () => {
+    const live2dInspectorOverlayEnabled = renderer.setInspectorOverlayEnabled(
+      !renderer.isInspectorOverlayEnabled()
+    );
+    reportState({ live2dInspectorOverlayEnabled });
+    return renderer.getInspectorSnapshot();
+  }
+};
 renderer.setHostBounds(initialConfig.petHostBounds);
 if (initialConfig.petAnchor) {
   renderer.setAnchorScreenPoint(initialConfig.petAnchor.x, initialConfig.petAnchor.y);
@@ -140,7 +156,8 @@ reportState({
   currentOutfitParameterIndex: initialOutfitParameterIndex,
   currentOutfitValue: initialOutfitValue,
   currentExpressionId: initialExpressionId,
-  currentExpressionLabel: initialExpressionLabel
+  currentExpressionLabel: initialExpressionLabel,
+  live2dInspectorOverlayEnabled: renderer.isInspectorOverlayEnabled()
 });
 client.connect();
 

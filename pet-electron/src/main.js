@@ -71,7 +71,8 @@ let latestFrontendState = {
   currentOutfitParameterIndex: null,
   currentOutfitValue: 0,
   currentExpressionId: "neutral",
-  currentExpressionLabel: "一般"
+  currentExpressionLabel: "一般",
+  live2dInspectorOverlayEnabled: false
 };
 
 const petLog = createPetLogger(app);
@@ -628,6 +629,17 @@ async function readRendererStatus() {
   };
 }
 
+async function readLive2DInspectorSnapshot() {
+  return (
+    (await executeRenderer(`(() => {
+      if (window.__kuroLive2DInspector && typeof window.__kuroLive2DInspector.getSnapshot === "function") {
+        return window.__kuroLive2DInspector.getSnapshot();
+      }
+      return null;
+    })();`)) || null
+  );
+}
+
 async function applyRendererBackendConfig(baseUrl, wsUrl, reload = true) {
   const payload = await executeRenderer(`((baseUrlValue, wsUrlValue, shouldReconnect) => {
     if (typeof window.__kuroPetApplyBackendConfig === "function") {
@@ -794,6 +806,36 @@ async function handleControlAction(action, payload = {}) {
         priority
       });
       return { ok: true, route: "ipc", action };
+    }
+    case "set-live2d-inspector":
+    case "set-live2d-debug-overlay": {
+      const enabled = Boolean(payload.enabled);
+      updateFrontendState({ live2dInspectorOverlayEnabled: enabled });
+      broadcast("pet-command", {
+        type: "live2d-inspector-set",
+        enabled
+      });
+      return {
+        ok: true,
+        route: "ipc",
+        action,
+        live2dInspectorOverlayEnabled: enabled
+      };
+    }
+    case "toggle-live2d-inspector":
+    case "toggle-live2d-debug-overlay": {
+      const enabled = !Boolean(latestFrontendState.live2dInspectorOverlayEnabled);
+      updateFrontendState({ live2dInspectorOverlayEnabled: enabled });
+      broadcast("pet-command", {
+        type: "live2d-inspector-set",
+        enabled
+      });
+      return {
+        ok: true,
+        route: "ipc",
+        action,
+        live2dInspectorOverlayEnabled: enabled
+      };
     }
     case "toggle-subtitle":
       return setReaderVisible(!(readerWindow && !readerWindow.isDestroyed() && readerWindow.isVisible()));
@@ -1037,6 +1079,7 @@ function startControlServer() {
     host: CONTROL_HOST,
     port: CONTROL_PORT,
     readRendererStatus,
+    readLive2DInspectorSnapshot,
     getShellStatus: () => ({
       mode: appState.mode,
       forceIgnoreMouse: appState.forceIgnoreMouse,
