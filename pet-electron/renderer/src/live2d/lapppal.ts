@@ -39,8 +39,18 @@ export class LAppPal {
   }
 
   public static updateTime(): void {
-    this.currentFrame = Date.now();
-    this.deltaTime = (this.currentFrame - this.lastFrame) / 1000;
+    this.currentFrame =
+      typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now()
+        : Date.now();
+    if (this.lastFrame <= 0) {
+      this.deltaTime = 1 / 60;
+      this.lastFrame = this.currentFrame;
+      return;
+    }
+
+    const rawDeltaTime = (this.currentFrame - this.lastFrame) / 1000;
+    this.deltaTime = Math.min(1 / 30, Math.max(0, rawDeltaTime));
     this.lastFrame = this.currentFrame;
   }
 

@@ -7,6 +7,16 @@ declare global {
         baseUrl: string;
         wsUrl: string;
         zoomScale: number;
+        petHostBounds?: {
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+        };
+        petAnchor?: {
+          x: number;
+          y: number;
+        };
         outfit?: {
           outfitId?: string;
           parameterId?: string;
@@ -25,6 +35,8 @@ declare global {
       startWindowDrag: (screenX: number, screenY: number) => void;
       updateWindowDrag: (screenX: number, screenY: number) => void;
       setPetWindowZoom: (zoomScale: number) => void;
+      setPetModelZoom: (zoomScale: number) => void;
+      setPetAnchor: (x: number, y: number) => void;
       getScreenCaptureSourceId: () => Promise<string>;
       endWindowDrag: () => void;
       showContextMenu: () => void;
@@ -38,6 +50,20 @@ declare global {
           expressionId?: string;
           expressionLabel?: string;
           parameters?: Record<string, number>;
+          group?: string;
+          motionIndex?: number | null;
+          priority?: number;
+          zoomScale?: number;
+          petHostBounds?: {
+            x: number;
+            y: number;
+            width: number;
+            height: number;
+          };
+          petAnchor?: {
+            x: number;
+            y: number;
+          };
           value?: number;
         }) => void
       ) => () => void;

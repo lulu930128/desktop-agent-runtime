@@ -61,6 +61,17 @@ const bridge = {
       zoomScale: Number(zoomScale)
     });
   },
+  setPetModelZoom(zoomScale) {
+    ipcRenderer.send("set-pet-model-zoom", {
+      zoomScale: Number(zoomScale)
+    });
+  },
+  setPetAnchor(x, y) {
+    ipcRenderer.send("set-pet-anchor", {
+      x: Number(x),
+      y: Number(y)
+    });
+  },
   adjustPetWindowScale(scaleRatio) {
     ipcRenderer.send("adjust-pet-window-scale", {
       scaleRatio: Number(scaleRatio)
@@ -83,6 +94,8 @@ contextBridge.exposeInMainWorld("api", {
   startWindowDrag: bridge.startWindowDrag,
   updateWindowDrag: bridge.updateWindowDrag,
   setPetWindowZoom: bridge.setPetWindowZoom,
+  setPetModelZoom: bridge.setPetModelZoom,
+  setPetAnchor: bridge.setPetAnchor,
   adjustPetWindowScale: bridge.adjustPetWindowScale,
   getScreenCaptureSourceId: bridge.getScreenCaptureSourceId,
   endWindowDrag: bridge.endWindowDrag,

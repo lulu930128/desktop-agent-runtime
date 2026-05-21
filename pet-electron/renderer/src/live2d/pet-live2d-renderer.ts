@@ -5,6 +5,7 @@ import * as LAppDefine from "./lappdefine";
 import { LAppModel } from "./lappmodel";
 import { LAppPal } from "./lapppal";
 import { LAppSubdelegate } from "./lappsubdelegate";
+import { Live2DHitTester } from "./live2d-hit-tester";
 
 type ModelDescriptor = {
   modelUrl: string;
@@ -18,7 +19,29 @@ type DrawableBounds = {
   bottom: number;
 };
 
+type ScreenBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type ScreenPoint = {
+  x: number;
+  y: number;
+};
+
+type AnchorDragState = {
+  startClientX: number;
+  startClientY: number;
+  startAnchorX: number;
+  startAnchorY: number;
+};
+
 const FORCE_MAX_RENDER_FPS = true;
+const MIN_MODEL_ZOOM_SCALE = 0.2;
+const MAX_MODEL_ZOOM_SCALE = 8;
+const MODEL_ZOOM_WHEEL_FACTOR = 1.06;
 
 let cubismInitialized = false;
 
@@ -61,7 +84,7 @@ function clampDragPoint(value: number): number {
 export class PetLive2DRenderer {
   private readonly canvas: HTMLCanvasElement;
   private readonly subdelegate: LAppSubdelegate;
-  private readonly hitTestPixel: Uint8Array;
+  private readonly hitTester: Live2DHitTester;
   private model: LAppModel | null;
   private modelDescriptor: ModelDescriptor | null;
   private rafId: number | null;
@@ -71,6 +94,7 @@ export class PetLive2DRenderer {
   private outfitParameterId: string | null;
   private outfitParameterIndex: number | null;
   private outfitValue: number;
+  private expressionId: string | null;
   private expressionParameters: Record<string, number>;
   private aiState: string;
   private pointerActive: boolean;
@@ -80,6 +104,9 @@ export class PetLive2DRenderer {
   private lastResizeWidth: number;
   private lastResizeHeight: number;
   private lastResizeDpr: number;
+  private hostBounds: ScreenBounds;
+  private anchorScreenPoint: ScreenPoint;
+  private anchorDrag: AnchorDragState | null;
 
   public constructor(canvas: HTMLCanvasElement) {
     ensureCubismReady();
@@ -89,7 +116,7 @@ export class PetLive2DRenderer {
       throw new Error("Unable to initialize Live2D WebGL context.");
     }
 
-    this.hitTestPixel = new Uint8Array(4);
+    this.hitTester = new Live2DHitTester();
     this.model = null;
     this.modelDescriptor = null;
     this.rafId = null;
@@ -99,6 +126,7 @@ export class PetLive2DRenderer {
     this.outfitParameterId = null;
     this.outfitParameterIndex = null;
     this.outfitValue = 0;
+    this.expressionId = null;
     this.expressionParameters = {};
     this.aiState = "idle";
     this.pointerActive = false;
@@ -108,6 +136,17 @@ export class PetLive2DRenderer {
     this.lastResizeWidth = -1;
     this.lastResizeHeight = -1;
     this.lastResizeDpr = -1;
+    this.hostBounds = {
+      x: 0,
+      y: 0,
+      width: Math.max(1, window.innerWidth || canvas.clientWidth || 1),
+      height: Math.max(1, window.innerHeight || canvas.clientHeight || 1)
+    };
+    this.anchorScreenPoint = {
+      x: this.hostBounds.x + this.hostBounds.width / 2,
+      y: this.hostBounds.y + this.hostBounds.height / 2
+    };
+    this.anchorDrag = null;
     this.renderFrame = this.renderFrame.bind(this);
     this.start();
   }
@@ -143,6 +182,9 @@ export class PetLive2DRenderer {
     for (const [parameterId, value] of Object.entries(this.expressionParameters)) {
       nextModel.setExternalParameterTarget(parameterId, value, 0.35);
     }
+    if (this.expressionId) {
+      nextModel.setExpression(this.expressionId);
+    }
     this.subdelegate.getTextureManager().releaseTextures();
     console.info("[pet-renderer] Loading model assets", { modelDir, fileName });
     nextModel.loadAssets(modelDir, fileName);
@@ -156,12 +198,86 @@ export class PetLive2DRenderer {
     this.bumpActivity(600);
   }
 
+  public setHostBounds(bounds?: Partial<ScreenBounds> | null): void {
+    if (!bounds || typeof bounds !== "object") {
+      return;
+    }
+
+    const nextBounds = {
+      x: Number.isFinite(Number(bounds.x)) ? Number(bounds.x) : this.hostBounds.x,
+      y: Number.isFinite(Number(bounds.y)) ? Number(bounds.y) : this.hostBounds.y,
+      width: Number.isFinite(Number(bounds.width))
+        ? Math.max(1, Number(bounds.width))
+        : this.hostBounds.width,
+      height: Number.isFinite(Number(bounds.height))
+        ? Math.max(1, Number(bounds.height))
+        : this.hostBounds.height
+    };
+
+    this.hostBounds = nextBounds;
+    this.bumpActivity(500);
+  }
+
+  public setAnchorScreenPoint(x: number, y: number): void {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return;
+    }
+
+    this.anchorScreenPoint = {
+      x,
+      y
+    };
+    this.bumpActivity(500);
+  }
+
+  public getAnchorScreenPoint(): ScreenPoint {
+    return {
+      x: this.anchorScreenPoint.x,
+      y: this.anchorScreenPoint.y
+    };
+  }
+
+  public beginAnchorDrag(clientX: number, clientY: number): void {
+    this.anchorDrag = {
+      startClientX: clientX,
+      startClientY: clientY,
+      startAnchorX: this.anchorScreenPoint.x,
+      startAnchorY: this.anchorScreenPoint.y
+    };
+    this.bumpActivity(700);
+  }
+
+  public updateAnchorDrag(clientX: number, clientY: number): ScreenPoint {
+    if (!this.anchorDrag) {
+      this.beginAnchorDrag(clientX, clientY);
+    }
+
+    const drag = this.anchorDrag;
+    if (!drag) {
+      return this.getAnchorScreenPoint();
+    }
+
+    this.setAnchorScreenPoint(
+      drag.startAnchorX + (clientX - drag.startClientX),
+      drag.startAnchorY + (clientY - drag.startClientY)
+    );
+    return this.getAnchorScreenPoint();
+  }
+
+  public endAnchorDrag(): void {
+    this.anchorDrag = null;
+    this.bumpActivity(300);
+  }
+
   public setZoomScale(nextZoomScale: number): number {
     if (!Number.isFinite(nextZoomScale)) {
       return this.zoomScale;
     }
 
-    this.zoomScale = Math.min(2.25, Math.max(0.55, nextZoomScale));
+    this.zoomScale = Math.min(
+      MAX_MODEL_ZOOM_SCALE,
+      Math.max(MIN_MODEL_ZOOM_SCALE, nextZoomScale)
+    );
     this.bumpActivity(800);
     return this.zoomScale;
   }
@@ -246,6 +362,35 @@ export class PetLive2DRenderer {
     this.bumpActivity(900);
   }
 
+  public setExpressionId(expressionId: string): void {
+    const normalizedExpressionId = String(expressionId || "").trim();
+    if (!normalizedExpressionId) {
+      return;
+    }
+
+    this.expressionId = normalizedExpressionId;
+    this.model?.setExpression(normalizedExpressionId);
+    this.bumpActivity(900);
+  }
+
+  public playMotion(
+    group: string,
+    motionIndex: number | null = null,
+    priority = LAppDefine.PriorityNormal
+  ): void {
+    const normalizedGroup = String(group || "").trim();
+    if (!this.model || !normalizedGroup) {
+      return;
+    }
+
+    if (Number.isInteger(motionIndex) && motionIndex !== null && motionIndex >= 0) {
+      this.model.startMotion(normalizedGroup, motionIndex, priority);
+    } else {
+      this.model.startRandomMotion(normalizedGroup, priority);
+    }
+    this.bumpActivity(1200);
+  }
+
   public setDragPointFromCanvas(clientX: number, clientY: number): void {
     if (!this.model || this.disposed) {
       return;
@@ -274,7 +419,8 @@ export class PetLive2DRenderer {
 
   public adjustZoomByWheel(deltaY: number): number {
     const direction = deltaY < 0 ? 1 : -1;
-    const nextScale = this.zoomScale * (direction > 0 ? 1.08 : 1 / 1.08);
+    const nextScale =
+      this.zoomScale * (direction > 0 ? MODEL_ZOOM_WHEEL_FACTOR : 1 / MODEL_ZOOM_WHEEL_FACTOR);
     return this.setZoomScale(nextScale);
   }
 
@@ -291,49 +437,12 @@ export class PetLive2DRenderer {
       return false;
     }
 
-    const gl = this.subdelegate.getGlManager().getGl();
-    if (!gl || gl.isContextLost()) {
-      return false;
-    }
-
-    const rect = this.canvas.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) {
-      return false;
-    }
-
-    const localX = clientX - rect.left;
-    const localY = clientY - rect.top;
-    if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) {
-      return false;
-    }
-
-    const pixelX = Math.max(
-      0,
-      Math.min(this.canvas.width - 1, Math.floor((localX / rect.width) * this.canvas.width))
-    );
-    const pixelY = Math.max(
-      0,
-      Math.min(
-        this.canvas.height - 1,
-        this.canvas.height - 1 - Math.floor((localY / rect.height) * this.canvas.height)
-      )
-    );
-
-    try {
-      gl.readPixels(
-        pixelX,
-        pixelY,
-        1,
-        1,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        this.hitTestPixel
-      );
-      return this.hitTestPixel[3] >= 20;
-    } catch (error) {
-      console.warn("[pet-renderer] Canvas hit test failed", error);
-      return false;
-    }
+    return this.hitTester.hitTestCanvasPoint(
+      this.canvas,
+      readyModel,
+      clientX,
+      clientY
+    ).hit;
   }
 
   public dispose(): void {
@@ -374,6 +483,7 @@ export class PetLive2DRenderer {
 
     this.model = null;
     this.invalidateDrawableBounds();
+    this.hitTester.clear();
   }
 
   private bumpActivity(durationMs: number): void {
@@ -455,17 +565,15 @@ export class PetLive2DRenderer {
     this.lastResizeHeight = height;
     this.lastResizeDpr = dpr;
     this.subdelegate.resize();
-    this.invalidateDrawableBounds();
   }
 
   private getDrawableBounds(readyModel: LAppModel): DrawableBounds | null {
-    const now = performance.now();
-    if (this.cachedDrawableBounds && now - this.cachedDrawableBoundsAtMs < 1200) {
+    if (this.cachedDrawableBounds) {
       return this.cachedDrawableBounds;
     }
 
     this.cachedDrawableBounds = this.measureDrawableBounds(readyModel);
-    this.cachedDrawableBoundsAtMs = now;
+    this.cachedDrawableBoundsAtMs = performance.now();
     return this.cachedDrawableBounds;
   }
 
@@ -514,6 +622,26 @@ export class PetLive2DRenderer {
     return { left, right, top, bottom };
   }
 
+  private getAnchorViewPoint(projection: CubismMatrix44): ScreenPoint | null {
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return null;
+    }
+
+    const anchorCanvasX = this.anchorScreenPoint.x - this.hostBounds.x;
+    const anchorCanvasY = this.anchorScreenPoint.y - this.hostBounds.y;
+    if (!Number.isFinite(anchorCanvasX) || !Number.isFinite(anchorCanvasY)) {
+      return null;
+    }
+
+    const deviceX = (anchorCanvasX / rect.width) * 2 - 1;
+    const deviceY = 1 - (anchorCanvasY / rect.height) * 2;
+    return {
+      x: projection.invertTransformX(deviceX),
+      y: projection.invertTransformY(deviceY)
+    };
+  }
+
   private renderFrame(): void {
     this.rafId = null;
     if (this.disposed) {
@@ -560,10 +688,12 @@ export class PetLive2DRenderer {
       if (matrix && this.modelDescriptor) {
         matrix.loadIdentity();
 
-        const targetHeight = Math.min(
+        const anchorViewPoint = this.getAnchorViewPoint(projection) || { x: 0, y: 0 };
+        const baseTargetHeight = Math.min(
           2.8,
           Math.max(0.85, this.modelDescriptor.sizeHint * 1.9)
         );
+        const targetHeight = baseTargetHeight * this.zoomScale;
 
         matrix.setHeight(targetHeight);
 
@@ -572,21 +702,24 @@ export class PetLive2DRenderer {
           const centerX = (bounds.left + bounds.right) / 2;
           const centerY = (bounds.top + bounds.bottom) / 2;
           matrix.translate(
-            -centerX * matrix.getScaleX(),
-            -centerY * matrix.getScaleY()
+            anchorViewPoint.x - centerX * matrix.getScaleX(),
+            anchorViewPoint.y - centerY * matrix.getScaleY()
           );
         } else {
-          matrix.centerX(0);
-          matrix.centerY(0);
+          matrix.centerX(anchorViewPoint.x);
+          matrix.centerY(anchorViewPoint.y);
         }
       }
 
+      this.hitTester.updateProjection(projection);
       readyModel.draw(projection);
 
       CubismWebGLOffscreenManager.getInstance().endFrameProcess(gl);
       CubismWebGLOffscreenManager
         .getInstance()
         .releaseStaleRenderTextures(gl);
+    } else {
+      this.hitTester.clear();
     }
     this.scheduleNextFrame();
   }

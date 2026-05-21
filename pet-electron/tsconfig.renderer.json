@@ -16,7 +16,7 @@
     "types": ["node"],
     "baseUrl": ".",
     "paths": {
-      "@framework/*": ["../vendor/CubismWebFramework/src/*"]
+      "@framework/*": ["vendor/CubismWebFramework/src/*"]
     }
   },
   "include": ["renderer/src/**/*.ts", "renderer/src/**/*.d.ts"]

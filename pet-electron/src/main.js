@@ -1,10 +1,8 @@
 ﻿const path = require("path");
 const fs = require("fs");
-const http = require("http");
 const {
   app,
   BrowserWindow,
-  Menu,
   Tray,
   desktopCapturer,
   ipcMain,
@@ -14,10 +12,16 @@ const {
 } = require("electron");
 
 const { cloneDefaultState, loadState, mergeState, saveState } = require("./state");
+const {
+  buildReaderVisibleInputText,
+  normalizeReaderAttachments
+} = require("./main-process/reader-attachments");
+const { startControlServer: createControlServer } = require("./main-process/control-server");
+const { createPetContextMenu, createTrayMenu } = require("./main-process/menus");
+const { createPetLogger } = require("./main-process/pet-logger");
 
 const APP_NAME = "Kuro Pet Electron";
 const TEMP_MAX_RENDER_PERFORMANCE = true;
-const MODE_CHANGE_TIMEOUT_MS = 2200;
 const CONTROL_HOST = process.env.KURO_PET_CONTROL_HOST || "127.0.0.1";
 const CONTROL_PORT = Number(process.env.KURO_PET_CONTROL_PORT || "23567");
 
@@ -28,97 +32,17 @@ if (TEMP_MAX_RENDER_PERFORMANCE) {
   app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
 }
 
-const repoRoot = path.resolve(__dirname, "..", "..");
-const frontendEntry = path.join(repoRoot, "Open-LLM-VTuber", "frontend", "index.html");
-const rendererEntry = path.join(repoRoot, "pet-electron", "renderer-dist", "index.html");
-const iconPath = path.join(repoRoot, "Open-LLM-VTuber", "frontend", "favicon.ico");
+const projectRoot = path.resolve(__dirname, "..");
+const rendererEntry = path.join(projectRoot, "renderer-dist", "index.html");
+const iconPath = path.join(projectRoot, "src", "assets", "favicon.ico");
 const readerEntry = path.join(__dirname, "reader-window.html");
 const readerPreloadPath = path.join(__dirname, "reader-preload.js");
-const MIN_PET_ZOOM_SCALE = 0.55;
-const MAX_PET_ZOOM_SCALE = 2.25;
-const DEFAULT_PET_BOUNDS = cloneDefaultState().boundsByMode.pet;
-const BASE_PET_WINDOW_WIDTH = DEFAULT_PET_BOUNDS.width;
-const BASE_PET_WINDOW_HEIGHT = DEFAULT_PET_BOUNDS.height;
+const MIN_PET_ZOOM_SCALE = 0.2;
+const MAX_PET_ZOOM_SCALE = 8;
 const MIN_PET_WINDOW_WIDTH = 280;
 const MIN_PET_WINDOW_HEIGHT = 420;
-const MIN_PET_VISIBLE_MARGIN = 80;
 const MIN_READER_WINDOW_WIDTH = 360;
 const MIN_READER_WINDOW_HEIGHT = 236;
-const MAX_READER_ATTACHMENTS = 6;
-const MAX_READER_IMAGE_BYTES = 8 * 1024 * 1024;
-const MAX_READER_AUDIO_BYTES = 12 * 1024 * 1024;
-const MAX_READER_TEXT_BYTES = 4 * 1024 * 1024;
-const MAX_READER_ARCHIVE_BYTES = 24 * 1024 * 1024;
-const MAX_READER_BINARY_BYTES = 16 * 1024 * 1024;
-const READER_TEXT_EXTENSIONS = new Set([
-  ".txt",
-  ".md",
-  ".json",
-  ".jsonl",
-  ".yaml",
-  ".yml",
-  ".toml",
-  ".ini",
-  ".cfg",
-  ".csv",
-  ".tsv",
-  ".log",
-  ".env",
-  ".gitignore",
-  ".xml"
-]);
-const READER_CODE_EXTENSIONS = new Set([
-  ".py",
-  ".js",
-  ".mjs",
-  ".cjs",
-  ".ts",
-  ".tsx",
-  ".jsx",
-  ".html",
-  ".css",
-  ".scss",
-  ".c",
-  ".cc",
-  ".cpp",
-  ".h",
-  ".hpp",
-  ".cs",
-  ".java",
-  ".go",
-  ".rs",
-  ".php",
-  ".rb",
-  ".lua",
-  ".sql",
-  ".swift",
-  ".kt",
-  ".kts",
-  ".dart",
-  ".vue",
-  ".svelte",
-  ".r",
-  ".pl",
-  ".bat",
-  ".cmd",
-  ".ps1",
-  ".sh"
-]);
-const READER_ARCHIVE_EXTENSIONS = new Set([".zip", ".tar", ".tgz", ".tar.gz", ".gz"]);
-const READER_BINARY_EXTENSIONS = new Set([".exe", ".dll", ".bin", ".dat"]);
-const READER_ARCHIVE_MIME_TYPES = new Set([
-  "application/zip",
-  "application/x-zip-compressed",
-  "application/x-tar",
-  "application/gzip",
-  "application/x-gzip"
-]);
-const READER_BINARY_MIME_TYPES = new Set([
-  "application/octet-stream",
-  "application/vnd.microsoft.portable-executable",
-  "application/x-msdownload",
-  "application/x-dosexec"
-]);
 
 let mainWindow = null;
 let readerWindow = null;
@@ -147,51 +71,14 @@ let latestFrontendState = {
   currentExpressionLabel: "一般"
 };
 
+const petLog = createPetLogger(app);
+
 function normalizePetZoomScale(value) {
   const zoomScale = Number(value);
   if (!Number.isFinite(zoomScale)) {
     return 1;
   }
   return Math.max(MIN_PET_ZOOM_SCALE, Math.min(MAX_PET_ZOOM_SCALE, zoomScale));
-}
-
-function shouldUseCustomRenderer() {
-  return fs.existsSync(rendererEntry);
-}
-
-function getRendererEntryPath() {
-  return shouldUseCustomRenderer() ? rendererEntry : frontendEntry;
-}
-
-function petLog(...parts) {
-  const line = `[${new Date().toISOString()}] ${parts
-    .map((part) => {
-      if (part instanceof Error) {
-        return `${part.message}\n${part.stack || ""}`;
-      }
-      if (typeof part === "string") {
-        return part;
-      }
-      try {
-        return JSON.stringify(part);
-      } catch {
-        return String(part);
-      }
-    })
-    .join(" ")}`;
-
-  console.log(line);
-
-  if (!app.isReady()) {
-    return;
-  }
-
-  try {
-    const logPath = path.join(app.getPath("userData"), "pet-shell.log");
-    fs.appendFileSync(logPath, `${line}\n`, "utf8");
-  } catch (error) {
-    console.warn("[pet-electron] Failed to write log file:", error);
-  }
 }
 
 function saveCurrentState() {
@@ -202,6 +89,11 @@ function saveCurrentState() {
 }
 
 function setBoundsForCurrentMode(bounds) {
+  if (appState.mode === "pet") {
+    saveCurrentState();
+    return;
+  }
+
   appState.boundsByMode[appState.mode] = {
     x: bounds.x,
     y: bounds.y,
@@ -239,6 +131,7 @@ function resetPetBoundsToDefault() {
     width: defaults.width,
     height: defaults.height
   };
+  appState.petAnchor = getDefaultPetAnchor();
 }
 
 function getAllDisplays() {
@@ -265,6 +158,63 @@ function getVirtualWorkAreaBounds() {
   };
 }
 
+function getPetHostBounds() {
+  return getVirtualWorkAreaBounds();
+}
+
+function clampPointToVirtualDesktop(point) {
+  const area = getVirtualWorkAreaBounds();
+  const fallback = {
+    x: area.x + area.width / 2,
+    y: area.y + area.height / 2
+  };
+  const x = Number.isFinite(Number(point?.x)) ? Number(point.x) : fallback.x;
+  const y = Number.isFinite(Number(point?.y)) ? Number(point.y) : fallback.y;
+
+  return {
+    x: Math.round(Math.min(Math.max(x, area.x), area.x + area.width)),
+    y: Math.round(Math.min(Math.max(y, area.y), area.y + area.height))
+  };
+}
+
+function getDefaultPetAnchor() {
+  const defaults = cloneDefaultState().boundsByMode.pet;
+  const primaryArea = screen.getPrimaryDisplay().workArea;
+  return clampPointToVirtualDesktop({
+    x: primaryArea.x + defaults.x + defaults.width / 2,
+    y: primaryArea.y + defaults.y + defaults.height / 2
+  });
+}
+
+function ensurePetAnchor() {
+  const anchor = clampPointToVirtualDesktop(appState.petAnchor || getDefaultPetAnchor());
+  appState.petAnchor = anchor;
+  return anchor;
+}
+
+function buildPetHostStatePayload(type = "pet-host-set") {
+  return {
+    type,
+    petHostBounds: getPetHostBounds(),
+    petAnchor: ensurePetAnchor()
+  };
+}
+
+function broadcastPetHostState(type = "pet-host-set") {
+  broadcast("pet-command", buildPetHostStatePayload(type));
+}
+
+function setPetAnchor(x, y, options = {}) {
+  appState.petAnchor = clampPointToVirtualDesktop({ x, y });
+  saveCurrentState();
+
+  if (options.broadcast !== false) {
+    broadcastPetHostState("pet-anchor-set");
+  }
+
+  return appState.petAnchor;
+}
+
 function findDisplayForBounds(bounds) {
   const point = {
     x: bounds.x + Math.round(bounds.width / 2),
@@ -286,23 +236,10 @@ function clampBoundsToDisplay(bounds, display) {
   };
 }
 
-function clampBoundsToVirtualDesktop(bounds) {
-  const area = getVirtualWorkAreaBounds();
-  const width = Math.min(bounds.width, area.width);
-  const height = Math.min(bounds.height, area.height);
-
-  return {
-    x: Math.min(Math.max(bounds.x, area.x), area.x + area.width - width),
-    y: Math.min(Math.max(bounds.y, area.y), area.y + area.height - height),
-    width,
-    height
-  };
-}
-
 function clampBoundsToVirtualDesktopWithOverflow(bounds, visibleMargin = 120) {
   const area = getVirtualWorkAreaBounds();
-  const width = Math.min(bounds.width, area.width);
-  const height = Math.min(bounds.height, area.height);
+  const width = Math.max(1, Math.round(bounds.width));
+  const height = Math.max(1, Math.round(bounds.height));
   const minVisibleX = Math.max(64, Math.min(visibleMargin, width));
   const minVisibleY = Math.max(64, Math.min(visibleMargin, height));
 
@@ -331,53 +268,11 @@ function clampReaderBounds(bounds) {
   );
 }
 
-function scaleBoundsAroundCenter(bounds, scaleRatio) {
-  const ratio = Number.isFinite(scaleRatio) ? scaleRatio : 1;
-  const nextWidth = Math.max(MIN_PET_WINDOW_WIDTH, Math.round(bounds.width * ratio));
-  const nextHeight = Math.max(MIN_PET_WINDOW_HEIGHT, Math.round(bounds.height * ratio));
-
-  return {
-    x: Math.round(bounds.x - (nextWidth - bounds.width) / 2),
-    y: Math.round(bounds.y - (nextHeight - bounds.height) / 2),
-    width: nextWidth,
-    height: nextHeight
-  };
-}
-
-function buildBoundsAroundCenter(centerPoint, width, height) {
-  const nextWidth = Math.max(MIN_PET_WINDOW_WIDTH, Math.round(width));
-  const nextHeight = Math.max(MIN_PET_WINDOW_HEIGHT, Math.round(height));
-  return {
-    x: Math.round(centerPoint.x - nextWidth / 2),
-    y: Math.round(centerPoint.y - nextHeight / 2),
-    width: nextWidth,
-    height: nextHeight
-  };
-}
-
-function getCurrentWindowCenter(bounds) {
-  return {
-    x: bounds.x + bounds.width / 2,
-    y: bounds.y + bounds.height / 2
-  };
-}
-
-function getPetWindowVisibleMargin(bounds) {
-  const shortestEdge = Math.min(bounds.width, bounds.height);
-  return Math.max(MIN_PET_VISIBLE_MARGIN, Math.round(shortestEdge * 0.08));
-}
-
 function resolveTargetBoundsForMode(mode) {
-  if (mode === "pet" && appState.petSpanAllDisplays) {
-    return getVirtualWorkAreaBounds();
-  }
-
   const requestedBounds = getWindowBoundsForMode(mode);
   if (mode === "pet") {
-    return clampBoundsToVirtualDesktopWithOverflow(
-      requestedBounds,
-      getPetWindowVisibleMargin(requestedBounds)
-    );
+    ensurePetAnchor();
+    return getPetHostBounds();
   }
 
   return clampBoundsToDisplay(requestedBounds, findDisplayForBounds(requestedBounds));
@@ -396,35 +291,21 @@ function applyIgnoreMouseState() {
   mainWindow.setIgnoreMouseEvents(shouldIgnore, { forward: true });
 }
 
-function setPetWindowZoom(zoomScale, options = {}) {
-  const normalizedZoomScale = normalizePetZoomScale(zoomScale);
+function setPetWindowZoom(zoomScale) {
+  return setPetModelZoom(zoomScale);
+}
 
-  appState.petZoomScale = normalizedZoomScale;
+function setPetModelZoom(zoomScale, options = {}) {
+  appState.petZoomScale = normalizePetZoomScale(zoomScale);
+  saveCurrentState();
 
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    saveCurrentState();
-    return false;
+  if (options.broadcast !== false) {
+    broadcast("pet-command", {
+      type: "pet-zoom-set",
+      zoomScale: appState.petZoomScale
+    });
   }
 
-  if (appState.mode !== "pet" || appState.petSpanAllDisplays) {
-    saveCurrentState();
-    return false;
-  }
-
-  const currentBounds = mainWindow.getBounds();
-  const currentCenter = getCurrentWindowCenter(currentBounds);
-  const targetBounds = buildBoundsAroundCenter(
-    currentCenter,
-    BASE_PET_WINDOW_WIDTH * normalizedZoomScale,
-    BASE_PET_WINDOW_HEIGHT * normalizedZoomScale
-  );
-  const nextBounds = clampBoundsToVirtualDesktopWithOverflow(
-    targetBounds,
-    getPetWindowVisibleMargin(targetBounds)
-  );
-
-  mainWindow.setBounds(nextBounds, false);
-  setBoundsForCurrentMode(nextBounds);
   return true;
 }
 
@@ -434,9 +315,7 @@ function adjustPetWindowScale(scaleRatio) {
     return false;
   }
 
-  return setPetWindowZoom(normalizePetZoomScale(appState.petZoomScale) * ratio, {
-    previousZoomScale: normalizePetZoomScale(appState.petZoomScale)
-  });
+  return setPetModelZoom(normalizePetZoomScale(appState.petZoomScale) * ratio);
 }
 
 function getReaderStatePayload() {
@@ -589,202 +468,11 @@ async function applyRendererBackendConfig(baseUrl, wsUrl, reload = true) {
     };
   })(${JSON.stringify(baseUrl || "")}, ${JSON.stringify(wsUrl || "")}, ${JSON.stringify(Boolean(reload))});`);
 
-  if (!shouldUseCustomRenderer() && reload && mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.reloadIgnoringCache();
-  }
   updateFrontendState({
     baseUrl: baseUrl || latestFrontendState.baseUrl,
     wsUrl: wsUrl || latestFrontendState.wsUrl
   });
   return payload || {};
-}
-
-function estimateDataUrlBytes(dataUrl) {
-  const raw = String(dataUrl || "");
-  const commaIndex = raw.indexOf(",");
-  const payload = commaIndex >= 0 ? raw.slice(commaIndex + 1) : raw;
-  return Math.floor((payload.length * 3) / 4);
-}
-
-function getReaderFileExtension(name) {
-  const lowerName = String(name || "").toLowerCase();
-  if (lowerName.endsWith(".tar.gz")) {
-    return ".tar.gz";
-  }
-  const dotIndex = lowerName.lastIndexOf(".");
-  return dotIndex >= 0 ? lowerName.slice(dotIndex) : "";
-}
-
-function guessReaderMimeType(name, kind, fallback) {
-  const mimeType = String(fallback || "").trim().toLowerCase();
-  if (mimeType) {
-    return mimeType;
-  }
-
-  const mimeByExtension = {
-    ".txt": "text/plain",
-    ".md": "text/markdown",
-    ".json": "application/json",
-    ".jsonl": "application/x-ndjson",
-    ".yaml": "application/x-yaml",
-    ".yml": "application/x-yaml",
-    ".toml": "application/toml",
-    ".ini": "text/plain",
-    ".cfg": "text/plain",
-    ".csv": "text/csv",
-    ".tsv": "text/tab-separated-values",
-    ".log": "text/plain",
-    ".env": "text/plain",
-    ".gitignore": "text/plain",
-    ".py": "text/x-python",
-    ".js": "text/javascript",
-    ".mjs": "text/javascript",
-    ".cjs": "text/javascript",
-    ".ts": "text/typescript",
-    ".tsx": "text/typescript",
-    ".jsx": "text/javascript",
-    ".html": "text/html",
-    ".css": "text/css",
-    ".scss": "text/x-scss",
-    ".c": "text/plain",
-    ".cc": "text/plain",
-    ".cpp": "text/plain",
-    ".h": "text/plain",
-    ".hpp": "text/plain",
-    ".cs": "text/plain",
-    ".java": "text/x-java-source",
-    ".go": "text/plain",
-    ".rs": "text/plain",
-    ".php": "text/x-php",
-    ".rb": "text/plain",
-    ".lua": "text/plain",
-    ".sql": "application/sql",
-    ".swift": "text/plain",
-    ".kt": "text/plain",
-    ".kts": "text/plain",
-    ".dart": "text/plain",
-    ".vue": "text/plain",
-    ".svelte": "text/plain",
-    ".r": "text/plain",
-    ".pl": "text/plain",
-    ".xml": "application/xml",
-    ".bat": "text/plain",
-    ".cmd": "text/plain",
-    ".ps1": "text/plain",
-    ".sh": "text/x-shellscript",
-    ".zip": "application/zip",
-    ".tar": "application/x-tar",
-    ".tgz": "application/gzip",
-    ".tar.gz": "application/gzip",
-    ".gz": "application/gzip",
-    ".exe": "application/vnd.microsoft.portable-executable",
-    ".dll": "application/vnd.microsoft.portable-executable",
-    ".bin": "application/octet-stream",
-    ".dat": "application/octet-stream"
-  };
-  return mimeByExtension[getReaderFileExtension(name)] || (kind === "binary" ? "application/octet-stream" : "application/octet-stream");
-}
-
-function classifyReaderAttachment(name, mimeType, requestedKind) {
-  const normalizedMime = String(mimeType || "").trim().toLowerCase();
-  const extension = getReaderFileExtension(name);
-  if (normalizedMime.startsWith("image/")) {
-    return "image";
-  }
-  if (normalizedMime.startsWith("audio/")) {
-    return "audio";
-  }
-  if (READER_CODE_EXTENSIONS.has(extension)) {
-    return "code";
-  }
-  if (READER_TEXT_EXTENSIONS.has(extension) || normalizedMime.startsWith("text/")) {
-    return "text";
-  }
-  if (READER_ARCHIVE_EXTENSIONS.has(extension) || READER_ARCHIVE_MIME_TYPES.has(normalizedMime)) {
-    return "archive";
-  }
-  if (READER_BINARY_EXTENSIONS.has(extension) || READER_BINARY_MIME_TYPES.has(normalizedMime)) {
-    return "binary";
-  }
-  if (["application/json", "application/xml", "application/x-yaml", "application/toml"].includes(normalizedMime)) {
-    return "text";
-  }
-  const kind = String(requestedKind || "").trim().toLowerCase();
-  if (["image", "audio", "text", "code", "archive", "binary"].includes(kind)) {
-    return kind;
-  }
-  return "";
-}
-
-function getReaderAttachmentLimit(kind) {
-  if (kind === "image") {
-    return MAX_READER_IMAGE_BYTES;
-  }
-  if (kind === "audio") {
-    return MAX_READER_AUDIO_BYTES;
-  }
-  if (kind === "archive") {
-    return MAX_READER_ARCHIVE_BYTES;
-  }
-  if (kind === "binary") {
-    return MAX_READER_BINARY_BYTES;
-  }
-  return MAX_READER_TEXT_BYTES;
-}
-
-function buildReaderVisibleInputText(text, attachments) {
-  const normalizedText = String(text || "").trim();
-  const attachmentNames = (Array.isArray(attachments) ? attachments : [])
-    .map((item, index) => path.basename(String(item && item.name ? item.name : `file-${index + 1}`)).trim())
-    .filter(Boolean);
-
-  if (!attachmentNames.length) {
-    return normalizedText;
-  }
-  return [normalizedText, `附件：${attachmentNames.join("、")}`].filter(Boolean).join("\n");
-}
-
-function normalizeReaderAttachments(attachments) {
-  const input = Array.isArray(attachments) ? attachments : [];
-  const output = [];
-  const errors = [];
-
-  for (const item of input.slice(0, MAX_READER_ATTACHMENTS)) {
-    if (!item || typeof item !== "object") {
-      continue;
-    }
-
-    const data = String(item.data || "");
-    const name = path.basename(String(item.name || "uploaded-file")).slice(0, 160) || "uploaded-file";
-    const requestedMimeType = String(item.mime_type || item.type || "").trim().toLowerCase();
-    const kind = classifyReaderAttachment(name, requestedMimeType, item.kind);
-    const mimeType = guessReaderMimeType(name, kind, requestedMimeType);
-    const size = Number(item.size) || estimateDataUrlBytes(data);
-
-    if (!data.startsWith("data:") || !kind || !mimeType) {
-      errors.push(`${name}: invalid attachment payload`);
-      continue;
-    }
-
-    if (size > getReaderAttachmentLimit(kind)) {
-      errors.push(`${name}: file is too large`);
-      continue;
-    }
-
-    output.push({
-      kind,
-      name,
-      data,
-      mime_type: mimeType,
-      size
-    });
-  }
-
-  if (input.length > MAX_READER_ATTACHMENTS) {
-    errors.push(`Only the first ${MAX_READER_ATTACHMENTS} files were attached.`);
-  }
-
-  return { attachments: output, errors };
 }
 
 async function sendTextToFrontend(text, attachments = []) {
@@ -827,42 +515,6 @@ async function sendTextToFrontend(text, attachments = []) {
     result.warnings = normalizedAttachments.errors;
   }
   return result;
-}
-
-async function clickRendererButtonByText(candidates) {
-  if (shouldUseCustomRenderer()) {
-    return {
-      ok: false,
-      error: "unsupported-in-custom-renderer",
-      candidates
-    };
-  }
-
-  return (
-    (await executeRenderer(`((candidates) => {
-      const normalizedCandidates = (Array.isArray(candidates) ? candidates : [])
-        .map((value) => String(value || "").toLowerCase().replace(/\\s+/g, " ").trim())
-        .filter(Boolean);
-      const buttons = Array.from(document.querySelectorAll("button"));
-      const normalize = (value) => String(value || "").toLowerCase().replace(/\\s+/g, " ").trim();
-
-      for (const button of buttons) {
-        const text = normalize(button.innerText || button.textContent || "");
-        if (!text) continue;
-        if (normalizedCandidates.some((candidate) => text.includes(candidate))) {
-          button.click();
-          return { ok: true, text };
-        }
-      }
-
-      return {
-        ok: false,
-        buttons: buttons
-          .map((button) => normalize(button.innerText || button.textContent || ""))
-          .filter(Boolean)
-      };
-    })(${JSON.stringify(candidates || [])});`)) || { ok: false }
-  );
 }
 
 function setReaderVisible(visible) {
@@ -948,26 +600,33 @@ async function handleControlAction(action, payload = {}) {
       });
       return { ok: true, route: "ipc", action };
     }
+    case "play-motion": {
+      const group = String(payload.group || "Idle");
+      const motionIndex = Number.isInteger(payload.motionIndex) && payload.motionIndex >= 0
+        ? payload.motionIndex
+        : null;
+      const priority = Number.isInteger(payload.priority)
+        ? payload.priority
+        : undefined;
+      broadcast("pet-command", {
+        type: "motion-play",
+        group,
+        motionIndex,
+        priority
+      });
+      return { ok: true, route: "ipc", action };
+    }
     case "toggle-subtitle":
       return setReaderVisible(!(readerWindow && !readerWindow.isDestroyed() && readerWindow.isVisible()));
     case "toggle-camera":
-      if (shouldUseCustomRenderer()) {
-        broadcast("pet-command", { type: "camera-toggle", enabled: Boolean(payload.enabled) });
-        return { ok: true, route: "ipc", action };
-      }
-      return clickRendererButtonByText(["camera", "攝像頭", "摄像头", "攝影機"]);
+      broadcast("pet-command", { type: "camera-toggle", enabled: Boolean(payload.enabled) });
+      return { ok: true, route: "ipc", action };
     case "toggle-screen":
-      if (shouldUseCustomRenderer()) {
-        broadcast("pet-command", { type: "screen-toggle", enabled: Boolean(payload.enabled) });
-        return { ok: true, route: "ipc", action };
-      }
-      return clickRendererButtonByText(["screen", "螢幕", "屏幕", "屏幕共享"]);
+      broadcast("pet-command", { type: "screen-toggle", enabled: Boolean(payload.enabled) });
+      return { ok: true, route: "ipc", action };
     case "toggle-browser":
-      if (shouldUseCustomRenderer()) {
-        broadcast("pet-command", { type: "browser-toggle", enabled: Boolean(payload.enabled) });
-        return { ok: true, route: "ipc", action };
-      }
-      return clickRendererButtonByText(["browser", "瀏覽器", "浏览器"]);
+      broadcast("pet-command", { type: "browser-toggle", enabled: Boolean(payload.enabled) });
+      return { ok: true, route: "ipc", action };
     case "reload-frontend":
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.reloadIgnoringCache();
@@ -990,250 +649,6 @@ async function handleControlAction(action, payload = {}) {
   }
 }
 
-async function configurePetShellRenderer() {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-
-  await mainWindow.webContents.insertCSS(`
-    html,
-    body,
-    #root {
-      background: transparent !important;
-    }
-
-    body {
-      overflow: hidden !important;
-    }
-
-    img[alt="background"],
-    video {
-      display: none !important;
-    }
-
-    #live2d,
-    #canvas,
-    canvas {
-      pointer-events: auto !important;
-      cursor: grab !important;
-    }
-  `);
-
-  await mainWindow.webContents.executeJavaScript(
-    `(() => {
-      document.documentElement.dataset.kuroPetShell = "1";
-
-      if (!window.__kuroPetWindowDragBound) {
-        window.__kuroPetWindowDragBound = true;
-
-        let isDraggingWindow = false;
-
-        const beginWindowDrag = (event) => {
-          if (!window.api?.startWindowDrag || event.button !== 0) {
-            return;
-          }
-
-          isDraggingWindow = true;
-          event.preventDefault();
-          event.stopPropagation();
-          window.api.startWindowDrag(event.screenX, event.screenY);
-        };
-
-        const moveWindowDrag = (event) => {
-          if (!isDraggingWindow) {
-            return;
-          }
-          event.preventDefault();
-          window.api.updateWindowDrag?.(event.screenX, event.screenY);
-        };
-
-        const endWindowDrag = () => {
-          if (!isDraggingWindow) {
-            return;
-          }
-          isDraggingWindow = false;
-          window.api.endWindowDrag?.();
-        };
-
-        window.addEventListener("pointermove", moveWindowDrag, true);
-        window.addEventListener("pointerup", endWindowDrag, true);
-        window.addEventListener("pointercancel", endWindowDrag, true);
-        window.addEventListener("blur", endWindowDrag, true);
-
-        const bindStageDrag = () => {
-          const live2dRoot =
-            document.querySelector("#live2d canvas") ||
-            document.getElementById("live2d") ||
-            document.getElementById("canvas") ||
-            document.querySelector("canvas");
-
-          if (!live2dRoot || live2dRoot.dataset.kuroPetDragBound === "1") {
-            return Boolean(live2dRoot);
-          }
-
-          live2dRoot.dataset.kuroPetDragBound = "1";
-          live2dRoot.style.pointerEvents = "auto";
-          live2dRoot.addEventListener("pointerdown", beginWindowDrag, true);
-          return true;
-        };
-
-        const hideAncestorCard = (node, minWidth = 220, minHeight = 50, maxDepth = 8) => {
-          let current = node;
-          let chosen = null;
-          for (let depth = 0; depth < maxDepth && current; depth += 1) {
-            const rect = current.getBoundingClientRect();
-            if (rect.width >= minWidth && rect.height >= minHeight) {
-              chosen = current;
-            }
-            current = current.parentElement;
-          }
-          if (!chosen) {
-            return false;
-          }
-          chosen.dataset.kuroPetLegacyOverlay = "1";
-          chosen.style.display = "none";
-          chosen.style.opacity = "0";
-          chosen.style.pointerEvents = "none";
-          return true;
-        };
-
-        const trimLegacyUi = () => {
-          const candidates = Array.from(document.querySelectorAll("input, textarea"));
-          for (const node of candidates) {
-            const placeholder = String(node.getAttribute("placeholder") || "").toLowerCase();
-            if (
-              placeholder.includes("type your message") ||
-              placeholder.includes("輸入") ||
-              placeholder.includes("message")
-            ) {
-              hideAncestorCard(node, 260, 80, 8);
-            }
-          }
-
-          const allNodes = Array.from(document.querySelectorAll("body *"));
-          for (const node of allNodes) {
-            const text = String(node.textContent || "").replace(/\s+/g, " ").trim();
-            if (!text) {
-              continue;
-            }
-            if (text === "Open LLM VTuber" || text === "Connected" || text === "已連接") {
-              hideAncestorCard(node, 120, 24, 6);
-            }
-          }
-
-          const live2dRoot = document.getElementById("live2d");
-          if (live2dRoot) {
-            live2dRoot.style.pointerEvents = "auto";
-            live2dRoot.style.background = "transparent";
-            live2dRoot.style.zIndex = "20";
-          }
-
-          const canvas = document.querySelector("#live2d canvas") || document.querySelector("canvas");
-          if (canvas) {
-            canvas.style.pointerEvents = "auto";
-            canvas.style.cursor = "grab";
-            canvas.style.zIndex = "20";
-          }
-        };
-
-        if (!bindStageDrag()) {
-          const retry = setInterval(() => {
-            if (bindStageDrag()) {
-              clearInterval(retry);
-            }
-            trimLegacyUi();
-          }, 350);
-        }
-        trimLegacyUi();
-      }
-
-      if (!window.__kuroPetLegacyUiHidden) {
-        window.__kuroPetLegacyUiHidden = true;
-
-        const hideLegacyOverlay = () => {
-          const targets = Array.from(document.querySelectorAll("input, textarea"))
-            .filter((node) => {
-              const placeholder = String(node.getAttribute("placeholder") || "").toLowerCase();
-              return (
-                placeholder.includes("type your message") ||
-                placeholder.includes("message") ||
-                placeholder.includes("輸入")
-              );
-            });
-
-          for (const input of targets) {
-            let candidate = input;
-            let chosen = null;
-            for (let depth = 0; depth < 8 && candidate; depth += 1) {
-              const rect = candidate.getBoundingClientRect();
-              if (rect.width >= 260 && rect.height >= 80) {
-                chosen = candidate;
-              }
-              candidate = candidate.parentElement;
-            }
-            if (chosen) {
-              chosen.dataset.kuroPetLegacyOverlay = "1";
-              chosen.style.display = "none";
-              chosen.style.opacity = "0";
-              chosen.style.pointerEvents = "none";
-            }
-          }
-        };
-
-        hideLegacyOverlay();
-        const overlayObserver = new MutationObserver(() => hideLegacyOverlay());
-        overlayObserver.observe(document.body, {
-          subtree: true,
-          childList: true,
-          attributes: true
-        });
-      }
-    })();`,
-    true
-  );
-}
-
-function waitForRendererSignal(channel, predicate = () => true) {
-  return new Promise((resolve) => {
-    let finished = false;
-
-    const cleanup = (result) => {
-      if (finished) {
-        return;
-      }
-      finished = true;
-      clearTimeout(timer);
-      ipcMain.removeListener(channel, handler);
-      resolve(result);
-    };
-
-    const handler = (_event, ...args) => {
-      if (predicate(...args)) {
-        cleanup(true);
-      }
-    };
-
-    const timer = setTimeout(() => cleanup(false), MODE_CHANGE_TIMEOUT_MS);
-    ipcMain.on(channel, handler);
-  });
-}
-
-async function syncRendererMode(mode) {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-
-  hoveredComponents = new Map();
-  mainWindow.webContents.send("pre-mode-changed", mode);
-  await waitForRendererSignal("renderer-ready-for-mode-change", (incomingMode) => incomingMode === mode);
-
-  mainWindow.webContents.send("mode-changed", mode);
-  await waitForRendererSignal("mode-change-rendered");
-
-  mainWindow.webContents.send("force-ignore-mouse-changed", appState.forceIgnoreMouse);
-  applyIgnoreMouseState();
-}
-
 function applyWindowMode(mode, { force = false } = {}) {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
@@ -1248,11 +663,12 @@ function applyWindowMode(mode, { force = false } = {}) {
   const targetBounds = resolveTargetBoundsForMode(nextMode);
 
   if (nextMode === "pet") {
+    ensurePetAnchor();
     mainWindow.setAlwaysOnTop(true, "screen-saver");
     mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     mainWindow.setSkipTaskbar(true);
     mainWindow.setResizable(false);
-    mainWindow.setMinimumSize(320, 520);
+    mainWindow.setMinimumSize(1, 1);
   } else {
     mainWindow.setAlwaysOnTop(false);
     mainWindow.setVisibleOnAllWorkspaces(false);
@@ -1262,6 +678,9 @@ function applyWindowMode(mode, { force = false } = {}) {
   }
 
   mainWindow.setBounds(targetBounds, false);
+  if (nextMode === "pet") {
+    broadcastPetHostState("pet-host-set");
+  }
   saveCurrentState();
   applyIgnoreMouseState();
   updateTrayMenu();
@@ -1274,8 +693,21 @@ function refreshLayoutForDisplayTopology(reason = "display-metrics-changed") {
 
   const targetBounds = resolveTargetBoundsForMode(appState.mode);
   mainWindow.setBounds(targetBounds, false);
-  setBoundsForCurrentMode(targetBounds);
-  petLog("display-topology-refresh", { reason, mode: appState.mode, targetBounds });
+
+  if (appState.mode === "pet") {
+    ensurePetAnchor();
+    broadcastPetHostState("pet-host-set");
+    saveCurrentState();
+  } else {
+    setBoundsForCurrentMode(targetBounds);
+  }
+
+  petLog("display-topology-refresh", {
+    reason,
+    mode: appState.mode,
+    targetBounds,
+    petAnchor: appState.petAnchor
+  });
 }
 
 function moveWindowToNextDisplay() {
@@ -1283,13 +715,30 @@ function moveWindowToNextDisplay() {
     return;
   }
 
-  if (appState.mode === "pet" && appState.petSpanAllDisplays) {
-    refreshLayoutForDisplayTopology("move-to-next-display-while-spanned");
+  const displays = getAllDisplays();
+  if (displays.length < 2) {
     return;
   }
 
-  const displays = getAllDisplays();
-  if (displays.length < 2) {
+  if (appState.mode === "pet") {
+    const currentAnchor = ensurePetAnchor();
+    const currentDisplay = screen.getDisplayNearestPoint(currentAnchor);
+    const currentIndex = displays.findIndex((item) => item.id === currentDisplay.id);
+    const nextDisplay = displays[(currentIndex + 1) % displays.length];
+    const currentArea = currentDisplay.workArea;
+    const nextArea = nextDisplay.workArea;
+    const ratioX = currentArea.width > 0
+      ? (currentAnchor.x - currentArea.x) / currentArea.width
+      : 0.5;
+    const ratioY = currentArea.height > 0
+      ? (currentAnchor.y - currentArea.y) / currentArea.height
+      : 0.5;
+
+    setPetAnchor(
+      nextArea.x + nextArea.width * Math.min(Math.max(ratioX, 0), 1),
+      nextArea.y + nextArea.height * Math.min(Math.max(ratioY, 0), 1)
+    );
+    mainWindow.setBounds(getPetHostBounds(), false);
     return;
   }
 
@@ -1314,70 +763,66 @@ function moveWindowToNextDisplay() {
   setBoundsForCurrentMode(nextBounds);
 }
 
+function showMainWindow() {
+  if (!mainWindow) {
+    return;
+  }
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function toggleForceIgnoreMouse() {
+  appState.forceIgnoreMouse = !appState.forceIgnoreMouse;
+  saveCurrentState();
+  applyIgnoreMouseState();
+  broadcast("force-ignore-mouse-changed", appState.forceIgnoreMouse);
+  updateTrayMenu();
+}
+
+function toggleReaderWindow() {
+  if (!readerWindow || readerWindow.isDestroyed()) {
+    appState.readerVisible = true;
+    createReaderWindow();
+    return;
+  }
+  if (readerWindow.isVisible()) {
+    readerWindow.hide();
+  } else {
+    readerWindow.show();
+    readerWindow.focus();
+  }
+}
+
+function reloadMainWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.reloadIgnoringCache();
+  }
+}
+
+function getMenuState() {
+  return {
+    forceIgnoreMouse: appState.forceIgnoreMouse,
+    readerVisible: appState.readerVisible
+  };
+}
+
+function getMenuActions() {
+  return {
+    showPet: showMainWindow,
+    toggleIgnoreMouse: toggleForceIgnoreMouse,
+    toggleReader: toggleReaderWindow,
+    moveNextDisplay: moveWindowToNextDisplay,
+    reloadFrontend: reloadMainWindow,
+    quit: () => app.quit()
+  };
+}
+
 function updateTrayMenu() {
   if (!tray) {
     return;
   }
 
-  const menu = Menu.buildFromTemplate([
-    {
-      label: "顯示桌寵",
-      click: () => {
-        if (!mainWindow) {
-          return;
-        }
-        mainWindow.show();
-        mainWindow.focus();
-      }
-    },
-    {
-      label: appState.forceIgnoreMouse ? "關閉滑鼠穿透" : "開啟滑鼠穿透",
-      click: () => {
-        appState.forceIgnoreMouse = !appState.forceIgnoreMouse;
-        saveCurrentState();
-        applyIgnoreMouseState();
-        broadcast("force-ignore-mouse-changed", appState.forceIgnoreMouse);
-        updateTrayMenu();
-      }
-    },
-    {
-      label: appState.readerVisible ? "隱藏閱讀框" : "顯示閱讀框",
-      click: () => {
-        if (!readerWindow || readerWindow.isDestroyed()) {
-          appState.readerVisible = true;
-          createReaderWindow();
-          return;
-        }
-        if (readerWindow.isVisible()) {
-          readerWindow.hide();
-        } else {
-          readerWindow.show();
-          readerWindow.focus();
-        }
-      }
-    },
-    {
-      label: "移到下一個螢幕",
-      click: () => moveWindowToNextDisplay()
-    },
-    {
-      label: "重新載入前端",
-      click: () => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.reloadIgnoringCache();
-        }
-      }
-    },
-    { type: "separator" },
-    {
-      label: "結束",
-      click: () => {
-        app.quit();
-      }
-    }
-  ]);
-
-  tray.setContextMenu(menu);
+  tray.setContextMenu(createTrayMenu(getMenuState(), getMenuActions()));
   tray.setToolTip(`${APP_NAME} (${appState.mode})`);
 }
 
@@ -1386,78 +831,7 @@ function showPetContextMenu() {
     return;
   }
 
-  const menu = Menu.buildFromTemplate([
-    {
-      label: appState.forceIgnoreMouse ? "關閉滑鼠穿透" : "開啟滑鼠穿透",
-      click: () => {
-        appState.forceIgnoreMouse = !appState.forceIgnoreMouse;
-        saveCurrentState();
-        applyIgnoreMouseState();
-        broadcast("force-ignore-mouse-changed", appState.forceIgnoreMouse);
-        updateTrayMenu();
-      }
-    },
-    {
-      label: appState.readerVisible ? "隱藏閱讀框" : "顯示閱讀框",
-      click: () => {
-        if (!readerWindow || readerWindow.isDestroyed()) {
-          appState.readerVisible = true;
-          createReaderWindow();
-          return;
-        }
-        if (readerWindow.isVisible()) {
-          readerWindow.hide();
-        } else {
-          readerWindow.show();
-          readerWindow.focus();
-        }
-      }
-    },
-    {
-      label: "移到下一個螢幕",
-      click: () => moveWindowToNextDisplay()
-    },
-    {
-      label: "重新載入前端",
-      click: () => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.reloadIgnoringCache();
-        }
-      }
-    },
-    { type: "separator" },
-    {
-      label: "結束",
-      click: () => {
-        app.quit();
-      }
-    }
-  ]);
-
-  menu.popup({ window: mainWindow });
-}
-
-function writeJson(res, statusCode, payload) {
-  res.writeHead(statusCode, {
-    "Content-Type": "application/json; charset=utf-8",
-    "Cache-Control": "no-store"
-  });
-  res.end(JSON.stringify(payload));
-}
-
-function readRequestBody(req) {
-  return new Promise((resolve, reject) => {
-    let raw = "";
-    req.on("data", (chunk) => {
-      raw += chunk;
-      if (raw.length > 1024 * 256) {
-        reject(new Error("Request body too large."));
-        req.destroy();
-      }
-    });
-    req.on("end", () => resolve(raw));
-    req.on("error", reject);
-  });
+  createPetContextMenu(getMenuState(), getMenuActions()).popup({ window: mainWindow });
 }
 
 function startControlServer() {
@@ -1465,80 +839,22 @@ function startControlServer() {
     return;
   }
 
-  controlServer = http.createServer(async (req, res) => {
-    const requestUrl = new URL(req.url || "/", `http://${CONTROL_HOST}:${CONTROL_PORT}`);
-
-    try {
-      if (req.method === "GET" && requestUrl.pathname === "/status") {
-        const renderer = await readRendererStatus();
-        renderer.readerVisible = Boolean(appState.readerVisible);
-        writeJson(res, 200, {
-          ok: true,
-          mode: appState.mode,
-          forceIgnoreMouse: appState.forceIgnoreMouse,
-          petSpanAllDisplays: appState.petSpanAllDisplays,
-          bounds: mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : null,
-          renderer
-        });
-        return;
-      }
-
-      if (req.method === "POST" && requestUrl.pathname === "/command") {
-        const raw = await readRequestBody(req);
-        const payload = raw ? JSON.parse(raw) : {};
-        const action = String(payload.action || "").trim();
-        const result = await handleControlAction(action, payload);
-        const renderer = await readRendererStatus();
-        renderer.readerVisible = Boolean(appState.readerVisible);
-        writeJson(res, 200, {
-          ok: Boolean(result && result.ok),
-          message: result && result.ok ? `command ${action} dispatched` : result.error || "command failed",
-          action,
-          result,
-          renderer
-        });
-        return;
-      }
-
-      if (req.method === "POST" && requestUrl.pathname === "/backend-config") {
-        const raw = await readRequestBody(req);
-        const payload = raw ? JSON.parse(raw) : {};
-        const baseUrl = String(payload.baseUrl || "").trim();
-        const wsUrl = String(payload.wsUrl || "").trim();
-        const reload = payload.reload !== false;
-        const result = await applyRendererBackendConfig(baseUrl, wsUrl, reload);
-        const renderer = await readRendererStatus();
-        writeJson(res, 200, {
-          ok: true,
-          message: reload ? "backend config updated and frontend reloaded" : "backend config updated",
-          result,
-          renderer
-        });
-        return;
-      }
-
-      writeJson(res, 404, {
-        ok: false,
-        error: "Not found"
-      });
-    } catch (error) {
-      petLog("control-server-error", error);
-      writeJson(res, 500, {
-        ok: false,
-        error: error instanceof Error ? error.message : String(error)
-      });
-    }
-  });
-
-  controlServer.on("error", (error) => {
-    petLog("control-server-listen-error", error);
-  });
-
-  controlServer.listen(CONTROL_PORT, CONTROL_HOST, () => {
-    petLog("control-server-ready", {
-      host: CONTROL_HOST,
-      port: CONTROL_PORT
-    });
+  controlServer = createControlServer({
+    host: CONTROL_HOST,
+    port: CONTROL_PORT,
+    readRendererStatus,
+    getShellStatus: () => ({
+      mode: appState.mode,
+      forceIgnoreMouse: appState.forceIgnoreMouse,
+      petSpanAllDisplays: appState.petSpanAllDisplays,
+      petHostBounds: getPetHostBounds(),
+      petAnchor: ensurePetAnchor(),
+      bounds: mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : null
+    }),
+    isReaderVisible: () => Boolean(appState.readerVisible),
+    handleControlAction,
+    applyRendererBackendConfig,
+    log: petLog
   });
 }
 
@@ -1647,8 +963,8 @@ function createReaderWindow() {
 
 function createWindow() {
   const bounds = resolveTargetBoundsForMode(appState.mode);
-  const entryPath = getRendererEntryPath();
-  const usingCustomRenderer = shouldUseCustomRenderer();
+  const entryPath = rendererEntry;
+  const rendererBuildAvailable = fs.existsSync(entryPath);
 
   mainWindow = new BrowserWindow({
     x: bounds.x,
@@ -1676,10 +992,11 @@ function createWindow() {
 
   petLog("Creating window", {
     entryPath,
-    usingCustomRenderer,
+    rendererBuildAvailable,
     mode: appState.mode,
     bounds,
     petSpanAllDisplays: appState.petSpanAllDisplays,
+    petAnchor: ensurePetAnchor(),
     backendBaseUrl: process.env.KURO_BACKEND_BASE_URL || null,
     backendWsUrl: process.env.KURO_BACKEND_WS_URL || null
   });
@@ -1725,39 +1042,33 @@ function createWindow() {
       .then((result) => petLog("renderer-diagnostics", result))
       .catch((error) => petLog("renderer-diagnostics-failed", error));
 
-    if (usingCustomRenderer) {
-      appState.mode = "pet";
-      applyWindowMode("pet", { force: true });
+    appState.mode = "pet";
+    applyWindowMode("pet", { force: true });
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+      }
+    }, 180);
+  });
+
+  mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+    petLog("did-fail-load", { errorCode, errorDescription, validatedURL });
+    if (!rendererBuildAvailable) {
+      mainWindow.loadURL(
+        `data:text/html;charset=utf-8,${encodeURIComponent(
+          "<!doctype html><title>Kuro Pet</title><body style=\"margin:0;background:transparent;color:white;font:14px sans-serif\">Renderer build missing. Run npm run build:renderer.</body>"
+        )}`
+      ).catch((error) => petLog("Failed to load renderer missing page", error));
       setTimeout(() => {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.show();
         }
       }, 180);
-      return;
     }
-
-    setTimeout(async () => {
-      try {
-        appState.mode = "pet";
-        applyWindowMode("pet", { force: true });
-        await syncRendererMode("pet");
-        await configurePetShellRenderer();
-      } catch (error) {
-        petLog("Initial pet-shell sync failed", error);
-      } finally {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.show();
-        }
-      }
-    }, 900);
   });
 
   mainWindow.webContents.on("console-message", (_event, level, message, line, sourceId) => {
     petLog("renderer-console", { level, message, line, sourceId });
-  });
-
-  mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
-    petLog("did-fail-load", { errorCode, errorDescription, validatedURL });
   });
 
   mainWindow.webContents.on(
@@ -1804,6 +1115,8 @@ function registerIpc() {
       baseUrl: process.env.KURO_BACKEND_BASE_URL || "http://127.0.0.1:23456",
       wsUrl: process.env.KURO_BACKEND_WS_URL || "ws://127.0.0.1:23456/client-ws",
       zoomScale: normalizePetZoomScale(appState.petZoomScale),
+      petHostBounds: getPetHostBounds(),
+      petAnchor: ensurePetAnchor(),
       outfit: appState.outfit,
       expression: appState.expression
     };
@@ -1816,13 +1129,10 @@ function registerIpc() {
     updateFrontendState(payload);
   });
 
-  ipcMain.on("set-mode", async (_event, mode) => {
+  ipcMain.on("set-mode", (_event, mode) => {
     const nextMode = mode === "window" ? "window" : "pet";
     applyWindowMode(nextMode);
     saveCurrentState();
-    if (!shouldUseCustomRenderer()) {
-      await syncRendererMode(nextMode);
-    }
   });
 
   ipcMain.on("toggle-force-ignore-mouse", () => {
@@ -1890,6 +1200,10 @@ function registerIpc() {
       return;
     }
 
+    if (appState.mode === "pet") {
+      return;
+    }
+
     if (!hoveredComponents.get("live2d-model")) {
       return;
     }
@@ -1911,6 +1225,10 @@ function registerIpc() {
 
   ipcMain.on("update-window-drag", (_event, payload) => {
     if (!mainWindow || mainWindow.isDestroyed() || !activeWindowDrag) {
+      return;
+    }
+
+    if (appState.mode === "pet") {
       return;
     }
 
@@ -1943,6 +1261,14 @@ function registerIpc() {
     setPetWindowZoom(Number(payload?.zoomScale));
   });
 
+  ipcMain.on("set-pet-model-zoom", (_event, payload) => {
+    setPetModelZoom(Number(payload?.zoomScale));
+  });
+
+  ipcMain.on("set-pet-anchor", (_event, payload) => {
+    setPetAnchor(Number(payload?.x), Number(payload?.y), { broadcast: false });
+  });
+
   ipcMain.on("end-window-drag", () => {
     activeWindowDrag = null;
     hoveredComponents.set("pet-window-drag", false);
@@ -1953,8 +1279,8 @@ function registerIpc() {
     const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
     const bounds = win ? win.getBounds() : getWindowBoundsForMode(appState.mode);
     const currentDisplay =
-      appState.mode === "pet" && appState.petSpanAllDisplays
-        ? screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+      appState.mode === "pet"
+        ? screen.getDisplayNearestPoint(ensurePetAnchor())
         : findDisplayForBounds(bounds);
     const sources = await desktopCapturer.getSources({
       types: ["screen"],
@@ -2002,18 +1328,9 @@ if (!singleInstanceLock) {
     latestFrontendState.currentExpressionLabel = appState.expression.expressionLabel;
     appState.mode = "pet";
     appState.forceIgnoreMouse = true;
-    appState.petSpanAllDisplays = false;
+    appState.petSpanAllDisplays = true;
     appState.petZoomScale = normalizePetZoomScale(appState.petZoomScale);
-    const virtualArea = getVirtualWorkAreaBounds();
-    const petBounds = appState.boundsByMode.pet;
-    if (
-      petBounds.width > 1200 ||
-      petBounds.height > 1200 ||
-      petBounds.width >= virtualArea.width * 0.85 ||
-      petBounds.height >= virtualArea.height * 0.85
-    ) {
-      resetPetBoundsToDefault();
-    }
+    ensurePetAnchor();
     saveCurrentState();
     petLog("app-ready", { statePath, appState });
 

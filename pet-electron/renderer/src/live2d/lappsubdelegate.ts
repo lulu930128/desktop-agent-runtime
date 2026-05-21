@@ -30,7 +30,7 @@ export class LAppSubdelegate {
   }
 
   public resize(): void {
-    const dpr = Math.max(1, window.devicePixelRatio || 1);
+    const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
     const targetWidth = Math.max(
       1,
       Math.round((this.canvas.clientWidth || window.innerWidth || 640) * dpr)

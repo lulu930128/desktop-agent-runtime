@@ -6,7 +6,7 @@ export default defineConfig({
   base: "./",
   resolve: {
     alias: {
-      "@framework": path.resolve(__dirname, "..", "vendor", "CubismWebFramework", "src")
+      "@framework": path.resolve(__dirname, "vendor", "CubismWebFramework", "src")
     }
   },
   build: {

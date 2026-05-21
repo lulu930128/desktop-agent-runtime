@@ -181,8 +181,17 @@ enum LoadStep {
   CompleteSetup
 }
 
-const SKIP_OPTIONAL_PHYSICS = true;
-const MINIMAL_RENDERER_BOOT = true;
+const LIVE2D_FEATURES = {
+  expressions: true,
+  physics: true,
+  pose: true,
+  eyeBlink: true,
+  breath: true,
+  userData: true,
+  lipSync: true,
+  look: true,
+  motions: true
+};
 
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) {
@@ -325,6 +334,12 @@ export class LAppModel extends CubismUserModel {
   private _mouthDebugPulseActive: boolean;
   private _mouthDebugPulseElapsed: number;
   private _mouthDebugPulseDuration: number;
+  private _officialEyeBlinkEnabled: boolean;
+  private _officialBreathEnabled: boolean;
+  private _officialIdleMotionEnabled: boolean;
+  private _queuedExpressionId: string | null;
+  private _pendingMotionLoads: Map<string, Promise<ACubismMotion | null>>;
+  private _rendererBootFinalized: boolean;
   private _externalParameterTargets: Map<string, ExternalParameterTarget>;
   private _assetCacheBust: string;
 
@@ -382,12 +397,27 @@ export class LAppModel extends CubismUserModel {
   private setupModel(setting: ICubismModelSetting): void {
     this._updating = true;
     this._initialized = false;
+    this._expressionCount = 0;
+    this._textureCount = 0;
+    this._motionCount = 0;
+    this._allMotionCount = 0;
+    this._officialEyeBlinkEnabled = false;
+    this._officialBreathEnabled = false;
+    this._officialIdleMotionEnabled = false;
+    this._pendingMotionLoads.clear();
+    this._rendererBootFinalized = false;
 
     this._modelSetting = setting;
 
+    let rendererBootFinalized = false;
     const finalizeRendererBoot = (): void => {
+      if (rendererBootFinalized || this._rendererBootFinalized) {
+        return;
+      }
+      rendererBootFinalized = true;
+      this._rendererBootFinalized = true;
       this._state = LoadStep.LoadTexture;
-      console.info('[pet-renderer] Finalizing minimal renderer boot');
+      console.info('[pet-renderer] Finalizing Live2D renderer boot');
       this._model.saveParameters();
       this._motionManager.stopAllMotions();
       this._updating = false;
@@ -448,12 +478,9 @@ export class LAppModel extends CubismUserModel {
             throw new Error(`Model buffer missing for ${modelFileName}`);
           }
           this.loadModel(arrayBuffer, this._mocConsistency);
-          if (MINIMAL_RENDERER_BOOT) {
-            console.info(
-              '[pet-renderer] Minimal renderer boot enabled, skipping optional setup chain'
-            );
-            this._state = LoadStep.SetupLayout;
-            setupLayout();
+          if (!LIVE2D_FEATURES.expressions) {
+            this._state = LoadStep.LoadPhysics;
+            loadCubismPhysics();
             return;
           }
           this._state = LoadStep.LoadExpression;
@@ -471,6 +498,26 @@ export class LAppModel extends CubismUserModel {
     const loadCubismExpression = (): void => {
       if (this._modelSetting.getExpressionCount() > 0) {
         const count: number = this._modelSetting.getExpressionCount();
+        const finishExpressionLoad = (): void => {
+          this._expressionCount++;
+
+          if (this._expressionCount >= count) {
+            if (this._expressionManager != null) {
+              const expressionUpdater = new CubismExpressionUpdater(
+                this._expressionManager
+              );
+              this._updateScheduler.addUpdatableList(expressionUpdater);
+            }
+            if (this._queuedExpressionId) {
+              this.setExpression(this._queuedExpressionId);
+            }
+
+            this._state = LoadStep.LoadPhysics;
+
+            // callback
+            loadCubismPhysics();
+          }
+        };
 
         for (let i = 0; i < count; i++) {
           const expressionName = this._modelSetting.getExpressionName(i);
@@ -503,9 +550,10 @@ export class LAppModel extends CubismUserModel {
 
               this._expressions.set(expressionName, motion);
 
-              this._expressionCount++;
+              finishExpressionLoad();
+              return;
 
-              if (this._expressionCount >= count) {
+              if (false && this._expressionCount >= count) {
                 // Expression Updaterの追加
                 if (this._expressionManager != null) {
                   const expressionUpdater = new CubismExpressionUpdater(
@@ -513,12 +561,22 @@ export class LAppModel extends CubismUserModel {
                   );
                   this._updateScheduler.addUpdatableList(expressionUpdater);
                 }
+                if (this._queuedExpressionId) {
+                  this.setExpression(this._queuedExpressionId);
+                }
 
                 this._state = LoadStep.LoadPhysics;
 
                 // callback
                 loadCubismPhysics();
               }
+            })
+            .catch(error => {
+              console.warn(
+                '[pet-renderer] Expression load failed, continuing without expression',
+                { expressionName, expressionFileName, error }
+              );
+              finishExpressionLoad();
             });
         }
         this._state = LoadStep.WaitLoadExpression;
@@ -532,8 +590,8 @@ export class LAppModel extends CubismUserModel {
 
     // Physics
     const loadCubismPhysics = (): void => {
-      if (SKIP_OPTIONAL_PHYSICS) {
-        console.info('[pet-renderer] Skipping physics during initial renderer migration');
+      if (!LIVE2D_FEATURES.physics) {
+        console.info('[pet-renderer] Physics feature disabled');
         this._state = LoadStep.LoadPose;
         loadCubismPose();
         return;
@@ -582,6 +640,14 @@ export class LAppModel extends CubismUserModel {
 
             // callback
             loadCubismPose();
+          })
+          .catch(error => {
+            console.warn(
+              '[pet-renderer] Physics fetch failed, continuing without physics',
+              error
+            );
+            this._state = LoadStep.LoadPose;
+            loadCubismPose();
           });
         this._state = LoadStep.WaitLoadPhysics;
       } else {
@@ -594,6 +660,12 @@ export class LAppModel extends CubismUserModel {
 
     // Pose
     const loadCubismPose = (): void => {
+      if (!LIVE2D_FEATURES.pose) {
+        this._state = LoadStep.SetupEyeBlink;
+        setupEyeBlink();
+        return;
+      }
+
       const poseFileName = safeModelSettingString(
         this._modelSetting,
         'getPoseFileName'
@@ -637,6 +709,14 @@ export class LAppModel extends CubismUserModel {
 
             // callback
             setupEyeBlink();
+          })
+          .catch(error => {
+            console.warn(
+              '[pet-renderer] Pose fetch failed, continuing without pose',
+              error
+            );
+            this._state = LoadStep.SetupEyeBlink;
+            setupEyeBlink();
           });
         this._state = LoadStep.WaitLoadPose;
       } else {
@@ -649,13 +729,14 @@ export class LAppModel extends CubismUserModel {
 
     // EyeBlink
     const setupEyeBlink = (): void => {
-      if (this._modelSetting.getEyeBlinkParameterCount() > 0) {
+      if (LIVE2D_FEATURES.eyeBlink && this._modelSetting.getEyeBlinkParameterCount() > 0) {
         this._eyeBlink = CubismEyeBlink.create(this._modelSetting);
         const eyeBlinkUpdater = new CubismEyeBlinkUpdater(
           () => this._motionUpdated,
           this._eyeBlink
         );
         this._updateScheduler.addUpdatableList(eyeBlinkUpdater);
+        this._officialEyeBlinkEnabled = true;
       }
 
       this._state = LoadStep.SetupBreath;
@@ -666,6 +747,12 @@ export class LAppModel extends CubismUserModel {
 
     // Breath
     const setupBreath = (): void => {
+      if (!LIVE2D_FEATURES.breath) {
+        this._state = LoadStep.LoadUserData;
+        loadUserData();
+        return;
+      }
+
       this._breath = CubismBreath.create();
 
       const breathParameters: Array<BreathParameterData> = [
@@ -694,6 +781,7 @@ export class LAppModel extends CubismUserModel {
 
       const breathUpdater = new CubismBreathUpdater(this._breath);
       this._updateScheduler.addUpdatableList(breathUpdater);
+      this._officialBreathEnabled = true;
 
       this._state = LoadStep.LoadUserData;
 
@@ -703,6 +791,12 @@ export class LAppModel extends CubismUserModel {
 
     // UserData
     const loadUserData = (): void => {
+      if (!LIVE2D_FEATURES.userData) {
+        this._state = LoadStep.SetupEyeBlinkIds;
+        setupEyeBlinkIds();
+        return;
+      }
+
       const userDataFile = safeModelSettingString(
         this._modelSetting,
         'getUserDataFile'
@@ -739,6 +833,14 @@ export class LAppModel extends CubismUserModel {
             this._state = LoadStep.SetupEyeBlinkIds;
 
             // callback
+            setupEyeBlinkIds();
+          })
+          .catch(error => {
+            console.warn(
+              '[pet-renderer] UserData fetch failed, continuing without userdata',
+              error
+            );
+            this._state = LoadStep.SetupEyeBlinkIds;
             setupEyeBlinkIds();
           });
 
@@ -785,7 +887,7 @@ export class LAppModel extends CubismUserModel {
       }
 
       // LipSync Updaterの追加
-      if (this._lipSyncIds.length > 0) {
+      if (LIVE2D_FEATURES.lipSync && this._lipSyncIds.length > 0) {
         const lipSyncUpdater = new CubismLipSyncUpdater(
           this._lipSyncIds,
           this._wavFileHandler
@@ -801,6 +903,11 @@ export class LAppModel extends CubismUserModel {
 
     // Look
     const setupLook = (): void => {
+      if (!LIVE2D_FEATURES.look) {
+        finalizeUpdaters();
+        return;
+      }
+
       this._look = CubismLook.create();
 
       const lookParameters: Array<LookParameterData> = [
@@ -868,10 +975,8 @@ export class LAppModel extends CubismUserModel {
           error
         );
       }
-      if (MINIMAL_RENDERER_BOOT) {
-        console.info(
-          '[pet-renderer] Minimal renderer boot continuing directly to renderer setup'
-        );
+      if (!LIVE2D_FEATURES.motions) {
+        console.info('[pet-renderer] Motion feature disabled');
         finalizeRendererBoot();
         return;
       }
@@ -890,6 +995,8 @@ export class LAppModel extends CubismUserModel {
       const group: string[] = [];
 
       const motionGroupCount: number = this._modelSetting.getMotionGroupCount();
+      this._officialIdleMotionEnabled =
+        this._modelSetting.getMotionCount(LAppDefine.MotionGroupIdle) > 0;
 
       // モーションの総数を求める
       for (let i = 0; i < motionGroupCount; i++) {
@@ -902,7 +1009,7 @@ export class LAppModel extends CubismUserModel {
         this.preLoadMotionGroup(group[i]);
       }
 
-      if (motionGroupCount == 0) {
+      if (this._allMotionCount <= 0) {
         finalizeRendererBoot();
         return;
       }
@@ -938,6 +1045,10 @@ export class LAppModel extends CubismUserModel {
     if (this._state == LoadStep.LoadTexture) {
       // テクスチャ読み込み用
       const textureCount: number = this._modelSetting.getTextureCount();
+      if (textureCount <= 0) {
+        this._state = LoadStep.CompleteSetup;
+        return;
+      }
 
       for (
         let modelTextureNumber = 0;
@@ -1107,6 +1218,77 @@ export class LAppModel extends CubismUserModel {
     }
   }
 
+  private loadMotionAsync(
+    group: string,
+    no: number,
+    name: string
+  ): Promise<ACubismMotion | null> {
+    const pendingMotion = this._pendingMotionLoads.get(name);
+    if (pendingMotion) {
+      return pendingMotion;
+    }
+
+    const motionFileName = this._modelSetting.getMotionFileName(group, no);
+    const pending = fetch(this.resolveAssetPath(motionFileName), { cache: 'no-store' })
+      .then(response => {
+        if (response.ok) {
+          return response.arrayBuffer();
+        }
+        CubismLogError(
+          `Failed to load file ${this.resolveAssetPath(motionFileName)}`
+        );
+        return new ArrayBuffer(0);
+      })
+      .then(arrayBuffer => {
+        if (!arrayBuffer || arrayBuffer.byteLength <= 0) {
+          return null;
+        }
+
+        const motion = this.loadMotion(
+          arrayBuffer,
+          arrayBuffer.byteLength,
+          name,
+          null,
+          null,
+          this._modelSetting,
+          group,
+          no,
+          this._motionConsistency
+        );
+
+        if (!motion) {
+          return null;
+        }
+
+        motion.setEffectIds(this._eyeBlinkIds, this._lipSyncIds);
+        return motion;
+      })
+      .catch(error => {
+        console.warn('[pet-renderer] Motion load failed', {
+          group,
+          no,
+          motionFileName,
+          error
+        });
+        return null;
+      })
+      .finally(() => {
+        this._pendingMotionLoads.delete(name);
+      });
+
+    this._pendingMotionLoads.set(name, pending);
+    return pending;
+  }
+
+  private startMotionVoice(group: string, no: number): void {
+    const voice = this._modelSetting.getMotionSoundFileName(group, no);
+    if (voice.localeCompare('') == 0) {
+      return;
+    }
+
+    this._wavFileHandler.start(this.resolveAssetPath(voice));
+  }
+
   /**
    * 引数で指定したモーションの再生を開始する
    * @param group モーショングループ名
@@ -1137,6 +1319,27 @@ export class LAppModel extends CubismUserModel {
     const name = `${group}_${no}`;
     let motion: CubismMotion = this._motions.get(name) as CubismMotion;
     let autoDelete = false;
+
+    if (motion == null) {
+      this.loadMotionAsync(group, no, name).then(loadedMotion => {
+        if (!loadedMotion) {
+          CubismLogError("Can't start motion {0} .", motionFileName);
+          this._motionManager.setReservePriority(LAppDefine.PriorityNone);
+          return;
+        }
+
+        loadedMotion.setBeganMotionHandler(onBeganMotionHandler);
+        loadedMotion.setFinishedMotionHandler(onFinishedMotionHandler);
+        this._motions.set(name, loadedMotion);
+        this.startMotionVoice(group, no);
+        this._motionManager.startMotionPriority(
+          loadedMotion,
+          false,
+          priority
+        );
+      });
+      return InvalidMotionQueueEntryHandleValue;
+    }
 
     if (motion == null) {
       fetch(this.resolveAssetPath(motionFileName), { cache: 'no-store' })
@@ -1178,13 +1381,7 @@ export class LAppModel extends CubismUserModel {
       motion.setFinishedMotionHandler(onFinishedMotionHandler);
     }
 
-    //voice
-    const voice = this._modelSetting.getMotionSoundFileName(group, no);
-    if (voice.localeCompare('') != 0) {
-      let path = voice;
-      path = this._modelHomeDir + path;
-      this._wavFileHandler.start(path);
-    }
+    this.startMotionVoice(group, no);
 
     if (this._debugMode) {
       LAppPal.printMessage(`[APP]start motion: [${group}_${no}]`);
@@ -1232,6 +1429,7 @@ export class LAppModel extends CubismUserModel {
    * @param expressionId 表情モーションのID
    */
   public setExpression(expressionId: string): void {
+    this._queuedExpressionId = expressionId;
     const motion: ACubismMotion = this._expressions.get(expressionId);
 
     if (this._debugMode) {
@@ -1240,6 +1438,7 @@ export class LAppModel extends CubismUserModel {
 
     if (motion != null) {
       this._expressionManager.startMotion(motion, false);
+      this._queuedExpressionId = null;
     } else {
       if (this._debugMode) {
         LAppPal.printMessage(`[APP]expression[${expressionId}] is null`);
@@ -1301,6 +1500,96 @@ export class LAppModel extends CubismUserModel {
     return false;
   }
 
+  public hitTestAnyArea(x: number, y: number): boolean {
+    if (this._opacity < 1 || !this._modelSetting) {
+      return false;
+    }
+
+    const count = this._modelSetting.getHitAreasCount();
+    for (let i = 0; i < count; i++) {
+      const drawId = this._modelSetting.getHitAreaId(i);
+      if (this.isHit(drawId, x, y)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  public hitTestDrawableBounds(x: number, y: number): boolean {
+    if (this._opacity < 1 || !this._model || !this._modelMatrix) {
+      return false;
+    }
+
+    const tx = this._modelMatrix.invertTransformX(x);
+    const ty = this._modelMatrix.invertTransformY(y);
+    const drawableCount = this._model.getDrawableCount();
+
+    for (let drawableIndex = 0; drawableIndex < drawableCount; drawableIndex += 1) {
+      if (
+        this._model.getDrawableOpacity(drawableIndex) <= 0.001 ||
+        !this._model.getDrawableDynamicFlagIsVisible(drawableIndex)
+      ) {
+        continue;
+      }
+
+      const vertexCount = this._model.getDrawableVertexCount(drawableIndex);
+      const vertices = this._model.getDrawableVertices(drawableIndex);
+      if (vertexCount <= 0 || !vertices) {
+        continue;
+      }
+
+      let left = Number.POSITIVE_INFINITY;
+      let right = Number.NEGATIVE_INFINITY;
+      let top = Number.POSITIVE_INFINITY;
+      let bottom = Number.NEGATIVE_INFINITY;
+
+      for (let vertexIndex = 0; vertexIndex < vertexCount; vertexIndex += 1) {
+        const vx = vertices[vertexIndex * 2];
+        const vy = vertices[vertexIndex * 2 + 1];
+        if (!Number.isFinite(vx) || !Number.isFinite(vy)) {
+          continue;
+        }
+
+        left = Math.min(left, vx);
+        right = Math.max(right, vx);
+        top = Math.min(top, vy);
+        bottom = Math.max(bottom, vy);
+      }
+
+      if (left <= tx && tx <= right && top <= ty && ty <= bottom) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private finishMotionPreloadIfReady(): void {
+    if (
+      this._rendererBootFinalized ||
+      this._allMotionCount > 0 && this._motionCount < this._allMotionCount
+    ) {
+      return;
+    }
+
+    this._rendererBootFinalized = true;
+    this._state = LoadStep.LoadTexture;
+    this._motionManager.stopAllMotions();
+    this._updating = false;
+    this._initialized = true;
+
+    this.createRenderer(
+      this._subdelegate.getCanvas().width,
+      this._subdelegate.getCanvas().height
+    );
+    this.setupTextures();
+    this.getRenderer().startUp(
+      this._subdelegate.getGlManager().getGl()
+    );
+    this.getRenderer().loadShaders(LAppDefine.ShaderPath);
+  }
+
   /**
    * モーションデータをグループ名から一括でロードする。
    * モーションデータの名前は内部でModelSettingから取得する。
@@ -1318,6 +1607,20 @@ export class LAppModel extends CubismUserModel {
           `[APP]load motion: ${motionFileName} => [${name}]`
         );
       }
+
+      this.loadMotionAsync(group, i, name).then(tmpMotion => {
+        if (tmpMotion != null) {
+          if (this._motions.get(name) != null) {
+            ACubismMotion.delete(this._motions.get(name));
+          }
+          this._motions.set(name, tmpMotion);
+          this._motionCount++;
+        } else {
+          this._allMotionCount--;
+        }
+        this.finishMotionPreloadIfReady();
+      });
+      continue;
 
       fetch(this.resolveAssetPath(motionFileName), { cache: 'no-store' })
         .then(response => {
@@ -1358,7 +1661,8 @@ export class LAppModel extends CubismUserModel {
             this._allMotionCount--;
           }
 
-          if (this._motionCount >= this._allMotionCount) {
+          if (this._motionCount >= this._allMotionCount && !this._rendererBootFinalized) {
+            this._rendererBootFinalized = true;
             this._state = LoadStep.LoadTexture;
 
             // 全てのモーションを停止する
@@ -1386,6 +1690,7 @@ export class LAppModel extends CubismUserModel {
    */
   public releaseMotions(): void {
     this._motions.clear();
+    this._pendingMotionLoads.clear();
   }
 
   /**
@@ -1493,11 +1798,12 @@ export class LAppModel extends CubismUserModel {
     if (!this._model) {
       return;
     }
+    if (this._officialIdleMotionEnabled || this._officialBreathEnabled) {
+      return;
+    }
 
     const time = this._userTimeSeconds;
-    const hasIdleMotion =
-      this._modelSetting?.getMotionCount(LAppDefine.MotionGroupIdle) > 0;
-    const weight = hasIdleMotion ? 0.22 : 0.86;
+    const weight = 0.86;
 
     this.addExistingParameterValue(
       this._idParamAngleX,
@@ -1590,7 +1896,11 @@ export class LAppModel extends CubismUserModel {
   }
 
   private applyIdleBlink(deltaTimeSeconds: number): void {
-    if (!this._model || this._idleBlinkIds.length === 0) {
+    if (
+      !this._model ||
+      this._officialEyeBlinkEnabled ||
+      this._idleBlinkIds.length === 0
+    ) {
       return;
     }
 
@@ -1823,6 +2133,12 @@ export class LAppModel extends CubismUserModel {
     this._mouthDebugPulseActive = false;
     this._mouthDebugPulseElapsed = 0;
     this._mouthDebugPulseDuration = 0;
+    this._officialEyeBlinkEnabled = false;
+    this._officialBreathEnabled = false;
+    this._officialIdleMotionEnabled = false;
+    this._queuedExpressionId = null;
+    this._pendingMotionLoads = new Map<string, Promise<ACubismMotion | null>>();
+    this._rendererBootFinalized = false;
     this._externalParameterTargets = new Map<string, ExternalParameterTarget>();
     this._externalLookTargetX = 0;
     this._externalLookTargetY = 0;

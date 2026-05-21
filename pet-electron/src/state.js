@@ -4,8 +4,9 @@ const path = require("path");
 const DEFAULT_STATE = {
   mode: "pet",
   forceIgnoreMouse: true,
-  petSpanAllDisplays: false,
+  petSpanAllDisplays: true,
   petZoomScale: 1,
+  petAnchor: null,
   readerVisible: true,
   outfit: {
     outfitId: "normal",
@@ -64,7 +65,18 @@ function mergeState(candidate) {
   }
 
   if (Number.isFinite(candidate.petZoomScale)) {
-    next.petZoomScale = Math.max(0.55, Math.min(2.25, Number(candidate.petZoomScale)));
+    next.petZoomScale = Math.max(0.2, Math.min(8, Number(candidate.petZoomScale)));
+  }
+
+  if (candidate.petAnchor && typeof candidate.petAnchor === "object") {
+    const x = Number(candidate.petAnchor.x);
+    const y = Number(candidate.petAnchor.y);
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      next.petAnchor = {
+        x: Math.round(x),
+        y: Math.round(y)
+      };
+    }
   }
 
   if (typeof candidate.readerVisible === "boolean") {
