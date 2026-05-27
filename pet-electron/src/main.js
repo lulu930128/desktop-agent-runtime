@@ -17,12 +17,13 @@ const {
   buildReaderVisibleInputText,
   normalizeReaderAttachments
 } = require("./main-process/reader-attachments");
+const { createBriefingStore } = require("./main-process/briefing-store");
 const { startControlServer: createControlServer } = require("./main-process/control-server");
 const { createPetContextMenu, createTrayMenu } = require("./main-process/menus");
 const { createPetLogger } = require("./main-process/pet-logger");
 
 const APP_NAME = "Kuro Pet Electron";
-const APP_USER_MODEL_ID = "kuro.desktop-agent.pet";
+const APP_USER_MODEL_ID = "kuro.desktop-agent";
 const TEMP_MAX_RENDER_PERFORMANCE = true;
 const CONTROL_HOST = process.env.KURO_PET_CONTROL_HOST || "127.0.0.1";
 const CONTROL_PORT = Number(process.env.KURO_PET_CONTROL_PORT || "23567");
@@ -39,18 +40,25 @@ const rendererEntry = path.join(projectRoot, "renderer-dist", "index.html");
 const iconPath = path.join(projectRoot, "src", "assets", "favicon.ico");
 const readerEntry = path.join(__dirname, "reader-window.html");
 const readerPreloadPath = path.join(__dirname, "reader-preload.js");
+const briefingEntry = path.join(__dirname, "briefing-window.html");
+const briefingPreloadPath = path.join(__dirname, "briefing-preload.js");
 const MIN_PET_ZOOM_SCALE = 0.2;
 const MAX_PET_ZOOM_SCALE = 8;
 const MIN_PET_WINDOW_WIDTH = 280;
 const MIN_PET_WINDOW_HEIGHT = 420;
 const MIN_READER_WINDOW_WIDTH = 360;
 const MIN_READER_WINDOW_HEIGHT = 236;
+const MIN_BRIEFING_WINDOW_WIDTH = 720;
+const MIN_BRIEFING_WINDOW_HEIGHT = 420;
 
 let mainWindow = null;
 let readerWindow = null;
+let briefingWindow = null;
 let tray = null;
 let appState = cloneDefaultState();
 let statePath = "";
+let briefingStore = null;
+let briefingStorePath = "";
 let hoveredComponents = new Map();
 let activeWindowDrag = null;
 let controlServer = null;
@@ -122,6 +130,39 @@ function getReaderBounds() {
 
 function setReaderBounds(bounds) {
   appState.readerBounds = {
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height
+  };
+  saveCurrentState();
+}
+
+function getDefaultBriefingBounds() {
+  const area = getVirtualWorkAreaBounds();
+  const width = Math.min(
+    1040,
+    Math.max(MIN_BRIEFING_WINDOW_WIDTH, Math.round(area.width * 0.46))
+  );
+  const height = Math.min(
+    640,
+    Math.max(MIN_BRIEFING_WINDOW_HEIGHT, Math.round(area.height * 0.42))
+  );
+
+  return {
+    x: area.x + 24,
+    y: area.y + Math.max(24, area.height - height - 24),
+    width,
+    height
+  };
+}
+
+function getBriefingBounds() {
+  return appState.briefingBounds || getDefaultBriefingBounds();
+}
+
+function setBriefingBounds(bounds) {
+  appState.briefingBounds = {
     x: bounds.x,
     y: bounds.y,
     width: bounds.width,
@@ -274,6 +315,23 @@ function clampReaderBounds(bounds) {
       height: Math.max(MIN_READER_WINDOW_HEIGHT, Number(bounds.height) || MIN_READER_WINDOW_HEIGHT)
     },
     160
+  );
+}
+
+function clampBriefingBounds(bounds) {
+  return clampBoundsToVirtualDesktopWithOverflow(
+    {
+      ...bounds,
+      width: Math.max(
+        MIN_BRIEFING_WINDOW_WIDTH,
+        Number(bounds.width) || MIN_BRIEFING_WINDOW_WIDTH
+      ),
+      height: Math.max(
+        MIN_BRIEFING_WINDOW_HEIGHT,
+        Number(bounds.height) || MIN_BRIEFING_WINDOW_HEIGHT
+      )
+    },
+    220
   );
 }
 
@@ -510,6 +568,44 @@ function getReaderStatePayload() {
   };
 }
 
+function getBriefingStatePayload() {
+  const data = briefingStore ? briefingStore.getData() : null;
+  const pendingMemoryCount = data
+    ? data.memoryCandidates.filter((candidate) => candidate.status === "pending").length
+    : 0;
+  return {
+    ok: true,
+    aiState: latestFrontendState.aiState || "idle",
+    wsConnected: Boolean(latestFrontendState.wsConnected),
+    confName: latestFrontendState.confName || "",
+    confUid: latestFrontendState.confUid || "",
+    currentHistoryUid: latestFrontendState.currentHistoryUid || "",
+    currentHistoryTitle: latestFrontendState.currentHistoryTitle || "",
+    latestAssistantText: latestFrontendState.latestAssistantText || "",
+    briefingVisible: Boolean(
+      briefingWindow && !briefingWindow.isDestroyed() && briefingWindow.isVisible()
+    ),
+    briefingDate: data?.snapshot?.date || "",
+    briefingUpdatedAt: data?.snapshot?.updatedAt || data?.updatedAt || "",
+    pendingMemoryCount,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function getBriefingDataPayload() {
+  if (!briefingStore) {
+    return {
+      ok: false,
+      error: "Briefing store is not ready."
+    };
+  }
+
+  return {
+    ok: true,
+    ...briefingStore.getData()
+  };
+}
+
 function broadcastReaderState() {
   if (!readerWindow || readerWindow.isDestroyed()) {
     return;
@@ -521,12 +617,35 @@ function broadcastReaderState() {
   }
 }
 
+function broadcastBriefingState() {
+  if (!briefingWindow || briefingWindow.isDestroyed()) {
+    return;
+  }
+  try {
+    briefingWindow.webContents.send("briefing-state", getBriefingStatePayload());
+  } catch (error) {
+    petLog("briefing-state-broadcast-failed", error);
+  }
+}
+
+function broadcastBriefingData() {
+  if (!briefingWindow || briefingWindow.isDestroyed()) {
+    return;
+  }
+  try {
+    briefingWindow.webContents.send("briefing-data", getBriefingDataPayload());
+  } catch (error) {
+    petLog("briefing-data-broadcast-failed", error);
+  }
+}
+
 function updateFrontendState(patch = {}) {
   latestFrontendState = {
     ...latestFrontendState,
     ...(patch || {})
   };
   broadcastReaderState();
+  broadcastBriefingState();
 }
 
 function broadcast(channel, payload) {
@@ -730,6 +849,81 @@ function setReaderVisible(visible) {
   };
 }
 
+function setBriefingVisible(visible) {
+  appState.briefingVisible = Boolean(visible);
+  if (!briefingWindow || briefingWindow.isDestroyed()) {
+    if (appState.briefingVisible) {
+      createBriefingWindow();
+    }
+  } else if (appState.briefingVisible) {
+    briefingWindow.show();
+    briefingWindow.focus();
+  } else {
+    briefingWindow.hide();
+  }
+  updateTrayMenu();
+  broadcastBriefingState();
+  return {
+    ok: true,
+    route: "window",
+    action: "set-briefing-visible",
+    briefingVisible: appState.briefingVisible
+  };
+}
+
+function replaceBriefingSnapshot(snapshot) {
+  if (!briefingStore) {
+    return {
+      ok: false,
+      error: "Briefing store is not ready."
+    };
+  }
+  const data = briefingStore.replaceSnapshot(snapshot);
+  broadcastBriefingData();
+  broadcastBriefingState();
+  return {
+    ok: true,
+    action: "set-briefing-snapshot",
+    data
+  };
+}
+
+function addBriefingMemoryCandidate(candidate) {
+  if (!briefingStore) {
+    return {
+      ok: false,
+      error: "Briefing store is not ready."
+    };
+  }
+  const result = briefingStore.addMemoryCandidate(candidate);
+  if (result.ok) {
+    broadcastBriefingData();
+    broadcastBriefingState();
+  }
+  return {
+    action: "add-briefing-memory-candidate",
+    ...result
+  };
+}
+
+function setBriefingMemoryCandidateStatus(candidateId, status) {
+  if (!briefingStore) {
+    return {
+      ok: false,
+      error: "Briefing store is not ready."
+    };
+  }
+  const result = briefingStore.setMemoryCandidateStatus(candidateId, status);
+  if (result.ok) {
+    broadcastBriefingData();
+    broadcastBriefingState();
+  }
+  return {
+    action: "set-briefing-memory-candidate-status",
+    ...result
+  };
+}
+
 async function handleControlAction(action, payload = {}) {
   switch (action) {
     case "mic-toggle":
@@ -740,6 +934,18 @@ async function handleControlAction(action, payload = {}) {
       return { ok: true, route: "ipc", action };
     case "set-reader-visible":
       return setReaderVisible(Boolean(payload.enabled));
+    case "set-briefing-visible":
+      return setBriefingVisible(Boolean(payload.enabled));
+    case "toggle-briefing":
+      return setBriefingVisible(
+        !(briefingWindow && !briefingWindow.isDestroyed() && briefingWindow.isVisible())
+      );
+    case "set-briefing-snapshot":
+      return replaceBriefingSnapshot(payload.snapshot || payload);
+    case "add-briefing-memory-candidate":
+      return addBriefingMemoryCandidate(payload.candidate || payload);
+    case "set-briefing-memory-candidate-status":
+      return setBriefingMemoryCandidateStatus(payload.id, String(payload.status || "pending"));
     case "set-outfit": {
       const outfitId = String(payload.outfitId || "normal");
       const rawParameterId = String(payload.parameterId || "Param10");
@@ -855,6 +1061,9 @@ async function handleControlAction(action, payload = {}) {
       if (readerWindow && !readerWindow.isDestroyed()) {
         readerWindow.webContents.reloadIgnoringCache();
       }
+      if (briefingWindow && !briefingWindow.isDestroyed()) {
+        briefingWindow.webContents.reloadIgnoringCache();
+      }
       return { ok: true, action };
     case "show-pet":
       if (mainWindow && !mainWindow.isDestroyed()) {
@@ -934,6 +1143,12 @@ function refreshLayoutForDisplayTopology(reason = "display-metrics-changed") {
     saveCurrentState();
   } else {
     setBoundsForCurrentMode(targetBounds);
+  }
+
+  if (briefingWindow && !briefingWindow.isDestroyed()) {
+    const briefingBounds = clampBriefingBounds(briefingWindow.getBounds());
+    briefingWindow.setBounds(briefingBounds, false);
+    setBriefingBounds(briefingBounds);
   }
 
   petLog("display-topology-refresh", {
@@ -1027,9 +1242,29 @@ function toggleReaderWindow() {
   }
 }
 
+function toggleBriefingWindow() {
+  if (!briefingWindow || briefingWindow.isDestroyed()) {
+    appState.briefingVisible = true;
+    createBriefingWindow();
+    return;
+  }
+  if (briefingWindow.isVisible()) {
+    briefingWindow.hide();
+  } else {
+    briefingWindow.show();
+    briefingWindow.focus();
+  }
+}
+
 function reloadMainWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.reloadIgnoringCache();
+  }
+  if (readerWindow && !readerWindow.isDestroyed()) {
+    readerWindow.webContents.reloadIgnoringCache();
+  }
+  if (briefingWindow && !briefingWindow.isDestroyed()) {
+    briefingWindow.webContents.reloadIgnoringCache();
   }
 }
 
@@ -1037,7 +1272,8 @@ function getMenuState() {
   return {
     forceIgnoreMouse: appState.forceIgnoreMouse,
     petGameMode: appState.petGameMode,
-    readerVisible: appState.readerVisible
+    readerVisible: appState.readerVisible,
+    briefingVisible: appState.briefingVisible
   };
 }
 
@@ -1047,6 +1283,7 @@ function getMenuActions() {
     toggleIgnoreMouse: toggleForceIgnoreMouse,
     toggleGameMode: togglePetGameMode,
     toggleReader: toggleReaderWindow,
+    toggleBriefing: toggleBriefingWindow,
     moveNextDisplay: moveWindowToNextDisplay,
     reloadFrontend: reloadMainWindow,
     quit: () => app.quit()
@@ -1087,9 +1324,15 @@ function startControlServer() {
       petSpanAllDisplays: appState.petSpanAllDisplays,
       petHostBounds: getPetHostBounds(),
       petAnchor: ensurePetAnchor(),
-      bounds: mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : null
+      bounds: mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : null,
+      briefingVisible: Boolean(appState.briefingVisible)
     }),
     isReaderVisible: () => Boolean(appState.readerVisible),
+    isBriefingVisible: () => Boolean(appState.briefingVisible),
+    readBriefingData: getBriefingDataPayload,
+    replaceBriefingSnapshot,
+    addBriefingMemoryCandidate,
+    setBriefingMemoryCandidateStatus,
     handleControlAction,
     applyRendererBackendConfig,
     log: petLog
@@ -1196,6 +1439,92 @@ function createReaderWindow() {
 
   readerWindow.loadFile(readerEntry).catch((error) => {
     petLog("Failed to load reader window", error);
+  });
+}
+
+function createBriefingWindow() {
+  if (briefingWindow && !briefingWindow.isDestroyed()) {
+    if (appState.briefingVisible) {
+      briefingWindow.show();
+      briefingWindow.focus();
+    }
+    return;
+  }
+
+  const bounds = clampBriefingBounds(getBriefingBounds());
+  briefingWindow = new BrowserWindow({
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    minWidth: MIN_BRIEFING_WINDOW_WIDTH,
+    minHeight: MIN_BRIEFING_WINDOW_HEIGHT,
+    show: false,
+    frame: false,
+    transparent: false,
+    backgroundColor: "#090a0f",
+    resizable: true,
+    maximizable: true,
+    minimizable: true,
+    skipTaskbar: false,
+    fullscreenable: true,
+    alwaysOnTop: false,
+    title: `${APP_NAME} Briefing`,
+    icon: iconPath,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: briefingPreloadPath,
+      contextIsolation: true,
+      nodeIntegration: false,
+      backgroundThrottling: false
+    }
+  });
+
+  briefingWindow.setMenuBarVisibility(false);
+
+  briefingWindow.on("move", () => {
+    if (!briefingWindow || briefingWindow.isDestroyed()) {
+      return;
+    }
+    setBriefingBounds(briefingWindow.getBounds());
+  });
+
+  briefingWindow.on("resize", () => {
+    if (!briefingWindow || briefingWindow.isDestroyed()) {
+      return;
+    }
+    setBriefingBounds(briefingWindow.getBounds());
+  });
+
+  briefingWindow.on("show", () => {
+    appState.briefingVisible = true;
+    saveCurrentState();
+    broadcastBriefingState();
+    updateTrayMenu();
+  });
+
+  briefingWindow.on("hide", () => {
+    appState.briefingVisible = false;
+    saveCurrentState();
+    broadcastBriefingState();
+    updateTrayMenu();
+  });
+
+  briefingWindow.on("closed", () => {
+    briefingWindow = null;
+  });
+
+  briefingWindow.webContents.on("did-finish-load", () => {
+    broadcastBriefingState();
+    broadcastBriefingData();
+    if (appState.briefingVisible) {
+      briefingWindow.show();
+      briefingWindow.focus();
+    }
+  });
+
+  briefingWindow.loadFile(briefingEntry).catch((error) => {
+    petLog("Failed to load briefing window", error);
   });
 }
 
@@ -1430,6 +1759,32 @@ function registerIpc() {
     }
   });
 
+  ipcMain.handle("briefing-get-state", () => getBriefingStatePayload());
+  ipcMain.handle("briefing-get-data", () => getBriefingDataPayload());
+
+  ipcMain.on("briefing-close", () => {
+    if (briefingWindow && !briefingWindow.isDestroyed()) {
+      briefingWindow.hide();
+    }
+  });
+
+  ipcMain.on("briefing-minimize", () => {
+    if (briefingWindow && !briefingWindow.isDestroyed()) {
+      briefingWindow.minimize();
+    }
+  });
+
+  ipcMain.on("briefing-toggle-maximize", () => {
+    if (!briefingWindow || briefingWindow.isDestroyed()) {
+      return;
+    }
+    if (briefingWindow.isMaximized()) {
+      briefingWindow.unmaximize();
+    } else {
+      briefingWindow.maximize();
+    }
+  });
+
   ipcMain.on("update-component-hover", (_event, componentName, hovered) => {
     if (typeof componentName !== "string" || !componentName) {
       return;
@@ -1560,7 +1915,12 @@ if (!singleInstanceLock) {
       callback(permission === "media" || permission === "display-capture");
     });
     statePath = path.join(app.getPath("userData"), "pet-shell-state.json");
+    briefingStorePath = path.join(app.getPath("userData"), "briefing-store.json");
     appState = mergeState(loadState(statePath));
+    briefingStore = createBriefingStore({
+      storePath: briefingStorePath,
+      log: petLog
+    });
     latestFrontendState.currentOutfitId = appState.outfit.outfitId;
     latestFrontendState.currentOutfitParameterId = appState.outfit.parameterId;
     latestFrontendState.currentOutfitParameterIndex = appState.outfit.parameterIndex;
@@ -1573,13 +1933,14 @@ if (!singleInstanceLock) {
     appState.petZoomScale = normalizePetZoomScale(appState.petZoomScale);
     ensurePetAnchor();
     saveCurrentState();
-    petLog("app-ready", { statePath, appState });
+    petLog("app-ready", { statePath, briefingStorePath, appState });
 
     registerIpc();
     startControlServer();
     createTray();
     createWindow();
     createReaderWindow();
+    createBriefingWindow();
 
     screen.on("display-added", () => refreshLayoutForDisplayTopology("display-added"));
     screen.on("display-removed", () => refreshLayoutForDisplayTopology("display-removed"));
@@ -1594,6 +1955,9 @@ if (!singleInstanceLock) {
     }
     if (!readerWindow) {
       createReaderWindow();
+    }
+    if (!briefingWindow) {
+      createBriefingWindow();
     }
   });
 

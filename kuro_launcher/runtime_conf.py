@@ -53,6 +53,8 @@ def build_runtime_conf(
     llm_host: str,
     llm_port: int,
     bridge_translate_url: str,
+    tts_host: str,
+    tts_port: int,
     llm_provider_env: str,
     llm_default_provider: str,
     openai_model_env: str,
@@ -89,6 +91,8 @@ def build_runtime_conf(
     if isinstance(tts_cfg, dict):
         gsv_cfg = tts_cfg.get("gpt_sovits_tts")
         if isinstance(gsv_cfg, dict):
+            if tts_host and tts_port:
+                gsv_cfg["api_url"] = f"http://{tts_host}:{int(tts_port)}/tts"
             gsv_cfg["ref_audio_path"] = _resolve_repo_path(
                 repo_root,
                 str(gsv_cfg.get("ref_audio_path") or ""),

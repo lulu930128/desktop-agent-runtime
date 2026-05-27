@@ -32,7 +32,7 @@ BASE_DIR = _bootstrap_base_dir()
 OPEN_LLM_SRC = BASE_DIR / "Open-LLM-VTuber" / "src"
 if OPEN_LLM_SRC.exists() and str(OPEN_LLM_SRC) not in sys.path:
     sys.path.insert(0, str(OPEN_LLM_SRC))
-WINDOWS_APP_USER_MODEL_ID = "kuro.desktop-agent.launcher"
+WINDOWS_APP_USER_MODEL_ID = "kuro.desktop-agent"
 
 
 def _set_windows_app_user_model_id() -> None:
@@ -166,6 +166,8 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
         self._pet_status_in_flight = False
         self._panel_update_after_id: Optional[str] = None
         self._character_change_after_id: Optional[str] = None
+        self._startup_auto_start_after_id: Optional[str] = None
+        self._startup_auto_start_fired = False
         self._history_list_signature = ""
         self._history_list_selected_uid = ""
         self._pet_shell_online = False
@@ -184,6 +186,7 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
         self._refresh_character_list()
         self._refresh_outfit_list()
         self._refresh_project_list()
+        self._apply_startup_profile_defaults()
         self.after(LOG_DRAIN_INTERVAL_MS, self._drain_log_queue)
         self.after(600, self._tick_status)
 
@@ -1697,9 +1700,17 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
         )
         self._pet_toggle_switch(
             pet_button_bar,
+            "Dashboard",
+            "set-briefing-visible",
+            row=5,
+            column=0,
+            padx=(0, 0),
+        )
+        self._pet_toggle_switch(
+            pet_button_bar,
             "Game mode",
             "set-game-mode",
-            row=5,
+            row=6,
             column=0,
             padx=(0, 0),
         )
@@ -1711,7 +1722,7 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
             border_width=1,
             border_color=PALETTE["panel_border"],
         )
-        expression_shell.grid(row=6, column=0, sticky="ew", padx=(0, 0), pady=(0, 8))
+        expression_shell.grid(row=7, column=0, sticky="ew", padx=(0, 0), pady=(0, 8))
         expression_shell.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(
             expression_shell,
@@ -1743,7 +1754,7 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
             border_width=1,
             border_color=PALETTE["panel_border"],
         )
-        thinking_shell.grid(row=7, column=0, sticky="ew", padx=(0, 0), pady=(0, 8))
+        thinking_shell.grid(row=8, column=0, sticky="ew", padx=(0, 0), pady=(0, 8))
         thinking_shell.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(
             thinking_shell,
@@ -2890,12 +2901,12 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
     def _selected_project(self) -> Optional[ProjectDefinition]:
         return self.project_records.get(self.project_var.get())
 
-    def _apply_character_default_project(self) -> None:
+    def _apply_character_default_project(self, *, force: bool = False) -> None:
         character = self._selected_character()
         if not character or not self.project_records:
             return
         current = self.project_var.get()
-        if current in self.project_records:
+        if current in self.project_records and not force:
             return
         if character.default_project_id:
             for key, project in self.project_records.items():
@@ -2903,6 +2914,137 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
                     self.project_var.set(key)
                     return
         self.project_var.set(next(iter(self.project_records)))
+
+    def _find_startup_character_key(self, value: str) -> Optional[str]:
+        target = _normalize_token(value)
+        if not target:
+            return None
+        for key, record in self.character_records.items():
+            tokens = {
+                _normalize_token(record.yaml_path.stem),
+                _normalize_token(record.yaml_path.name),
+                _normalize_token(record.conf_name),
+                _normalize_token(record.conf_uid),
+                _normalize_token(record.live2d_model_name),
+            }
+            if target in tokens:
+                return key
+        return None
+
+    def _find_startup_project_key(self, value: str) -> Optional[str]:
+        target = _normalize_token(value)
+        if not target:
+            return None
+        for key, project in self.project_records.items():
+            tokens = {
+                _normalize_token(project.path.parent.name),
+                _normalize_token(project.project_id),
+                _normalize_token(project.display_name),
+            }
+            if target in tokens:
+                return key
+        return None
+
+    def _normalize_startup_outfit(self, value: str) -> str:
+        raw = (value or "").strip()
+        token = _normalize_token(raw)
+        if token in {"hoodie", "hood", "hooded", "hoody", "帽t", "帽tee"}:
+            return "hoodie"
+        if token in {"normal", "default", "original", "原版", "預設", "默认"}:
+            return "normal"
+        return ""
+
+    def _apply_startup_profile_defaults(self) -> None:
+        changed_character = False
+        changed_project = False
+        changed_outfit = False
+
+        if self.cfg.startup_character:
+            character_key = self._find_startup_character_key(self.cfg.startup_character)
+            if character_key:
+                if self.character_var.get() != character_key:
+                    self.character_var.set(character_key)
+                    changed_character = True
+            else:
+                self.log(
+                    f"[{log_ts()}] startup_profile character 找不到：{self.cfg.startup_character}"
+                )
+
+        if self.cfg.startup_project:
+            project_key = self._find_startup_project_key(self.cfg.startup_project)
+            if project_key:
+                if self.project_var.get() != project_key:
+                    self.project_var.set(project_key)
+                    changed_project = True
+            else:
+                self.log(
+                    f"[{log_ts()}] startup_profile project 找不到：{self.cfg.startup_project}"
+                )
+        elif changed_character:
+            self._apply_character_default_project(force=True)
+            changed_project = True
+
+        if self.cfg.startup_outfit:
+            outfit_id = self._normalize_startup_outfit(self.cfg.startup_outfit)
+            if outfit_id:
+                if self.outfit_var.get() != outfit_id:
+                    self.outfit_var.set(outfit_id)
+                    changed_outfit = True
+            else:
+                self.log(
+                    f"[{log_ts()}] startup_profile outfit 不支援：{self.cfg.startup_outfit}"
+                )
+
+        if any((changed_character, changed_project, changed_outfit)):
+            character = self._selected_character()
+            project = self._selected_project()
+            outfit_id, outfit_label, _ = self._selected_outfit_payload()
+            self.log(
+                f"[{log_ts()}] 已套用 startup_profile："
+                f"角色={character.conf_name if character else '-'}，"
+                f"專案={project.display_name if project else '-'}，"
+                f"衣服={outfit_label}({outfit_id})"
+            )
+            self._update_character_preview(character)
+
+        if self.cfg.startup_auto_start:
+            self._schedule_startup_auto_start()
+
+        if changed_character:
+            self._on_character_changed()
+        elif changed_project or changed_outfit:
+            self._schedule_panel_update()
+
+    def _schedule_startup_auto_start(self, delay_ms: int = 900) -> None:
+        if self._startup_auto_start_fired or self._startup_auto_start_after_id is not None:
+            return
+        self._startup_auto_start_after_id = self.after(
+            delay_ms,
+            self._run_startup_auto_start,
+        )
+        self.log(f"[{log_ts()}] startup_profile auto_start=true，已排程自動啟動角色。")
+
+    def _run_startup_auto_start(self) -> None:
+        self._startup_auto_start_after_id = None
+        if self._startup_auto_start_fired:
+            return
+        if self._character_change_after_id is not None:
+            self._schedule_startup_auto_start(delay_ms=150)
+            return
+
+        character = self._selected_character()
+        project = self._selected_project()
+        if not character or not project:
+            self.log(f"[{log_ts()}] startup_profile 自動啟動略過：角色或專案尚未選定。")
+            self._startup_auto_start_fired = True
+            return
+
+        self._startup_auto_start_fired = True
+        self.log(
+            f"[{log_ts()}] startup_profile 自動啟動："
+            f"角色={character.conf_name}，專案={project.display_name}"
+        )
+        self.on_start_profile()
 
     def _schedule_panel_update(self, delay_ms: int = 80) -> None:
         if self._panel_update_after_id is not None:
@@ -3572,6 +3714,8 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
                 llm_host=self.cfg.llm_host,
                 llm_port=self.cfg.llm_port,
                 bridge_translate_url=self.cfg.bridge_translate_url,
+                tts_host=self.cfg.tts_host,
+                tts_port=self.cfg.tts_port,
                 llm_provider_env=self.cfg.llm_provider_env,
                 llm_default_provider=self.cfg.llm_default_provider,
                 openai_model_env=self.cfg.openai_model_env,
@@ -3916,6 +4060,8 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
                 llm_host=self.cfg.llm_host,
                 llm_port=self.cfg.llm_port,
                 bridge_translate_url=self.cfg.bridge_translate_url,
+                tts_host=self.cfg.tts_host,
+                tts_port=self.cfg.tts_port,
                 llm_provider_env=self.cfg.llm_provider_env,
                 llm_default_provider=self.cfg.llm_default_provider,
                 openai_model_env=self.cfg.openai_model_env,
@@ -4083,6 +4229,7 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
             "toggle-camera": "cameraEnabled",
             "toggle-screen": "screenEnabled",
             "set-reader-visible": "readerVisible",
+            "set-briefing-visible": "briefingVisible",
             "set-game-mode": "petGameMode",
         }
         for action, key in state_map.items():

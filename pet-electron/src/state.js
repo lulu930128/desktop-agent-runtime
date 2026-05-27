@@ -9,6 +9,8 @@ const DEFAULT_STATE = {
   petAnchor: null,
   petGameMode: false,
   readerVisible: true,
+  briefingVisible: true,
+  briefingBounds: null,
   outfit: {
     outfitId: "normal",
     parameterId: "Param10",
@@ -88,6 +90,10 @@ function mergeState(candidate) {
     next.readerVisible = candidate.readerVisible;
   }
 
+  if (typeof candidate.briefingVisible === "boolean") {
+    next.briefingVisible = candidate.briefingVisible;
+  }
+
   if (candidate.outfit && typeof candidate.outfit === "object") {
     const outfit = candidate.outfit;
     const parameterId = String(outfit.parameterId || "Param10");
@@ -152,6 +158,16 @@ function mergeState(candidate) {
       y: Number.isFinite(bounds.y) ? Math.round(bounds.y) : current.y,
       width: Number.isFinite(bounds.width) ? Math.round(bounds.width) : current.width,
       height: Number.isFinite(bounds.height) ? Math.round(bounds.height) : current.height
+    };
+  }
+
+  if (candidate.briefingBounds && typeof candidate.briefingBounds === "object") {
+    const bounds = candidate.briefingBounds;
+    next.briefingBounds = {
+      x: Number.isFinite(bounds.x) ? Math.round(bounds.x) : 0,
+      y: Number.isFinite(bounds.y) ? Math.round(bounds.y) : 0,
+      width: Number.isFinite(bounds.width) ? Math.round(bounds.width) : 940,
+      height: Number.isFinite(bounds.height) ? Math.round(bounds.height) : 520
     };
   }
 

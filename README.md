@@ -1,262 +1,533 @@
 # Kuro Desktop Agent Runtime
 
-Kuro 是一套本地桌面助理 runtime，整合 launcher、Open-LLM-VTuber、GPT-SoVITS、Live2D 桌寵、角色記憶、跨對話檢索、工具路由、檔案理解與專案 prompt。
+Kuro 是一個 local-first 的桌面 AI 角色助理 runtime。這個 repository 把角色啟動器、Open-LLM-VTuber 後端、GPT-SoVITS 語音、Live2D 桌寵殼、角色記憶、專案 prompt、工具政策與桌面 Dashboard 串在同一個可控工作區中。
 
-這個專案的目標不是單純讓聊天機器人回覆文字，而是建立一個可控、可維護、可延伸的角色助理系統。Kuro 需要能理解目前專案脈絡、保留長期記憶、在需要時使用工具，並用字幕、語音與 Live2D 表現出一致的角色狀態。
+目前定位不是單純桌寵展示，而是「桌面個人助理的 runtime workspace」：
 
-## 作品定位
+- 開機後可以依 `startup_profile` 預設啟動指定角色、專案與服裝。
+- 角色可以透過 Live2D/Electron shell 常駐桌面。
+- Launcher 負責啟停、設定、角色/專案/聊天/記憶管理。
+- Dashboard / Briefing Panel 是 AI 和工具輸出的資料展示區。
+- 長期記憶與今日簡報資料分離，避免即時資訊污染角色記憶。
 
-Kuro 的核心設計是「有邊界的角色助理」：
+> Current status: source-controlled runtime workspace. Local secrets, model weights, voice references, generated runtime config, logs, chat history, memory data, Electron userData, build output and dependency folders are intentionally excluded from git.
 
-- 角色人格由 persona 管理，不讓工具、搜尋、專案 prompt 或語音模型任意改寫角色身份。
-- 專案脈絡由 project prompt 管理，讓同一個角色可以切換到不同工作情境。
-- 思考力控制搜尋深度、驗證強度與回答完整度，不改變角色人格。
-- 工具先經過分類、權限政策與候選篩選，再交給模型決定是否使用。
-- 記憶不把所有聊天全文塞回 prompt，而是透過查詢、範圍、衝突狀態與 token budget 篩選。
-- 輸出分成字幕、語音與 Live2D 表現層，避免技術資料、網址或診斷文字被送進 TTS。
+## Table of Contents
 
-## 系統架構
+- [Current Milestone](#current-milestone)
+- [Architecture](#architecture)
+- [Repository Layout](#repository-layout)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Startup Profile](#startup-profile)
+- [Launcher](#launcher)
+- [Electron Pet Shell](#electron-pet-shell)
+- [Dashboard / Briefing Panel](#dashboard--briefing-panel)
+- [Memory Model](#memory-model)
+- [Tool Integration Direction](#tool-integration-direction)
+- [Runtime Ports](#runtime-ports)
+- [Validation](#validation)
+- [Git Hygiene](#git-hygiene)
+- [GitHub Metadata](#github-metadata)
 
-```mermaid
-flowchart TD
-    U["使用者輸入<br/>文字 / 語音 / 圖片 / 檔案"] --> UI["Electron 桌寵<br/>Live2D / 字幕 / 麥克風 / 檔案入口"]
-    UI --> WS["WebSocket Protocol<br/>text-input / mic-audio / playback-complete"]
-    WS --> RT["Open-LLM-VTuber Runtime"]
+## Current Milestone
 
-    L["Launcher<br/>角色 / 衣服 / 專案 / 聊天 / 思考力"] --> CFG["Runtime Config<br/>合併角色、專案、工具與記憶設定"]
-    CFG --> RT
+This branch currently includes the first integrated desktop assistant layer:
 
-    RT --> AG["Agent Layer<br/>persona + project + strategy + tool policy"]
-    AG --> MEM["Memory Layer<br/>long-term memory + SQLite index + cross-history search"]
-    AG --> TOOL["Tool Layer<br/>web / local files / media / memory tools"]
-    AG --> OUT["Output Pipeline<br/>display lane + speech lane + emotion lane"]
+- `startup_profile` config for default character/project/outfit startup.
+- Default startup target: `kuro` / `desktop-agent-runtime` / `hoodie`.
+- Optional startup auto-start from launcher.
+- Unified Windows AppUserModelID: `kuro.desktop-agent`.
+- Electron `Reader` window for subtitle/dialog output.
+- Electron `Briefing` window for persistent dashboard output.
+- Launcher `Dashboard` toggle between `對話框` and `Game mode`.
+- Briefing backend store with snapshot + memory-candidate separation.
+- Control server APIs for dashboard data updates.
 
-    MEM --> AG
-    TOOL --> AG
-    OUT --> TTS["GPT-SoVITS<br/>audio + volume envelope"]
-    OUT --> SUB["Subtitle Payload<br/>Traditional Chinese display text"]
-    OUT --> EMO["Live2D Signals<br/>emotion / actions"]
-
-    TTS --> UI
-    SUB --> UI
-    EMO --> UI
-```
-
-## 使用體驗
-
-- 在 launcher 選擇角色、衣服、專案、聊天紀錄與思考力。
-- 可以使用一般聊天、專案聊天、網路搜尋、本地檔案讀取與附件分析。
-- 可以上傳圖片、音檔、文字、程式碼、壓縮檔或二進位檔；可執行檔只做靜態分析，不執行。
-- 工具狀態會顯示在當次對話底下，讓搜尋、檔案讀取與記憶事件留在同一個上下文。
-- 每個角色有獨立聊天紀錄與長期記憶，切換回來後可以延續脈絡。
-
-## Launcher
-
-`launcher.py` 是 Kuro 的控制室，負責組合 runtime config、啟停服務、切換角色與專案、管理聊天紀錄、操作記憶，以及把桌寵控制放在對話旁邊。
-
-Launcher 目前分工如下：
-
-- `launcher.py`：主入口與 UI orchestration。
-- `kuro_launcher/`：launcher 子模組、設定、服務 helper 與可維護的分類邏輯。
-- `kuro_launcher.settings.yaml`：本機路徑、port、模型與啟動預設。
-- `projects/`：專案 prompt、工具提示與回覆風格。
-
-## Prompt 與思考力
-
-Kuro 採用分層 prompt，而不是把所有規則塞進單一角色 prompt：
-
-1. System Contract
-2. Character Persona
-3. Project Context
-4. Tool Use Policy
-5. Conversation Strategy
-6. Expression / Response Contract
-
-思考力只影響對話策略。它決定模型要多快回覆、是否需要多做驗證、搜尋要做到多深、回答要多完整；它不應該改變角色人格。
-
-角色人格放在：
-
-- `Open-LLM-VTuber/prompts/persona/`
-- `Open-LLM-VTuber/characters/*.yaml`
-
-專案脈絡放在：
-
-- `projects/<project_id>/project.yaml`
-- `projects/<project_id>/prompts/project_prompt.txt`
-- `projects/<project_id>/prompts/tool_prompt.txt`
-- `projects/<project_id>/prompts/response_style_prompt.txt`
-
-## 記憶模型
-
-記憶是助理能力，不是聊天紀錄全文回放。Kuro 目前使用「長期記憶檔案 + SQLite 索引 + 跨對話檢索」的混合架構，讓角色能在不同聊天之間找回重要資訊，但仍維持範圍、衝突與 token budget 控制。
+## Architecture
 
 ```mermaid
 flowchart TD
-    TURN["目前對話回合"] --> READ["Memory Read Plan<br/>查詢、角色、專案、聊天範圍"]
-    READ --> IDX["SQLite Memory Index<br/>關鍵字 / scope / 狀態 / 時間"]
-    READ --> HIST["Conversation History Index<br/>其他聊天紀錄片段"]
-    IDX --> PACK["Context Packing<br/> relevance + recency + token budget"]
-    HIST --> PACK
-    PACK --> PROMPT["送入 Prompt 的記憶上下文"]
+    User["User / desktop"] --> Launcher["launcher.py<br/>control console"]
+    Launcher --> Config["kuro_launcher.settings.yaml<br/>paths / ports / startup_profile"]
+    Launcher --> RuntimeConf["Open-LLM-VTuber runtime config"]
+    Launcher --> PetShell["pet-electron<br/>Live2D pet shell"]
+    Launcher --> Services["Bridge / TTS / LLM runtime"]
 
-    TURN --> WRITE["Memory Write Plan<br/>使用者偏好 / 重要事實 / 助理結論"]
-    WRITE --> CONFLICT["Conflict Check<br/>active / superseded / disabled"]
-    CONFLICT --> STORE["long_term.json"]
-    STORE --> IDX
+    PetShell --> MainWindow["Live2D Pet Window"]
+    PetShell --> Reader["Reader Window<br/>dialog/subtitle output"]
+    PetShell --> Briefing["Dashboard / Briefing Window<br/>daily overview"]
+    PetShell --> Control["Control Server<br/>127.0.0.1:23567"]
+
+    Control --> BriefingStore["briefing-store.json<br/>snapshot + memory candidates"]
+    Tools["Future tool projects<br/>mail / news / stocks / messages"] --> Control
+    Agent["AI assistant / tools"] --> Control
+
+    Services --> AgentRuntime["Open-LLM-VTuber Agent Runtime"]
+    AgentRuntime --> Memory["Character long-term memory"]
+    AgentRuntime --> TTS["GPT-SoVITS"]
+    AgentRuntime --> PetShell
 ```
 
-長期記憶支援：
+The important boundary is:
 
-- Query-aware retrieval：依照目前問題挑選相關記憶。
-- Scope levels：區分使用者、角色、專案、聊天與 runtime。
-- Assistant outcome：把助理推導出的有用結論納入寫入判斷。
-- Conflict handling：新舊資訊衝突時保留狀態，而不是直接覆蓋或重複。
-- Soft delete：刪除與停用可以留下可追蹤狀態。
-- Cross-history search：必要時可搜尋其他對話片段，作為工具型上下文補充。
+- Launcher config and UI decide what to start.
+- Open-LLM-VTuber handles conversation, prompt composition, tools and memory.
+- Electron handles desktop windows, taskbar identity, control server and Dashboard display.
+- Tool projects should remain separate projects and push structured results into Kuro through explicit APIs.
 
-## 輸出流
+## Repository Layout
 
-Kuro 的輸出流採用三條 lane：字幕、語音與情緒動作。這是目前表現層最重要的專業化邊界。
+| Path | Responsibility |
+| --- | --- |
+| `launcher.py` | Main launcher UI, startup profile application, service orchestration and pet shell controls. |
+| `kuro_launcher/` | Launcher config parsing, service helpers, runtime config generation, memory panel and records. |
+| `kuro_launcher.settings.yaml` | Main local runtime source of truth for paths, ports, LLM env names and startup profile. |
+| `Open-LLM-VTuber/` | Agent runtime, WebSocket protocol, character configs, prompt/runtime logic and memory system. |
+| `pet-electron/` | Electron shell, Live2D renderer, Reader window, Dashboard window and local control server. |
+| `pet-electron/src/main-process/briefing-store.js` | Dashboard backend store for daily snapshot and memory candidates. |
+| `bridges/` | Bridge service helpers, including translation/spoken-rendering integration. |
+| `gpt_sovits/` | GPT-SoVITS runtime and TTS configuration. |
+| `projects/` | Project prompt packs and assistant context definitions. |
+| `voices/` | Local voice references and generated voice assets. Keep private data out of git. |
+| `launcher_logs/` | Local launcher logs. Do not commit. |
+| `envs/` | Local Python environments. Do not commit. |
 
-```mermaid
-flowchart TD
-    A["Agent streaming response"] --> B["Transformers<br/>sentence divider / action parser / tts filter"]
-    B --> C["SentenceOutput<br/>display_text + tts_text + actions"]
+## Quick Start
 
-    C --> D["Subtitle Lane<br/>保留繁中字幕、網址、技術名詞與數值"]
-    D --> E["Silent Audio Payload<br/>audio = null / display_text = subtitle"]
-
-    C --> F["Speech Source Lane<br/>移除舞台指示、URL、路徑、程式碼與診斷資料"]
-    F --> G["DeepLX Bridge render_spoken<br/>短日文語音台詞 + emotion"]
-    G --> H["Japanese TTS Guard<br/>阻擋 JSON artifact、無假名、非語音內容"]
-    H -->|valid| I["GPT-SoVITS<br/>產生 wav"]
-    H -->|blocked| E
-
-    C --> J["Emotion Lane<br/>bridge emotion / inline tag / neutral"]
-    J --> K["Live2D control payload"]
-
-    I --> L["TTSTaskManager<br/>ordered queue"]
-    E --> L
-    L --> M["WebSocket audio payload<br/>base64 wav + volume envelope + display_text"]
-    K --> M
-    M --> N["Electron Adapter<br/>assistant-audio / synth-complete / control"]
-    N --> O["Renderer State<br/>assistant bubble / audio queue / lip sync / Live2D"]
-    O --> P["frontend-playback-complete"]
-    P --> Q["Backend finalizes turn"]
-```
-
-### 後端責任
-
-- `tts_filter` 將模型串流輸出整理成 `SentenceOutput`。
-- `handle_sentence_output` 將字幕文字、語音文字與動作拆開處理。
-- 字幕 lane 先送出 silent audio payload，確保畫面能顯示完整繁中內容。
-- 語音 lane 只保留適合朗讀的內容，再交給 bridge 轉成短日文語音台詞。
-- TTS guard 會阻擋 JSON 殘留、無假名日文、URL、路徑、程式碼與不適合朗讀的片段。
-- `TTSTaskManager` 負責 TTS 非同步任務、輸出排序與 `backend-synth-complete`。
-
-### 前端責任
-
-- `llm-vtuber-adapter` 將 Open-LLM-VTuber websocket payload 轉成 Kuro 內部事件。
-- `assistant-audio` 會同時更新字幕與音訊佇列；沒有音訊時仍可更新字幕。
-- Renderer 使用 audio queue 順序播放語音，並由音訊 envelope 驅動 lip sync。
-- 收到 `synth-complete` 後，前端會等 audio queue 播放完畢，再送出 `frontend-playback-complete`。
-- 後端收到播放完成或逾時後，才會送出 `force-new-message` 與 conversation end。
-
-這個設計讓字幕可以完整承載資訊，語音保持乾淨自然，Live2D 表現不干擾角色與工具邏輯。
-
-## 工具模型
-
-工具不是全部丟給模型自由挑。Kuro 先判斷能力分類，再從候選工具中選擇。
-
-目前工具能力分成：
-
-- Web research：輕量搜尋、深度搜尋、來源驗證與頁面讀取。
-- Local files：允許根目錄、資料夾列表、文字搜尋與文字讀取。
-- Media and attachments：圖片、音檔、文字、壓縮檔與二進位靜態分析。
-- Runtime control：保留給 launcher/runtime 狀態與受控操作。
-- Memory：保留給記住、忘記、整理、跨對話搜尋與記憶維護。
-
-工具政策預設為 read-only。金鑰、私密設定、瀏覽器個人資料、憑證、私有網路與敏感路徑會被限制層擋下。
-
-## 專案結構
-
-```text
-C:\kuro
-|-- launcher.py                         # Launcher 主入口
-|-- kuro_launcher.settings.yaml          # 路徑、port、模型預設
-|-- kuro_launcher/                       # Launcher 子模組與服務 helper
-|-- Open-LLM-VTuber/                     # Agent、對話、工具、記憶、TTS pipeline
-|-- projects/                            # 專案 prompt 與回覆風格
-|-- bridges/                             # 翻譯、語音渲染與 bridge service
-|-- gpt_sovits/                          # GPT-SoVITS runtime
-|-- pet-electron/                        # Electron + Live2D 桌寵 shell
-|-- local_translator/                     # 本地翻譯相關模組
-|-- voices/                              # 角色參考音檔
-|-- vendor/                              # 專案內供應商或第三方檔案
-|-- launcher_logs/                       # Launcher log，不進 git
-|-- 暫存區/                              # 圖片與音檔暫存區，不放程式碼
-```
-
-## 啟動
+From the repo root:
 
 ```powershell
-cd C:\kuro
+cd C:\project\kuro
 .\envs\kuro-llm310\python.exe .\launcher.py
 ```
 
-Launcher 會讀取 `kuro_launcher.settings.yaml`，產生 Open-LLM-VTuber runtime config，並協調本地服務。
-
-桌面捷徑流程可使用：
+The VBS launcher can also be used from Explorer:
 
 ```text
 桌寵啟動器.vbs
 ```
 
-## 擴充點
+The VBS launcher prefers the repo-local Python executable:
 
-- 新角色：`Open-LLM-VTuber/characters/` 與 `Open-LLM-VTuber/prompts/persona/`
-- 新專案：`projects/`
-- 普通聊天專案：`projects/casual-chat/`
-- 工具路由：`Open-LLM-VTuber/tool_catalog.json`
-- 工具限制：`Open-LLM-VTuber/tool_policy.json`
-- 對話策略：`Open-LLM-VTuber/src/open_llm_vtuber/agent/conversation_strategy_manager.py`
-- 記憶管理：`Open-LLM-VTuber/src/open_llm_vtuber/character_memory_manager.py`
-- 記憶索引：`Open-LLM-VTuber/src/open_llm_vtuber/character_memory_sql_index.py`
-- 跨對話檢索：`Open-LLM-VTuber/src/open_llm_vtuber/conversation_history_index.py`
-- 輸出管線：`Open-LLM-VTuber/src/open_llm_vtuber/conversations/conversation_utils.py`
-- Electron 輸出接收：`pet-electron/renderer/src/backend/backend-client.ts`
+```text
+envs\kuro-llm310\python.exe
+```
 
-## Repo 邊界
+and falls back to `py .\launcher.py` if the repo-local runtime does not exist.
 
-適合進 git：
+## Configuration
 
-- source code
-- README 與文件
-- prompt
-- character/project config
-- tool catalog/policy
-- runtime helper
-- 可重現的測試
+The main configuration file is:
 
-不適合進 git：
+```text
+kuro_launcher.settings.yaml
+```
 
-- `.env`
-- API key
-- launcher log
-- runtime 產物
-- 聊天紀錄與本機記憶資料
-- 參考音檔與模型權重
-- 暫存圖片與音檔
-- `pet-electron/.tmp/`
+Key sections:
 
-## 驗證
+```yaml
+paths:
+  ROOT: "${HERE}"
+  open_llm_vtuber_dir: "${ROOT}\\Open-LLM-VTuber"
+  projects_dir: "${ROOT}\\projects"
+  pet_electron_dir: "${ROOT}\\pet-electron"
+  runtime_conf_path: "${open_llm_vtuber_dir}\\conf.launcher_runtime.yaml"
 
-常用檢查指令：
+network:
+  bridge:
+    host: "127.0.0.1"
+    port: 1188
+  tts:
+    host: "127.0.0.1"
+    port: 9981
+  llm:
+    host: "127.0.0.1"
+    port: 23456
+  pet_control:
+    host: "127.0.0.1"
+    port: 23567
+```
+
+Secrets must stay in local environment files or OS environment variables, not in tracked files:
 
 ```powershell
-.\envs\kuro-llm310\python.exe -m unittest .\Open-LLM-VTuber\tests\test_character_memory_manager.py
-.\envs\kuro-llm310\python.exe -m unittest .\Open-LLM-VTuber\tests\test_tts_pronunciation_pipeline.py
+Copy-Item .env.example .env
+notepad .env
+```
+
+Common LLM variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `KURO_LLM_PROVIDER` | Runtime LLM provider selector. |
+| `OPENAI_LLM_API_KEY` | OpenAI-compatible LLM API key. |
+| `OPENAI_API_KEY` | Fallback key used by some compatible integrations. |
+| `OPENAI_LLM_MODEL` | Default OpenAI-compatible LLM model. |
+| `OPENAI_LLM_TEMPERATURE` | Optional temperature override. |
+| `OPENAI_TRANSLATE_MODEL` | Bridge / spoken rendering model. |
+| `ENABLE_OLLAMA_FALLBACK` | Enables local Ollama fallback when configured. |
+| `OLLAMA_BASE_URL` | Ollama-compatible endpoint. |
+
+## Startup Profile
+
+`startup_profile` defines what should be selected when launcher starts:
+
+```yaml
+startup_profile:
+  character: "kuro"
+  project: "desktop-agent-runtime"
+  outfit: "hoodie"
+  auto_start: true
+```
+
+Behavior:
+
+- `character` matches character file stem, file name, `conf_name`, `conf_uid` or Live2D model name.
+- `project` matches project id, display name or project folder.
+- `outfit` currently normalizes values such as `hoodie`, `hood`, `帽T` to the hoodie state.
+- `auto_start: true` schedules a one-time startup call to `on_start_profile()` after launcher UI selection settles.
+
+If a configured item cannot be found, launcher logs the missing startup item and continues with available defaults.
+
+## Launcher
+
+Launcher is the operator console. It handles:
+
+- Start/stop profile.
+- Start/stop Bridge, TTS and LLM runtime.
+- Launch Electron pet shell.
+- Character, outfit, project and chat selection.
+- Memory panel CRUD and approval controls.
+- Pet shell status polling.
+- Pet controls:
+  - microphone
+  - camera
+  - screen
+  - dialog / Reader window
+  - Dashboard / Briefing window
+  - Game mode
+  - expression
+  - thinking power
+
+The launcher and Electron shell share the same Windows AppUserModelID:
+
+```text
+kuro.desktop-agent
+```
+
+This is intended to group the launcher and pet/Dashboard windows together on the Windows taskbar.
+
+## Electron Pet Shell
+
+The Electron shell lives in `pet-electron/`.
+
+Useful commands:
+
+```powershell
+Set-Location .\pet-electron
+npm run check:renderer
+npm run build:renderer
+npm run start
+```
+
+Main pieces:
+
+| File | Responsibility |
+| --- | --- |
+| `src/main.js` | Electron main process, windows, tray menu, IPC, control server wiring. |
+| `src/state.js` | Persistent pet shell state such as window bounds and visibility. |
+| `src/main-process/control-server.js` | Local HTTP control server. |
+| `src/main-process/menus.js` | Tray and pet context menus. |
+| `src/reader-window.html` | Dialog/subtitle Reader window. |
+| `src/briefing-window.html` | Dashboard / Briefing window. |
+| `src/main-process/briefing-store.js` | Backend store for Dashboard data. |
+| `renderer/` | TypeScript/Live2D renderer source. |
+
+The shell stores runtime state under Electron `userData`, not in the repo:
+
+```text
+pet-shell-state.json
+briefing-store.json
+pet-shell.log
+```
+
+## Dashboard / Briefing Panel
+
+Dashboard is the persistent information surface intended for the secondary monitor data area.
+
+Design role:
+
+- Kuro pet: conversational/personality interface.
+- Reader: short dialog/subtitle output.
+- Dashboard: structured daily intelligence and assistant output.
+- Launcher: engineering/control console.
+
+The first version uses a YouTube Music-like layout:
+
+- Left navigation:
+  - 今日大綱
+  - 待處理
+  - Mail
+  - Messages
+  - Stocks
+  - News
+  - Calendar
+  - Notes
+- Right content area:
+  - module cards
+  - metrics
+  - item lists
+  - runtime/source status
+
+Dashboard backend data is split into:
+
+| Data | Purpose |
+| --- | --- |
+| `snapshot` | Today's visible Dashboard data. Safe to update frequently. |
+| `memoryCandidates` | Suggestions that may become long-term memory only after approval. |
+| `sourceStatus` | Future health/status state for mail/news/stocks/messages adapters. |
+
+Control APIs are exposed through the pet shell control server:
+
+```http
+GET  /briefing
+POST /briefing/snapshot
+POST /briefing/memory-candidates
+POST /briefing/memory-candidate-status
+POST /command
+```
+
+Example snapshot update:
+
+```powershell
+$body = @{
+  title = "今日簡報"
+  sections = @(
+    @{
+      key = "overview"
+      label = "今日大綱"
+      icon = "T"
+      subtitle = "工具摘要"
+      modules = @(
+        @{
+          id = "mail"
+          title = "重要信件"
+          tag = "Mail"
+          value = "2"
+          unit = "items"
+          wide = $true
+          items = @(
+            @{ text = "有兩封信需要今天回覆"; meta = "high" }
+          )
+        }
+      )
+    }
+  )
+} | ConvertTo-Json -Depth 8
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:23567/briefing/snapshot" `
+  -Body $body `
+  -ContentType "application/json"
+```
+
+Example memory candidate:
+
+```powershell
+$body = @{
+  content = "使用者希望每日大綱優先顯示 mail、新聞、股票與訊息摘要。"
+  memoryType = "preference"
+  reason = "Dashboard preference"
+  source = "briefing"
+} | ConvertTo-Json -Depth 4
+
+Invoke-RestMethod `
+  -Method Post `
+  -Uri "http://127.0.0.1:23567/briefing/memory-candidates" `
+  -Body $body `
+  -ContentType "application/json"
+```
+
+## Memory Model
+
+Memory is intentionally not the same thing as Dashboard content.
+
+Recommended split:
+
+```text
+tool data -> daily snapshot -> Dashboard display
+                         |
+                         -> memory candidate -> approval -> long-term character memory
+```
+
+Long-term memory should store stable facts and preferences:
+
+- preferred Dashboard layout
+- recurring topics
+- watchlist preferences
+- role/project defaults
+- writing or response style preferences
+
+Daily snapshots should store volatile information:
+
+- today's news
+- today's mail summary
+- market movement
+- message queue
+- temporary tasks
+
+Only approved candidates should enter character long-term memory. This keeps Kuro useful without filling memory with one-day noise.
+
+Existing memory management lives in:
+
+| Path | Responsibility |
+| --- | --- |
+| `kuro_launcher/memory_panel.py` | Launcher memory UI actions. |
+| `kuro_launcher/memory_support.py` | Memory path and preview helpers. |
+| `Open-LLM-VTuber/src/open_llm_vtuber/character_memory_manager.py` | Memory CRUD and turn processing. |
+| `Open-LLM-VTuber/src/open_llm_vtuber/character_memory_sql_index.py` | SQLite memory index. |
+| `Open-LLM-VTuber/src/open_llm_vtuber/conversation_history_index.py` | Conversation history search/indexing. |
+
+## Tool Integration Direction
+
+Most serious tools should remain in their own projects and expose stable structured outputs.
+
+Recommended model:
+
+```text
+Mail project      -> adapter -> Kuro briefing API
+News project      -> adapter -> Kuro briefing API
+Stocks project    -> adapter -> Kuro briefing API
+Messages project  -> adapter -> Kuro briefing API
+```
+
+Kuro should avoid owning every external connector directly. Its role should be:
+
+- choose character/persona and context
+- coordinate tool outputs
+- display assistant summaries
+- manage memory approval
+- provide desktop interaction surfaces
+
+Future MCP/tool design should prefer:
+
+- typed JSON outputs
+- source timestamps
+- error/source status reporting
+- idempotent daily snapshot updates
+- explicit memory-candidate creation
+- no automatic write into long-term memory without a review path
+
+## Runtime Ports
+
+Default local ports from `kuro_launcher.settings.yaml`:
+
+| Service | Host | Port | Notes |
+| --- | --- | --- | --- |
+| Bridge | `127.0.0.1` | `1188` | Translation/spoken rendering bridge. |
+| TTS | `127.0.0.1` | `9981` | GPT-SoVITS API endpoint used by launcher runtime config. |
+| LLM runtime | `127.0.0.1` | `23456` | Open-LLM-VTuber backend. |
+| Pet control | `127.0.0.1` | `23567` | Electron shell control server. |
+
+The runtime config builder writes the GPT-SoVITS `api_url` from the configured TTS host/port:
+
+```text
+http://<tts_host>:<tts_port>/tts
+```
+
+## Validation
+
+Python syntax checks:
+
+```powershell
+.\envs\kuro-llm310\python.exe -m py_compile .\launcher.py .\kuro_launcher\config.py .\kuro_launcher\runtime_conf.py
+```
+
+Electron main-process checks:
+
+```powershell
+node --check .\pet-electron\src\main.js
+node --check .\pet-electron\src\state.js
+node --check .\pet-electron\src\main-process\control-server.js
+node --check .\pet-electron\src\main-process\briefing-store.js
+node --check .\pet-electron\src\briefing-preload.js
+```
+
+Renderer checks:
+
+```powershell
+Set-Location .\pet-electron
+npm run check:renderer
+npm run build:renderer
+```
+
+Git whitespace check:
+
+```powershell
 git diff --check
 ```
 
-文件修改後至少確認 `git diff --check`，避免 Markdown 或空白格式問題。
+Runtime smoke checks when the pet shell is running:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:23567/status
+Invoke-RestMethod http://127.0.0.1:23567/briefing
+```
+
+## Git Hygiene
+
+Commit:
+
+- source code
+- launcher/runtime helpers
+- prompt/config templates
+- character/project metadata that is safe to publish
+- documentation
+- placeholder configs
+
+Do not commit:
+
+- `.env`, `.env.local`
+- API keys, tokens, cookies, credentials
+- `open_ai_api.txt`
+- `launcher_logs/`
+- generated runtime config
+- chat history and memory data
+- Electron `userData`
+- model weights
+- private voice references
+- `pet-electron/node_modules/`
+- `pet-electron/renderer-dist/`
+- `pet-electron/.tmp/`
+- Python virtual environments under `envs/`
+
+## GitHub Metadata
+
+Suggested repository description:
+
+```text
+Local-first desktop AI companion runtime integrating launcher, Open-LLM-VTuber, GPT-SoVITS, Live2D, memory, tools, and project prompts.
+```
+
+Suggested topics:
+
+```text
+desktop-agent
+ai-companion
+live2d
+electron
+open-llm-vtuber
+gpt-sovits
+local-first
+voice-assistant
+python
+typescript
+```
+
+GitHub metadata is remote repository state, not git content. Use GitHub CLI when it needs to be updated:
+
+```powershell
+gh repo view lulu930128/desktop-agent-runtime --json description,homepageUrl,repositoryTopics
+```

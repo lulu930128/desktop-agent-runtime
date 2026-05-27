@@ -15,13 +15,19 @@ paths:
   pet_electron_dir: "${ROOT}\\pet-electron"
   pet_electron_preferred: true
 
+startup_profile:
+  character: "kuro"
+  project: "desktop-agent-runtime"
+  outfit: "hoodie"
+  auto_start: true
+
 network:
   bridge:
     host: "127.0.0.1"
     port: 1188
   tts:
     host: "127.0.0.1"
-    port: 9881
+    port: 9981
   llm:
     host: "127.0.0.1"
     port: 23456

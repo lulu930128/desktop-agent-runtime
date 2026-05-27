@@ -1,0 +1,850 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kuro Briefing</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #090a0f;
+      --sidebar: #10131a;
+      --surface: #151922;
+      --surface-2: #1b202b;
+      --surface-3: #202735;
+      --line: rgba(255, 255, 255, 0.08);
+      --line-strong: rgba(255, 255, 255, 0.14);
+      --text: #f4f6fb;
+      --muted: #9da6b8;
+      --soft: #c8ceda;
+      --accent: #b892ff;
+      --cyan: #73d6cf;
+      --green: #80d984;
+      --yellow: #f0c96a;
+      --red: #ef8585;
+      --radius: 8px;
+      --titlebar-height: 38px;
+      font-family: "Segoe UI", "Microsoft JhengHei", system-ui, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    body {
+      user-select: none;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .window {
+      height: 100%;
+      display: grid;
+      grid-template-rows: var(--titlebar-height) 1fr;
+      border: 1px solid var(--line-strong);
+      background: var(--bg);
+    }
+
+    .titlebar {
+      -webkit-app-region: drag;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 16px;
+      height: var(--titlebar-height);
+      padding: 0 8px 0 14px;
+      border-bottom: 1px solid var(--line);
+      background: #0d1017;
+    }
+
+    .brand {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--soft);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .mark {
+      width: 18px;
+      height: 18px;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 3px;
+      flex: 0 0 auto;
+    }
+
+    .mark span {
+      border-radius: 4px;
+      background: var(--accent);
+    }
+
+    .brand strong {
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .state {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--muted);
+    }
+
+    .window-actions {
+      -webkit-app-region: no-drag;
+      display: flex;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .window-actions button {
+      width: 34px;
+      height: 28px;
+      border: 0;
+      border-radius: 6px;
+      color: var(--soft);
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .window-actions button:hover {
+      background: var(--surface-2);
+      color: var(--text);
+    }
+
+    .window-actions button[data-action="close"]:hover {
+      background: #74333b;
+    }
+
+    .shell {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 184px minmax(0, 1fr);
+    }
+
+    .sidebar {
+      min-width: 0;
+      padding: 14px 10px;
+      border-right: 1px solid var(--line);
+      background: var(--sidebar);
+      overflow: hidden;
+    }
+
+    .nav {
+      display: grid;
+      gap: 6px;
+    }
+
+    .nav button {
+      width: 100%;
+      min-height: 36px;
+      display: grid;
+      grid-template-columns: 22px 1fr auto;
+      align-items: center;
+      gap: 8px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: var(--radius);
+      color: var(--soft);
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .nav button:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+    }
+
+    .nav button.active {
+      color: var(--text);
+      background: var(--surface-3);
+    }
+
+    .nav-icon {
+      width: 22px;
+      height: 22px;
+      display: inline-grid;
+      place-items: center;
+      border-radius: 6px;
+      color: #0a0c11;
+      background: var(--cyan);
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .nav-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .nav-count {
+      min-width: 22px;
+      height: 20px;
+      display: inline-grid;
+      place-items: center;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .content {
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      background:
+        linear-gradient(180deg, rgba(115, 214, 207, 0.06), transparent 210px),
+        var(--bg);
+    }
+
+    .content-inner {
+      min-width: 0;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 18px 20px 24px;
+    }
+
+    .page-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .page-title {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.2;
+      font-weight: 720;
+    }
+
+    .page-subtitle {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .status-row {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--soft);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: var(--red);
+    }
+
+    .dot.online {
+      background: var(--green);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 10px;
+    }
+
+    .card {
+      min-width: 0;
+      min-height: 152px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: color-mix(in srgb, var(--surface) 92%, #ffffff 8%);
+      box-shadow: 0 18px 36px rgba(0, 0, 0, 0.18);
+      overflow: hidden;
+    }
+
+    .card.wide {
+      grid-column: span 2;
+    }
+
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 42px;
+      padding: 12px 14px 8px;
+    }
+
+    .card-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .card-tag {
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .metric {
+      padding: 0 14px 8px;
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+
+    .metric strong {
+      font-size: 28px;
+      line-height: 1;
+      font-weight: 760;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .items {
+      margin: 0;
+      padding: 0 14px 14px;
+      list-style: none;
+      display: grid;
+      gap: 8px;
+    }
+
+    .item {
+      min-width: 0;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      color: var(--soft);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .item::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--accent);
+    }
+
+    .item span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .item time,
+    .item b {
+      color: var(--muted);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .accent-cyan .item::before,
+    .accent-cyan .nav-icon {
+      background: var(--cyan);
+    }
+
+    .accent-green .item::before,
+    .accent-green .nav-icon {
+      background: var(--green);
+    }
+
+    .accent-yellow .item::before,
+    .accent-yellow .nav-icon {
+      background: var(--yellow);
+    }
+
+    .accent-red .item::before,
+    .accent-red .nav-icon {
+      background: var(--red);
+    }
+
+    @media (max-width: 860px) {
+      .shell {
+        grid-template-columns: 148px minmax(0, 1fr);
+      }
+
+      .content-inner {
+        padding: 14px;
+      }
+
+      .card.wide {
+        grid-column: span 1;
+      }
+
+      .page-head {
+        grid-template-columns: 1fr;
+      }
+
+      .status-row {
+        justify-content: flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="window">
+    <header class="titlebar">
+      <div class="brand">
+        <span class="mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+        <strong>Kuro Briefing</strong>
+        <span class="state" id="titleState">local draft</span>
+      </div>
+      <div class="window-actions">
+        <button type="button" data-action="minimize" aria-label="Minimize">-</button>
+        <button type="button" data-action="maximize" aria-label="Maximize">[]</button>
+        <button type="button" data-action="close" aria-label="Close">x</button>
+      </div>
+    </header>
+
+    <main class="shell">
+      <aside class="sidebar">
+        <nav class="nav" id="nav" aria-label="Briefing sections"></nav>
+      </aside>
+      <section class="content">
+        <div class="content-inner">
+          <div class="page-head">
+            <div>
+              <h1 class="page-title" id="pageTitle">今日大綱</h1>
+              <div class="page-subtitle" id="pageSubtitle">等待工具資料接入</div>
+            </div>
+            <div class="status-row">
+              <span class="pill"><span class="dot" id="connectionDot"></span><span id="connectionText">離線</span></span>
+              <span class="pill" id="updatedAt">--:--</span>
+            </div>
+          </div>
+          <div class="grid" id="moduleGrid"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const sections = [
+      {
+        key: "overview",
+        label: "今日大綱",
+        icon: "T",
+        count: 6,
+        subtitle: "跨來源摘要與優先事項",
+        accent: "",
+        modules: [
+          {
+            title: "優先處理",
+            tag: "Draft",
+            value: "3",
+            unit: "items",
+            wide: true,
+            items: [
+              ["回覆重要 mail queue", "09:30"],
+              ["確認市場風險與持股異動", "盤後"],
+              ["整理今日研究 notes", "夜間"]
+            ]
+          },
+          {
+            title: "訊號概覽",
+            tag: "Signals",
+            value: "12",
+            unit: "signals",
+            items: [
+              ["新聞：AI / 半導體 / 匯率", "5"],
+              ["股票：watchlist 異動", "4"],
+              ["訊息：待回覆", "3"]
+            ]
+          },
+          {
+            title: "Kuro 狀態",
+            tag: "Runtime",
+            value: "idle",
+            unit: "",
+            items: [
+              ["角色 kuro / hoodie profile", "on"],
+              ["Briefing shell", "v0"],
+              ["Tools adapter", "pending"]
+            ]
+          }
+        ]
+      },
+      {
+        key: "tasks",
+        label: "待處理",
+        icon: "A",
+        count: 3,
+        subtitle: "需要人工判斷或回覆的事項",
+        accent: "accent-yellow",
+        modules: [
+          {
+            title: "今日待辦",
+            tag: "Manual",
+            value: "3",
+            unit: "open",
+            wide: true,
+            items: [
+              ["確認要接入的第一批工具：Gmail / News / Market", "設計"],
+              ["決定 Briefing Panel 固定螢幕位置策略", "UI"],
+              ["替 mock data 接上 adapter registry", "code"]
+            ]
+          },
+          {
+            title: "稍後追蹤",
+            tag: "Later",
+            value: "2",
+            unit: "",
+            items: [
+              ["Rainmeter status bar integration", "idea"],
+              ["Discord / message summary connector", "idea"]
+            ]
+          }
+        ]
+      },
+      {
+        key: "mail",
+        label: "Mail",
+        icon: "M",
+        count: 4,
+        subtitle: "重要信件摘要",
+        accent: "accent-cyan",
+        modules: [
+          {
+            title: "重要收件",
+            tag: "Mock",
+            value: "4",
+            unit: "mail",
+            wide: true,
+            items: [
+              ["研究更新與待回覆信件", "high"],
+              ["服務通知 / 帳務 / 安全提醒", "check"],
+              ["低優先訂閱內容", "later"]
+            ]
+          }
+        ]
+      },
+      {
+        key: "messages",
+        label: "Messages",
+        icon: "D",
+        count: 5,
+        subtitle: "聊天與社群訊息摘要",
+        accent: "accent-green",
+        modules: [
+          {
+            title: "訊息摘要",
+            tag: "Mock",
+            value: "5",
+            unit: "threads",
+            wide: true,
+            items: [
+              ["Discord：需要回覆的對話", "2"],
+              ["Line / Telegram：待整理", "2"],
+              ["低優先群組訊息", "1"]
+            ]
+          }
+        ]
+      },
+      {
+        key: "stocks",
+        label: "Stocks",
+        icon: "S",
+        count: 7,
+        subtitle: "市場與 watchlist 模組",
+        accent: "accent-red",
+        modules: [
+          {
+            title: "Watchlist",
+            tag: "Mock",
+            value: "7",
+            unit: "names",
+            wide: true,
+            items: [
+              ["盤後異動與籌碼訊號", "pending"],
+              ["個股新聞交叉比對", "pending"],
+              ["Open Market Intelligence 入口", "later"]
+            ]
+          }
+        ]
+      },
+      {
+        key: "news",
+        label: "News",
+        icon: "N",
+        count: 8,
+        subtitle: "新聞與世界訊號",
+        accent: "",
+        modules: [
+          {
+            title: "新聞雷達",
+            tag: "Mock",
+            value: "8",
+            unit: "items",
+            wide: true,
+            items: [
+              ["AI / 科技政策", "track"],
+              ["宏觀 / 匯率 / 利率", "track"],
+              ["Open Intel Atlas 入口", "later"]
+            ]
+          }
+        ]
+      },
+      {
+        key: "calendar",
+        label: "Calendar",
+        icon: "C",
+        count: 2,
+        subtitle: "行程與時間節點",
+        accent: "accent-yellow",
+        modules: [
+          {
+            title: "今日行程",
+            tag: "Mock",
+            value: "2",
+            unit: "events",
+            wide: true,
+            items: [
+              ["工作區巡檢", "morning"],
+              ["研究整理", "night"]
+            ]
+          }
+        ]
+      },
+      {
+        key: "notes",
+        label: "Notes",
+        icon: "R",
+        count: 3,
+        subtitle: "記憶、備忘與研究筆記",
+        accent: "accent-green",
+        modules: [
+          {
+            title: "記憶入口",
+            tag: "Mock",
+            value: "3",
+            unit: "notes",
+            wide: true,
+            items: [
+              ["Startup profile: kuro / hoodie", "saved"],
+              ["Briefing panel layout direction", "saved"],
+              ["Tool adapters remain external projects", "plan"]
+            ]
+          }
+        ]
+      }
+    ];
+
+    let activeKey = "overview";
+    let shellState = null;
+    let briefingData = null;
+
+    const navEl = document.getElementById("nav");
+    const gridEl = document.getElementById("moduleGrid");
+    const pageTitleEl = document.getElementById("pageTitle");
+    const pageSubtitleEl = document.getElementById("pageSubtitle");
+    const titleStateEl = document.getElementById("titleState");
+    const connectionDotEl = document.getElementById("connectionDot");
+    const connectionTextEl = document.getElementById("connectionText");
+    const updatedAtEl = document.getElementById("updatedAt");
+
+    function getActiveSection() {
+      return sections.find((section) => section.key === activeKey) || sections[0];
+    }
+
+    function formatClock(value) {
+      const date = value ? new Date(value) : new Date();
+      if (Number.isNaN(date.getTime())) {
+        return "--:--";
+      }
+      return date.toLocaleTimeString("zh-TW", {
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[char]));
+    }
+
+    function itemParts(item) {
+      if (Array.isArray(item)) {
+        return [item[0] || "", item[1] || ""];
+      }
+      if (item && typeof item === "object") {
+        return [
+          item.text || item.title || item.label || "",
+          item.meta || item.status || item.time || item.source || ""
+        ];
+      }
+      return [item || "", ""];
+    }
+
+    function applyBriefingData(payload) {
+      if (!payload || !payload.snapshot || !Array.isArray(payload.snapshot.sections)) {
+        return false;
+      }
+      if (!payload.snapshot.sections.length) {
+        return false;
+      }
+      briefingData = payload;
+      sections.splice(0, sections.length, ...payload.snapshot.sections);
+      if (!sections.some((section) => section.key === activeKey)) {
+        activeKey = sections[0].key;
+      }
+      render();
+      return true;
+    }
+
+    function renderNav() {
+      navEl.innerHTML = "";
+      for (const section of sections) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = section.key === activeKey ? `active ${section.accent}` : section.accent;
+        button.dataset.key = section.key;
+        button.innerHTML = `
+          <span class="nav-icon">${escapeHtml(section.icon)}</span>
+          <span class="nav-label">${escapeHtml(section.label)}</span>
+          <span class="nav-count">${escapeHtml(section.count)}</span>
+        `;
+        button.addEventListener("click", () => {
+          activeKey = section.key;
+          render();
+        });
+        navEl.appendChild(button);
+      }
+    }
+
+    function createCard(module, accent) {
+      const card = document.createElement("article");
+      card.className = `card ${module.wide ? "wide" : ""} ${accent || ""}`;
+      const value = module.value ? `
+        <div class="metric">
+          <strong>${escapeHtml(module.value)}</strong>
+          <span>${escapeHtml(module.unit || "")}</span>
+        </div>
+      ` : "";
+      const items = (module.items || [])
+        .map((item) => {
+          const [text, meta] = itemParts(item);
+          return `<li class="item"><span>${escapeHtml(text)}</span><b>${escapeHtml(meta)}</b></li>`;
+        })
+        .join("");
+      card.innerHTML = `
+        <div class="card-head">
+          <div class="card-title">${escapeHtml(module.title)}</div>
+          <div class="card-tag">${escapeHtml(module.tag || "")}</div>
+        </div>
+        ${value}
+        <ul class="items">${items}</ul>
+      `;
+      return card;
+    }
+
+    function renderState() {
+      const online = Boolean(shellState && shellState.wsConnected);
+      const dataUpdatedAt =
+        briefingData && briefingData.snapshot
+          ? briefingData.snapshot.updatedAt || briefingData.updatedAt
+          : "";
+      connectionDotEl.classList.toggle("online", online);
+      connectionTextEl.textContent = online ? "已連線" : "離線";
+      updatedAtEl.textContent = `更新 ${formatClock(dataUpdatedAt || (shellState && shellState.updatedAt))}`;
+      titleStateEl.textContent = shellState && shellState.confName
+        ? shellState.confName
+        : "local draft";
+    }
+
+    function render() {
+      const section = getActiveSection();
+      pageTitleEl.textContent = section.label;
+      pageSubtitleEl.textContent = section.subtitle;
+      renderNav();
+      renderState();
+      gridEl.innerHTML = "";
+      for (const module of section.modules) {
+        gridEl.appendChild(createCard(module, section.accent));
+      }
+    }
+
+    function wireWindowActions() {
+      document.querySelector('[data-action="close"]').addEventListener("click", () => {
+        window.kuroBriefing && window.kuroBriefing.closeWindow();
+      });
+      document.querySelector('[data-action="minimize"]').addEventListener("click", () => {
+        window.kuroBriefing && window.kuroBriefing.minimizeWindow();
+      });
+      document.querySelector('[data-action="maximize"]').addEventListener("click", () => {
+        window.kuroBriefing && window.kuroBriefing.toggleMaximizeWindow();
+      });
+    }
+
+    async function boot() {
+      wireWindowActions();
+      if (window.kuroBriefing) {
+        shellState = await window.kuroBriefing.getState();
+        applyBriefingData(await window.kuroBriefing.getData());
+        window.kuroBriefing.onState((payload) => {
+          shellState = payload;
+          renderState();
+        });
+        window.kuroBriefing.onData((payload) => {
+          applyBriefingData(payload);
+        });
+      }
+      render();
+    }
+
+    boot().catch(() => render());
+  </script>
+</body>
+</html>

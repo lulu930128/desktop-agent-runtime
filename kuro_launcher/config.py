@@ -29,6 +29,19 @@ def _resolve_path(value: str, mapping: Dict[str, str]) -> Path:
     return Path(expanded)
 
 
+def _coerce_bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    return default
+
+
 @dataclass(frozen=True)
 class AppConfig:
     config_path: Path
@@ -49,6 +62,10 @@ class AppConfig:
     electron_lnk: Optional[Path]
     pet_electron_dir: Path
     pet_electron_preferred: bool
+    startup_character: str
+    startup_project: str
+    startup_outfit: str
+    startup_auto_start: bool
 
     bridge_host: str
     bridge_port: int
@@ -163,6 +180,9 @@ def load_config(config_path: Path) -> AppConfig:
     llm = cfg.get("llm") or {}
     openai = llm.get("openai") or {}
     bridge_cfg = cfg.get("bridge") or {}
+    startup_profile = cfg.get("startup_profile") or {}
+    if not isinstance(startup_profile, dict):
+        startup_profile = {}
 
     return AppConfig(
         config_path=config_path.resolve(),
@@ -182,6 +202,10 @@ def load_config(config_path: Path) -> AppConfig:
         electron_lnk=electron_lnk,
         pet_electron_dir=pet_electron_dir,
         pet_electron_preferred=pet_electron_preferred,
+        startup_character=str(startup_profile.get("character") or "").strip(),
+        startup_project=str(startup_profile.get("project") or "").strip(),
+        startup_outfit=str(startup_profile.get("outfit") or "").strip(),
+        startup_auto_start=_coerce_bool(startup_profile.get("auto_start"), False),
         bridge_host=str(bridge_net.get("host", "127.0.0.1")),
         bridge_port=int(bridge_net.get("port", 1188)),
         tts_host=str(tts_net.get("host", "127.0.0.1")),

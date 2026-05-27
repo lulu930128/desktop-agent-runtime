@@ -34,6 +34,11 @@ function startControlServer({
   readLive2DInspectorSnapshot,
   getShellStatus,
   isReaderVisible,
+  isBriefingVisible,
+  readBriefingData,
+  replaceBriefingSnapshot,
+  addBriefingMemoryCandidate,
+  setBriefingMemoryCandidateStatus,
   handleControlAction,
   applyRendererBackendConfig,
   log
@@ -45,6 +50,8 @@ function startControlServer({
       if (req.method === "GET" && requestUrl.pathname === "/status") {
         const renderer = await readRendererStatus();
         renderer.readerVisible = isReaderVisible();
+        renderer.briefingVisible =
+          typeof isBriefingVisible === "function" ? isBriefingVisible() : false;
         writeJson(res, 200, {
           ok: true,
           ...getShellStatus(),
@@ -64,12 +71,61 @@ function startControlServer({
         return;
       }
 
+      if (req.method === "GET" && requestUrl.pathname === "/briefing") {
+        const payload = typeof readBriefingData === "function"
+          ? readBriefingData()
+          : { ok: false, error: "Briefing store is not available." };
+        writeJson(res, payload.ok ? 200 : 503, payload);
+        return;
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/briefing/snapshot") {
+        const payload = parseRequestJson(await readRequestBody(req));
+        const result = typeof replaceBriefingSnapshot === "function"
+          ? replaceBriefingSnapshot(payload.snapshot || payload)
+          : { ok: false, error: "Briefing store is not available." };
+        writeJson(res, result.ok ? 200 : 400, result);
+        return;
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/briefing/memory-candidates") {
+        const payload = parseRequestJson(await readRequestBody(req));
+        const candidates = Array.isArray(payload.candidates)
+          ? payload.candidates
+          : [payload.candidate || payload];
+        const results = candidates.map((candidate) =>
+          typeof addBriefingMemoryCandidate === "function"
+            ? addBriefingMemoryCandidate(candidate)
+            : { ok: false, error: "Briefing store is not available." }
+        );
+        writeJson(res, results.every((item) => item.ok) ? 200 : 400, {
+          ok: results.every((item) => item.ok),
+          results,
+          data: results.find((item) => item.data)?.data || null
+        });
+        return;
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/briefing/memory-candidate-status") {
+        const payload = parseRequestJson(await readRequestBody(req));
+        const result = typeof setBriefingMemoryCandidateStatus === "function"
+          ? setBriefingMemoryCandidateStatus(
+              String(payload.id || ""),
+              String(payload.status || "pending")
+            )
+          : { ok: false, error: "Briefing store is not available." };
+        writeJson(res, result.ok ? 200 : 400, result);
+        return;
+      }
+
       if (req.method === "POST" && requestUrl.pathname === "/command") {
         const payload = parseRequestJson(await readRequestBody(req));
         const action = String(payload.action || "").trim();
         const result = await handleControlAction(action, payload);
         const renderer = await readRendererStatus();
         renderer.readerVisible = isReaderVisible();
+        renderer.briefingVisible =
+          typeof isBriefingVisible === "function" ? isBriefingVisible() : false;
         writeJson(res, 200, {
           ok: Boolean(result && result.ok),
           message: result && result.ok ? `command ${action} dispatched` : result.error || "command failed",
