@@ -266,6 +266,61 @@
         }
       ]
     },
+    "market_intelligence": {
+      "title": "Market Intelligence",
+      "description": "Open Market Intelligence local stock, market, watchlist evidence, and prompt-ready briefs.",
+      "intent_keywords": [
+        "OMI",
+        "Open Market Intelligence",
+        "股票",
+        "台股",
+        "大盤",
+        "市場",
+        "個股",
+        "自選股",
+        "watchlist",
+        "資料新鮮度",
+        "股價",
+        "走勢",
+        "籌碼",
+        "券商分點",
+        "外資",
+        "投信",
+        "法人",
+        "財報",
+        "營收",
+        "技術面",
+        "基本面",
+        "台積電",
+        "TSMC",
+        "TWSE",
+        "TPEX",
+        "TAIEX",
+        "ticker",
+        "短線",
+        "波段",
+        "投資研究",
+        "market",
+        "stock",
+        "portfolio"
+      ],
+      "default_tools": ["omi.ask"],
+      "tools": [
+        {
+          "name": "omi.ask",
+          "level": "read",
+          "capabilities": [
+            "market_data",
+            "stock_context",
+            "watchlist",
+            "data_freshness",
+            "brief"
+          ],
+          "risk": "read_only",
+          "when": "Use for Taiwan market, stock, watchlist, data freshness, and prompt-ready brief questions backed by local Open Market Intelligence data. Prefer mode=data_only or mode=brief. Do not request report generation, allow_llm, or allow_write unless the runtime policy is explicitly changed."
+        }
+      ]
+    },
     "runtime_control": {
       "title": "Runtime Control",
       "description": "Reserved category for launcher/runtime status and controlled restart actions.",

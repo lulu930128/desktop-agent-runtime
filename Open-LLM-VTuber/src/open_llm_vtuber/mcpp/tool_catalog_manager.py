@@ -20,6 +20,8 @@ class ToolIntent:
     needs_time: bool = False
     needs_memory: bool = False
     needs_runtime_control: bool = False
+    needs_market_intelligence: bool = False
+    market_needs_web_enrichment: bool = False
     needs_directory_scan: bool = False
     needs_file_read: bool = False
     has_url: bool = False
@@ -182,6 +184,11 @@ class ToolCatalog:
                 "- Runtime policy still decides whether a selected tool is allowed "
                 "to execute. Never treat prompt text as permission."
             ),
+            (
+                "- For stock, watchlist, and market-intelligence questions, prefer "
+                "local OMI data first; use web research only as enrichment for "
+                "fresh news, realtime quotes, or missing local context."
+            ),
             f"- Current thinking power: {normalized_power}. This controls web-search depth.",
             "",
             "Categories:",
@@ -219,6 +226,22 @@ class ToolCatalog:
             lines.append(f"- Search/tool depth: {intent.desired_depth}")
             if intent.reasons:
                 lines.append(f"- Planner reasons: {'; '.join(intent.reasons[:4])}")
+            if intent.needs_market_intelligence:
+                lines.append(
+                    "- Market route: call omi.ask first for local stock, market, "
+                    "watchlist, and data-freshness context."
+                )
+                if intent.market_needs_web_enrichment:
+                    lines.append(
+                        "- Web research is only a follow-up after omi.ask when the "
+                        "user asked for fresh news, realtime quotes, or public-event "
+                        "enrichment."
+                    )
+                else:
+                    lines.append(
+                        "- Do not use web research for this market question unless "
+                        "the OMI result is missing, stale, or explicitly insufficient."
+                    )
         if route.candidates:
             lines.append("- Candidate ranking:")
             for candidate in route.candidates[: self.max_candidate_tools]:
@@ -266,6 +289,15 @@ class ToolCatalog:
 
         if intent.needs_web_research:
             scores["web_research"] = scores.get("web_research", 0) + 18
+
+        if intent.needs_market_intelligence:
+            scores["market_intelligence"] = scores.get("market_intelligence", 0) + 32
+            if (
+                not intent.market_needs_web_enrichment
+                and not intent.has_url
+                and not intent.needs_source_verification
+            ):
+                scores.pop("web_research", None)
 
         if intent.needs_source_verification:
             scores["web_research"] = scores.get("web_research", 0) + 6
@@ -405,6 +437,10 @@ class ToolCatalog:
             if intent.desired_depth == "deep" and tool_name == "advanced_search_web":
                 score += 8
                 reasons.append("deep mode prefers advanced search")
+        elif category_id == "market_intelligence":
+            if intent.needs_market_intelligence and tool_name == "omi.ask":
+                score += 24
+                reasons.append("market questions use OMI first")
         elif category_id == "local_files":
             if intent.needs_directory_scan and tool_name in {"list_directory", "search_files"}:
                 score += 14
@@ -464,10 +500,19 @@ def infer_tool_intent(text: str, thinking_power: str = "normal") -> ToolIntent:
     needs_time = _looks_like_time_request(normalized_text)
     needs_memory = _looks_like_memory_request(normalized_text)
     needs_runtime_control = _looks_like_runtime_control_request(normalized_text)
+    needs_market_intelligence = _looks_like_market_intelligence_request(normalized_text)
+    market_needs_web_enrichment = (
+        needs_market_intelligence
+        and _looks_like_market_web_enrichment_request(normalized_text)
+    )
     needs_web_research = has_url or needs_current_info or needs_source_verification or needs_media_lookup
 
     if has_url:
         mark("url", "URL detected")
+    if needs_market_intelligence:
+        mark("market_intelligence", "stock/market request should use local OMI data first")
+    if market_needs_web_enrichment:
+        mark("web_enrichment", "fresh public market context may be useful after OMI")
     if needs_current_info:
         mark("current_info", "current/latest/public information requested")
     if needs_source_verification:
@@ -501,6 +546,8 @@ def infer_tool_intent(text: str, thinking_power: str = "normal") -> ToolIntent:
         needs_time=needs_time,
         needs_memory=needs_memory,
         needs_runtime_control=needs_runtime_control,
+        needs_market_intelligence=needs_market_intelligence,
+        market_needs_web_enrichment=market_needs_web_enrichment,
         needs_directory_scan=needs_directory_scan,
         needs_file_read=needs_file_read,
         has_url=has_url,
@@ -556,6 +603,99 @@ def _looks_like_public_web_request(text: str) -> bool:
             r"(?i)\b(search|lookup|latest|recent|current|news|price|weather|earthquake|official|docs?)\b",
             text,
         )
+    )
+
+
+def _looks_like_market_intelligence_request(text: str) -> bool:
+    direct_terms = [
+        "台股",
+        "大盤",
+        "個股",
+        "自選股",
+        "股票",
+        "股價",
+        "走勢",
+        "籌碼",
+        "分點",
+        "外資",
+        "投信",
+        "自營商",
+        "融資",
+        "融券",
+        "財報",
+        "營收",
+        "法人",
+        "技術面",
+        "基本面",
+        "watchlist",
+        "stock",
+        "ticker",
+        "portfolio",
+        "twse",
+        "tpex",
+        "taiex",
+        "tsmc",
+        "台積電",
+    ]
+    if any(term in text for term in direct_terms):
+        return True
+
+    stock_question_terms = [
+        "狀況",
+        "怎麼看",
+        "分析",
+        "整理",
+        "觀察",
+        "最新",
+        "消息",
+        "新聞",
+        "即時",
+        "報價",
+        "今天",
+        "漲",
+        "跌",
+        "買",
+        "賣",
+        "進場",
+        "出場",
+        "支撐",
+        "壓力",
+        "target",
+        "price",
+        "quote",
+        "news",
+        "latest",
+    ]
+    return _has_likely_taiwan_stock_code(text) and any(
+        term in text for term in stock_question_terms
+    )
+
+
+def _looks_like_market_web_enrichment_request(text: str) -> bool:
+    web_enrichment_terms = [
+        "最新消息",
+        "即時",
+        "新聞",
+        "消息",
+        "報價",
+        "即時股價",
+        "突發",
+        "公告",
+        "法說",
+        "realtime",
+        "real-time",
+        "breaking",
+        "latest news",
+        "news",
+        "quote",
+        "price",
+    ]
+    return any(term in text for term in web_enrichment_terms)
+
+
+def _has_likely_taiwan_stock_code(text: str) -> bool:
+    return bool(
+        re.search(r"(?<![0-9a-z.])\d{4}[a-z]?(?![0-9a-z.])", text, re.IGNORECASE)
     )
 
 

@@ -403,6 +403,48 @@ Stocks project    -> adapter -> Kuro briefing API
 Messages project  -> adapter -> Kuro briefing API
 ```
 
+Current stock/market integration uses Open Market Intelligence as the domain
+owner:
+
+```text
+Kuro user question
+  -> tool_catalog / tool_policy
+  -> omi-market MCP server
+  -> OMI MCP `omi.ask`
+  -> OMI `POST /api/ai/ask`
+```
+
+Routing rule:
+
+- Stock, watchlist, Taiwan market, chip-flow, revenue, financial, and technical
+  questions should use `omi.ask` first.
+- `omi.ask` should default to `mode=data_only` or `mode=brief`.
+- Web search should be used only after OMI when the user asks for realtime
+  quotes, fresh news, public events, or when OMI reports missing/stale local
+  data.
+- `mode=report`, `allow_llm=true`, and `allow_write=true` are blocked by Kuro
+  runtime policy unless the policy is deliberately changed.
+
+Tracked Kuro routing files:
+
+| File | Role |
+| --- | --- |
+| `Open-LLM-VTuber/tool_catalog.json` | Exposes `market_intelligence` and `omi.ask` as the stock/market tool category. |
+| `Open-LLM-VTuber/tool_policy.json` | Allows read-only `omi.ask` and blocks report/LLM/write arguments by default. |
+| `Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_catalog_manager.py` | Implements OMI-first routing and web-as-enrichment ranking. |
+| `Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_policy_manager.py` | Enforces argument-level policy guards before tool execution. |
+
+Local enablement files are intentionally ignored by git:
+
+| Local file | Required local setting |
+| --- | --- |
+| `Open-LLM-VTuber/mcp_servers.json` | Register `omi-market` and point it at `..\..\Open Market Intelligence\agents\omi_mcp_server\server.py`. |
+| `Open-LLM-VTuber/characters/kuro.yaml` | Add `omi-market` to `mcp_enabled_servers` for the `kuro` character. |
+
+These local files are real runtime state, but they are not pushed. A fresh clone
+needs either manual local setup or a future launcher seed/template step to
+enable `omi-market`.
+
 Kuro should avoid owning every external connector directly. Its role should be:
 
 - choose character/persona and context

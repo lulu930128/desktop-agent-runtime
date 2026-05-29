@@ -64,6 +64,10 @@ class ToolPolicy:
                 reason=f"Tool '{tool_name}' requires confirmation, but this runtime has no confirmation flow yet.",
             )
 
+        argument_decision = self._check_argument_rules(tool_name, tool_cfg, args)
+        if not argument_decision.allowed:
+            return argument_decision
+
         path_decision = self._check_path_args(tool_name, tool_cfg, args)
         if not path_decision.allowed:
             return path_decision
@@ -73,6 +77,39 @@ class ToolPolicy:
             return url_decision
 
         return ToolPolicyDecision(allowed=True, status="allowed", reason="Allowed by runtime policy.")
+
+    def _check_argument_rules(
+        self,
+        tool_name: str,
+        tool_cfg: dict[str, Any],
+        args: dict[str, Any],
+    ) -> ToolPolicyDecision:
+        deny_truthy_args = tool_cfg.get("deny_truthy_args") or []
+        if isinstance(deny_truthy_args, list):
+            for arg_name in deny_truthy_args:
+                arg_key = str(arg_name)
+                if _is_truthy_arg(args.get(arg_key)):
+                    return ToolPolicyDecision(
+                        allowed=False,
+                        status="blocked",
+                        reason=f"Tool '{tool_name}' cannot use argument '{arg_key}' under the current policy.",
+                    )
+
+        deny_values = tool_cfg.get("deny_values") or {}
+        if isinstance(deny_values, dict):
+            for arg_name, blocked_values in deny_values.items():
+                arg_key = str(arg_name)
+                if arg_key not in args:
+                    continue
+                blocked_set = _normalized_blocked_values(blocked_values)
+                if _normalized_arg_value(args.get(arg_key)) in blocked_set:
+                    return ToolPolicyDecision(
+                        allowed=False,
+                        status="blocked",
+                        reason=f"Tool '{tool_name}' cannot use value '{args.get(arg_key)}' for argument '{arg_key}' under the current policy.",
+                    )
+
+        return ToolPolicyDecision(True, "allowed", "Allowed by runtime policy.")
 
     def _check_path_args(
         self,
@@ -185,3 +222,25 @@ def _default_policy_path() -> Path | None:
         if candidate.exists():
             return candidate
     return candidates[-1]
+
+
+def _is_truthy_arg(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return bool(value)
+
+
+def _normalized_arg_value(value: Any) -> str:
+    return str(value).strip().lower()
+
+
+def _normalized_blocked_values(values: Any) -> set[str]:
+    if isinstance(values, list):
+        return {_normalized_arg_value(item) for item in values}
+    return {_normalized_arg_value(values)}
