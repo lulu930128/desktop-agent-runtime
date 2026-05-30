@@ -159,9 +159,11 @@ class ServiceContext:
 
                 # 3. Initialize ToolManager with the fetched formatted tools
 
-                _, raw_tools_dict = await self.tool_adapter.get_server_and_tool_info(
-                    enabled_servers
-                )
+                raw_tools_dict = self.tool_adapter.get_last_formatted_tools_dict()
+                if not raw_tools_dict:
+                    _, raw_tools_dict = await self.tool_adapter.get_server_and_tool_info(
+                        enabled_servers
+                    )
                 self.tool_manager = ToolManager(
                     formatted_tools_openai=openai_tools,
                     formatted_tools_claude=claude_tools,

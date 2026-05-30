@@ -266,6 +266,94 @@
         }
       ]
     },
+    "mail": {
+      "title": "Mail",
+      "description": "Gmail read-only authorization, unread mail, recent search, and daily brief snapshots.",
+      "intent_keywords": [
+        "mail",
+        "gmail",
+        "email",
+        "inbox",
+        "unread",
+        "sender",
+        "subject",
+        "newsletter",
+        "\u4fe1\u4ef6",
+        "\u90f5\u4ef6",
+        "\u6536\u4ef6",
+        "\u6536\u4ef6\u5323",
+        "\u4fe1\u7bb1",
+        "\u672a\u8b80",
+        "\u672a\u8b80\u4fe1",
+        "\u4eca\u5929\u7684\u4fe1"
+      ],
+      "default_tools": ["mail.daily_brief"],
+      "tools": [
+        {
+          "name": "mail.auth_status",
+          "level": "light",
+          "capabilities": ["mail", "gmail", "auth_status"],
+          "risk": "read_only",
+          "when": "Use to check whether Gmail OAuth is configured and authorized."
+        },
+        {
+          "name": "mail.auth_start",
+          "level": "setup",
+          "capabilities": ["mail", "gmail", "authorization"],
+          "risk": "local_auth",
+          "when": "Use only when the user asks to connect or re-authorize Gmail."
+        },
+        {
+          "name": "mail.auth_finish",
+          "level": "setup",
+          "capabilities": ["mail", "gmail", "authorization"],
+          "risk": "local_auth",
+          "when": "Use only after the user provides the Google OAuth redirected URL."
+        },
+        {
+          "name": "mail.list_unread",
+          "level": "read",
+          "capabilities": ["mail", "gmail", "unread"],
+          "risk": "read_only",
+          "when": "Use for unread Gmail summaries. It does not mark mail as read."
+        },
+        {
+          "name": "mail.search_recent",
+          "level": "search",
+          "capabilities": ["mail", "gmail", "search"],
+          "risk": "read_only",
+          "when": "Use for recent Gmail searches by sender, subject, keyword, or Gmail query syntax."
+        },
+        {
+          "name": "mail.get_message_summary",
+          "level": "read",
+          "capabilities": ["mail", "gmail", "message_summary"],
+          "risk": "read_only",
+          "when": "Use when a specific Gmail message id needs a metadata/snippet summary."
+        },
+        {
+          "name": "mail.get_message_detail",
+          "level": "read",
+          "capabilities": ["mail", "gmail", "message_detail", "message_body", "attachment_metadata"],
+          "risk": "read_only",
+          "when": "Use only when the user asks to open or read a specific Gmail message body. It does not download attachments or modify the mailbox."
+        },
+        {
+          "name": "mail.daily_brief",
+          "level": "read",
+          "capabilities": ["mail", "gmail", "brief", "dashboard_snapshot"],
+          "risk": "read_only",
+          "when": "Use for a daily Gmail brief and Kuro Briefing-compatible snapshot. It returns JSON and does not modify the mailbox."
+        },
+        {
+          "name": "mail.update_briefing",
+          "level": "read",
+          "capabilities": ["mail", "gmail", "brief", "dashboard_snapshot", "dashboard_update"],
+          "risk": "read_only_local_update",
+          "when": "Use when the user asks to update or refresh the Kuro Briefing panel from Gmail. It modifies only the local dashboard snapshot and does not modify the mailbox."
+        }
+      ]
+    },
     "market_intelligence": {
       "title": "Market Intelligence",
       "description": "Open Market Intelligence local stock, market, watchlist evidence, and prompt-ready briefs.",

@@ -3,6 +3,7 @@
 import shutil
 import json
 
+from datetime import timedelta
 from pathlib import Path
 from typing import Dict, Optional, Union, Any
 from loguru import logger
@@ -11,6 +12,37 @@ from .types import MCPServer
 from .utils.path import validate_file
 
 DEFAULT_CONFIG_PATH = "mcp_servers.json"
+DEFAULT_TIMEOUT_SECONDS = 30
+
+
+def _normalize_timeout(value: Any) -> timedelta:
+    """Normalize JSON timeout values into the type expected by mcp.ClientSession."""
+    if isinstance(value, timedelta):
+        return value
+    if value is None:
+        return timedelta(seconds=DEFAULT_TIMEOUT_SECONDS)
+    if isinstance(value, (int, float)):
+        seconds = float(value)
+    elif isinstance(value, str):
+        try:
+            seconds = float(value.strip())
+        except ValueError:
+            logger.warning(
+                f"MCPSR: Invalid timeout value '{value}'. Using default timeout."
+            )
+            return timedelta(seconds=DEFAULT_TIMEOUT_SECONDS)
+    else:
+        logger.warning(
+            f"MCPSR: Unsupported timeout type '{type(value).__name__}'. Using default timeout."
+        )
+        return timedelta(seconds=DEFAULT_TIMEOUT_SECONDS)
+
+    if seconds <= 0:
+        logger.warning(
+            f"MCPSR: Non-positive timeout value '{value}'. Using default timeout."
+        )
+        return timedelta(seconds=DEFAULT_TIMEOUT_SECONDS)
+    return timedelta(seconds=seconds)
 
 
 class ServerRegistry:
@@ -86,7 +118,7 @@ class ServerRegistry:
                 args=server_details["args"],
                 env=server_details.get("env", None),
                 cwd=server_details.get("cwd", None),
-                timeout=server_details.get("timeout", None),
+                timeout=_normalize_timeout(server_details.get("timeout", None)),
             )
             logger.debug(f"MCPSR: Loaded server: '{server_name}'.")
 

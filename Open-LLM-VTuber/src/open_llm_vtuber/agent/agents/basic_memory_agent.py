@@ -342,6 +342,19 @@ class BasicMemoryAgent(AgentInterface):
 
         return "\n".join(message_parts).strip()
 
+    def _compose_tool_route_text(self, current_text: str) -> str:
+        """Include recent context so short follow-up turns can still route to tools."""
+        parts: List[str] = []
+        for message in self._memory[-6:]:
+            role = str(message.get("role") or "message")
+            content = self._message_text_for_budget(message)
+            if content:
+                parts.append(f"{role}: {content[:500]}")
+        if current_text:
+            parts.append(f"user: {current_text}")
+        route_text = "\n".join(parts).strip()
+        return route_text[-2400:] if route_text else current_text
+
     def _to_messages(self, input_data: BatchInput) -> List[Dict[str, Any]]:
         """Prepare messages for LLM API call."""
         messages = self._pack_short_term_memory()
@@ -760,6 +773,7 @@ class BasicMemoryAgent(AgentInterface):
             self.prompt_mode_flag = False
 
             request_text_for_tools = self._to_text_prompt(input_data)
+            route_request_text = self._compose_tool_route_text(request_text_for_tools)
             messages = self._to_messages(input_data)
             tools = None
             tool_mode = None
@@ -774,13 +788,13 @@ class BasicMemoryAgent(AgentInterface):
                 if isinstance(self._llm, ClaudeAsyncLLM):
                     tool_mode = "Claude"
                     tools = self._tool_manager.get_formatted_tools(
-                        "Claude", request_text=request_text_for_tools
+                        "Claude", request_text=route_request_text
                     )
                     llm_supports_native_tools = True
                 elif isinstance(self._llm, OpenAICompatibleAsyncLLM):
                     tool_mode = "OpenAI"
                     tools = self._tool_manager.get_formatted_tools(
-                        "OpenAI", request_text=request_text_for_tools
+                        "OpenAI", request_text=route_request_text
                     )
                     llm_supports_native_tools = True
                 else:

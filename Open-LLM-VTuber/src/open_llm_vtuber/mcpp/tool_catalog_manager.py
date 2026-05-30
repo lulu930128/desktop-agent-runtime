@@ -20,6 +20,8 @@ class ToolIntent:
     needs_time: bool = False
     needs_memory: bool = False
     needs_runtime_control: bool = False
+    needs_mail: bool = False
+    needs_dashboard_update: bool = False
     needs_market_intelligence: bool = False
     market_needs_web_enrichment: bool = False
     needs_directory_scan: bool = False
@@ -318,6 +320,13 @@ class ToolCatalog:
         if intent.needs_runtime_control:
             scores["runtime_control"] = scores.get("runtime_control", 0) + 14
 
+        if intent.needs_mail:
+            scores["mail"] = scores.get("mail", 0) + 32
+            if not intent.has_path and not intent.needs_directory_scan and not intent.needs_file_read:
+                scores.pop("local_files", None)
+            if not intent.has_url and not intent.needs_source_verification and not intent.needs_media_lookup:
+                scores.pop("web_research", None)
+
         if re.search(r"(?i)\b(error|traceback|exception|config|prompt|launcher|runtime)\b", normalized_text):
             scores["local_files"] = scores.get("local_files", 0) + 2
 
@@ -441,6 +450,26 @@ class ToolCatalog:
             if intent.needs_market_intelligence and tool_name == "omi.ask":
                 score += 24
                 reasons.append("market questions use OMI first")
+        elif category_id == "mail":
+            if intent.needs_mail:
+                if tool_name == "mail.update_briefing":
+                    score += 22
+                    reasons.append("mail dashboard refresh")
+                    if intent.needs_dashboard_update:
+                        score += 32
+                        reasons.append("explicit dashboard update request")
+                elif tool_name == "mail.daily_brief":
+                    score += 24
+                    reasons.append("mail requests prefer daily brief first")
+                elif tool_name == "mail.list_unread":
+                    score += 20
+                    reasons.append("mail unread request")
+                elif tool_name == "mail.search_recent":
+                    score += 16
+                    reasons.append("mail recent search")
+                elif tool_name == "mail.auth_status":
+                    score += 10
+                    reasons.append("mail auth status is lightweight")
         elif category_id == "local_files":
             if intent.needs_directory_scan and tool_name in {"list_directory", "search_files"}:
                 score += 14
@@ -500,6 +529,8 @@ def infer_tool_intent(text: str, thinking_power: str = "normal") -> ToolIntent:
     needs_time = _looks_like_time_request(normalized_text)
     needs_memory = _looks_like_memory_request(normalized_text)
     needs_runtime_control = _looks_like_runtime_control_request(normalized_text)
+    needs_mail = _looks_like_mail_request(normalized_text)
+    needs_dashboard_update = needs_mail and _looks_like_dashboard_update_request(normalized_text)
     needs_market_intelligence = _looks_like_market_intelligence_request(normalized_text)
     market_needs_web_enrichment = (
         needs_market_intelligence
@@ -533,6 +564,10 @@ def infer_tool_intent(text: str, thinking_power: str = "normal") -> ToolIntent:
         mark("memory", "memory operation requested")
     if needs_runtime_control:
         mark("runtime_control", "runtime/launcher control requested")
+    if needs_mail:
+        mark("mail", "Gmail/mail request should use read-only mail tools")
+    if needs_dashboard_update:
+        mark("dashboard_update", "mail request should refresh the local briefing panel")
 
     confidence = min(1.0, 0.25 + len(labels) * 0.12 + (0.16 if has_url or has_path else 0.0))
     return ToolIntent(
@@ -546,6 +581,8 @@ def infer_tool_intent(text: str, thinking_power: str = "normal") -> ToolIntent:
         needs_time=needs_time,
         needs_memory=needs_memory,
         needs_runtime_control=needs_runtime_control,
+        needs_mail=needs_mail,
+        needs_dashboard_update=needs_dashboard_update,
         needs_market_intelligence=needs_market_intelligence,
         market_needs_web_enrichment=market_needs_web_enrichment,
         needs_directory_scan=needs_directory_scan,
@@ -604,6 +641,43 @@ def _looks_like_public_web_request(text: str) -> bool:
             text,
         )
     )
+
+
+def _looks_like_mail_request(text: str) -> bool:
+    direct_terms = [
+        "gmail",
+        "email",
+        "mail",
+        "inbox",
+        "unread",
+        "sender",
+        "subject",
+        "newsletter",
+        "\u4fe1\u4ef6",
+        "\u90f5\u4ef6",
+        "\u6536\u4ef6",
+        "\u6536\u4ef6\u5323",
+        "\u4fe1\u7bb1",
+        "\u672a\u8b80",
+        "\u672a\u8b80\u4fe1",
+    ]
+    return any(term in text for term in direct_terms)
+
+
+def _looks_like_dashboard_update_request(text: str) -> bool:
+    terms = [
+        "update",
+        "refresh",
+        "dashboard",
+        "briefing",
+        "panel",
+        "\u66f4\u65b0",
+        "\u5237\u65b0",
+        "\u7c21\u5831",
+        "\u9762\u677f",
+        "\u770b\u677f",
+    ]
+    return any(term in text for term in terms)
 
 
 def _looks_like_market_intelligence_request(text: str) -> bool:

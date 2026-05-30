@@ -18,6 +18,7 @@ const {
   normalizeReaderAttachments
 } = require("./main-process/reader-attachments");
 const { createBriefingStore } = require("./main-process/briefing-store");
+const { createMailBriefingService } = require("./main-process/mail-briefing-service");
 const { startControlServer: createControlServer } = require("./main-process/control-server");
 const { createPetContextMenu, createTrayMenu } = require("./main-process/menus");
 const { createPetLogger } = require("./main-process/pet-logger");
@@ -36,6 +37,7 @@ if (TEMP_MAX_RENDER_PERFORMANCE) {
 }
 
 const projectRoot = path.resolve(__dirname, "..");
+const repoRoot = path.resolve(projectRoot, "..");
 const rendererEntry = path.join(projectRoot, "renderer-dist", "index.html");
 const iconPath = path.join(projectRoot, "src", "assets", "favicon.ico");
 const readerEntry = path.join(__dirname, "reader-window.html");
@@ -62,6 +64,7 @@ let briefingStorePath = "";
 let hoveredComponents = new Map();
 let activeWindowDrag = null;
 let controlServer = null;
+let mailBriefingService = null;
 const taskbarHiddenNativeHandles = new Set();
 let latestFrontendState = {
   wsConnected: false,
@@ -587,6 +590,7 @@ function getBriefingStatePayload() {
     ),
     briefingDate: data?.snapshot?.date || "",
     briefingUpdatedAt: data?.snapshot?.updatedAt || data?.updatedAt || "",
+    mailBriefing: mailBriefingService ? mailBriefingService.readStatus() : null,
     pendingMemoryCount,
     updatedAt: new Date().toISOString()
   };
@@ -604,6 +608,76 @@ function getBriefingDataPayload() {
     ok: true,
     ...briefingStore.getData()
   };
+}
+
+function readMailBriefingStatus() {
+  return mailBriefingService ? mailBriefingService.readStatus() : null;
+}
+
+function readMailPreferences() {
+  if (!mailBriefingService) {
+    return {
+      ok: false,
+      error: "Mail briefing service is not ready."
+    };
+  }
+  return mailBriefingService.readPreferences();
+}
+
+function saveMailPreferences(preferences) {
+  if (!mailBriefingService) {
+    return {
+      ok: false,
+      error: "Mail briefing service is not ready."
+    };
+  }
+  const result = mailBriefingService.savePreferences(preferences);
+  broadcastBriefingState();
+  return result;
+}
+
+function readMailRules() {
+  if (!mailBriefingService) {
+    return {
+      ok: false,
+      error: "Mail briefing service is not ready."
+    };
+  }
+  return mailBriefingService.readRules();
+}
+
+function saveMailRules(rulesPayload) {
+  if (!mailBriefingService) {
+    return {
+      ok: false,
+      error: "Mail briefing service is not ready."
+    };
+  }
+  const result = mailBriefingService.saveRules(rulesPayload);
+  broadcastBriefingState();
+  return result;
+}
+
+async function readMailMessage(messageId) {
+  if (!mailBriefingService) {
+    return {
+      ok: false,
+      error: "Mail briefing service is not ready."
+    };
+  }
+  return mailBriefingService.readMessage(messageId);
+}
+
+async function refreshMailBriefing() {
+  if (!mailBriefingService) {
+    return {
+      ok: false,
+      error: "Mail briefing service is not ready."
+    };
+  }
+  const result = await mailBriefingService.refreshOnce();
+  broadcastBriefingState();
+  return result;
 }
 
 function broadcastReaderState() {
@@ -1330,6 +1404,13 @@ function startControlServer() {
     isReaderVisible: () => Boolean(appState.readerVisible),
     isBriefingVisible: () => Boolean(appState.briefingVisible),
     readBriefingData: getBriefingDataPayload,
+    readMailBriefingStatus,
+    readMailPreferences,
+    saveMailPreferences,
+    readMailRules,
+    saveMailRules,
+    readMailMessage,
+    refreshMailBriefing,
     replaceBriefingSnapshot,
     addBriefingMemoryCandidate,
     setBriefingMemoryCandidateStatus,
@@ -1761,6 +1842,12 @@ function registerIpc() {
 
   ipcMain.handle("briefing-get-state", () => getBriefingStatePayload());
   ipcMain.handle("briefing-get-data", () => getBriefingDataPayload());
+  ipcMain.handle("briefing-refresh-mail", async () => refreshMailBriefing());
+  ipcMain.handle("briefing-get-mail-preferences", () => readMailPreferences());
+  ipcMain.handle("briefing-save-mail-preferences", (_event, preferences) => saveMailPreferences(preferences));
+  ipcMain.handle("briefing-get-mail-rules", () => readMailRules());
+  ipcMain.handle("briefing-save-mail-rules", (_event, rulesPayload) => saveMailRules(rulesPayload));
+  ipcMain.handle("briefing-get-mail-message", (_event, messageId) => readMailMessage(messageId));
 
   ipcMain.on("briefing-close", () => {
     if (briefingWindow && !briefingWindow.isDestroyed()) {
@@ -1937,6 +2024,14 @@ if (!singleInstanceLock) {
 
     registerIpc();
     startControlServer();
+    mailBriefingService = createMailBriefingService({
+      repoRoot,
+      controlHost: CONTROL_HOST,
+      controlPort: CONTROL_PORT,
+      log: petLog,
+      onStatusChange: broadcastBriefingState
+    });
+    mailBriefingService.start();
     createTray();
     createWindow();
     createReaderWindow();
@@ -1968,6 +2063,14 @@ if (!singleInstanceLock) {
   });
 
   app.on("before-quit", () => {
+    if (mailBriefingService) {
+      try {
+        mailBriefingService.stop();
+      } catch (error) {
+        petLog("mail-briefing-service-stop-error", error);
+      }
+      mailBriefingService = null;
+    }
     if (controlServer) {
       try {
         controlServer.close();

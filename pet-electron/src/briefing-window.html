@@ -271,6 +271,42 @@
       white-space: nowrap;
     }
 
+    .icon-button {
+      width: 28px;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      -webkit-app-region: no-drag;
+    }
+
+    .icon-button:hover {
+      border-color: rgba(167, 126, 255, 0.65);
+      background: rgba(167, 126, 255, 0.12);
+    }
+
+    .icon-button:disabled {
+      cursor: wait;
+      opacity: 0.55;
+    }
+
+    .icon-button.loading {
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
     .dot {
       width: 7px;
       height: 7px;
@@ -386,6 +422,534 @@
       white-space: nowrap;
     }
 
+    .mail-view {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .mail-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .mail-toolbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .mail-side-actions {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+    }
+
+    .mail-side-actions .mail-toolbar {
+      align-items: stretch;
+      flex-direction: column;
+      margin-bottom: 0;
+    }
+
+    .mail-side-actions .mail-toolbar .pill {
+      justify-content: center;
+    }
+
+    .mail-side-actions .mail-toolbar-actions {
+      justify-content: center;
+    }
+
+    .mail-main,
+    .mail-side,
+    .mail-summary-card,
+    .mail-message {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: color-mix(in srgb, var(--surface) 92%, #ffffff 8%);
+    }
+
+    .mail-summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .mail-summary-card {
+      min-height: 74px;
+      padding: 12px;
+    }
+
+    .mail-summary-card strong {
+      display: block;
+      font-size: 24px;
+      line-height: 1;
+    }
+
+    .mail-summary-card span {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .mail-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .mail-message {
+      padding: 12px;
+      cursor: pointer;
+      -webkit-app-region: no-drag;
+    }
+
+    .mail-message:hover,
+    .mail-message:focus {
+      border-color: rgba(115, 214, 207, 0.5);
+      background: color-mix(in srgb, var(--surface-2) 92%, #ffffff 8%);
+      outline: 0;
+    }
+
+    .mail-message.high {
+      border-color: color-mix(in srgb, var(--yellow) 45%, var(--line) 55%);
+    }
+
+    .mail-message.critical {
+      border-color: color-mix(in srgb, #ff6b6b 65%, var(--line) 35%);
+      background: color-mix(in srgb, var(--surface) 88%, #ff6b6b 12%);
+    }
+
+    .mail-message.medium {
+      border-color: color-mix(in srgb, var(--cyan) 35%, var(--line) 65%);
+    }
+
+    .mail-message.muted {
+      opacity: 0.68;
+    }
+
+    .mail-message-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: start;
+    }
+
+    .mail-subject {
+      min-width: 0;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+
+    .mail-sender,
+    .mail-snippet,
+    .mail-meta {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .mail-sender {
+      margin-top: 4px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .mail-snippet {
+      margin-top: 8px;
+      color: var(--soft);
+      user-select: text;
+    }
+
+    .mail-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    .mail-tag {
+      min-height: 20px;
+      display: inline-flex;
+      align-items: center;
+      padding: 0 7px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--soft);
+      font-size: 11px;
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .mail-score {
+      min-width: 44px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      color: #0a0c11;
+      background: var(--cyan);
+      text-align: center;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .mail-message.high .mail-score {
+      background: var(--yellow);
+    }
+
+    .mail-message.critical .mail-score {
+      background: #ff6b6b;
+      color: #10131a;
+    }
+
+    .mail-message.muted .mail-score {
+      background: #8a92a6;
+      color: #10131a;
+    }
+
+    .mail-side {
+      padding: 12px;
+    }
+
+    .mail-side h2 {
+      margin: 0 0 10px;
+      font-size: 13px;
+    }
+
+    .mail-side dl {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      font-size: 12px;
+    }
+
+    .mail-side dt {
+      color: var(--muted);
+    }
+
+    .mail-side dd {
+      margin: 2px 0 0;
+      color: var(--soft);
+      overflow-wrap: anywhere;
+      user-select: text;
+    }
+
+    .mail-empty {
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      color: var(--muted);
+      background: color-mix(in srgb, var(--surface) 92%, #ffffff 8%);
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: var(--titlebar-height) 0 0;
+      display: grid;
+      place-items: start center;
+      padding: 42px 20px;
+      background: rgba(0, 0, 0, 0.52);
+      z-index: 20;
+    }
+
+    .modal-backdrop.hidden {
+      display: none;
+    }
+
+    .settings-dialog {
+      width: min(720px, 100%);
+      max-height: calc(100vh - 120px);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius);
+      background: #11151e;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+      overflow: hidden;
+    }
+
+    .message-dialog {
+      width: min(920px, 100%);
+    }
+
+    .message-content {
+      min-height: 0;
+      padding: 16px;
+      overflow: auto;
+      user-select: text;
+    }
+
+    .message-meta-grid {
+      display: grid;
+      grid-template-columns: 86px minmax(0, 1fr);
+      gap: 8px 12px;
+      margin-bottom: 14px;
+      font-size: 12px;
+    }
+
+    .message-meta-grid dt {
+      color: var(--muted);
+    }
+
+    .message-meta-grid dd {
+      margin: 0;
+      color: var(--soft);
+      overflow-wrap: anywhere;
+    }
+
+    .message-body-text {
+      min-height: 180px;
+      margin: 0;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.035);
+      color: var(--text);
+      font: 12px/1.65 "Segoe UI", "Microsoft JhengHei", system-ui, sans-serif;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .attachment-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .attachment-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.035);
+      font-size: 12px;
+    }
+
+    .attachment-item strong {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .attachment-item span {
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .settings-head,
+    .settings-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .settings-actions {
+      justify-content: flex-end;
+      border-top: 1px solid var(--line);
+      border-bottom: 0;
+    }
+
+    .settings-head h2 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .settings-body {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      padding: 16px;
+      overflow: auto;
+    }
+
+    .settings-body > .wide {
+      grid-column: 1 / -1;
+    }
+
+    .settings-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .settings-tabs {
+      display: inline-flex;
+      gap: 4px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.035);
+      width: max-content;
+    }
+
+    .settings-tab {
+      min-height: 28px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      padding: 0 12px;
+      cursor: pointer;
+    }
+
+    .settings-tab.active {
+      background: rgba(115, 214, 207, 0.16);
+      color: var(--text);
+    }
+
+    .settings-panel.hidden {
+      display: none;
+    }
+
+    .rules-settings-panel {
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr);
+      gap: 14px;
+      min-height: 420px;
+    }
+
+    .rule-list-panel,
+    .rule-editor {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, 0.025);
+      padding: 12px;
+    }
+
+    .rule-list-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+      font-size: 12px;
+    }
+
+    .rule-editor-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .rule-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .rule-card {
+      width: 100%;
+      min-height: 52px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.035);
+      color: var(--text);
+      padding: 8px;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .rule-card.active {
+      border-color: rgba(115, 214, 207, 0.65);
+      background: rgba(115, 214, 207, 0.12);
+    }
+
+    .rule-card strong,
+    .rule-card span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .rule-card span {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field.wide {
+      grid-column: 1 / -1;
+    }
+
+    .field label {
+      color: var(--soft);
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .field input,
+    .field select,
+    .field textarea {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      padding: 8px 10px;
+      font: inherit;
+      font-size: 12px;
+      user-select: text;
+    }
+
+    .field textarea {
+      min-height: 88px;
+      resize: vertical;
+    }
+
+    .rule-editor textarea {
+      min-height: 74px;
+    }
+
+    .field.checkbox {
+      grid-template-columns: auto 1fr;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .field.checkbox input {
+      width: auto;
+    }
+
+    .command-button {
+      min-height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text);
+      padding: 0 12px;
+      cursor: pointer;
+    }
+
+    .command-button.primary {
+      border-color: rgba(115, 214, 207, 0.55);
+      background: rgba(115, 214, 207, 0.14);
+    }
+
     .accent-cyan .item::before,
     .accent-cyan .nav-icon {
       background: var(--cyan);
@@ -426,6 +990,17 @@
       .status-row {
         justify-content: flex-start;
       }
+
+      .mail-view {
+        grid-template-columns: 1fr;
+      }
+
+      .mail-summary,
+      .settings-body,
+      .settings-grid,
+      .rules-settings-panel {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
@@ -464,6 +1039,149 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <div class="modal-backdrop hidden" id="mailSettingsOverlay" aria-hidden="true">
+    <section class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="mailSettingsTitle">
+      <div class="settings-head">
+        <h2 id="mailSettingsTitle">Mail 設定</h2>
+        <button type="button" class="icon-button" id="mailSettingsClose" aria-label="關閉 Mail 設定">×</button>
+      </div>
+      <div class="settings-body">
+        <div class="settings-tabs wide" role="tablist" aria-label="Mail 設定分類">
+          <button type="button" class="settings-tab active" id="mailSettingsBasicTab" data-settings-panel="basic">一般</button>
+          <button type="button" class="settings-tab" id="mailSettingsRulesTab" data-settings-panel="rules">必做事件</button>
+        </div>
+
+        <div class="settings-panel wide" id="mailSettingsBasicPanel">
+          <div class="settings-grid">
+            <div class="field">
+              <label for="mailMaxResults">每次刷新信件數</label>
+              <input id="mailMaxResults" type="number" min="1" max="500" step="1" />
+            </div>
+            <div class="field">
+              <label for="mailNewerThanDays">查詢天數</label>
+              <input id="mailNewerThanDays" type="number" min="1" max="365" step="1" />
+            </div>
+            <div class="field">
+              <label for="mailIntervalSeconds">自動刷新秒數</label>
+              <input id="mailIntervalSeconds" type="number" min="300" max="86400" step="60" />
+            </div>
+            <label class="field checkbox" for="mailUnreadOnly">
+              <input id="mailUnreadOnly" type="checkbox" />
+              <span>只看未讀</span>
+            </label>
+            <div class="field wide">
+              <label for="mailExtraQuery">額外 Gmail 查詢</label>
+              <input id="mailExtraQuery" type="text" />
+            </div>
+            <div class="field">
+              <label for="mailFocusSenders">特別關注寄件者</label>
+              <textarea id="mailFocusSenders" spellcheck="false"></textarea>
+            </div>
+            <div class="field">
+              <label for="mailFocusDomains">特別關注網域</label>
+              <textarea id="mailFocusDomains" spellcheck="false"></textarea>
+            </div>
+            <div class="field">
+              <label for="mailFocusKeywords">特別關注關鍵字</label>
+              <textarea id="mailFocusKeywords" spellcheck="false"></textarea>
+            </div>
+            <div class="field">
+              <label for="mailIgnoreKeywords">忽略關鍵字</label>
+              <textarea id="mailIgnoreKeywords" spellcheck="false"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-panel rules-settings-panel wide hidden" id="mailSettingsRulesPanel">
+          <div class="rule-list-panel">
+            <div class="rule-list-head">
+              <strong>必做事件規則</strong>
+              <button type="button" class="command-button" id="mailRuleAdd">新增</button>
+            </div>
+            <div class="rule-list" id="mailRuleList"></div>
+          </div>
+          <div class="rule-editor">
+            <div class="rule-editor-head">
+              <div class="field checkbox">
+                <input id="mailRuleEnabled" type="checkbox" />
+                <label for="mailRuleEnabled">啟用這條必做事件</label>
+              </div>
+              <button type="button" class="command-button" id="mailRuleDelete">刪除</button>
+            </div>
+            <div class="settings-grid">
+              <div class="field">
+                <label for="mailRuleName">規則名稱</label>
+                <input id="mailRuleName" type="text" />
+              </div>
+              <div class="field">
+                <label for="mailRuleId">規則 ID</label>
+                <input id="mailRuleId" type="text" />
+              </div>
+              <div class="field">
+                <label for="mailRuleCategory">事件分類</label>
+                <input id="mailRuleCategory" type="text" />
+              </div>
+              <div class="field">
+                <label for="mailRulePriority">優先等級</label>
+                <select id="mailRulePriority">
+                  <option value="critical">關鍵</option>
+                  <option value="high">高</option>
+                  <option value="medium">中</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="mailRuleScore">分數</label>
+                <input id="mailRuleScore" type="number" min="0" max="200" step="5" />
+              </div>
+              <label class="field checkbox" for="mailRuleFetchBody">
+                <input id="mailRuleFetchBody" type="checkbox" />
+                <span>命中後讀完整內文做抽取</span>
+              </label>
+            </div>
+            <div class="settings-grid">
+              <div class="field">
+                <label for="mailRuleDomains">寄件網域條件</label>
+                <textarea id="mailRuleDomains" spellcheck="false"></textarea>
+              </div>
+              <div class="field">
+                <label for="mailRuleKeywords">必須命中的文字</label>
+                <textarea id="mailRuleKeywords" spellcheck="false"></textarea>
+              </div>
+              <div class="field">
+                <label for="mailRuleExcludeKeywords">排除文字</label>
+                <textarea id="mailRuleExcludeKeywords" spellcheck="false"></textarea>
+              </div>
+              <div class="field">
+                <label for="mailRuleTags">事件標籤</label>
+                <textarea id="mailRuleTags" spellcheck="false"></textarea>
+              </div>
+            </div>
+            <div class="field wide">
+              <label for="mailRuleExtract">抽取欄位</label>
+              <textarea id="mailRuleExtract" spellcheck="false"></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-actions">
+        <button type="button" class="command-button" id="mailSettingsCancel">取消</button>
+        <button type="button" class="command-button primary" id="mailSettingsSave">儲存</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop hidden" id="mailMessageOverlay" aria-hidden="true">
+    <section class="settings-dialog message-dialog" role="dialog" aria-modal="true" aria-labelledby="mailMessageTitle">
+      <div class="settings-head">
+        <h2 id="mailMessageTitle">信件內容</h2>
+        <button type="button" class="icon-button" id="mailMessageClose" aria-label="關閉信件內容">×</button>
+      </div>
+      <div class="message-content" id="mailMessageContent">
+        <div class="mail-empty">選擇一封信件後會在這裡顯示完整內容。</div>
+      </div>
+    </section>
   </div>
 
   <script>
@@ -680,15 +1398,66 @@
     let activeKey = "overview";
     let shellState = null;
     let briefingData = null;
+    let mailRefreshInFlight = false;
+    let mailPreferences = null;
+    let mailRules = [];
+    let selectedMailRuleId = "";
+    let activeMailSettingsPanel = "basic";
+    let mailSettingsSaving = false;
+    let mailMessageLoading = false;
 
     const navEl = document.getElementById("nav");
     const gridEl = document.getElementById("moduleGrid");
     const pageTitleEl = document.getElementById("pageTitle");
     const pageSubtitleEl = document.getElementById("pageSubtitle");
     const titleStateEl = document.getElementById("titleState");
+    let mailRefreshButtonEl = null;
+    let mailSettingsButtonEl = null;
+    const mailSettingsOverlayEl = document.getElementById("mailSettingsOverlay");
+    const mailSettingsCloseEl = document.getElementById("mailSettingsClose");
+    const mailSettingsCancelEl = document.getElementById("mailSettingsCancel");
+    const mailSettingsSaveEl = document.getElementById("mailSettingsSave");
+    const mailSettingsBasicTabEl = document.getElementById("mailSettingsBasicTab");
+    const mailSettingsRulesTabEl = document.getElementById("mailSettingsRulesTab");
+    const mailSettingsBasicPanelEl = document.getElementById("mailSettingsBasicPanel");
+    const mailSettingsRulesPanelEl = document.getElementById("mailSettingsRulesPanel");
+    const mailRuleListEl = document.getElementById("mailRuleList");
+    const mailRuleAddEl = document.getElementById("mailRuleAdd");
+    const mailRuleDeleteEl = document.getElementById("mailRuleDelete");
+    const mailMessageOverlayEl = document.getElementById("mailMessageOverlay");
+    const mailMessageCloseEl = document.getElementById("mailMessageClose");
+    const mailMessageTitleEl = document.getElementById("mailMessageTitle");
+    const mailMessageContentEl = document.getElementById("mailMessageContent");
+    let mailStatusDotEl = null;
+    let mailStatusTextEl = null;
     const connectionDotEl = document.getElementById("connectionDot");
     const connectionTextEl = document.getElementById("connectionText");
     const updatedAtEl = document.getElementById("updatedAt");
+    const mailPreferenceFields = {
+      maxResults: document.getElementById("mailMaxResults"),
+      newerThanDays: document.getElementById("mailNewerThanDays"),
+      intervalSeconds: document.getElementById("mailIntervalSeconds"),
+      unreadOnly: document.getElementById("mailUnreadOnly"),
+      extraQuery: document.getElementById("mailExtraQuery"),
+      focusSenders: document.getElementById("mailFocusSenders"),
+      focusDomains: document.getElementById("mailFocusDomains"),
+      focusKeywords: document.getElementById("mailFocusKeywords"),
+      ignoreKeywords: document.getElementById("mailIgnoreKeywords")
+    };
+    const mailRuleFields = {
+      enabled: document.getElementById("mailRuleEnabled"),
+      name: document.getElementById("mailRuleName"),
+      id: document.getElementById("mailRuleId"),
+      category: document.getElementById("mailRuleCategory"),
+      priority: document.getElementById("mailRulePriority"),
+      score: document.getElementById("mailRuleScore"),
+      fetchBody: document.getElementById("mailRuleFetchBody"),
+      domains: document.getElementById("mailRuleDomains"),
+      keywords: document.getElementById("mailRuleKeywords"),
+      excludeKeywords: document.getElementById("mailRuleExcludeKeywords"),
+      tags: document.getElementById("mailRuleTags"),
+      extract: document.getElementById("mailRuleExtract")
+    };
 
     function getActiveSection() {
       return sections.find((section) => section.key === activeKey) || sections[0];
@@ -726,6 +1495,496 @@
         ];
       }
       return [item || "", ""];
+    }
+
+    function lineList(value) {
+      return Array.isArray(value) ? value.join("\n") : "";
+    }
+
+    function parseLineList(value) {
+      return String(value || "")
+        .split(/\r?\n|,/)
+        .map((item) => {
+          let normalized = item.trim().replace(/\s+/g, " ");
+          const addressMatch = normalized.match(/<([^<>\s]+@[^<>\s]+)>/);
+          if (addressMatch) {
+            normalized = addressMatch[1];
+          }
+          if (normalized.startsWith("<") && normalized.endsWith(">")) {
+            normalized = normalized.slice(1, -1).trim();
+          }
+          return normalized;
+        })
+        .filter(Boolean);
+    }
+
+    function numberValue(input, fallback) {
+      const parsed = Number(input && input.value);
+      return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : fallback;
+    }
+
+    function getMailData() {
+      return briefingData && briefingData.snapshot && briefingData.snapshot.mail
+        ? briefingData.snapshot.mail
+        : null;
+    }
+
+    function formatMailDate(value) {
+      const date = value ? new Date(value) : null;
+      if (!date || Number.isNaN(date.getTime())) {
+        return "";
+      }
+      return date.toLocaleString("zh-TW", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+    }
+
+    function formatBytes(value) {
+      const bytes = Number(value || 0);
+      if (!Number.isFinite(bytes) || bytes <= 0) {
+        return "大小未知";
+      }
+      if (bytes < 1024) {
+        return `${Math.round(bytes)} B`;
+      }
+      if (bytes < 1024 * 1024) {
+        return `${(bytes / 1024).toFixed(1)} KB`;
+      }
+      return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    }
+
+    function localizeMailTag(value) {
+      const text = String(value || "");
+      const fixed = {
+        critical: "關鍵",
+        high: "高優先",
+        medium: "中優先",
+        low: "低優先",
+        muted: "降噪",
+        unread: "未讀",
+        "required-event": "必做事件",
+        "gmail-important": "Gmail 重要",
+        "focus-sender": "關注寄件者",
+        "focus-domain": "關注網域",
+        "ignored-sender": "忽略寄件者",
+        "ignored-domain": "忽略網域",
+        promotions: "促銷分類",
+        social: "社群分類"
+      };
+      if (fixed[text]) {
+        return fixed[text];
+      }
+      if (text.startsWith("keyword:")) {
+        return `關鍵字：${text.slice("keyword:".length)}`;
+      }
+      if (text.startsWith("ignored:")) {
+        return `忽略：${text.slice("ignored:".length)}`;
+      }
+      return text;
+    }
+
+    function uniqueMailTags(tags) {
+      const output = [];
+      const seen = new Set();
+      for (const tag of tags) {
+        const label = localizeMailTag(tag);
+        const key = label.toLocaleLowerCase();
+        if (!label || seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        output.push(label);
+      }
+      return output;
+    }
+
+    function setMailPreferencesForm(preferences) {
+      const prefs = preferences || {};
+      mailPreferenceFields.maxResults.value = prefs.maxResults || 12;
+      mailPreferenceFields.newerThanDays.value = prefs.newerThanDays || 7;
+      mailPreferenceFields.intervalSeconds.value = prefs.intervalSeconds || 900;
+      mailPreferenceFields.unreadOnly.checked = prefs.unreadOnly !== false;
+      mailPreferenceFields.extraQuery.value = prefs.extraQuery || "";
+      mailPreferenceFields.focusSenders.value = lineList(prefs.focusSenders);
+      mailPreferenceFields.focusDomains.value = lineList(prefs.focusDomains);
+      mailPreferenceFields.focusKeywords.value = lineList(prefs.focusKeywords);
+      mailPreferenceFields.ignoreKeywords.value = lineList(prefs.ignoreKeywords);
+    }
+
+    function readMailPreferencesForm() {
+      return {
+        maxResults: numberValue(mailPreferenceFields.maxResults, 12),
+        newerThanDays: numberValue(mailPreferenceFields.newerThanDays, 7),
+        intervalSeconds: numberValue(mailPreferenceFields.intervalSeconds, 900),
+        unreadOnly: Boolean(mailPreferenceFields.unreadOnly.checked),
+        extraQuery: mailPreferenceFields.extraQuery.value.trim(),
+        focusSenders: parseLineList(mailPreferenceFields.focusSenders.value),
+        focusDomains: parseLineList(mailPreferenceFields.focusDomains.value),
+        focusKeywords: parseLineList(mailPreferenceFields.focusKeywords.value),
+        ignoreKeywords: parseLineList(mailPreferenceFields.ignoreKeywords.value)
+      };
+    }
+
+    function slugValue(value) {
+      return String(value || "")
+        .trim()
+        .toLocaleLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 60);
+    }
+
+    function requiredEventRules() {
+      return mailRules.filter((rule) => rule && rule.type === "required_event");
+    }
+
+    function conditionValues(rule, group, field, op) {
+      const conditions = rule && rule.if && Array.isArray(rule.if[group]) ? rule.if[group] : [];
+      const output = [];
+      for (const condition of conditions) {
+        if (condition.field !== field || (op && condition.op !== op)) {
+          continue;
+        }
+        if (Array.isArray(condition.value)) {
+          output.push(...condition.value);
+        } else if (condition.value) {
+          output.push(condition.value);
+        }
+      }
+      return output;
+    }
+
+    function extractLines(extractRules) {
+      return Array.isArray(extractRules)
+        ? extractRules.map((item) => `${item.key || ""} | ${item.label || item.key || ""} | ${item.pattern || ""}`).join("\n")
+        : "";
+    }
+
+    function parseExtractLines(value) {
+      return String(value || "")
+        .split(/\r?\n/)
+        .map((line) => {
+          const parts = line.split("|").map((item) => item.trim());
+          if (parts.length < 3 || !parts[0] || !parts.slice(2).join("|").trim()) {
+            return null;
+          }
+          return {
+            key: parts[0],
+            label: parts[1] || parts[0],
+            pattern: parts.slice(2).join("|").trim()
+          };
+        })
+        .filter(Boolean);
+    }
+
+    function setMailSettingsPanel(panel) {
+      activeMailSettingsPanel = panel === "rules" ? "rules" : "basic";
+      if (mailSettingsBasicTabEl) {
+        mailSettingsBasicTabEl.classList.toggle("active", activeMailSettingsPanel === "basic");
+        mailSettingsBasicTabEl.setAttribute("aria-selected", activeMailSettingsPanel === "basic" ? "true" : "false");
+      }
+      if (mailSettingsRulesTabEl) {
+        mailSettingsRulesTabEl.classList.toggle("active", activeMailSettingsPanel === "rules");
+        mailSettingsRulesTabEl.setAttribute("aria-selected", activeMailSettingsPanel === "rules" ? "true" : "false");
+      }
+      if (mailSettingsBasicPanelEl) {
+        mailSettingsBasicPanelEl.classList.toggle("hidden", activeMailSettingsPanel !== "basic");
+      }
+      if (mailSettingsRulesPanelEl) {
+        mailSettingsRulesPanelEl.classList.toggle("hidden", activeMailSettingsPanel !== "rules");
+      }
+    }
+
+    function setRuleEditor(rule) {
+      const source = rule || {};
+      const then = source.then || {};
+      selectedMailRuleId = source.id || "";
+      mailRuleFields.enabled.checked = source.enabled !== false;
+      mailRuleFields.name.value = source.name || "";
+      mailRuleFields.id.value = source.id || "";
+      mailRuleFields.category.value = then.category || "mail.required_event";
+      mailRuleFields.priority.value = then.priority || "high";
+      mailRuleFields.score.value = then.score || 100;
+      mailRuleFields.fetchBody.checked = Boolean(then.fetchFullBody);
+      mailRuleFields.domains.value = lineList(conditionValues(source, "all", "senderDomain", "endsWith"));
+      mailRuleFields.keywords.value = lineList(conditionValues(source, "all", "text", "containsAny"));
+      mailRuleFields.excludeKeywords.value = lineList(conditionValues(source, "none", "text", "containsAny"));
+      mailRuleFields.tags.value = lineList(then.tags || []);
+      mailRuleFields.extract.value = extractLines(then.extract);
+      if (mailRuleDeleteEl) {
+        mailRuleDeleteEl.disabled = !source.id;
+      }
+    }
+
+    function renderRuleList() {
+      if (!mailRuleListEl) {
+        return;
+      }
+      const rules = requiredEventRules();
+      if (!selectedMailRuleId && rules.length) {
+        selectedMailRuleId = rules[0].id;
+      }
+      mailRuleListEl.innerHTML = rules.length
+        ? rules.map((rule) => `
+            <button type="button" class="rule-card ${rule.id === selectedMailRuleId ? "active" : ""}" data-rule-id="${escapeHtml(rule.id)}">
+              <strong>${escapeHtml(rule.name || rule.id)}</strong>
+              <span>${escapeHtml(`${rule.enabled === false ? "停用" : "啟用"} / ${(rule.then && rule.then.category) || "未分類"}`)}</span>
+            </button>
+          `).join("")
+        : `<div class="mail-empty">還沒有必做事件規則。</div>`;
+      for (const button of mailRuleListEl.querySelectorAll("[data-rule-id]")) {
+        button.addEventListener("click", () => {
+          syncSelectedRuleFromForm();
+          selectedMailRuleId = button.getAttribute("data-rule-id") || "";
+          const selected = mailRules.find((rule) => rule.id === selectedMailRuleId);
+          setRuleEditor(selected);
+          renderRuleList();
+        });
+      }
+      const selected = mailRules.find((rule) => rule.id === selectedMailRuleId) || rules[0] || null;
+      if (selected) {
+        setRuleEditor(selected);
+      } else {
+        setRuleEditor(null);
+      }
+    }
+
+    function ruleFromEditor() {
+      const rawId = mailRuleFields.id.value || mailRuleFields.name.value || `required-${Date.now().toString(36)}`;
+      const id = slugValue(rawId) || `required-${Date.now().toString(36)}`;
+      const domains = parseLineList(mailRuleFields.domains.value);
+      const keywords = parseLineList(mailRuleFields.keywords.value);
+      const excludeKeywords = parseLineList(mailRuleFields.excludeKeywords.value);
+      const all = [];
+      if (domains.length) {
+        all.push({ field: "senderDomain", op: "endsWith", value: domains });
+      }
+      if (keywords.length) {
+        all.push({ field: "text", op: "containsAny", value: keywords });
+      }
+      return {
+        id,
+        name: mailRuleFields.name.value.trim() || id,
+        type: "required_event",
+        enabled: Boolean(mailRuleFields.enabled.checked),
+        if: {
+          all,
+          any: [],
+          none: excludeKeywords.length
+            ? [{ field: "text", op: "containsAny", value: excludeKeywords }]
+            : []
+        },
+        then: {
+          priority: mailRuleFields.priority.value || "high",
+          category: mailRuleFields.category.value.trim() || "mail.required_event",
+          score: numberValue(mailRuleFields.score, 100),
+          fetchFullBody: Boolean(mailRuleFields.fetchBody.checked),
+          tags: parseLineList(mailRuleFields.tags.value),
+          extract: parseExtractLines(mailRuleFields.extract.value)
+        }
+      };
+    }
+
+    function syncSelectedRuleFromForm() {
+      if (!selectedMailRuleId || !mailRuleFields.id) {
+        return;
+      }
+      const updated = ruleFromEditor();
+      const index = mailRules.findIndex((rule) => rule.id === selectedMailRuleId);
+      if (index >= 0) {
+        mailRules[index] = updated;
+      } else {
+        mailRules.push(updated);
+      }
+      selectedMailRuleId = updated.id;
+    }
+
+    function setMailRulesForm(rules) {
+      mailRules = Array.isArray(rules) ? JSON.parse(JSON.stringify(rules)) : [];
+      selectedMailRuleId = requiredEventRules()[0]?.id || "";
+      renderRuleList();
+    }
+
+    function addMailRule() {
+      syncSelectedRuleFromForm();
+      const id = `required-${Date.now().toString(36)}`;
+      const rule = {
+        id,
+        name: "新的必做事件",
+        type: "required_event",
+        enabled: true,
+        if: {
+          all: [{ field: "text", op: "containsAny", value: ["關鍵字"] }],
+          any: [],
+          none: []
+        },
+        then: {
+          priority: "high",
+          category: "mail.required_event",
+          score: 100,
+          fetchFullBody: false,
+          tags: ["必做"],
+          extract: []
+        }
+      };
+      mailRules.push(rule);
+      selectedMailRuleId = id;
+      renderRuleList();
+      setMailSettingsPanel("rules");
+    }
+
+    function deleteSelectedMailRule() {
+      if (!selectedMailRuleId) {
+        return;
+      }
+      const index = mailRules.findIndex((rule) => rule.id === selectedMailRuleId);
+      if (index < 0) {
+        return;
+      }
+      mailRules.splice(index, 1);
+      selectedMailRuleId = requiredEventRules()[0]?.id || "";
+      renderRuleList();
+      if (!selectedMailRuleId) {
+        setRuleEditor(null);
+      }
+    }
+
+    function showMailSettings(open) {
+      if (!mailSettingsOverlayEl) {
+        return;
+      }
+      mailSettingsOverlayEl.classList.toggle("hidden", !open);
+      mailSettingsOverlayEl.setAttribute("aria-hidden", open ? "false" : "true");
+    }
+
+    function showMailMessage(open) {
+      if (!mailMessageOverlayEl) {
+        return;
+      }
+      mailMessageOverlayEl.classList.toggle("hidden", !open);
+      mailMessageOverlayEl.setAttribute("aria-hidden", open ? "false" : "true");
+    }
+
+    function renderMailMessageDetail(message) {
+      if (!mailMessageContentEl || !mailMessageTitleEl) {
+        return;
+      }
+      const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+      const event = message.event || (Array.isArray(message.events) ? message.events[0] : null);
+      const extracted = event && event.extracted && typeof event.extracted === "object"
+        ? Object.entries(event.extracted)
+        : [];
+      mailMessageTitleEl.textContent = message.subject || "信件內容";
+      const attachmentHtml = attachments.length
+        ? `
+          <div class="attachment-list">
+            ${attachments.map((attachment) => `
+              <div class="attachment-item">
+                <strong>${escapeHtml(attachment.filename || "未命名附件")}</strong>
+                <span>${escapeHtml(`${attachment.mimeType || "未知類型"} · ${formatBytes(attachment.size)}`)}</span>
+              </div>
+            `).join("")}
+          </div>
+        `
+        : `<div class="attachment-list"><div class="mail-empty">沒有附件。</div></div>`;
+      mailMessageContentEl.innerHTML = `
+        <dl class="message-meta-grid">
+          <dt>寄件者</dt><dd>${escapeHtml(message.from || message.senderEmail || "")}</dd>
+          <dt>日期</dt><dd>${escapeHtml(formatMailDate(message.date) || "無日期")}</dd>
+          <dt>優先度</dt><dd>${escapeHtml(localizeMailTag(message.priorityLevel || "low"))} · ${escapeHtml(message.priorityScore || 0)}</dd>
+          <dt>附件</dt><dd>${escapeHtml(attachments.length ? `${attachments.length} 個附件，尚未下載` : "無附件")}</dd>
+          ${event ? `<dt>事件</dt><dd>${escapeHtml(`${event.name || event.ruleId || "固定事件"} / ${event.category || ""}`)}</dd>` : ""}
+        </dl>
+        ${extracted.length ? `
+          <div class="mail-tags">
+            ${extracted.map(([key, value]) => `<span class="mail-tag">${escapeHtml(`${key}: ${value}`)}</span>`).join("")}
+          </div>
+        ` : ""}
+        <pre class="message-body-text">${escapeHtml(message.bodyText || "這封信沒有可顯示的文字內容。")}</pre>
+        ${message.bodyTruncated ? `<div class="mail-tags"><span class="mail-tag">內容過長，已截斷顯示</span></div>` : ""}
+        ${attachmentHtml}
+      `;
+    }
+
+    async function openMailMessage(messageId) {
+      if (!messageId || mailMessageLoading || !window.kuroBriefing || typeof window.kuroBriefing.getMailMessage !== "function") {
+        return;
+      }
+      mailMessageLoading = true;
+      if (mailMessageTitleEl) {
+        mailMessageTitleEl.textContent = "載入信件中";
+      }
+      if (mailMessageContentEl) {
+        mailMessageContentEl.innerHTML = `<div class="mail-empty">正在讀取完整信件內容...</div>`;
+      }
+      showMailMessage(true);
+      try {
+        const result = await window.kuroBriefing.getMailMessage(messageId);
+        if (result && result.ok && result.message) {
+          renderMailMessageDetail(result.message);
+        } else if (mailMessageContentEl) {
+          mailMessageContentEl.innerHTML = `<div class="mail-empty">${escapeHtml((result && result.error) || "信件讀取失敗。")}</div>`;
+        }
+      } finally {
+        mailMessageLoading = false;
+      }
+    }
+
+    async function openMailSettings() {
+      if (!window.kuroBriefing || typeof window.kuroBriefing.getMailPreferences !== "function") {
+        return;
+      }
+      const result = await window.kuroBriefing.getMailPreferences();
+      if (result && result.preferences) {
+        mailPreferences = result.preferences;
+        setMailPreferencesForm(mailPreferences);
+      }
+      if (typeof window.kuroBriefing.getMailRules === "function") {
+        const rulesResult = await window.kuroBriefing.getMailRules();
+        if (rulesResult && Array.isArray(rulesResult.rules)) {
+          setMailRulesForm(rulesResult.rules);
+        }
+      }
+      setMailSettingsPanel(activeMailSettingsPanel);
+      showMailSettings(true);
+    }
+
+    async function saveMailSettings() {
+      if (!window.kuroBriefing || typeof window.kuroBriefing.saveMailPreferences !== "function" || mailSettingsSaving) {
+        return;
+      }
+      mailSettingsSaving = true;
+      if (mailSettingsSaveEl) {
+        mailSettingsSaveEl.disabled = true;
+      }
+      try {
+        syncSelectedRuleFromForm();
+        const result = await window.kuroBriefing.saveMailPreferences(readMailPreferencesForm());
+        let rulesResult = null;
+        if (typeof window.kuroBriefing.saveMailRules === "function") {
+          rulesResult = await window.kuroBriefing.saveMailRules({ rules: mailRules });
+        }
+        if (result && result.preferences) {
+          mailPreferences = result.preferences;
+          setMailPreferencesForm(mailPreferences);
+        }
+        if (rulesResult && Array.isArray(rulesResult.rules)) {
+          setMailRulesForm(rulesResult.rules);
+        }
+        if (result && result.mailBriefing) {
+          shellState = { ...(shellState || {}), mailBriefing: result.mailBriefing };
+        }
+        showMailSettings(false);
+        await refreshMailBriefing();
+      } finally {
+        mailSettingsSaving = false;
+        if (mailSettingsSaveEl) {
+          mailSettingsSaveEl.disabled = false;
+        }
+      }
     }
 
     function applyBriefingData(payload) {
@@ -790,6 +2049,227 @@
       return card;
     }
 
+    function createMailSummaryCard(value, label) {
+      return `
+        <div class="mail-summary-card">
+          <strong>${escapeHtml(value)}</strong>
+          <span>${escapeHtml(label)}</span>
+        </div>
+      `;
+    }
+
+    function bindMailToolbar() {
+      mailRefreshButtonEl = document.getElementById("mailRefreshButton");
+      mailSettingsButtonEl = document.getElementById("mailSettingsButton");
+      mailStatusDotEl = document.getElementById("mailStatusDot");
+      mailStatusTextEl = document.getElementById("mailStatusText");
+      if (mailRefreshButtonEl) {
+        mailRefreshButtonEl.addEventListener("click", refreshMailBriefing);
+      }
+      if (mailSettingsButtonEl) {
+        mailSettingsButtonEl.addEventListener("click", openMailSettings);
+      }
+      syncMailStatus();
+    }
+
+    function mailToolbarHtml() {
+      return `
+        <div class="mail-toolbar">
+          <div class="pill"><span class="dot" id="mailStatusDot"></span><span id="mailStatusText">Mail --</span></div>
+          <div class="mail-toolbar-actions">
+            <button type="button" class="icon-button" id="mailRefreshButton" title="刷新 Gmail" aria-label="刷新 Gmail">↻</button>
+            <button type="button" class="icon-button" id="mailSettingsButton" title="Mail 設定" aria-label="Mail 設定">⚙</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function createMailMessage(message) {
+      const level = message.priorityLevel || "low";
+      const event = message.event || (Array.isArray(message.events) ? message.events[0] : null);
+      const eventTags = event && Array.isArray(event.tags) ? event.tags : [];
+      const muteTags = Array.isArray(message.muteRules)
+        ? message.muteRules.flatMap((rule) => Array.isArray(rule.tags) ? rule.tags : [])
+        : [];
+      const tags = uniqueMailTags([
+        message.requiredEvent ? "required-event" : "",
+        level !== "low" ? level : "",
+        message.unread ? "unread" : "",
+        message.gmailImportant ? "gmail-important" : "",
+        event ? event.name : "",
+        ...eventTags,
+        message.muted ? "muted" : "",
+        ...muteTags,
+        ...(message.priorityReasons || []).slice(0, 4)
+      ].filter(Boolean));
+      const extracted = event && event.extracted && typeof event.extracted === "object"
+        ? Object.entries(event.extracted)
+        : [];
+      const row = document.createElement("article");
+      row.className = `mail-message ${level}`;
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-label", `開啟信件：${message.subject || ""}`);
+      row.innerHTML = `
+        <div class="mail-message-head">
+          <div>
+            <div class="mail-subject">${escapeHtml(message.subject || "(no subject)")}</div>
+            <div class="mail-sender">${escapeHtml(message.from || message.senderEmail || "Unknown sender")}</div>
+          </div>
+          <div class="mail-score">${escapeHtml(message.priorityScore || 0)}</div>
+        </div>
+        <div class="mail-snippet">${escapeHtml(message.snippet || "")}</div>
+        ${extracted.length ? `
+          <div class="mail-tags">
+            ${extracted.map(([key, value]) => `<span class="mail-tag">${escapeHtml(`${key}: ${value}`)}</span>`).join("")}
+          </div>
+        ` : ""}
+        <div class="mail-tags">
+          ${tags.map((tag) => `<span class="mail-tag">${escapeHtml(tag)}</span>`).join("")}
+          <span class="mail-tag">${escapeHtml(formatMailDate(message.date) || "無日期")}</span>
+        </div>
+      `;
+      row.addEventListener("click", () => openMailMessage(message.id));
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openMailMessage(message.id);
+        }
+      });
+      return row;
+    }
+
+    function renderMailSection(section) {
+      const mail = getMailData();
+      gridEl.className = "mail-view";
+      gridEl.innerHTML = "";
+      if (!mail) {
+        gridEl.innerHTML = `
+          <div class="mail-main" style="border:0;background:transparent;">
+            <div class="mail-empty">目前還沒有 Gmail 簡報資料。</div>
+          </div>
+          <aside class="mail-side">
+            <h2>目前規則</h2>
+            <dl>
+              <div><dt>狀態</dt><dd>尚無資料</dd></div>
+            </dl>
+            <div class="mail-side-actions">${mailToolbarHtml()}</div>
+          </aside>
+        `;
+        bindMailToolbar();
+        return;
+      }
+
+      const main = document.createElement("div");
+      main.className = "mail-main";
+      main.style.border = "0";
+      main.style.background = "transparent";
+      const messages = Array.isArray(mail.messages) ? mail.messages : [];
+      const rules = mail.rules || {};
+      main.innerHTML = `
+        <div class="mail-summary">
+          ${createMailSummaryCard(mail.requiredEventCount || 0, "必做事件")}
+          ${createMailSummaryCard(mail.highPriorityCount || 0, "高優先信件")}
+          ${createMailSummaryCard(mail.unreadCount || 0, "已抓取未讀")}
+          ${createMailSummaryCard(mail.resultEstimate || section.count || 0, "符合條件")}
+        </div>
+        <div class="mail-list"></div>
+      `;
+      const list = main.querySelector(".mail-list");
+      if (messages.length) {
+        for (const message of messages) {
+          list.appendChild(createMailMessage(message));
+        }
+      } else {
+        list.innerHTML = `<div class="mail-empty">目前查詢條件沒有符合的信件。</div>`;
+      }
+
+      const prefs = mail.preferences || {};
+      const side = document.createElement("aside");
+      side.className = "mail-side";
+      side.innerHTML = `
+        <h2>目前規則</h2>
+        <dl>
+          <div><dt>帳號</dt><dd>${escapeHtml(mail.account || "")}</dd></div>
+          <div><dt>查詢條件</dt><dd>${escapeHtml(mail.query || "")}</dd></div>
+          <div><dt>已抓取</dt><dd>${escapeHtml(`${mail.fetchedCount || messages.length} / ${mail.resultEstimate || 0}`)}</dd></div>
+          <div><dt>必做事件</dt><dd>${escapeHtml(mail.requiredEventCount || 0)}</dd></div>
+          <div><dt>降噪信件</dt><dd>${escapeHtml(mail.mutedCount || 0)}</dd></div>
+          <div><dt>關注規則</dt><dd>${escapeHtml(prefs.focusRuleCount || 0)}</dd></div>
+          <div><dt>忽略規則</dt><dd>${escapeHtml(prefs.ignoreRuleCount || 0)}</dd></div>
+          <div><dt>精確規則</dt><dd>${escapeHtml(`${rules.requiredEventCount || 0} 必做，${rules.muteCount || 0} 降噪`)}</dd></div>
+          <div><dt>刷新設定</dt><dd>${escapeHtml(`${prefs.intervalSeconds || 900} 秒，${prefs.maxResults || 12} 封信`)}</dd></div>
+        </dl>
+        <div class="mail-side-actions">${mailToolbarHtml()}</div>
+      `;
+      gridEl.appendChild(main);
+      gridEl.appendChild(side);
+      bindMailToolbar();
+    }
+
+    function mailBriefingStatusText(mail) {
+      if (!mail) {
+        return "Mail --";
+      }
+      if (mailRefreshInFlight || mail.inFlight) {
+        return "Mail 同步中";
+      }
+      if (mail.lastOk === false) {
+        return "Mail 錯誤";
+      }
+      if (mail.lastMessageCount !== null && mail.lastMessageCount !== undefined) {
+        const total = mail.lastResultSizeEstimate !== null && mail.lastResultSizeEstimate !== undefined
+          ? `/${mail.lastResultSizeEstimate}`
+          : "";
+        return `Mail ${mail.lastMessageCount}${total}`;
+      }
+      if (!mail.enabled) {
+        return "Mail 關閉";
+      }
+      return mail.running ? "Mail 自動同步" : "Mail 待同步";
+    }
+
+    function syncMailStatus() {
+      const mail = shellState && shellState.mailBriefing;
+      const busy = Boolean(mailRefreshInFlight || (mail && mail.inFlight));
+      if (mailRefreshButtonEl) {
+        mailRefreshButtonEl.disabled = busy;
+        mailRefreshButtonEl.classList.toggle("loading", busy);
+      }
+      if (mailStatusDotEl) {
+        mailStatusDotEl.classList.toggle("online", Boolean(mail && mail.enabled && mail.lastOk !== false));
+      }
+      if (mailStatusTextEl) {
+        mailStatusTextEl.textContent = mailBriefingStatusText(mail);
+      }
+    }
+
+    async function refreshMailBriefing() {
+      if (!window.kuroBriefing || typeof window.kuroBriefing.refreshMail !== "function" || mailRefreshInFlight) {
+        return;
+      }
+      mailRefreshInFlight = true;
+      syncMailStatus();
+      try {
+        const result = await window.kuroBriefing.refreshMail();
+        if (result && result.mailBriefing) {
+          shellState = { ...(shellState || {}), mailBriefing: result.mailBriefing };
+        }
+      } catch (_error) {
+        shellState = {
+          ...(shellState || {}),
+          mailBriefing: {
+            ...((shellState && shellState.mailBriefing) || {}),
+            lastOk: false,
+            lastError: "Mail refresh failed."
+          }
+        };
+      } finally {
+        mailRefreshInFlight = false;
+        renderState();
+      }
+    }
+
     function renderState() {
       const online = Boolean(shellState && shellState.wsConnected);
       const dataUpdatedAt =
@@ -799,6 +2279,7 @@
       connectionDotEl.classList.toggle("online", online);
       connectionTextEl.textContent = online ? "已連線" : "離線";
       updatedAtEl.textContent = `更新 ${formatClock(dataUpdatedAt || (shellState && shellState.updatedAt))}`;
+      syncMailStatus();
       titleStateEl.textContent = shellState && shellState.confName
         ? shellState.confName
         : "local draft";
@@ -810,6 +2291,15 @@
       pageSubtitleEl.textContent = section.subtitle;
       renderNav();
       renderState();
+      if (section.key === "mail") {
+        renderMailSection(section);
+        return;
+      }
+      mailRefreshButtonEl = null;
+      mailSettingsButtonEl = null;
+      mailStatusDotEl = null;
+      mailStatusTextEl = null;
+      gridEl.className = "grid";
       gridEl.innerHTML = "";
       for (const module of section.modules) {
         gridEl.appendChild(createCard(module, section.accent));
@@ -826,6 +2316,44 @@
       document.querySelector('[data-action="maximize"]').addEventListener("click", () => {
         window.kuroBriefing && window.kuroBriefing.toggleMaximizeWindow();
       });
+      if (mailSettingsCloseEl) {
+        mailSettingsCloseEl.addEventListener("click", () => showMailSettings(false));
+      }
+      if (mailSettingsCancelEl) {
+        mailSettingsCancelEl.addEventListener("click", () => showMailSettings(false));
+      }
+      if (mailSettingsSaveEl) {
+        mailSettingsSaveEl.addEventListener("click", saveMailSettings);
+      }
+      if (mailSettingsBasicTabEl) {
+        mailSettingsBasicTabEl.addEventListener("click", () => setMailSettingsPanel("basic"));
+      }
+      if (mailSettingsRulesTabEl) {
+        mailSettingsRulesTabEl.addEventListener("click", () => setMailSettingsPanel("rules"));
+      }
+      if (mailRuleAddEl) {
+        mailRuleAddEl.addEventListener("click", addMailRule);
+      }
+      if (mailRuleDeleteEl) {
+        mailRuleDeleteEl.addEventListener("click", deleteSelectedMailRule);
+      }
+      if (mailSettingsOverlayEl) {
+        mailSettingsOverlayEl.addEventListener("click", (event) => {
+          if (event.target === mailSettingsOverlayEl) {
+            showMailSettings(false);
+          }
+        });
+      }
+      if (mailMessageCloseEl) {
+        mailMessageCloseEl.addEventListener("click", () => showMailMessage(false));
+      }
+      if (mailMessageOverlayEl) {
+        mailMessageOverlayEl.addEventListener("click", (event) => {
+          if (event.target === mailMessageOverlayEl) {
+            showMailMessage(false);
+          }
+        });
+      }
     }
 
     async function boot() {

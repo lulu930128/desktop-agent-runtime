@@ -208,6 +208,13 @@ class ToolExecutor:
                     tool_results_for_llm.append(formatted_result)
                 continue  # Skip execution logic for this call
 
+            api_tool_name = tool_name
+            tool_name = self._tool_manager.resolve_tool_name(tool_name)
+            if tool_name != api_tool_name:
+                logger.debug(
+                    f"Resolved API tool name '{api_tool_name}' to MCP tool '{tool_name}'."
+                )
+
             tool_input = self._apply_thinking_power(tool_name, tool_input)
 
             policy_decision = self._tool_policy.check(tool_name, tool_input)

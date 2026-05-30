@@ -50,6 +50,46 @@
       "mode": "read_only",
       "category": "memory"
     },
+    "mail.auth_status": {
+      "mode": "read_only",
+      "category": "mail"
+    },
+    "mail.auth_start": {
+      "mode": "read_only",
+      "category": "mail"
+    },
+    "mail.auth_finish": {
+      "mode": "read_only",
+      "category": "mail"
+    },
+    "mail.list_unread": {
+      "mode": "read_only",
+      "category": "mail",
+      "deny_truthy_args": ["include_spam_trash"]
+    },
+    "mail.search_recent": {
+      "mode": "read_only",
+      "category": "mail",
+      "deny_truthy_args": ["include_spam_trash"]
+    },
+    "mail.get_message_summary": {
+      "mode": "read_only",
+      "category": "mail"
+    },
+    "mail.get_message_detail": {
+      "mode": "read_only",
+      "category": "mail"
+    },
+    "mail.daily_brief": {
+      "mode": "read_only",
+      "category": "mail",
+      "deny_truthy_args": ["include_spam_trash"]
+    },
+    "mail.update_briefing": {
+      "mode": "read_only",
+      "category": "mail",
+      "deny_truthy_args": ["include_spam_trash"]
+    },
     "omi.ask": {
       "mode": "read_only",
       "category": "market_intelligence",

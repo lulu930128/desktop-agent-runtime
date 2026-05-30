@@ -7,6 +7,24 @@ contextBridge.exposeInMainWorld("kuroBriefing", {
   getData() {
     return ipcRenderer.invoke("briefing-get-data");
   },
+  refreshMail() {
+    return ipcRenderer.invoke("briefing-refresh-mail");
+  },
+  getMailPreferences() {
+    return ipcRenderer.invoke("briefing-get-mail-preferences");
+  },
+  saveMailPreferences(preferences) {
+    return ipcRenderer.invoke("briefing-save-mail-preferences", preferences);
+  },
+  getMailRules() {
+    return ipcRenderer.invoke("briefing-get-mail-rules");
+  },
+  saveMailRules(rulesPayload) {
+    return ipcRenderer.invoke("briefing-save-mail-rules", rulesPayload);
+  },
+  getMailMessage(messageId) {
+    return ipcRenderer.invoke("briefing-get-mail-message", messageId);
+  },
   closeWindow() {
     ipcRenderer.send("briefing-close");
   },

@@ -27,11 +27,25 @@ class ToolManager:
         self._formatted_tools_claude: List[Dict[str, Any]] = (
             formatted_tools_claude or []
         )
-        self._tools_by_name_openai = {
+        openai_tools_by_api_name = {
             tool.get("function", {}).get("name"): tool
             for tool in self._formatted_tools_openai
             if tool.get("function", {}).get("name")
         }
+        self._openai_api_to_tool_name: Dict[str, str] = {}
+        self._tools_by_name_openai: Dict[str, Dict[str, Any]] = {}
+        for canonical_name, tool_info in self.tools.items():
+            api_name = getattr(tool_info, "api_name", "") or canonical_name
+            if api_name in openai_tools_by_api_name:
+                self._openai_api_to_tool_name[api_name] = canonical_name
+                self._tools_by_name_openai[canonical_name] = openai_tools_by_api_name[
+                    api_name
+                ]
+
+        for api_name, tool in openai_tools_by_api_name.items():
+            self._openai_api_to_tool_name.setdefault(api_name, api_name)
+            self._tools_by_name_openai.setdefault(api_name, tool)
+
         self._tools_by_name_claude = {
             tool.get("name"): tool
             for tool in self._formatted_tools_claude
@@ -47,13 +61,20 @@ class ToolManager:
 
     def get_tool(self, tool_name: str) -> FormattedTool | None:
         """Get a tool's raw information by its name."""
-        tool = self.tools.get(tool_name)
+        canonical_name = self.resolve_tool_name(tool_name)
+        tool = self.tools.get(canonical_name)
         if isinstance(tool, FormattedTool):
             return tool
         logger.warning(
             f"TM: Raw tool info for '{tool_name}' not found (was initial_tools_dict provided?)."
         )
         return None
+
+    def resolve_tool_name(self, tool_name: str) -> str:
+        """Resolve provider-safe API names back to canonical MCP tool names."""
+        if tool_name in self.tools:
+            return tool_name
+        return self._openai_api_to_tool_name.get(tool_name, tool_name)
 
     def get_formatted_tools(
         self, mode: Literal["OpenAI", "Claude"], request_text: str | None = None

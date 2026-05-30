@@ -1,5 +1,6 @@
 """Constructs prompts for servers and tools, formats tool information for OpenAI API."""
 
+import re
 from typing import Dict, Optional, List, Tuple, Any
 from loguru import logger
 
@@ -8,12 +9,40 @@ from .mcp_client import MCPClient
 from .server_registry import ServerRegistry
 
 
+OPENAI_TOOL_NAME_MAX_LENGTH = 64
+_OPENAI_TOOL_NAME_INVALID_CHARS = re.compile(r"[^a-zA-Z0-9_-]+")
+
+
+def _openai_api_tool_name(tool_name: str, used_names: set[str]) -> str:
+    """Return a unique OpenAI-compatible function name for a canonical MCP tool."""
+    base_name = _OPENAI_TOOL_NAME_INVALID_CHARS.sub("_", tool_name).strip("_")
+    if not base_name:
+        base_name = "tool"
+    base_name = base_name[:OPENAI_TOOL_NAME_MAX_LENGTH]
+
+    candidate = base_name
+    suffix_index = 2
+    while candidate in used_names:
+        suffix = f"_{suffix_index}"
+        max_base_length = OPENAI_TOOL_NAME_MAX_LENGTH - len(suffix)
+        candidate = f"{base_name[:max_base_length]}{suffix}"
+        suffix_index += 1
+
+    used_names.add(candidate)
+    return candidate
+
+
 class ToolAdapter:
     """Dynamically fetches tool information from enabled MCP servers and formats it."""
 
     def __init__(self, server_registery: Optional[ServerRegistry] = None) -> None:
         """Initialize with an ServerRegistry."""
         self.server_registery = server_registery or ServerRegistry()
+        self._last_formatted_tools_dict: Dict[str, FormattedTool] = {}
+
+    def get_last_formatted_tools_dict(self) -> Dict[str, FormattedTool]:
+        """Return the raw tools from the most recent dynamic fetch."""
+        return self._last_formatted_tools_dict
 
     async def get_server_and_tool_info(
         self, enabled_servers: List[str]
@@ -148,6 +177,7 @@ class ToolAdapter:
             return openai_tools, claude_tools
 
         logger.debug(f"MC: Formatting {len(formatted_tools_dict)} tools for API usage.")
+        used_openai_tool_names: set[str] = set()
 
         for tool_name, data_object in formatted_tools_dict.items():
             if not isinstance(data_object, FormattedTool):
@@ -158,6 +188,12 @@ class ToolAdapter:
             properties: Dict[str, Dict[str, str]] = input_schema.get("properties", {})
             tool_description = data_object.description or "No description provided."
             required_params = input_schema.get("required", [])
+            openai_tool_name = _openai_api_tool_name(tool_name, used_openai_tool_names)
+            data_object.api_name = openai_tool_name
+            if openai_tool_name != tool_name:
+                logger.debug(
+                    f"MC: OpenAI tool alias '{openai_tool_name}' maps to MCP tool '{tool_name}'."
+                )
 
             # Format for OpenAI
             openai_function_params = {
@@ -190,7 +226,7 @@ class ToolAdapter:
                 {
                     "type": "function",
                     "function": {
-                        "name": tool_name,
+                        "name": openai_tool_name,
                         "description": tool_description,
                         "parameters": openai_function_params,
                     },
@@ -228,5 +264,6 @@ class ToolAdapter:
         )
         mcp_prompt_string = self.construct_mcp_prompt_string(servers_info)
         openai_tools, claude_tools = self.format_tools_for_api(formatted_tools_dict)
+        self._last_formatted_tools_dict = formatted_tools_dict
         logger.info("MC: Dynamic tool construction complete.")
         return mcp_prompt_string, openai_tools, claude_tools

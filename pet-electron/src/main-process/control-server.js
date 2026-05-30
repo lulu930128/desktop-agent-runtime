@@ -13,7 +13,7 @@ function readRequestBody(req) {
     let raw = "";
     req.on("data", (chunk) => {
       raw += chunk;
-      if (raw.length > 1024 * 256) {
+      if (raw.length > 1024 * 1024 * 2) {
         reject(new Error("Request body too large."));
         req.destroy();
       }
@@ -36,6 +36,13 @@ function startControlServer({
   isReaderVisible,
   isBriefingVisible,
   readBriefingData,
+  readMailBriefingStatus,
+  readMailPreferences,
+  saveMailPreferences,
+  readMailRules,
+  saveMailRules,
+  readMailMessage,
+  refreshMailBriefing,
   replaceBriefingSnapshot,
   addBriefingMemoryCandidate,
   setBriefingMemoryCandidateStatus,
@@ -76,6 +83,65 @@ function startControlServer({
           ? readBriefingData()
           : { ok: false, error: "Briefing store is not available." };
         writeJson(res, payload.ok ? 200 : 503, payload);
+        return;
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/briefing/mail/status") {
+        const payload = typeof readMailBriefingStatus === "function"
+          ? { ok: true, mailBriefing: readMailBriefingStatus() }
+          : { ok: false, error: "Mail briefing service is not available." };
+        writeJson(res, payload.ok ? 200 : 503, payload);
+        return;
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/briefing/mail/preferences") {
+        const payload = typeof readMailPreferences === "function"
+          ? readMailPreferences()
+          : { ok: false, error: "Mail preferences are not available." };
+        writeJson(res, payload.ok ? 200 : 503, payload);
+        return;
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/briefing/mail/preferences") {
+        const payload = parseRequestJson(await readRequestBody(req));
+        const result = typeof saveMailPreferences === "function"
+          ? saveMailPreferences(payload.preferences || payload)
+          : { ok: false, error: "Mail preferences are not available." };
+        writeJson(res, result.ok ? 200 : 400, result);
+        return;
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/briefing/mail/rules") {
+        const payload = typeof readMailRules === "function"
+          ? readMailRules()
+          : { ok: false, error: "Mail rules are not available." };
+        writeJson(res, payload.ok ? 200 : 503, payload);
+        return;
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/briefing/mail/rules") {
+        const payload = parseRequestJson(await readRequestBody(req));
+        const result = typeof saveMailRules === "function"
+          ? saveMailRules(payload.rules ? payload : { rules: payload })
+          : { ok: false, error: "Mail rules are not available." };
+        writeJson(res, result.ok ? 200 : 400, result);
+        return;
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/briefing/mail/message") {
+        const messageId = String(requestUrl.searchParams.get("id") || "").trim();
+        const result = typeof readMailMessage === "function"
+          ? await readMailMessage(messageId)
+          : { ok: false, error: "Mail message reader is not available." };
+        writeJson(res, result.ok ? 200 : 400, result);
+        return;
+      }
+
+      if (req.method === "POST" && requestUrl.pathname === "/briefing/mail/refresh") {
+        const result = typeof refreshMailBriefing === "function"
+          ? await refreshMailBriefing()
+          : { ok: false, error: "Mail briefing service is not available." };
+        writeJson(res, result.ok ? 200 : 500, result);
         return;
       }
 

@@ -3,6 +3,7 @@ const path = require("path");
 
 const STORE_VERSION = 1;
 const MAX_MEMORY_CANDIDATES = 100;
+const MAX_MAIL_MESSAGES = 500;
 const MEMORY_CANDIDATE_STATUSES = new Set(["pending", "approved", "rejected", "saved"]);
 
 function clone(value) {
@@ -237,6 +238,174 @@ function normalizeSourceStatus(candidate) {
   };
 }
 
+function normalizeStringList(candidate, maxItems = 20, maxLength = 80) {
+  if (!Array.isArray(candidate)) {
+    return [];
+  }
+  return candidate
+    .map((item) => boundedText(item, maxLength))
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+function normalizeStringMap(candidate, maxKeys = 16, maxLength = 160) {
+  if (!isObject(candidate)) {
+    return {};
+  }
+  const output = {};
+  for (const [key, value] of Object.entries(candidate).slice(0, maxKeys)) {
+    const normalizedKey = boundedText(key, 48);
+    const normalizedValue = boundedText(value, maxLength);
+    if (normalizedKey && normalizedValue) {
+      output[normalizedKey] = normalizedValue;
+    }
+  }
+  return output;
+}
+
+function normalizeMailEvent(candidate) {
+  if (!isObject(candidate)) {
+    return null;
+  }
+  const id = boundedText(candidate.id || candidate.ruleId, 80);
+  if (!id) {
+    return null;
+  }
+  return {
+    id,
+    ruleId: boundedText(candidate.ruleId || id, 80),
+    name: boundedText(candidate.name, 120, id),
+    category: boundedText(candidate.category, 80),
+    priority: boundedText(candidate.priority, 24, "high"),
+    score: Math.max(-100, Math.min(200, toCount(candidate.score, 100))),
+    fetchFullBody: toBool(candidate.fetchFullBody, false),
+    tags: normalizeStringList(candidate.tags, 12, 40),
+    extracted: normalizeStringMap(candidate.extracted, 16, 160)
+  };
+}
+
+function normalizeMailMuteRule(candidate) {
+  if (!isObject(candidate)) {
+    return null;
+  }
+  const id = boundedText(candidate.id || candidate.ruleId, 80);
+  if (!id) {
+    return null;
+  }
+  return {
+    id,
+    ruleId: boundedText(candidate.ruleId || id, 80),
+    name: boundedText(candidate.name, 120, id),
+    category: boundedText(candidate.category, 80),
+    scorePenalty: Math.max(0, Math.min(200, toCount(candidate.scorePenalty, 80))),
+    tags: normalizeStringList(candidate.tags, 12, 40)
+  };
+}
+
+function normalizeMailMessage(candidate) {
+  if (!isObject(candidate)) {
+    return null;
+  }
+  const id = boundedText(candidate.id, 80);
+  const subject = boundedText(candidate.subject, 220);
+  const events = Array.isArray(candidate.events)
+    ? candidate.events.map(normalizeMailEvent).filter(Boolean)
+    : [];
+  const event = normalizeMailEvent(candidate.event) || events[0] || null;
+  const muteRules = Array.isArray(candidate.muteRules)
+    ? candidate.muteRules.map(normalizeMailMuteRule).filter(Boolean)
+    : [];
+  if (!id && !subject) {
+    return null;
+  }
+  return {
+    id,
+    threadId: boundedText(candidate.threadId, 80),
+    from: boundedText(candidate.from, 180),
+    senderEmail: boundedText(candidate.senderEmail, 180),
+    senderDomain: boundedText(candidate.senderDomain, 120),
+    subject: subject || "(no subject)",
+    date: boundedText(candidate.date, 60),
+    snippet: boundedText(candidate.snippet, 360),
+    unread: toBool(candidate.unread, false),
+    gmailImportant: toBool(candidate.gmailImportant, false),
+    priorityScore: Math.max(-100, Math.min(200, toCount(candidate.priorityScore, 0))),
+    priorityLevel: boundedText(candidate.priorityLevel, 16, "low"),
+    priorityReasons: normalizeStringList(candidate.priorityReasons, 8, 80),
+    attention: toBool(candidate.attention, false),
+    requiredEvent: toBool(candidate.requiredEvent, Boolean(event)),
+    event,
+    events: event && !events.length ? [event] : events,
+    muted: toBool(candidate.muted, false),
+    muteRules,
+    bodyFetched: false,
+    attachmentsFetched: false
+  };
+}
+
+function normalizeMailRulesSummary(candidate, fallbackRules) {
+  const source = isObject(candidate) ? candidate : {};
+  const fallback = isObject(fallbackRules) ? fallbackRules : {};
+  return {
+    totalCount: toCount(source.totalCount, toCount(fallback.totalCount, 0)),
+    enabledCount: toCount(source.enabledCount, toCount(fallback.enabledCount, 0)),
+    requiredEventCount: toCount(source.requiredEventCount, toCount(fallback.requiredEventCount, 0)),
+    muteCount: toCount(source.muteCount, toCount(fallback.muteCount, 0)),
+    rulesFile: boundedText(source.rulesFile, 260, fallback.rulesFile || "")
+  };
+}
+
+function normalizeMailSnapshot(candidate, fallbackMail) {
+  const source = isObject(candidate) ? candidate : {};
+  const fallback = isObject(fallbackMail) ? fallbackMail : {};
+  const messagesSource = Array.isArray(source.messages)
+    ? source.messages
+    : Array.isArray(fallback.messages)
+      ? fallback.messages
+      : [];
+  const preferences = isObject(source.preferences)
+    ? source.preferences
+    : isObject(fallback.preferences)
+      ? fallback.preferences
+      : {};
+  const rules = isObject(source.rules)
+    ? source.rules
+    : isObject(fallback.rules)
+      ? fallback.rules
+      : {};
+
+  return {
+    account: boundedText(source.account, 180, fallback.account || ""),
+    query: boundedText(source.query, 260, fallback.query || ""),
+    resultEstimate: toCount(source.resultEstimate, toCount(fallback.resultEstimate, 0)),
+    fetchedCount: toCount(source.fetchedCount, messagesSource.length),
+    unreadCount: toCount(source.unreadCount, toCount(fallback.unreadCount, 0)),
+    requiredEventCount: toCount(source.requiredEventCount, toCount(fallback.requiredEventCount, 0)),
+    mutedCount: toCount(source.mutedCount, toCount(fallback.mutedCount, 0)),
+    ordinaryCount: toCount(source.ordinaryCount, toCount(fallback.ordinaryCount, 0)),
+    highPriorityCount: toCount(source.highPriorityCount, toCount(fallback.highPriorityCount, 0)),
+    mediumPriorityCount: toCount(source.mediumPriorityCount, toCount(fallback.mediumPriorityCount, 0)),
+    gmailImportantCount: toCount(source.gmailImportantCount, toCount(fallback.gmailImportantCount, 0)),
+    messages: messagesSource.map(normalizeMailMessage).filter(Boolean).slice(0, MAX_MAIL_MESSAGES),
+    preferences: {
+      autoRefresh: toBool(preferences.autoRefresh, true),
+      intervalSeconds: toCount(preferences.intervalSeconds, 900),
+      maxResults: toCount(preferences.maxResults, 12),
+      newerThanDays: toCount(preferences.newerThanDays, 7),
+      unreadOnly: toBool(preferences.unreadOnly, true),
+      extraQuery: boundedText(preferences.extraQuery, 240),
+      focusRuleCount: toCount(preferences.focusRuleCount, 0),
+      ignoreRuleCount: toCount(preferences.ignoreRuleCount, 0)
+    },
+    rules: normalizeMailRulesSummary(rules, fallback.rules),
+    privacy: {
+      bodyFetched: toBool(source.privacy?.bodyFetched, false),
+      attachmentsFetched: false,
+      mailboxModified: false
+    }
+  };
+}
+
 function normalizeSnapshot(candidate, fallbackSnapshot) {
   const now = new Date();
   const source = isObject(candidate) ? candidate : {};
@@ -259,7 +428,8 @@ function normalizeSnapshot(candidate, fallbackSnapshot) {
     title: boundedText(source.title, 80, fallback.title || "\u4eca\u65e5\u7c21\u5831"),
     updatedAt: boundedText(source.updatedAt, 40, now.toISOString()),
     sections,
-    sourceStatus
+    sourceStatus,
+    mail: normalizeMailSnapshot(source.mail, fallback.mail)
   };
 }
 

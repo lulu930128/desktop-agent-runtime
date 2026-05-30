@@ -8,6 +8,7 @@ open-llm-vtuber-electron/
 pet-electron/node_modules/
 pet-electron/dist/
 pet-electron/renderer-dist/
+pet-electron/.tmp/
 
 # Python/runtime artifacts
 __pycache__/

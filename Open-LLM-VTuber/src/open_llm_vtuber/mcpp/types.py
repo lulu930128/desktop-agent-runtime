@@ -34,12 +34,14 @@ class FormattedTool:
         related_server (str): The name of the server that contains the tool.
         generic_schema (Optional[dict[str, Any]], optional): Generic schema for the tool. Defaults to None.
         description (str, optional): Description of the tool, usually from the server's tool definition. Defaults to "No description available.".
+        api_name (str, optional): Provider-safe tool name exposed to APIs that restrict function names.
     """
 
     input_schema: dict[str, Any]
     related_server: str
     generic_schema: Optional[dict[str, Any]] = None
     description: str = "No description available."
+    api_name: str = ""
 
 
 @dataclass
