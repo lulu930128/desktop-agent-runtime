@@ -1,67 +1,80 @@
 # Kuro Desktop Agent Runtime
 
-Kuro 是一個 local-first 的桌面 AI 角色助理 runtime。這個 repository 把角色啟動器、Open-LLM-VTuber 後端、GPT-SoVITS 語音、Live2D 桌寵殼、角色記憶、專案 prompt、工具政策與桌面 Dashboard 串在同一個可控工作區中。
+Kuro is a local-first desktop AI companion runtime. It combines a launcher,
+Open-LLM-VTuber, GPT-SoVITS voice output, a Live2D Electron pet shell, project
+prompts, memory controls, tool policies, and a persistent desktop briefing panel
+into one controllable workspace.
 
-目前定位不是單純桌寵展示，而是「桌面個人助理的 runtime workspace」：
+<p align="center">
+  <img src="docs/assets/readme/kuro-launcher-overview.png" alt="Kuro launcher, chat history, runtime logs, and Live2D desktop companion" width="960">
+</p>
 
-- 開機後可以依 `startup_profile` 預設啟動指定角色、專案與服裝。
-- 角色可以透過 Live2D/Electron shell 常駐桌面。
-- Launcher 負責啟停、設定、角色/專案/聊天/記憶管理。
-- Dashboard / Briefing Panel 是 AI 和工具輸出的資料展示區。
-- 長期記憶與今日簡報資料分離，避免即時資訊污染角色記憶。
+This repository is not just a character demo. It is the runtime workspace for a
+desktop assistant that can stay on screen, speak through a local TTS stack,
+remember approved long-term context, route task-specific tools, and display
+structured daily intelligence beside the character.
 
-> Current status: source-controlled runtime workspace. Local secrets, model weights, voice references, generated runtime config, logs, chat history, memory data, Electron userData, build output and dependency folders are intentionally excluded from git.
+> Status: source-controlled local runtime workspace. Local secrets, model
+> weights, generated configs, logs, chat history, memory databases, Electron
+> userData, build output, voice references, and dependency folders are
+> intentionally excluded from git.
 
-## Table of Contents
+## Visual Tour
 
-- [Current Milestone](#current-milestone)
-- [Architecture](#architecture)
-- [Repository Layout](#repository-layout)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [Startup Profile](#startup-profile)
-- [Launcher](#launcher)
-- [Electron Pet Shell](#electron-pet-shell)
-- [Dashboard / Briefing Panel](#dashboard--briefing-panel)
-- [Memory Model](#memory-model)
-- [Tool Integration Direction](#tool-integration-direction)
-- [Runtime Ports](#runtime-ports)
-- [Validation](#validation)
-- [Git Hygiene](#git-hygiene)
-- [GitHub Metadata](#github-metadata)
+| Launcher and runtime | Briefing dashboard |
+| --- | --- |
+| <img src="docs/assets/readme/kuro-launcher-overview.png" alt="Kuro Launcher controlling character, chat, memory, services, and the Live2D desktop companion" width="480"> | <img src="docs/assets/readme/kuro-briefing-dashboard.png" alt="Kuro Briefing mail dashboard with counts, filtered mail items, and source status" width="480"> |
+
+| Desktop companion | Coding companion |
+| --- | --- |
+| <img src="docs/assets/readme/kuro-desktop-companion.png" alt="Kuro Live2D companion staying on screen while the user works in Word" width="480"> | <img src="docs/assets/readme/kuro-coding-companion.png" alt="Kuro Live2D companion and Reader window assisting beside VS Code" width="480"> |
+
+## What Kuro Does
+
+- Starts a selected character, project context, outfit, and services from one
+  launcher.
+- Runs a Live2D desktop companion through a custom Electron shell.
+- Keeps dialog output separate from structured daily briefing output.
+- Uses approval-based memory flow so volatile daily information does not
+  automatically pollute long-term character memory.
+- Routes domain tools through explicit policy files instead of letting the
+  assistant call arbitrary capabilities.
+- Treats external tools such as mail, market intelligence, news, and messages as
+  separate projects that push structured outputs into Kuro.
 
 ## Current Milestone
 
-This branch currently includes the first integrated desktop assistant layer:
+The current integrated desktop assistant layer includes:
 
-- `startup_profile` config for default character/project/outfit startup.
+- `startup_profile` selection for default character, project, outfit, and
+  optional auto-start behavior.
 - Default startup target: `kuro` / `desktop-agent-runtime` / `hoodie`.
-- Optional startup auto-start from launcher.
 - Unified Windows AppUserModelID: `kuro.desktop-agent`.
-- Electron `Reader` window for subtitle/dialog output.
+- Electron `Reader` window for dialog/subtitle output.
 - Electron `Briefing` window for persistent dashboard output.
-- Launcher `Dashboard` toggle between `對話框` and `Game mode`.
-- Briefing backend store with snapshot + memory-candidate separation.
-- Control server APIs for dashboard data updates.
+- Launcher controls for microphone, camera, screen, Reader, Dashboard, Game
+  mode, expression, and thinking-power state.
+- Briefing backend store with separate snapshot and memory-candidate data.
+- Local control server APIs for dashboard updates and runtime state.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    User["User / desktop"] --> Launcher["launcher.py<br/>control console"]
+    User["User / desktop"] --> Launcher["launcher.py<br/>operator console"]
     Launcher --> Config["kuro_launcher.settings.yaml<br/>paths / ports / startup_profile"]
     Launcher --> RuntimeConf["Open-LLM-VTuber runtime config"]
-    Launcher --> PetShell["pet-electron<br/>Live2D pet shell"]
+    Launcher --> PetShell["pet-electron<br/>Live2D desktop shell"]
     Launcher --> Services["Bridge / TTS / LLM runtime"]
 
     PetShell --> MainWindow["Live2D Pet Window"]
-    PetShell --> Reader["Reader Window<br/>dialog/subtitle output"]
-    PetShell --> Briefing["Dashboard / Briefing Window<br/>daily overview"]
+    PetShell --> Reader["Reader Window<br/>dialog output"]
+    PetShell --> Briefing["Briefing Window<br/>daily dashboard"]
     PetShell --> Control["Control Server<br/>127.0.0.1:23567"]
 
     Control --> BriefingStore["briefing-store.json<br/>snapshot + memory candidates"]
-    Tools["Future tool projects<br/>mail / news / stocks / messages"] --> Control
-    Agent["AI assistant / tools"] --> Control
+    Tools["Tool projects<br/>mail / markets / news / messages"] --> Control
+    Agent["AI assistant / tool routing"] --> Control
 
     Services --> AgentRuntime["Open-LLM-VTuber Agent Runtime"]
     AgentRuntime --> Memory["Character long-term memory"]
@@ -69,33 +82,35 @@ flowchart TD
     AgentRuntime --> PetShell
 ```
 
-The important boundary is:
+Important boundaries:
 
-- Launcher config and UI decide what to start.
-- Open-LLM-VTuber handles conversation, prompt composition, tools and memory.
-- Electron handles desktop windows, taskbar identity, control server and Dashboard display.
-- Tool projects should remain separate projects and push structured results into Kuro through explicit APIs.
+- The launcher decides which runtime profile should start.
+- Open-LLM-VTuber handles conversation, prompt composition, tools, and memory.
+- Electron owns the desktop windows, tray behavior, taskbar identity, local
+  control server, Reader, and Briefing UI.
+- External tools should publish structured results into Kuro through explicit
+  local APIs rather than becoming hidden logic inside the character prompt.
 
 ## Repository Layout
 
 | Path | Responsibility |
 | --- | --- |
-| `launcher.py` | Main launcher UI, startup profile application, service orchestration and pet shell controls. |
-| `kuro_launcher/` | Launcher config parsing, service helpers, runtime config generation, memory panel and records. |
-| `kuro_launcher.settings.yaml` | Main local runtime source of truth for paths, ports, LLM env names and startup profile. |
-| `Open-LLM-VTuber/` | Agent runtime, WebSocket protocol, character configs, prompt/runtime logic and memory system. |
-| `pet-electron/` | Electron shell, Live2D renderer, Reader window, Dashboard window and local control server. |
-| `pet-electron/src/main-process/briefing-store.js` | Dashboard backend store for daily snapshot and memory candidates. |
-| `bridges/` | Bridge service helpers, including translation/spoken-rendering integration. |
+| `launcher.py` | Main launcher UI, startup profile application, service orchestration, and pet shell controls. |
+| `kuro_launcher/` | Launcher config parsing, service helpers, runtime config generation, memory panel, and records. |
+| `kuro_launcher.settings.yaml` | Local runtime source of truth for paths, ports, LLM env names, and startup profile. |
+| `Open-LLM-VTuber/` | Agent runtime, WebSocket protocol, character configs, prompt/runtime logic, MCP/tool integration, and memory system. |
+| `pet-electron/` | Electron shell, Live2D renderer, Reader window, Briefing window, tray controls, and local control server. |
+| `bridges/` | Bridge service helpers, including translation and spoken-rendering integration. |
 | `gpt_sovits/` | GPT-SoVITS runtime and TTS configuration. |
 | `projects/` | Project prompt packs and assistant context definitions. |
+| `docs/assets/readme/` | Public README screenshots and visual assets. |
 | `voices/` | Local voice references and generated voice assets. Keep private data out of git. |
 | `launcher_logs/` | Local launcher logs. Do not commit. |
 | `envs/` | Local Python environments. Do not commit. |
 
 ## Quick Start
 
-From the repo root:
+From the repository root:
 
 ```powershell
 cd C:\project\kuro
@@ -108,13 +123,20 @@ The VBS launcher can also be used from Explorer:
 桌寵啟動器.vbs
 ```
 
-The VBS launcher prefers the repo-local Python executable:
+The launcher prefers the repository-local Python runtime:
 
 ```text
 envs\kuro-llm310\python.exe
 ```
 
-and falls back to `py .\launcher.py` if the repo-local runtime does not exist.
+and falls back to:
+
+```powershell
+py .\launcher.py
+```
+
+This project currently assumes a prepared local runtime environment. It is a
+working desktop assistant workspace, not a one-command public installer.
 
 ## Configuration
 
@@ -134,6 +156,12 @@ paths:
   pet_electron_dir: "${ROOT}\\pet-electron"
   runtime_conf_path: "${open_llm_vtuber_dir}\\conf.launcher_runtime.yaml"
 
+startup_profile:
+  character: "kuro"
+  project: "desktop-agent-runtime"
+  outfit: "hoodie"
+  auto_start: true
+
 network:
   bridge:
     host: "127.0.0.1"
@@ -149,7 +177,8 @@ network:
     port: 23567
 ```
 
-Secrets must stay in local environment files or OS environment variables, not in tracked files:
+Secrets must stay in local environment files or OS environment variables, not in
+tracked files:
 
 ```powershell
 Copy-Item .env.example .env
@@ -162,53 +191,24 @@ Common LLM variables:
 | --- | --- |
 | `KURO_LLM_PROVIDER` | Runtime LLM provider selector. |
 | `OPENAI_LLM_API_KEY` | OpenAI-compatible LLM API key. |
-| `OPENAI_API_KEY` | Fallback key used by some compatible integrations. |
+| `OPENAI_API_KEY` | Fallback key used by compatible integrations. |
 | `OPENAI_LLM_MODEL` | Default OpenAI-compatible LLM model. |
 | `OPENAI_LLM_TEMPERATURE` | Optional temperature override. |
-| `OPENAI_TRANSLATE_MODEL` | Bridge / spoken rendering model. |
+| `OPENAI_TRANSLATE_MODEL` | Bridge / spoken-rendering model. |
 | `ENABLE_OLLAMA_FALLBACK` | Enables local Ollama fallback when configured. |
 | `OLLAMA_BASE_URL` | Ollama-compatible endpoint. |
 
-## Startup Profile
-
-`startup_profile` defines what should be selected when launcher starts:
-
-```yaml
-startup_profile:
-  character: "kuro"
-  project: "desktop-agent-runtime"
-  outfit: "hoodie"
-  auto_start: true
-```
-
-Behavior:
-
-- `character` matches character file stem, file name, `conf_name`, `conf_uid` or Live2D model name.
-- `project` matches project id, display name or project folder.
-- `outfit` currently normalizes values such as `hoodie`, `hood`, `帽T` to the hoodie state.
-- `auto_start: true` schedules a one-time startup call to `on_start_profile()` after launcher UI selection settles.
-
-If a configured item cannot be found, launcher logs the missing startup item and continues with available defaults.
-
 ## Launcher
 
-Launcher is the operator console. It handles:
+The launcher is the operator console. It handles:
 
 - Start/stop profile.
-- Start/stop Bridge, TTS and LLM runtime.
-- Launch Electron pet shell.
-- Character, outfit, project and chat selection.
+- Start/stop Bridge, TTS, and LLM runtime.
+- Electron pet shell startup.
+- Character, outfit, project, chat, and memory selection.
 - Memory panel CRUD and approval controls.
 - Pet shell status polling.
-- Pet controls:
-  - microphone
-  - camera
-  - screen
-  - dialog / Reader window
-  - Dashboard / Briefing window
-  - Game mode
-  - expression
-  - thinking power
+- Reader, Dashboard, Game mode, expression, and thinking-power controls.
 
 The launcher and Electron shell share the same Windows AppUserModelID:
 
@@ -216,7 +216,8 @@ The launcher and Electron shell share the same Windows AppUserModelID:
 kuro.desktop-agent
 ```
 
-This is intended to group the launcher and pet/Dashboard windows together on the Windows taskbar.
+This groups the launcher, pet, Reader, and Dashboard windows together on the
+Windows taskbar.
 
 ## Electron Pet Shell
 
@@ -235,16 +236,16 @@ Main pieces:
 
 | File | Responsibility |
 | --- | --- |
-| `src/main.js` | Electron main process, windows, tray menu, IPC, control server wiring. |
+| `src/main.js` | Electron main process, windows, tray menu, IPC, and control server wiring. |
 | `src/state.js` | Persistent pet shell state such as window bounds and visibility. |
 | `src/main-process/control-server.js` | Local HTTP control server. |
 | `src/main-process/menus.js` | Tray and pet context menus. |
 | `src/reader-window.html` | Dialog/subtitle Reader window. |
 | `src/briefing-window.html` | Dashboard / Briefing window. |
-| `src/main-process/briefing-store.js` | Backend store for Dashboard data. |
-| `renderer/` | TypeScript/Live2D renderer source. |
+| `src/main-process/briefing-store.js` | Backend store for Dashboard snapshot and memory candidates. |
+| `renderer/` | TypeScript / Live2D renderer source. |
 
-The shell stores runtime state under Electron `userData`, not in the repo:
+The shell stores runtime state under Electron `userData`, not in the repository:
 
 ```text
 pet-shell-state.json
@@ -252,41 +253,37 @@ briefing-store.json
 pet-shell.log
 ```
 
-## Dashboard / Briefing Panel
+## Briefing Dashboard
 
-Dashboard is the persistent information surface intended for the secondary monitor data area.
+The Briefing window is the persistent information surface for assistant and tool
+output. It is separate from the character dialog so Kuro can show structured
+daily context without turning every transient item into long-term memory.
 
-Design role:
+Current dashboard roles:
 
-- Kuro pet: conversational/personality interface.
-- Reader: short dialog/subtitle output.
-- Dashboard: structured daily intelligence and assistant output.
-- Launcher: engineering/control console.
+- Kuro pet: conversational and personality interface.
+- Reader: short dialog or subtitle output.
+- Briefing: structured daily intelligence and assistant output.
+- Launcher: runtime control and engineering console.
 
-The first version uses a YouTube Music-like layout:
+The first version includes sections such as:
 
-- Left navigation:
-  - 今日大綱
-  - 待處理
-  - Mail
-  - Messages
-  - Stocks
-  - News
-  - Calendar
-  - Notes
-- Right content area:
-  - module cards
-  - metrics
-  - item lists
-  - runtime/source status
+- Today
+- Tasks
+- Mail
+- Messages
+- Stocks
+- News
+- Calendar
+- Notes
 
-Dashboard backend data is split into:
+Dashboard data is split into:
 
 | Data | Purpose |
 | --- | --- |
 | `snapshot` | Today's visible Dashboard data. Safe to update frequently. |
 | `memoryCandidates` | Suggestions that may become long-term memory only after approval. |
-| `sourceStatus` | Future health/status state for mail/news/stocks/messages adapters. |
+| `sourceStatus` | Health/status state for mail, news, stocks, messages, and other adapters. |
 
 Control APIs are exposed through the pet shell control server:
 
@@ -302,23 +299,23 @@ Example snapshot update:
 
 ```powershell
 $body = @{
-  title = "今日簡報"
+  title = "Daily Briefing"
   sections = @(
     @{
       key = "overview"
-      label = "今日大綱"
+      label = "Today"
       icon = "T"
-      subtitle = "工具摘要"
+      subtitle = "Tool summary"
       modules = @(
         @{
           id = "mail"
-          title = "重要信件"
+          title = "Important Mail"
           tag = "Mail"
           value = "2"
           unit = "items"
           wide = $true
           items = @(
-            @{ text = "有兩封信需要今天回覆"; meta = "high" }
+            @{ text = "Two messages need a reply today"; meta = "high" }
           )
         }
       )
@@ -333,28 +330,9 @@ Invoke-RestMethod `
   -ContentType "application/json"
 ```
 
-Example memory candidate:
-
-```powershell
-$body = @{
-  content = "使用者希望每日大綱優先顯示 mail、新聞、股票與訊息摘要。"
-  memoryType = "preference"
-  reason = "Dashboard preference"
-  source = "briefing"
-} | ConvertTo-Json -Depth 4
-
-Invoke-RestMethod `
-  -Method Post `
-  -Uri "http://127.0.0.1:23567/briefing/memory-candidates" `
-  -Body $body `
-  -ContentType "application/json"
-```
-
 ## Memory Model
 
-Memory is intentionally not the same thing as Dashboard content.
-
-Recommended split:
+Memory is intentionally separate from Dashboard content:
 
 ```text
 tool data -> daily snapshot -> Dashboard display
@@ -367,8 +345,8 @@ Long-term memory should store stable facts and preferences:
 - preferred Dashboard layout
 - recurring topics
 - watchlist preferences
-- role/project defaults
-- writing or response style preferences
+- role or project defaults
+- writing and response style preferences
 
 Daily snapshots should store volatile information:
 
@@ -378,21 +356,13 @@ Daily snapshots should store volatile information:
 - message queue
 - temporary tasks
 
-Only approved candidates should enter character long-term memory. This keeps Kuro useful without filling memory with one-day noise.
+Only approved candidates should enter character long-term memory. This keeps the
+assistant useful without filling memory with one-day noise.
 
-Existing memory management lives in:
+## Tool Integration
 
-| Path | Responsibility |
-| --- | --- |
-| `kuro_launcher/memory_panel.py` | Launcher memory UI actions. |
-| `kuro_launcher/memory_support.py` | Memory path and preview helpers. |
-| `Open-LLM-VTuber/src/open_llm_vtuber/character_memory_manager.py` | Memory CRUD and turn processing. |
-| `Open-LLM-VTuber/src/open_llm_vtuber/character_memory_sql_index.py` | SQLite memory index. |
-| `Open-LLM-VTuber/src/open_llm_vtuber/conversation_history_index.py` | Conversation history search/indexing. |
-
-## Tool Integration Direction
-
-Most serious tools should remain in their own projects and expose stable structured outputs.
+Kuro should not own every external connector directly. Serious domain tools
+should stay in their own projects and publish typed outputs into Kuro.
 
 Recommended model:
 
@@ -403,33 +373,22 @@ Stocks project    -> adapter -> Kuro briefing API
 Messages project  -> adapter -> Kuro briefing API
 ```
 
-Current stock/market integration uses Open Market Intelligence as the domain
+Current stock and market integration uses Open Market Intelligence as the domain
 owner:
 
 ```text
 Kuro user question
   -> tool_catalog / tool_policy
   -> omi-market MCP server
-  -> OMI MCP `omi.ask`
-  -> OMI `POST /api/ai/ask`
+  -> OMI MCP omi.ask
+  -> OMI POST /api/ai/ask
 ```
 
-Routing rule:
-
-- Stock, watchlist, Taiwan market, chip-flow, revenue, financial, and technical
-  questions should use `omi.ask` first.
-- `omi.ask` should default to `mode=data_only` or `mode=brief`.
-- Web search should be used only after OMI when the user asks for realtime
-  quotes, fresh news, public events, or when OMI reports missing/stale local
-  data.
-- `mode=report`, `allow_llm=true`, and `allow_write=true` are blocked by Kuro
-  runtime policy unless the policy is deliberately changed.
-
-Tracked Kuro routing files:
+Tracked routing files:
 
 | File | Role |
 | --- | --- |
-| `Open-LLM-VTuber/tool_catalog.json` | Exposes `market_intelligence` and `omi.ask` as the stock/market tool category. |
+| `Open-LLM-VTuber/tool_catalog.json` | Exposes market intelligence and `omi.ask` as the stock/market tool category. |
 | `Open-LLM-VTuber/tool_policy.json` | Allows read-only `omi.ask` and blocks report/LLM/write arguments by default. |
 | `Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_catalog_manager.py` | Implements OMI-first routing and web-as-enrichment ranking. |
 | `Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_policy_manager.py` | Enforces argument-level policy guards before tool execution. |
@@ -438,29 +397,8 @@ Local enablement files are intentionally ignored by git:
 
 | Local file | Required local setting |
 | --- | --- |
-| `Open-LLM-VTuber/mcp_servers.json` | Register `omi-market` and point it at `..\..\Open Market Intelligence\agents\omi_mcp_server\server.py`. |
-| `Open-LLM-VTuber/characters/kuro.yaml` | Add `omi-market` to `mcp_enabled_servers` for the `kuro` character. |
-
-These local files are real runtime state, but they are not pushed. A fresh clone
-needs either manual local setup or a future launcher seed/template step to
-enable `omi-market`.
-
-Kuro should avoid owning every external connector directly. Its role should be:
-
-- choose character/persona and context
-- coordinate tool outputs
-- display assistant summaries
-- manage memory approval
-- provide desktop interaction surfaces
-
-Future MCP/tool design should prefer:
-
-- typed JSON outputs
-- source timestamps
-- error/source status reporting
-- idempotent daily snapshot updates
-- explicit memory-candidate creation
-- no automatic write into long-term memory without a review path
+| `Open-LLM-VTuber/mcp_servers.json` | Register `omi-market` and point it at the Open Market Intelligence MCP server. |
+| `Open-LLM-VTuber/characters/kuro.yaml` | Add enabled MCP servers for the local `kuro` character. |
 
 ## Runtime Ports
 
@@ -468,12 +406,13 @@ Default local ports from `kuro_launcher.settings.yaml`:
 
 | Service | Host | Port | Notes |
 | --- | --- | --- | --- |
-| Bridge | `127.0.0.1` | `1188` | Translation/spoken rendering bridge. |
+| Bridge | `127.0.0.1` | `1188` | Translation and spoken-rendering bridge. |
 | TTS | `127.0.0.1` | `9981` | GPT-SoVITS API endpoint used by launcher runtime config. |
 | LLM runtime | `127.0.0.1` | `23456` | Open-LLM-VTuber backend. |
 | Pet control | `127.0.0.1` | `23567` | Electron shell control server. |
 
-The runtime config builder writes the GPT-SoVITS `api_url` from the configured TTS host/port:
+The runtime config builder writes the GPT-SoVITS `api_url` from the configured
+TTS host and port:
 
 ```text
 http://<tts_host>:<tts_port>/tts
@@ -505,17 +444,17 @@ npm run check:renderer
 npm run build:renderer
 ```
 
-Git whitespace check:
-
-```powershell
-git diff --check
-```
-
 Runtime smoke checks when the pet shell is running:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:23567/status
 Invoke-RestMethod http://127.0.0.1:23567/briefing
+```
+
+Git whitespace check:
+
+```powershell
+git diff --check
 ```
 
 ## Git Hygiene
@@ -525,8 +464,9 @@ Commit:
 - source code
 - launcher/runtime helpers
 - prompt/config templates
-- character/project metadata that is safe to publish
+- safe character/project metadata
 - documentation
+- README screenshots
 - placeholder configs
 
 Do not commit:
@@ -545,9 +485,9 @@ Do not commit:
 - `pet-electron/.tmp/`
 - Python virtual environments under `envs/`
 
-## GitHub Metadata
+## Suggested GitHub Metadata
 
-Suggested repository description:
+Repository description:
 
 ```text
 Local-first desktop AI companion runtime integrating launcher, Open-LLM-VTuber, GPT-SoVITS, Live2D, memory, tools, and project prompts.
@@ -568,8 +508,4 @@ python
 typescript
 ```
 
-GitHub metadata is remote repository state, not git content. Use GitHub CLI when it needs to be updated:
-
-```powershell
-gh repo view lulu930128/desktop-agent-runtime --json description,homepageUrl,repositoryTopics
-```
+GitHub metadata is remote repository state, not git content.
