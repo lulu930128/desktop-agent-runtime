@@ -334,10 +334,24 @@ Invoke-RestMethod `
 
 Memory is intentionally separate from Dashboard content:
 
-```text
-tool data -> daily snapshot -> Dashboard display
-                         |
-                         -> memory candidate -> approval -> long-term character memory
+```mermaid
+flowchart TD
+    Turn["Current conversation turn"] --> ReadPlan["Memory read plan<br/>query, character, project, chat scope"]
+    ReadPlan --> MemoryIndex["SQLite memory index<br/>keywords, scope, status, time"]
+    ReadPlan --> HistoryIndex["Conversation history index<br/>cross-chat retrieval"]
+    MemoryIndex --> Packing["Context packing<br/>relevance + recency + token budget"]
+    HistoryIndex --> Packing
+    Packing --> PromptContext["Memory context inserted into prompt"]
+
+    Turn --> WritePlan["Memory write plan<br/>preferences, durable facts, assistant conclusions"]
+    WritePlan --> ConflictCheck["Conflict check<br/>active / superseded / disabled"]
+    ConflictCheck --> Candidate["Memory candidate<br/>review before long-term storage"]
+    Candidate --> LongTerm["Long-term character memory"]
+    LongTerm --> MemoryIndex
+
+    ToolData["Tool data"] --> Snapshot["Daily dashboard snapshot"]
+    Snapshot --> Briefing["Briefing display"]
+    Snapshot --> Candidate
 ```
 
 Long-term memory should store stable facts and preferences:
@@ -359,6 +373,39 @@ Daily snapshots should store volatile information:
 Only approved candidates should enter character long-term memory. This keeps the
 assistant useful without filling memory with one-day noise.
 
+## Output Pipeline
+
+Kuro separates what the user sees, what the voice engine speaks, and what the
+Live2D shell animates. This keeps technical content readable while preventing
+URLs, diagnostics, code, or tool artifacts from leaking into speech.
+
+```mermaid
+flowchart TD
+    Stream["Agent streaming response"] --> Transform["Transformers<br/>sentence divider / action parser / TTS filter"]
+    Transform --> Output["SentenceOutput<br/>display_text + tts_text + actions"]
+
+    Output --> Subtitle["Subtitle lane<br/>Traditional Chinese display text, URLs, code, diagnostics"]
+    Subtitle --> SilentPayload["Silent payload<br/>audio = null, display_text preserved"]
+
+    Output --> SpeechSource["Speech source lane<br/>remove URLs, paths, code, tool artifacts"]
+    SpeechSource --> SpokenRender["Bridge spoken rendering<br/>short voice-safe line + emotion"]
+    SpokenRender --> Guard["Japanese TTS guard<br/>block JSON, non-speech text, invalid kana output"]
+    Guard -->|valid| TTS["GPT-SoVITS<br/>wav output"]
+    Guard -->|blocked| SilentPayload
+
+    Output --> Emotion["Emotion lane<br/>bridge emotion / inline tag / neutral"]
+    Emotion --> Live2D["Live2D control payload"]
+
+    TTS --> Queue["TTS task manager<br/>ordered playback queue"]
+    SilentPayload --> Queue
+    Live2D --> Payload["WebSocket payload<br/>audio + display_text + actions"]
+    Queue --> Payload
+    Payload --> Electron["Electron adapter<br/>assistant-audio / synth-complete / control"]
+    Electron --> Renderer["Renderer state<br/>assistant bubble / audio queue / lip sync / Live2D"]
+    Renderer --> Playback["frontend-playback-complete"]
+    Playback --> Runtime["Backend finalizes turn"]
+```
+
 ## Tool Integration
 
 Kuro should not own every external connector directly. Serious domain tools
@@ -366,11 +413,25 @@ should stay in their own projects and publish typed outputs into Kuro.
 
 Recommended model:
 
-```text
-Mail project      -> adapter -> Kuro briefing API
-News project      -> adapter -> Kuro briefing API
-Stocks project    -> adapter -> Kuro briefing API
-Messages project  -> adapter -> Kuro briefing API
+```mermaid
+flowchart TD
+    Ask["User asks Kuro"] --> Strategy["Conversation strategy<br/>intent + thinking-power budget"]
+    Strategy --> Catalog["tool_catalog.json<br/>capability categories and ranking"]
+    Catalog --> Policy["tool_policy.json<br/>read/write, LLM, report, and argument guards"]
+    Policy --> Adapter["MCP / local tool adapter"]
+
+    Adapter --> Mail["kuro-mail<br/>read-only Gmail briefing"]
+    Adapter --> Market["omi-market<br/>Open Market Intelligence omi.ask"]
+    Adapter --> Future["future adapters<br/>news / messages / calendar"]
+
+    Mail --> BriefingApi["Kuro briefing API<br/>snapshot + source status"]
+    Market --> AnswerPack["Structured answer pack<br/>data, missing items, source refs"]
+    Future --> BriefingApi
+
+    BriefingApi --> Dashboard["Briefing dashboard"]
+    AnswerPack --> AgentResponse["Assistant response"]
+    Dashboard --> MemoryCandidate["optional memory candidate<br/>requires approval"]
+    AgentResponse --> MemoryCandidate
 ```
 
 Current stock and market integration uses Open Market Intelligence as the domain
