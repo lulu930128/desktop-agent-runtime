@@ -405,7 +405,7 @@
             "brief"
           ],
           "risk": "read_only",
-          "when": "Use for Taiwan market, stock, watchlist, data freshness, and prompt-ready brief questions backed by local Open Market Intelligence data. Prefer mode=data_only or mode=brief. Do not request report generation, allow_llm, or allow_write unless the runtime policy is explicitly changed."
+          "when": "Use for Taiwan market, stock, watchlist, data freshness, and prompt-ready brief or trusted read-only OMI LLM analysis backed by local Open Market Intelligence data. Prefer mode=data_only or mode=brief for evidence, and mode=analysis with allow_llm=true when OMI should do its own non-persistent LLM synthesis. Do not request report generation or allow_write unless the runtime policy is explicitly changed."
         }
       ]
     },

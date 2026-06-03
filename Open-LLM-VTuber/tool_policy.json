@@ -93,7 +93,7 @@
     "omi.ask": {
       "mode": "read_only",
       "category": "market_intelligence",
-      "deny_truthy_args": ["allow_llm", "allow_write"],
+      "deny_truthy_args": ["allow_write"],
       "deny_values": {
         "mode": ["report"]
       }

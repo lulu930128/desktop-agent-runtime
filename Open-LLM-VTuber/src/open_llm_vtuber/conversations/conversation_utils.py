@@ -21,11 +21,27 @@ from ..speech_pronunciation import (
     apply_pronunciation,
     contains_pronunciation_surface,
 )
+from .speech_presentation import (
+    PresentationEnvelope,
+    SPEECH_PLAN_FIXED_JA,
+    SPEECH_PLAN_SKIP,
+    SPEECH_PLAN_SOURCE,
+    SPEECH_POLICY_CODE_JA,
+    SPEECH_POLICY_ERROR_JA,
+    SPEECH_POLICY_STOCK_NUMBERS_JA,
+    SPEECH_POLICY_TABLE_JA,
+    SPEECH_POLICY_URL_JA,
+    SpeechPolicyEngine,
+    normalize_speech_plan_for_presentation,
+    speech_plan_item,
+)
 
 # =========================
 # Protocol-2 helpers (tags / zh display / ja tts)
 # =========================
-_EMO_TAG_RE = re.compile(r"\[(?:neutral|joy|happy|sad|angry|surprised|fear|disgust)\]", re.IGNORECASE)
+_EMO_TAG_RE = re.compile(
+    r"\[(?:neutral|joy|happy|sad|angry|surprised|fear|disgust)\]", re.IGNORECASE
+)
 
 # =========================
 # Route-A: structured event stream (JSON + sentinel)
@@ -48,16 +64,19 @@ _EMOTION_CANON = {
     "smirk": "smirk",
 }
 
+
 def _canonicalize_emotion(tag: str) -> str:
     if not tag:
         return ""
     t = str(tag).strip().lower()
     return _EMOTION_CANON.get(t, t)
 
+
 class _StructuredEventDecoder:
     """Incremental decoder for Route-A streamed events.
     Accepts arbitrary string chunks; extracts JSON objects delimited by the sentinel.
     """
+
     def __init__(self, eom_sentinel: str = _EOM_SENTINEL) -> None:
         self._buf = ""
         self._sentinel = eom_sentinel
@@ -98,10 +117,11 @@ class _StructuredEventDecoder:
                 start = s.find("{")
                 end = s.rfind("}")
                 if start != -1 and end != -1 and end > start:
-                    return json.loads(s[start:end+1])
+                    return json.loads(s[start : end + 1])
             except Exception:
                 return None
         return None
+
 
 def _extract_emotion_tags(text: str) -> (list, str):
     """Extract [joy]-style tags and return (tags, cleaned_text). Keeps tag order."""
@@ -112,18 +132,48 @@ def _extract_emotion_tags(text: str) -> (list, str):
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return tags, cleaned
 
+
+def _strip_emotion_tags_preserve_layout(text: str) -> str:
+    if not isinstance(text, str) or not text:
+        return ""
+    return _EMO_TAG_RE.sub("", text).strip()
+
+
 def _looks_like_chinese(text: str) -> bool:
     # Very light heuristic for "likely Chinese" (used only to protect Japanese TTS).
     if not text:
         return False
     # common Chinese particles / function words
-    zh_markers = ["的", "了", "嗎", "吧", "在", "這", "那", "也", "很", "不", "我", "你", "他", "她", "它", "們"]
+    zh_markers = [
+        "的",
+        "了",
+        "嗎",
+        "吧",
+        "在",
+        "這",
+        "那",
+        "也",
+        "很",
+        "不",
+        "我",
+        "你",
+        "他",
+        "她",
+        "它",
+        "們",
+    ]
     return any(m in text for m in zh_markers)
+
 
 def _contains_kana(text: str) -> bool:
     for ch in text:
         o = ord(ch)
-        if 0x3040 <= o <= 0x309F or 0x30A0 <= o <= 0x30FF or 0x31F0 <= o <= 0x31FF or 0xFF66 <= o <= 0xFF9F:
+        if (
+            0x3040 <= o <= 0x309F
+            or 0x30A0 <= o <= 0x30FF
+            or 0x31F0 <= o <= 0x31FF
+            or 0xFF66 <= o <= 0xFF9F
+        ):
             return True
     return False
 
@@ -162,7 +212,12 @@ def _is_safe_japanese_tts(text: str) -> bool:
     cjk = 0
     for ch in s:
         o = ord(ch)
-        if 0x3040 <= o <= 0x309F or 0x30A0 <= o <= 0x30FF or 0x31F0 <= o <= 0x31FF or 0xFF66 <= o <= 0xFF9F:
+        if (
+            0x3040 <= o <= 0x309F
+            or 0x30A0 <= o <= 0x30FF
+            or 0x31F0 <= o <= 0x31FF
+            or 0xFF66 <= o <= 0xFF9F
+        ):
             kana += 1
         elif 0x4E00 <= o <= 0x9FFF:  # CJK Unified Ideographs
             cjk += 1
@@ -188,6 +243,15 @@ _EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b")
 _WINDOWS_PATH_RE = re.compile(r"\b[A-Za-z]:[\\/][^\s，。！？、；;]+")
 _POSIX_PATH_RE = re.compile(r"(?<!\w)/(?:[\w.-]+/)+[\w.-]+")
 _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]{1,80})\]\((?:https?://|www\.)[^)]+\)")
+_LATIN_PAREN_FRAGMENT_RE = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9\s.,，、;；:&/_+#'\-‐‑–—]*$"
+)
+_LEADING_LATIN_PAREN_FRAGMENT_RE = re.compile(
+    r"^\s*[A-Za-z0-9][A-Za-z0-9\s.,，、;；:&/_+#'\-‐‑–—]{0,120}[）)]\s*"
+)
+_TRAILING_LATIN_PAREN_FRAGMENT_RE = re.compile(
+    r"[（(]\s*[A-Za-z0-9][A-Za-z0-9\s.,，、;；:&/_+#'\-‐‑–—]{0,120}$"
+)
 _INLINE_CODE_RE = re.compile(r"`([^`]{1,80})`")
 _FENCED_CODE_RE = re.compile(r"```.*?```", re.DOTALL)
 _HTML_TAG_RE = re.compile(r"<[^>\n]{1,80}>")
@@ -195,10 +259,54 @@ _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _LATIN_RE = re.compile(r"[A-Za-z]")
 _DIGIT_RE = re.compile(r"\d")
 _DATA_SYMBOL_RE = re.compile(r"[{}\[\]<>\\/=|_$`~^]")
-_TRADITIONAL_CHINESE_HINT_RE = re.compile(r"[這個麼嗎妳們裡讓說話語會應該與為於後臺台檔號訊]")
+_TRADITIONAL_CHINESE_HINT_RE = re.compile(
+    r"[這個麼嗎妳們裡讓說話語會應該與為於後臺台檔號訊]"
+)
 _JSON_ARTIFACT_RE = re.compile(
     r"(?:\\?\"(?:ja|emotion|data|provider|code|errors)\\?\"\s*:|[{}]|\\[nrt\"])",
     re.IGNORECASE,
+)
+_UNREADABLE_RENDER_RE = re.compile(
+    r"(?:テキスト|内容|文字).{0,16}(?:読み取れ|読め|文字化け)"
+)
+_UUID_RE = re.compile(r"\b[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\b")
+_LONG_TOKEN_RE = re.compile(r"\b[A-Za-z0-9_-]{24,}\b")
+_MARKDOWN_TABLE_LINE_RE = re.compile(r"^\s*\|.+\|\s*$")
+_MARKDOWN_TABLE_SEPARATOR_RE = re.compile(
+    r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$"
+)
+_STACK_TRACE_RE = re.compile(
+    r"(?i)(traceback|stack trace|^\s*at\s+\S+\(|^\s*file\s+\".+\",\s+line\s+\d+)"
+)
+_CODE_LIKE_RE = re.compile(
+    r"^\s*(?:def|class|function|const|let|var|import|from|if|for|while|return)\b|[{}<>`]"
+)
+_ERROR_DETAIL_RE = re.compile(
+    r"(?i)(exception|traceback|stack trace|permission denied|timeout|timed out|errno|http\s*[45]\d\d)"
+)
+_STOCK_NUMBER_RE = re.compile(
+    r"(?:股價|收盤|開盤|成交量|成交值|漲跌|漲幅|跌幅|法人|外資|投信|自營商|指數|大盤|均線|EPS|本益比|殖利率)"
+)
+_LIST_MARKER_RE = re.compile(
+    r"^\s*(?:[-*+•]|\d+[.)、]|[一二三四五六七八九十]+[、.])\s+"
+)
+_SPEECH_SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？!?；;])\s*")
+_SPEECH_CLAUSE_SPLIT_RE = re.compile(r"(?<=[，、,])\s*")
+_JSON_LIKE_LINE_RE = re.compile(r"^\s*(?:[{[]|[]}]|\"[^\"]+\"\s*:|'.+'\s*:)")
+_RAW_DATA_LABEL_RE = re.compile(
+    r"(?i)^\s*(?:raw data|payload|request|response|headers?|body|debug|log|token|uuid|id)\s*[:=]"
+)
+_DEBUG_LOG_RE = re.compile(
+    r"(?i)^\s*(?:\d{4}-\d{2}-\d{2}[ t]\d{2}:\d{2}:\d{2}|\[[^\]]*(?:debug|info|warn|error)[^\]]*\]|(?:debug|info|warn|warning|error)\s*[:|])"
+)
+_INLINE_DISPLAY_BLOCK_RE = re.compile(
+    r"(?P<code>`[^`\n]{1,500}`)"
+    r"|(?P<url>(?i:\b(?:https?://|www\.)[^\s，。！？、；;）)\]】>」』]+))"
+    r"|(?P<winpath>\b[A-Za-z]:[\\/][^\s，。！？、；;]+)"
+    r"|(?P<posix>(?<!\w)/(?:[\w.-]+/)+[\w.-]+)"
+)
+_EMBEDDED_LIST_BOUNDARY_RE = re.compile(
+    r"(?<=[。！？!?；;:：])\s*(?=(?:[-*+•]|\d+[.)、]|[一二三四五六七八九十]+[、.])\s+)"
 )
 _KANJI_ONLY_TTS_ALLOWLIST = {
     "\u5927\u4e08\u592b",  # daijoubu
@@ -208,11 +316,17 @@ _KANJI_ONLY_TTS_ALLOWLIST = {
 _JA_TTS_SENTENCE_MARKERS_RE = re.compile(
     r"[\u3040-\u309f](?:\u3067\u3059|\u307e\u3059|\u3060|\u306d|\u3088|\u304b|\u305f|\u308b|\u3066|\u306b|\u3092|\u304c|\u306f|\u3082|\u306e|\u3057)"
 )
+_JA_GRAMMAR_MARKER_RE = re.compile(
+    r"(?:です|ます|でした|ました|ません|でしょう|だった|ください|[ぁ-ん](?:は|が|を|に|で|と|の|も))"
+)
 _SPEECH_LABEL_RE = re.compile(
     r"^\s*(?:結論|重點|原因|建議|補充|提醒|目前|答案|說明|更新|工具|搜尋結果|資料來源|來源)\s*[:：]\s*"
 )
 _LEADING_VOCATIVE_RE = re.compile(
     r"^\s*[「『\"]?([\w\u3040-\u30ff\u3400-\u9fff]{1,24})[」』\"]?\s*[，,、]\s*(?=\S)"
+)
+_VOCATIVE_FALSE_POSITIVE_RE = re.compile(
+    r"(?:主要|業務|包含|總部|起源|服務|客戶|公司|產品|資料|工具|結果|內容)"
 )
 _STAGE_DIRECTION_KEYWORDS = (
     "嘆氣",
@@ -247,7 +361,44 @@ def _compact_speech_text(text: str) -> str:
     text = re.sub(r"\s+", " ", text or "").strip()
     text = re.sub(r"\s+([，。！？、；：,.!?;:])", r"\1", text)
     text = re.sub(r"([（「『【])\s+", r"\1", text)
+    text = re.sub(r"[，,、]{2,}", "、", text)
+    text = re.sub(r"[；;]{2,}", "；", text)
     return text.strip(" \t\r\n-•*+|")
+
+
+def _strip_display_only_latin_terms(
+    text: str,
+    pronunciation_entries: list[PronunciationEntry] | None = None,
+) -> str:
+    """Remove visual-only Latin terms from the speech lane.
+
+    Subtitles can keep terms like "(ASE Technology)" or "(wafer probe)".
+    The speech lane removes those parenthetical Latin fragments, including
+    fragments split across streaming chunks, while keeping the surrounding
+    sentence speakable.
+    """
+    if not text:
+        return ""
+
+    def strip_parenthetical(match: re.Match) -> str:
+        inner = match.group(1) or ""
+        if contains_pronunciation_surface(inner, pronunciation_entries):
+            return match.group(0)
+        has_cjk = bool(_CJK_RE.search(inner))
+        has_kana = any(
+            0x3040 <= ord(ch) <= 0x30FF or 0x31F0 <= ord(ch) <= 0x31FF for ch in inner
+        )
+        if has_cjk or has_kana:
+            return match.group(0)
+        if _LATIN_PAREN_FRAGMENT_RE.fullmatch(_compact_speech_text(inner)):
+            return ""
+        return match.group(0)
+
+    s = str(text)
+    s = _TRAILING_LATIN_PAREN_FRAGMENT_RE.sub("", s)
+    s = _LEADING_LATIN_PAREN_FRAGMENT_RE.sub("", s)
+    s = re.sub(r"[（(]([^()（）]{1,80})[）)]", strip_parenthetical, s)
+    return _compact_speech_text(s)
 
 
 def _remove_stage_directions(text: str) -> str:
@@ -262,7 +413,11 @@ def _remove_stage_directions(text: str) -> str:
         return match.group(0)
 
     s = str(text)
-    s = re.sub(r"[（(【\[]\s*([^（）()\[\]【】]{1,40})\s*[）)】\]]", replace_if_stage_direction, s)
+    s = re.sub(
+        r"[（(【\[]\s*([^（）()\[\]【】]{1,40})\s*[）)】\]]",
+        replace_if_stage_direction,
+        s,
+    )
     s = re.sub(r"\*{1,3}\s*([^*\n]{1,40})\s*\*{1,3}", replace_if_stage_direction, s)
     return s
 
@@ -275,10 +430,15 @@ def _strip_speech_prefixes(text: str, *, strip_leading_vocative: bool = False) -
     match = _LEADING_VOCATIVE_RE.match(s)
     if match:
         name = match.group(1)
-        rest = s[match.end():].strip()
+        rest = s[match.end() :].strip()
         # Treat short comma-prefixed tokens as direct address in the voice lane.
         # The subtitle still keeps the name, but speech avoids making TTS read it as an emotion/sigh.
-        if rest and len(name) <= 24 and len(rest) >= 3:
+        if (
+            rest
+            and len(name) <= 24
+            and len(rest) >= 3
+            and not _VOCATIVE_FALSE_POSITIVE_RE.search(name)
+        ):
             s = rest
     return s
 
@@ -305,7 +465,10 @@ def _looks_like_display_only_line(
 
     if _URL_RE.fullmatch(s) or _EMAIL_RE.fullmatch(s):
         return True
-    if re.match(r"(?i)^\s*(url|uri|file|path|traceback|stack trace|snippet|matched queries)\s*:", s):
+    if re.match(
+        r"(?i)^\s*(url|uri|file|path|traceback|stack trace|snippet|matched queries)\s*:",
+        s,
+    ):
         return True
     if re.match(r"^\s*(?:```|[{[\]}]|</?\w+)", s) and cjk == 0:
         return True
@@ -331,9 +494,7 @@ def _speech_line_is_useful(
 
     cjk = _count_matches(_CJK_RE, s)
     kana = sum(
-        1
-        for ch in s
-        if 0x3040 <= ord(ch) <= 0x30FF or 0x31F0 <= ord(ch) <= 0x31FF
+        1 for ch in s if 0x3040 <= ord(ch) <= 0x30FF or 0x31F0 <= ord(ch) <= 0x31FF
     )
     latin = _count_matches(_LATIN_RE, s)
     digits = _count_matches(_DIGIT_RE, s)
@@ -357,10 +518,7 @@ def _sanitize_speech_line(
 
     s = text or ""
     s = _remove_stage_directions(s)
-    s = _strip_speech_prefixes(
-        s,
-        strip_leading_vocative=not contains_pronunciation_surface(s, pronunciation_entries),
-    )
+    s = _strip_speech_prefixes(s, strip_leading_vocative=False)
     s = _FENCED_CODE_RE.sub(" ", s)
     s = _MARKDOWN_LINK_RE.sub(r"\1", s)
     s = _PAREN_URL_RE.sub("", s)
@@ -370,14 +528,26 @@ def _sanitize_speech_line(
     s = _POSIX_PATH_RE.sub(" ", s)
     s = _HTML_TAG_RE.sub(" ", s)
     s = _INLINE_CODE_RE.sub(r"\1", s)
+    had_trailing_latin_parenthetical = bool(_TRAILING_LATIN_PAREN_FRAGMENT_RE.search(s))
+    s = _strip_display_only_latin_terms(s, pronunciation_entries)
     s = re.sub(r"\b[A-Za-z][A-Za-z0-9._/-]{12,}\b", " ", s)
-    s = re.sub(r"(?i)(?:參考資料|資料來源|來源|網址|連結|url|uri|source|reference)\s*[:：]\s*(?=[，,。；;]|$)", " ", s)
+    s = re.sub(
+        r"(?i)(?:參考資料|資料來源|來源|網址|連結|url|uri|source|reference)\s*[:：]\s*(?=[，,。；;]|$)",
+        " ",
+        s,
+    )
     s = re.sub(r"[:：]\s*([，,。；;])", r"\1", s)
     s = re.sub(r"^\s*[，,、；;。]+", "", s)
     s = re.sub(r"[（(]\s*[）)]", " ", s)
     s = re.sub(r"^\s*[-•*+]\s*", "", s)
     s = _compact_speech_text(s)
 
+    if (
+        had_trailing_latin_parenthetical
+        and _count_matches(_CJK_RE, s) <= 8
+        and not re.search(r"[，。！？、；;:：,.!?]", s)
+    ):
+        return ""
     if not _speech_line_is_useful(s, pronunciation_entries):
         return ""
     return s
@@ -392,8 +562,15 @@ def _finalize_rendered_japanese_for_tts(
     if not s:
         return "", "empty", []
     if _looks_like_json_artifact(s):
-        logger.warning(f"Rendered speech rejected because it contains JSON artifacts: {s[:120]!r}")
+        logger.warning(
+            f"Rendered speech rejected because it contains JSON artifacts: {s[:120]!r}"
+        )
         return "", "json_artifact", []
+    if _UNREADABLE_RENDER_RE.search(s):
+        logger.warning(
+            f"Rendered speech rejected as renderer unreadable placeholder: {s[:120]!r}"
+        )
+        return "", "renderer_unreadable", []
 
     s, pronunciation_hits = apply_pronunciation(s, pronunciation_entries)
     s = _compact_speech_text(s)
@@ -412,14 +589,19 @@ def _finalize_rendered_japanese_for_tts(
     s = _compact_speech_text(s)
 
     if _looks_like_json_artifact(s):
-        logger.warning(f"Rendered speech rejected because it contains JSON artifacts: {s[:120]!r}")
+        logger.warning(
+            f"Rendered speech rejected because it contains JSON artifacts: {s[:120]!r}"
+        )
         return "", "json_artifact", pronunciation_hits
+    if _UNREADABLE_RENDER_RE.search(s):
+        logger.warning(
+            f"Rendered speech rejected as renderer unreadable placeholder: {s[:120]!r}"
+        )
+        return "", "renderer_unreadable", pronunciation_hits
     if not s or _is_trivial_speech_text(s):
         return "", "trivial", pronunciation_hits
     kana = sum(
-        1
-        for ch in s
-        if 0x3040 <= ord(ch) <= 0x30FF or 0x31F0 <= ord(ch) <= 0x31FF
+        1 for ch in s if 0x3040 <= ord(ch) <= 0x30FF or 0x31F0 <= ord(ch) <= 0x31FF
     )
     cjk = _count_matches(_CJK_RE, s)
     latin = _count_matches(_LATIN_RE, s)
@@ -428,23 +610,42 @@ def _finalize_rendered_japanese_for_tts(
     if kana == 0:
         normalized = re.sub(r"[\s\u3000\u3001\u3002,.!?！？、。]+", "", s)
         if normalized not in _KANJI_ONLY_TTS_ALLOWLIST:
-            logger.warning(f"Rendered speech rejected because it has no kana: {s[:120]!r}")
+            logger.warning(
+                f"Rendered speech rejected because it has no kana: {s[:120]!r}"
+            )
             return "", "no_kana", pronunciation_hits
-    if kana == 0 and not (cjk <= 4 and latin == 0 and digits == 0 and not _TRADITIONAL_CHINESE_HINT_RE.search(s)):
+    if kana == 0 and not (
+        cjk <= 4
+        and latin == 0
+        and digits == 0
+        and not _TRADITIONAL_CHINESE_HINT_RE.search(s)
+    ):
         logger.warning(f"Rendered speech rejected because it has no kana: {s[:120]!r}")
         return "", "no_kana", pronunciation_hits
-    if _TRADITIONAL_CHINESE_HINT_RE.search(s) and kana / max(1, kana + cjk) < 0.55:
-        logger.warning(f"Rendered speech rejected because it still looks Chinese: {s[:120]!r}")
+    if (
+        _TRADITIONAL_CHINESE_HINT_RE.search(s)
+        and kana / max(1, kana + cjk) < 0.55
+        and not _JA_GRAMMAR_MARKER_RE.search(s)
+    ):
+        logger.warning(
+            f"Rendered speech rejected because it still looks Chinese: {s[:120]!r}"
+        )
         return "", "looks_chinese", pronunciation_hits
     if latin > 8 and latin > kana:
-        logger.warning(f"Rendered speech rejected because latin text leaked into TTS: {s[:120]!r}")
+        logger.warning(
+            f"Rendered speech rejected because latin text leaked into TTS: {s[:120]!r}"
+        )
         return "", "latin_leak", pronunciation_hits
     if digits > 12 and digits > kana:
-        logger.warning(f"Rendered speech rejected because dense numbers leaked into TTS: {s[:120]!r}")
+        logger.warning(
+            f"Rendered speech rejected because dense numbers leaked into TTS: {s[:120]!r}"
+        )
         return "", "dense_numbers", pronunciation_hits
     words = [part for part in s.split(" ") if part]
     if len(words) >= 4 and kana < 8:
-        logger.warning(f"Rendered speech rejected because it looks like fragmented tokens: {s[:120]!r}")
+        logger.warning(
+            f"Rendered speech rejected because it looks like fragmented tokens: {s[:120]!r}"
+        )
         return "", "fragmented_tokens", pronunciation_hits
     if kana > 0 and len(s) > 8:
         no_space = re.sub(r"\s+", "", s)
@@ -454,10 +655,14 @@ def _finalize_rendered_japanese_for_tts(
             or any(phrase in no_space for phrase in _KANJI_ONLY_TTS_ALLOWLIST)
         )
         if not has_sentence_shape and cjk >= 3 and kana < cjk:
-            logger.warning(f"Rendered speech rejected because it is not sentence-like Japanese: {s[:120]!r}")
+            logger.warning(
+                f"Rendered speech rejected because it is not sentence-like Japanese: {s[:120]!r}"
+            )
             return "", "not_sentence_like", pronunciation_hits
     if not _is_safe_japanese_tts(s):
-        logger.warning(f"Rendered speech rejected as unsafe for Japanese TTS: {s[:120]!r}")
+        logger.warning(
+            f"Rendered speech rejected as unsafe for Japanese TTS: {s[:120]!r}"
+        )
         return "", "unsafe_japanese", pronunciation_hits
     return s, "ok", pronunciation_hits
 
@@ -469,6 +674,25 @@ def _sanitize_rendered_japanese_for_tts(
     return _finalize_rendered_japanese_for_tts(text, pronunciation_entries)[0]
 
 
+def _build_renderer_failure_fallback_ja(
+    guard_reason: str,
+    speech_source: str,
+    pronunciation_entries: list[PronunciationEntry] | None = None,
+) -> tuple[str, str, list[str]]:
+    if not speech_source:
+        return "", guard_reason or "empty_source", []
+    if (guard_reason or "").strip().lower() == "ok":
+        return "", "ok", []
+    fallback = "詳しい内容は画面に表示しています。"
+    spoken, fallback_guard, hits = _finalize_rendered_japanese_for_tts(
+        fallback,
+        pronunciation_entries,
+    )
+    if not spoken:
+        return "", f"fallback_rejected:{fallback_guard}", hits
+    return spoken, f"{guard_reason or 'renderer_failed'}_fallback", hits
+
+
 def _compact_tts_debug_text(text: str, max_len: int = 220) -> str:
     compact = " ".join(str(text or "").replace("\r", " ").replace("\n", " ").split())
     if len(compact) <= max_len:
@@ -477,12 +701,21 @@ def _compact_tts_debug_text(text: str, max_len: int = 220) -> str:
 
 
 def _tts_debug_enabled() -> bool:
-    return os.getenv("KURO_TTS_DEBUG", "1").strip().lower() not in {"0", "false", "no", "off"}
+    return os.getenv("KURO_TTS_DEBUG", "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
 
 
 def _tts_pipeline_log_path() -> Path:
     logs_root = (os.getenv("KURO_LAUNCHER_LOGS_DIR", "") or "").strip()
-    base_dir = Path(logs_root) if logs_root else (Path.cwd().parent / "launcher_logs").resolve()
+    base_dir = (
+        Path(logs_root)
+        if logs_root
+        else (Path.cwd().parent / "launcher_logs").resolve()
+    )
     base_dir.mkdir(parents=True, exist_ok=True)
     return base_dir / "tts_pipeline.jsonl"
 
@@ -496,6 +729,7 @@ def _log_tts_pipeline(
     provider: str,
     pronunciation_hits: list[str],
     speech_repaired: bool = False,
+    presentation: PresentationEnvelope | None = None,
 ) -> None:
     if not _tts_debug_enabled():
         return
@@ -520,6 +754,8 @@ def _log_tts_pipeline(
             "rendered_ja": _compact_tts_debug_text(rendered_ja, max_len=800),
             "final_tts": _compact_tts_debug_text(final_tts, max_len=800),
         }
+        if presentation is not None:
+            payload["presentation"] = presentation.to_log_dict(max_text_len=800)
         with _tts_pipeline_log_path().open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
     except Exception as exc:
@@ -549,6 +785,352 @@ def _trim_speech_source(text: str, max_chars: int = 420) -> str:
     return text[:max_chars].rstrip("，、；：,.!?！？ ") + "。"
 
 
+def _speech_plan_item(kind: str, text: str = "", reason: str = "") -> Dict[str, str]:
+    return speech_plan_item(kind, text, reason)
+
+
+def _is_path_like_only(text: str) -> bool:
+    s = (text or "").strip()
+    if not s:
+        return False
+    if _WINDOWS_PATH_RE.fullmatch(s) or _POSIX_PATH_RE.fullmatch(s):
+        return True
+    return bool(
+        re.match(r"(?i)^\s*(?:file|path|filepath|directory|dir)\s*[:：]\s*", s)
+        and (
+            _WINDOWS_PATH_RE.search(s)
+            or _POSIX_PATH_RE.search(s)
+            or _count_matches(_CJK_RE, s) < 4
+        )
+    )
+
+
+def _is_token_or_id_line(text: str) -> bool:
+    s = (text or "").strip()
+    if not s:
+        return False
+    if _UUID_RE.search(s) or _LONG_TOKEN_RE.search(s):
+        return True
+    if re.match(r"(?i)^\s*(?:token|api[_-]?key|secret|uuid|id)\s*[:=]", s):
+        return True
+    return False
+
+
+def _is_dense_stock_number_line(text: str) -> bool:
+    s = text or ""
+    if not _STOCK_NUMBER_RE.search(s):
+        return False
+    number_groups = re.findall(
+        r"(?<![\w.])(?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?%?)(?![\w.])",
+        s,
+    )
+    return len(number_groups) >= 4 or _count_matches(_DIGIT_RE, s) >= 12
+
+
+def _line_has_speakable_context(
+    text: str,
+    pronunciation_entries: list[PronunciationEntry] | None = None,
+) -> bool:
+    s = _compact_speech_text(text)
+    if not s:
+        return False
+    return _speech_line_is_useful(s, pronunciation_entries) and (
+        _count_matches(_CJK_RE, s) >= 4
+        or contains_pronunciation_surface(s, pronunciation_entries)
+    )
+
+
+def _classify_speech_line(
+    raw_line: str,
+    *,
+    pronunciation_entries: list[PronunciationEntry] | None = None,
+    list_like_count: int = 0,
+) -> Dict[str, str]:
+    line = (raw_line or "").strip()
+    if not line:
+        return _speech_plan_item(SPEECH_PLAN_SKIP, reason="empty")
+
+    if list_like_count >= 2 and _LIST_MARKER_RE.match(line):
+        sanitized = _sanitize_speech_line(line, pronunciation_entries)
+        if _line_has_speakable_context(sanitized, pronunciation_entries):
+            return _speech_plan_item(SPEECH_PLAN_SOURCE, sanitized, "choice_item")
+        return _speech_plan_item(SPEECH_PLAN_SKIP, reason="choice_item_display_only")
+
+    if _MARKDOWN_TABLE_SEPARATOR_RE.match(line) or _MARKDOWN_TABLE_LINE_RE.match(line):
+        return _speech_plan_item(
+            SPEECH_PLAN_FIXED_JA,
+            SPEECH_POLICY_TABLE_JA,
+            "markdown_table",
+        )
+
+    if _STACK_TRACE_RE.search(line):
+        return _speech_plan_item(
+            SPEECH_PLAN_FIXED_JA,
+            SPEECH_POLICY_ERROR_JA,
+            "stack_trace",
+        )
+
+    if _ERROR_DETAIL_RE.search(line) and _count_matches(_CJK_RE, line) < 12:
+        return _speech_plan_item(
+            SPEECH_PLAN_FIXED_JA,
+            SPEECH_POLICY_ERROR_JA,
+            "error_detail",
+        )
+
+    if _DEBUG_LOG_RE.search(line):
+        if re.search(r"(?i)\berror\b", line):
+            return _speech_plan_item(
+                SPEECH_PLAN_FIXED_JA,
+                SPEECH_POLICY_ERROR_JA,
+                "debug_error",
+            )
+        return _speech_plan_item(SPEECH_PLAN_SKIP, reason="debug_log")
+
+    if _JSON_LIKE_LINE_RE.search(line) or _RAW_DATA_LABEL_RE.search(line):
+        return _speech_plan_item(SPEECH_PLAN_SKIP, reason="raw_data")
+
+    if _is_token_or_id_line(line):
+        return _speech_plan_item(SPEECH_PLAN_SKIP, reason="token_or_id")
+
+    if _is_path_like_only(line):
+        return _speech_plan_item(SPEECH_PLAN_SKIP, reason="path")
+
+    if _is_dense_stock_number_line(line):
+        return _speech_plan_item(
+            SPEECH_PLAN_FIXED_JA,
+            SPEECH_POLICY_STOCK_NUMBERS_JA,
+            "dense_stock_numbers",
+        )
+
+    if _URL_RE.search(line):
+        sanitized = _sanitize_speech_line(line, pronunciation_entries)
+        if _line_has_speakable_context(sanitized, pronunciation_entries):
+            return _speech_plan_item(
+                SPEECH_PLAN_SOURCE,
+                sanitized,
+                "source_with_display_url_removed",
+            )
+        return _speech_plan_item(
+            SPEECH_PLAN_FIXED_JA,
+            SPEECH_POLICY_URL_JA,
+            "url",
+        )
+
+    code_like = bool(_CODE_LIKE_RE.search(line) or _INLINE_CODE_RE.search(line))
+    if code_like:
+        sanitized = _sanitize_speech_line(line, pronunciation_entries)
+        if _line_has_speakable_context(sanitized, pronunciation_entries):
+            return _speech_plan_item(
+                SPEECH_PLAN_SOURCE,
+                sanitized,
+                "source_with_inline_code_removed",
+            )
+        return _speech_plan_item(
+            SPEECH_PLAN_FIXED_JA,
+            SPEECH_POLICY_CODE_JA,
+            "code",
+        )
+
+    sanitized = _sanitize_speech_line(line, pronunciation_entries)
+    if not sanitized:
+        return _speech_plan_item(SPEECH_PLAN_SKIP, reason="display_only")
+    return _speech_plan_item(SPEECH_PLAN_SOURCE, sanitized, "source")
+
+
+def _split_long_speech_unit(unit: str, max_chars: int = 150) -> list[str]:
+    unit = _compact_speech_text(unit)
+    if not unit:
+        return []
+    if len(unit) <= max_chars:
+        return [unit]
+
+    pieces = [part.strip() for part in _SPEECH_CLAUSE_SPLIT_RE.split(unit) if part]
+    if len(pieces) <= 1:
+        return [unit]
+
+    groups: list[str] = []
+    current = ""
+    for piece in pieces:
+        candidate = _compact_speech_text(f"{current}{piece}")
+        if current and len(candidate) > max_chars:
+            groups.append(current)
+            current = piece
+        else:
+            current = candidate
+    if current:
+        groups.append(current)
+    return groups or [unit]
+
+
+def _split_speech_units(text: str) -> list[str]:
+    source = _compact_speech_text(text)
+    if not source:
+        return []
+    units: list[str] = []
+    for part in _SPEECH_SENTENCE_SPLIT_RE.split(source):
+        part = _compact_speech_text(part)
+        if not part:
+            continue
+        units.extend(_split_long_speech_unit(part))
+    return units
+
+
+def _append_speech_plan_item(
+    plan: list[Dict[str, str]],
+    item: Dict[str, str],
+    seen_fixed_reasons: set[str],
+) -> None:
+    kind = item.get("kind", "")
+    text = _compact_speech_text(item.get("text", ""))
+    reason = item.get("reason", "")
+    if kind == SPEECH_PLAN_SKIP or not text:
+        return
+    if kind == SPEECH_PLAN_FIXED_JA:
+        dedupe_key = reason or text
+        if dedupe_key in seen_fixed_reasons:
+            return
+        seen_fixed_reasons.add(dedupe_key)
+        plan.append(_speech_plan_item(kind, text, reason))
+        return
+    if kind == SPEECH_PLAN_SOURCE:
+        for unit in _split_speech_units(text):
+            if unit:
+                plan.append(_speech_plan_item(kind, unit, reason))
+
+
+def _append_mixed_inline_speech_plan(
+    plan: list[Dict[str, str]],
+    raw_line: str,
+    *,
+    pronunciation_entries: list[PronunciationEntry] | None = None,
+    list_like_count: int = 0,
+    seen_fixed_reasons: set[str],
+) -> bool:
+    """Split one visual line into speakable text and display-only blocks."""
+    line = raw_line or ""
+    matches = list(_INLINE_DISPLAY_BLOCK_RE.finditer(line))
+    if not matches:
+        return False
+
+    pos = 0
+    appended = False
+    for match in matches:
+        before = line[pos : match.start()]
+        if before.strip():
+            _append_speech_plan_item(
+                plan,
+                _classify_speech_line(
+                    before,
+                    pronunciation_entries=pronunciation_entries,
+                    list_like_count=list_like_count,
+                ),
+                seen_fixed_reasons,
+            )
+            appended = True
+
+        if match.lastgroup == "code":
+            _append_speech_plan_item(
+                plan,
+                _speech_plan_item(
+                    SPEECH_PLAN_FIXED_JA,
+                    SPEECH_POLICY_CODE_JA,
+                    "inline_code",
+                ),
+                seen_fixed_reasons,
+            )
+            appended = True
+        elif match.lastgroup == "url":
+            _append_speech_plan_item(
+                plan,
+                _speech_plan_item(
+                    SPEECH_PLAN_FIXED_JA,
+                    SPEECH_POLICY_URL_JA,
+                    "inline_url",
+                ),
+                seen_fixed_reasons,
+            )
+            appended = True
+
+        pos = match.end()
+
+    after = line[pos:]
+    if after.strip():
+        _append_speech_plan_item(
+            plan,
+            _classify_speech_line(
+                after,
+                pronunciation_entries=pronunciation_entries,
+                list_like_count=list_like_count,
+            ),
+            seen_fixed_reasons,
+        )
+        appended = True
+
+    return appended
+
+
+def _build_speech_plan(
+    display_text: str,
+    tts_text: str,
+    pronunciation_entries: list[PronunciationEntry] | None = None,
+) -> list[Dict[str, str]]:
+    """Build speech actions from display text without compressing the answer.
+
+    Normal conversational text becomes source segments. Display-only artifacts are
+    skipped or replaced with a short fixed Japanese line before TTS.
+    """
+    source = (display_text or "").strip() or (tts_text or "").strip()
+    if not source:
+        return []
+
+    source = _strip_emotion_tags_preserve_layout(source)
+    source = _EMBEDDED_LIST_BOUNDARY_RE.sub("\n", source)
+    raw_lines = re.split(r"\r\n?|\n", source)
+    list_like_count = sum(1 for line in raw_lines if _LIST_MARKER_RE.match(line or ""))
+    plan: list[Dict[str, str]] = []
+    seen_fixed_reasons: set[str] = set()
+    in_code_block = False
+
+    for raw_line in raw_lines:
+        line = raw_line or ""
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            if not in_code_block:
+                _append_speech_plan_item(
+                    plan,
+                    _speech_plan_item(
+                        SPEECH_PLAN_FIXED_JA,
+                        SPEECH_POLICY_CODE_JA,
+                        "code_block",
+                    ),
+                    seen_fixed_reasons,
+                )
+                in_code_block = True
+            else:
+                in_code_block = False
+            continue
+        if in_code_block:
+            continue
+
+        if _append_mixed_inline_speech_plan(
+            plan,
+            line,
+            pronunciation_entries=pronunciation_entries,
+            list_like_count=list_like_count,
+            seen_fixed_reasons=seen_fixed_reasons,
+        ):
+            continue
+
+        item = _classify_speech_line(
+            line,
+            pronunciation_entries=pronunciation_entries,
+            list_like_count=list_like_count,
+        )
+        _append_speech_plan_item(plan, item, seen_fixed_reasons)
+
+    return normalize_speech_plan_for_presentation(plan)
+
+
 def _build_speech_source(
     display_text: str,
     tts_text: str,
@@ -559,19 +1141,11 @@ def _build_speech_source(
     The display lane keeps the original subtitle. This speech lane removes or skips
     visual-only material such as URLs, paths, code, logs, and dense data.
     """
-    source = (tts_text or "").strip() or (display_text or "").strip()
-    if not source:
-        return ""
-
-    _, source = _extract_emotion_tags(source)
-    source = _FENCED_CODE_RE.sub(" ", source)
-
-    parts: list[str] = []
-    for raw_line in re.split(r"\r\n?|\n", source):
-        line = _sanitize_speech_line(raw_line, pronunciation_entries)
-        if line:
-            parts.append(line)
-
+    parts = [
+        item["text"]
+        for item in _build_speech_plan(display_text, tts_text, pronunciation_entries)
+        if item.get("kind") == SPEECH_PLAN_SOURCE and item.get("text")
+    ]
     if not parts:
         return ""
     return _trim_speech_source(" ".join(parts))
@@ -580,7 +1154,7 @@ def _build_speech_source(
 from ..message_handler import message_handler
 from .types import WebSocketSend, BroadcastContext
 from .tts_manager import TTSTaskManager
-from ..agent.output_types import SentenceOutput, AudioOutput
+from ..agent.output_types import SentenceOutput, AudioOutput, DisplayText
 from ..agent.input_types import (
     BatchInput,
     FileData,
@@ -823,7 +1397,9 @@ def _format_byte_size(size: int) -> str:
 
 
 def _truncate_text(text: str, limit: int) -> str:
-    normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "")
+    normalized = (
+        str(text or "").replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "")
+    )
     normalized = normalized.strip()
     if len(normalized) <= limit:
         return normalized
@@ -887,11 +1463,22 @@ def _classify_uploaded_file(
         return "code"
     if extension in TEXT_ATTACHMENT_EXTENSIONS or normalized_mime.startswith("text/"):
         return "text"
-    if extension in ARCHIVE_ATTACHMENT_EXTENSIONS or normalized_mime in ARCHIVE_ATTACHMENT_MIME_TYPES:
+    if (
+        extension in ARCHIVE_ATTACHMENT_EXTENSIONS
+        or normalized_mime in ARCHIVE_ATTACHMENT_MIME_TYPES
+    ):
         return "archive"
-    if extension in BINARY_ATTACHMENT_EXTENSIONS or normalized_mime in BINARY_ATTACHMENT_MIME_TYPES:
+    if (
+        extension in BINARY_ATTACHMENT_EXTENSIONS
+        or normalized_mime in BINARY_ATTACHMENT_MIME_TYPES
+    ):
         return "binary"
-    if normalized_mime in {"application/json", "application/xml", "application/x-yaml", "application/toml"}:
+    if normalized_mime in {
+        "application/json",
+        "application/xml",
+        "application/x-yaml",
+        "application/toml",
+    }:
         return "text"
     if raw_bytes.startswith(b"MZ") or raw_bytes.startswith(b"\x7fELF"):
         return "binary"
@@ -900,7 +1487,9 @@ def _classify_uploaded_file(
     if explicit_kind in {"image", "audio", "text", "code", "archive", "binary"}:
         return explicit_kind
 
-    is_text, _, _ = _decode_text_bytes(raw_bytes[: min(len(raw_bytes), MAX_ARCHIVE_MEMBER_BYTES)])
+    is_text, _, _ = _decode_text_bytes(
+        raw_bytes[: min(len(raw_bytes), MAX_ARCHIVE_MEMBER_BYTES)]
+    )
     return "text" if is_text else "binary"
 
 
@@ -923,7 +1512,9 @@ def _summarize_text_attachment(
         f"- size: {_format_byte_size(len(raw_bytes))}",
     ]
     if not is_text:
-        header.append("- result: binary-looking content; static binary summary is safer")
+        header.append(
+            "- result: binary-looking content; static binary summary is safer"
+        )
         return "\n".join(header)
 
     excerpt = _truncate_text(text, max_chars)
@@ -941,7 +1532,11 @@ def _summarize_text_attachment(
 
 def _is_safe_archive_member(name: str) -> bool:
     normalized = str(name or "").replace("\\", "/")
-    if not normalized or normalized.startswith("/") or re.match(r"^[A-Za-z]:", normalized):
+    if (
+        not normalized
+        or normalized.startswith("/")
+        or re.match(r"^[A-Za-z]:", normalized)
+    ):
         return False
     return all(part not in {"", ".", ".."} for part in normalized.split("/"))
 
@@ -982,7 +1577,9 @@ def _summarize_zip_archive(name: str, raw_bytes: bytes) -> str:
 
         for info in entries[:MAX_ARCHIVE_ENTRIES]:
             suffix = "/" if info.is_dir() else ""
-            entry_lines.append(f"  - {info.filename}{suffix} ({_format_byte_size(info.file_size)})")
+            entry_lines.append(
+                f"  - {info.filename}{suffix} ({_format_byte_size(info.file_size)})"
+            )
 
         for info in entries:
             if len(text_samples) >= MAX_ARCHIVE_TEXT_FILES:
@@ -1025,7 +1622,9 @@ def _summarize_tar_archive(name: str, raw_bytes: bytes) -> str:
 
         for member in members[:MAX_ARCHIVE_ENTRIES]:
             suffix = "/" if member.isdir() else ""
-            entry_lines.append(f"  - {member.name}{suffix} ({_format_byte_size(member.size)})")
+            entry_lines.append(
+                f"  - {member.name}{suffix} ({_format_byte_size(member.size)})"
+            )
 
         for member in members:
             if len(text_samples) >= MAX_ARCHIVE_TEXT_FILES:
@@ -1137,12 +1736,16 @@ def _read_c_string(raw_bytes: bytes, offset: int, max_len: int = 512) -> str:
     return raw_bytes[offset:end].decode("ascii", errors="replace").strip()
 
 
-def _pe_rva_to_offset(sections: List[Dict[str, int]], rva: int, size_of_headers: int) -> Optional[int]:
+def _pe_rva_to_offset(
+    sections: List[Dict[str, int]], rva: int, size_of_headers: int
+) -> Optional[int]:
     if 0 <= rva < size_of_headers:
         return rva
     for section in sections:
         start = int(section.get("virtual_address") or 0)
-        span = max(int(section.get("virtual_size") or 0), int(section.get("raw_size") or 0))
+        span = max(
+            int(section.get("virtual_size") or 0), int(section.get("raw_size") or 0)
+        )
         if start <= rva < start + span:
             offset = int(section.get("raw_pointer") or 0) + (rva - start)
             return offset if 0 <= offset < 2**31 else None
@@ -1170,14 +1773,19 @@ def _parse_pe_imports(
     for descriptor_index in range(64):
         offset = descriptor_offset + descriptor_index * 20
         try:
-            original_thunk, _, _, name_rva, first_thunk = _unpack_from("<IIIII", raw_bytes, offset)
+            original_thunk, _, _, name_rva, first_thunk = _unpack_from(
+                "<IIIII", raw_bytes, offset
+            )
         except ValueError:
             break
         if not any([original_thunk, name_rva, first_thunk]):
             break
 
         name_offset = _pe_rva_to_offset(sections, name_rva, size_of_headers)
-        dll_name = _read_c_string(raw_bytes, name_offset or -1, 256) or f"dll_{descriptor_index}"
+        dll_name = (
+            _read_c_string(raw_bytes, name_offset or -1, 256)
+            or f"dll_{descriptor_index}"
+        )
         thunk_rva = original_thunk or first_thunk
         thunk_offset = _pe_rva_to_offset(sections, thunk_rva, size_of_headers)
         functions: List[str] = []
@@ -1185,9 +1793,13 @@ def _parse_pe_imports(
             for function_index in range(80):
                 try:
                     if is_pe64:
-                        (thunk_value,) = _unpack_from("<Q", raw_bytes, thunk_offset + function_index * thunk_size)
+                        (thunk_value,) = _unpack_from(
+                            "<Q", raw_bytes, thunk_offset + function_index * thunk_size
+                        )
                     else:
-                        (thunk_value,) = _unpack_from("<I", raw_bytes, thunk_offset + function_index * thunk_size)
+                        (thunk_value,) = _unpack_from(
+                            "<I", raw_bytes, thunk_offset + function_index * thunk_size
+                        )
                 except ValueError:
                     break
                 if thunk_value == 0:
@@ -1195,8 +1807,12 @@ def _parse_pe_imports(
                 if thunk_value & ordinal_mask:
                     functions.append(f"ordinal:{thunk_value & 0xFFFF}")
                     continue
-                hint_name_offset = _pe_rva_to_offset(sections, int(thunk_value), size_of_headers)
-                function_name = _read_c_string(raw_bytes, (hint_name_offset or -2) + 2, 256)
+                hint_name_offset = _pe_rva_to_offset(
+                    sections, int(thunk_value), size_of_headers
+                )
+                function_name = _read_c_string(
+                    raw_bytes, (hint_name_offset or -2) + 2, 256
+                )
                 if function_name:
                     functions.append(function_name)
                 if len(functions) >= 40:
@@ -1214,13 +1830,19 @@ def _parse_pe_summary(raw_bytes: bytes) -> List[str]:
             return ["- PE: invalid PE signature"]
 
         coff_offset = pe_offset + 4
-        machine, section_count, timestamp, _, _, optional_size, characteristics = _unpack_from(
-            "<HHIIIHH", raw_bytes, coff_offset
+        machine, section_count, timestamp, _, _, optional_size, characteristics = (
+            _unpack_from("<HHIIIHH", raw_bytes, coff_offset)
         )
         optional_offset = coff_offset + 20
         (magic,) = _unpack_from("<H", raw_bytes, optional_offset)
         is_pe64 = magic == 0x20B
-        pe_format = "PE32+" if is_pe64 else "PE32" if magic == 0x10B else f"unknown optional magic 0x{magic:X}"
+        pe_format = (
+            "PE32+"
+            if is_pe64
+            else "PE32"
+            if magic == 0x10B
+            else f"unknown optional magic 0x{magic:X}"
+        )
         (entry_point_rva,) = _unpack_from("<I", raw_bytes, optional_offset + 16)
         if is_pe64:
             (image_base,) = _unpack_from("<Q", raw_bytes, optional_offset + 24)
@@ -1230,7 +1852,9 @@ def _parse_pe_summary(raw_bytes: bytes) -> List[str]:
             data_directory_offset = optional_offset + 96
         (size_of_headers,) = _unpack_from("<I", raw_bytes, optional_offset + 60)
         (subsystem,) = _unpack_from("<H", raw_bytes, optional_offset + 68)
-        import_rva, import_size = _unpack_from("<II", raw_bytes, data_directory_offset + 8)
+        import_rva, import_size = _unpack_from(
+            "<II", raw_bytes, data_directory_offset + 8
+        )
 
         sections: List[Dict[str, int]] = []
         section_offset = optional_offset + optional_size
@@ -1248,7 +1872,10 @@ def _parse_pe_summary(raw_bytes: bytes) -> List[str]:
                 _,
                 section_characteristics,
             ) = _unpack_from("<8sIIIIIIHHI", raw_bytes, current_offset)
-            section_name = raw_name.split(b"\x00", 1)[0].decode("ascii", errors="replace") or f"section_{index}"
+            section_name = (
+                raw_name.split(b"\x00", 1)[0].decode("ascii", errors="replace")
+                or f"section_{index}"
+            )
             sections.append(
                 {
                     "name": section_name,
@@ -1263,7 +1890,9 @@ def _parse_pe_summary(raw_bytes: bytes) -> List[str]:
         timestamp_text = "unknown"
         if timestamp:
             try:
-                timestamp_text = datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat()
+                timestamp_text = datetime.fromtimestamp(
+                    timestamp, tz=timezone.utc
+                ).isoformat()
             except Exception:
                 timestamp_text = f"raw:{timestamp}"
 
@@ -1288,11 +1917,17 @@ def _parse_pe_summary(raw_bytes: bytes) -> List[str]:
         if section_count > 12:
             lines.append(f"  ...{section_count - 12} more sections")
 
-        imports = _parse_pe_imports(raw_bytes, sections, import_rva, size_of_headers, is_pe64)
+        imports = _parse_pe_imports(
+            raw_bytes, sections, import_rva, size_of_headers, is_pe64
+        )
         if imports:
-            lines.append(f"- import table: RVA 0x{import_rva:X}, size {_format_byte_size(import_size)}")
+            lines.append(
+                f"- import table: RVA 0x{import_rva:X}, size {_format_byte_size(import_size)}"
+            )
             for dll_name, functions in list(imports.items())[:18]:
-                preview = ", ".join(functions[:18]) if functions else "[names unavailable]"
+                preview = (
+                    ", ".join(functions[:18]) if functions else "[names unavailable]"
+                )
                 if len(functions) > 18:
                     preview += f", ...{len(functions) - 18} more"
                 lines.append(f"  - {dll_name}: {preview}")
@@ -1379,9 +2014,7 @@ async def transcribe_audio_files(
 
     notes: List[str] = []
     audio_items = [
-        file
-        for file in files
-        if isinstance(file, dict) and _is_audio_upload(file)
+        file for file in files if isinstance(file, dict) and _is_audio_upload(file)
     ][:3]
 
     for index, file in enumerate(audio_items, start=1):
@@ -1419,13 +2052,19 @@ async def summarize_uploaded_files(
         return []
 
     notes: List[str] = []
-    audio_files = [file for file in files if isinstance(file, dict) and _is_audio_upload(file)]
+    audio_files = [
+        file for file in files if isinstance(file, dict) and _is_audio_upload(file)
+    ]
     audio_notes = await transcribe_audio_files(files, asr_engine)
     if audio_notes:
         notes.append("[Audio file transcription]\n" + "\n".join(audio_notes))
     elif audio_files and asr_engine is None:
-        names = ", ".join(_safe_display_name(file.get("name") or "audio") for file in audio_files[:3])
-        notes.append(f"[Audio file transcription]\n- {names}: ASR engine is not available.")
+        names = ", ".join(
+            _safe_display_name(file.get("name") or "audio") for file in audio_files[:3]
+        )
+        notes.append(
+            f"[Audio file transcription]\n- {names}: ASR engine is not available."
+        )
 
     for index, file in enumerate(files, start=1):
         if not isinstance(file, dict) or _is_audio_upload(file):
@@ -1468,6 +2107,7 @@ async def process_agent_output(
     websocket_send: WebSocketSend,
     tts_manager: TTSTaskManager,
     translate_engine: Optional[Any] = None,
+    defer_sentence_voice: bool = False,
 ) -> str:
     """Process agent output with character information and optional translation"""
     output.display_text.name = character_config.character_name
@@ -1483,6 +2123,7 @@ async def process_agent_output(
                 websocket_send,
                 tts_manager,
                 translate_engine,
+                defer_voice=defer_sentence_voice,
             )
         elif isinstance(output, AudioOutput):
             full_response = await handle_audio_output(output, websocket_send)
@@ -1499,7 +2140,6 @@ async def process_agent_output(
     return full_response
 
 
-
 async def handle_sentence_output(
     output: SentenceOutput,
     live2d_model: Live2dModel,
@@ -1507,6 +2147,7 @@ async def handle_sentence_output(
     websocket_send: WebSocketSend,
     tts_manager: TTSTaskManager,
     translate_engine: Optional[Any] = None,
+    defer_voice: bool = False,
 ) -> str:
     """
     Dual-flow pipeline (recommended):
@@ -1517,13 +2158,20 @@ async def handle_sentence_output(
 
     This avoids long list/step content being spoken and greatly reduces playback queue / timeouts.
     """
+    speech_policy = SpeechPolicyEngine()
+    presentation = speech_policy.create_envelope(response_type="chat")
     full_response = ""
     full_zh = ""
+    full_tts = ""
     speech_zh_parts: List[str] = []
     pending_tags: List[str] = []
     last_display = None
     last_actions = None
-    pronunciation_entries = getattr(translate_engine, "pronunciation_entries", []) if translate_engine else []
+    pronunciation_entries = (
+        getattr(translate_engine, "pronunciation_entries", [])
+        if translate_engine
+        else []
+    )
 
     async def _emit_emotion_from_key(key: str) -> None:
         k = _canonicalize_emotion(key)
@@ -1531,7 +2179,9 @@ async def handle_sentence_output(
             return
         try:
             await websocket_send(
-                json.dumps({"type": "emotion", "emotion": k, "tags": [k]}, ensure_ascii=False)
+                json.dumps(
+                    {"type": "emotion", "emotion": k, "tags": [k]}, ensure_ascii=False
+                )
             )
             logger.info(f"🎭 Emitted emotion tags: {[k]}")
         except Exception as e:
@@ -1546,7 +2196,10 @@ async def handle_sentence_output(
             return
         try:
             await websocket_send(
-                json.dumps({"type": "emotion", "emotion": canon_tags[-1], "tags": canon_tags}, ensure_ascii=False)
+                json.dumps(
+                    {"type": "emotion", "emotion": canon_tags[-1], "tags": canon_tags},
+                    ensure_ascii=False,
+                )
             )
             logger.info(f"🎭 Emitted emotion tags: {canon_tags}")
         except Exception as e:
@@ -1576,15 +2229,19 @@ async def handle_sentence_output(
             pending_tags.extend(tags)
 
         if clean_disp:
+            presentation.append_display(raw_text=raw_disp, display_text=clean_disp)
             full_response += clean_disp
             full_zh += clean_disp
-            speech_source = _build_speech_source(
-                clean_disp,
-                str(tts_text or ""),
-                pronunciation_entries,
-            )
-            if speech_source:
-                speech_zh_parts.append(speech_source)
+            tts_piece = str(tts_text or "")
+            full_tts += tts_piece
+            if not defer_voice:
+                speech_source = _build_speech_source(
+                    clean_disp,
+                    tts_piece,
+                    pronunciation_entries,
+                )
+                if speech_source:
+                    speech_zh_parts.append(speech_source)
             last_display = display_text
             last_actions = actions
     # Send ONE silent subtitle payload (Chinese) to create/update the assistant bubble.
@@ -1605,35 +2262,90 @@ async def handle_sentence_output(
                 websocket_send=websocket_send,
             )
 
-
+    if defer_voice:
+        if full_zh.strip():
+            tts_manager.add_deferred_speech(
+                display_text=full_zh.strip(),
+                tts_text=full_tts.strip(),
+                display=last_display,
+                actions=last_actions,
+                emotion_tags=pending_tags,
+            )
+        return full_response
 
     # Final: render ONE short spoken Japanese line from the speech-source lane.
     # Keep display and speech intentionally separate: visual-only details stay visible
     # but do not get fed into Japanese TTS.
     full_zh_text = full_zh.strip()
     speech_zh_text = _trim_speech_source(" ".join(speech_zh_parts))
-    if full_zh_text and not speech_zh_text:
-        logger.info("Speech-source lane is empty after sanitizing; display-only response will stay silent.")
+    speech_policy.set_source(presentation, speech_zh_text)
+    if full_zh_text and not presentation.speech_source:
+        logger.info(
+            "Speech-source lane is empty after sanitizing; display-only response will stay silent."
+        )
 
-    rendered_ja = await _render_spoken_ja(speech_zh_text)
-    spoken_ja, tts_guard_reason, pronunciation_hits = _finalize_rendered_japanese_for_tts(
-        rendered_ja,
-        pronunciation_entries,
+    rendered_ja = await _render_spoken_ja(presentation.speech_source)
+    spoken_ja, tts_guard_reason, pronunciation_hits = (
+        _finalize_rendered_japanese_for_tts(
+            rendered_ja,
+            pronunciation_entries,
+        )
     )
-    if spoken_ja and spoken_ja.strip() == speech_zh_text:
-        logger.warning("Speech renderer returned the original subtitle text; skip voice lane to avoid feeding zh text into ja TTS.")
+    if spoken_ja and spoken_ja.strip() == presentation.speech_source:
+        logger.warning(
+            "Speech renderer returned the original subtitle text; skip voice lane to avoid feeding zh text into ja TTS."
+        )
         spoken_ja = ""
         tts_guard_reason = "same_as_source"
-    _log_tts_pipeline(
-        speech_source=speech_zh_text,
-        rendered_ja=rendered_ja,
-        final_tts=spoken_ja,
-        guard_reason=tts_guard_reason,
-        provider=getattr(translate_engine, "last_provider", "") if translate_engine else "",
-        pronunciation_hits=pronunciation_hits,
-        speech_repaired=bool(getattr(translate_engine, "last_speech_repaired", False)) if translate_engine else False,
+    if not spoken_ja and tts_manager.can_queue_speech_fallback():
+        fallback_ja, fallback_reason, fallback_hits = (
+            _build_renderer_failure_fallback_ja(
+                tts_guard_reason,
+                presentation.speech_source,
+                pronunciation_entries,
+            )
+        )
+        if fallback_ja:
+            logger.warning(
+                "Speech renderer produced no usable TTS; queueing one safe fallback line. reason={}",
+                tts_guard_reason,
+            )
+            spoken_ja = fallback_ja
+            tts_guard_reason = fallback_reason
+            pronunciation_hits = sorted(set([*pronunciation_hits, *fallback_hits]))
+            tts_manager.mark_speech_fallback_queued()
+    provider = (
+        getattr(translate_engine, "last_provider", "") if translate_engine else ""
     )
-    emotion_key = getattr(translate_engine, "last_emotion", "") if translate_engine else ""
+    speech_repaired = (
+        bool(getattr(translate_engine, "last_speech_repaired", False))
+        if translate_engine
+        else False
+    )
+    emotion_key = (
+        getattr(translate_engine, "last_emotion", "") if translate_engine else ""
+    )
+    presentation.expression_hint = _canonicalize_emotion(
+        emotion_key or (pending_tags[-1] if pending_tags else "neutral")
+    )
+    presentation.attach_speech_result(
+        rendered_text=rendered_ja,
+        spoken_text=spoken_ja,
+        guard_reason=tts_guard_reason,
+        provider=provider,
+        pronunciation_hits=pronunciation_hits,
+        speech_repaired=speech_repaired,
+    )
+    _log_tts_pipeline(
+        speech_source=presentation.speech_source,
+        rendered_ja=rendered_ja,
+        final_tts=presentation.spoken_text,
+        guard_reason=tts_guard_reason,
+        provider=provider,
+        pronunciation_hits=pronunciation_hits,
+        speech_repaired=speech_repaired,
+        presentation=presentation,
+    )
 
     # Prefer bridge-derived emotion; fallback to inline tags; else neutral
     if emotion_key:
@@ -1643,7 +2355,7 @@ async def handle_sentence_output(
     else:
         await _emit_emotion_from_key("neutral")
 
-    if spoken_ja:
+    if presentation.spoken_text:
         # Speak one Japanese audio. Subtitle has already been updated via 'full-text', so avoid re-sending it here to prevent duplicates.
         if last_display is not None:
             dt2 = copy.deepcopy(last_display)
@@ -1654,7 +2366,7 @@ async def handle_sentence_output(
                 dt2.text = ""
 
         await tts_manager.speak(
-            tts_text=spoken_ja,
+            tts_text=presentation.spoken_text,
             display_text=dt2,
             actions=last_actions,
             live2d_model=live2d_model,
@@ -1662,9 +2374,294 @@ async def handle_sentence_output(
             websocket_send=websocket_send,
         )
     else:
-        logger.warning("No spoken Japanese generated; skipping voice lane for this turn.")
+        logger.warning(
+            "No spoken Japanese generated; skipping voice lane for this turn."
+        )
 
     return full_response
+
+
+async def flush_deferred_sentence_speech(
+    *,
+    live2d_model: Live2dModel,
+    tts_engine: TTSInterface,
+    websocket_send: WebSocketSend,
+    tts_manager: TTSTaskManager,
+    translate_engine: Optional[Any] = None,
+) -> None:
+    deferred = tts_manager.pop_deferred_speech()
+    if not deferred:
+        return
+
+    display_text_source = str(deferred.get("display_text") or "")
+    tts_text_source = str(deferred.get("tts_text") or "")
+    last_display = deferred.get("display")
+    last_actions = deferred.get("actions")
+    pending_tags = [
+        str(tag) for tag in deferred.get("emotion_tags", []) if str(tag or "").strip()
+    ]
+    pronunciation_entries = (
+        getattr(translate_engine, "pronunciation_entries", [])
+        if translate_engine
+        else []
+    )
+
+    speech_policy = SpeechPolicyEngine()
+    presentation = speech_policy.create_envelope(response_type="chat")
+    presentation.append_display(
+        raw_text=display_text_source,
+        display_text=display_text_source,
+    )
+
+    async def emit_emotion_from_key(key: str) -> None:
+        k = _canonicalize_emotion(key)
+        if not k:
+            return
+        try:
+            await websocket_send(
+                json.dumps(
+                    {"type": "emotion", "emotion": k, "tags": [k]}, ensure_ascii=False
+                )
+            )
+            logger.info(f"🎭 Emitted emotion tags: {[k]}")
+        except Exception as e:
+            logger.warning(f"Failed to emit emotion tags: {e}")
+
+    async def emit_emotion(tags_to_send: List[str]) -> None:
+        canon_tags = [_canonicalize_emotion(t) for t in tags_to_send if t]
+        canon_tags = [t for t in canon_tags if t]
+        if not canon_tags:
+            return
+        try:
+            await websocket_send(
+                json.dumps(
+                    {"type": "emotion", "emotion": canon_tags[-1], "tags": canon_tags},
+                    ensure_ascii=False,
+                )
+            )
+            logger.info(f"🎭 Emitted emotion tags: {canon_tags}")
+        except Exception as e:
+            logger.warning(f"Failed to emit emotion tags: {e}")
+
+    async def render_spoken_ja(text_zh: str) -> str:
+        if not text_zh or not translate_engine:
+            return ""
+        try:
+            ja = await asyncio.to_thread(translate_engine.translate, text_zh)
+            return (ja or "").strip()
+        except Exception as e:
+            logger.warning(f"Speech render failed: {e}")
+            return ""
+
+    speech_plan = _build_speech_plan(
+        display_text_source,
+        tts_text_source,
+        pronunciation_entries,
+    )
+    source_segments = [
+        item["text"]
+        for item in speech_plan
+        if item.get("kind") == SPEECH_PLAN_SOURCE and item.get("text")
+    ]
+    speech_zh_text = _trim_speech_source(" ".join(source_segments))
+    speech_policy.set_source(presentation, speech_zh_text)
+    presentation.metadata["speech_plan"] = [
+        {
+            "kind": item.get("kind", ""),
+            "reason": item.get("reason", ""),
+            "text": _compact_tts_debug_text(item.get("text", ""), max_len=120),
+        }
+        for item in speech_plan
+    ]
+    if display_text_source.strip() and not speech_plan:
+        logger.info(
+            "Deferred speech-source lane is empty after sanitizing; display-only response will stay silent."
+        )
+
+    queued_spoken_count = 0
+    fallback_source = speech_zh_text
+    fallback_guard_reason = ""
+    used_renderer = False
+
+    async def queue_spoken_text(spoken_text: str) -> None:
+        if last_display is not None:
+            dt = copy.deepcopy(last_display)
+            dt.text = ""
+        else:
+            dt = DisplayText(text="")
+
+        await tts_manager.speak(
+            tts_text=spoken_text,
+            display_text=dt,
+            actions=last_actions,
+            live2d_model=live2d_model,
+            tts_engine=tts_engine,
+            websocket_send=websocket_send,
+        )
+
+    for segment_index, item in enumerate(speech_plan, start=1):
+        kind = item.get("kind", "")
+        segment_text = item.get("text", "")
+        policy_reason = item.get("reason", "")
+        if not segment_text:
+            continue
+
+        rendered_ja = ""
+        spoken_ja = ""
+        tts_guard_reason = "not_rendered"
+        pronunciation_hits: list[str] = []
+        provider = "local:speech_policy"
+        speech_repaired = False
+
+        if kind == SPEECH_PLAN_FIXED_JA:
+            rendered_ja = segment_text
+            spoken_ja, tts_guard_reason, pronunciation_hits = (
+                _finalize_rendered_japanese_for_tts(
+                    rendered_ja,
+                    pronunciation_entries,
+                )
+            )
+        elif kind == SPEECH_PLAN_SOURCE:
+            used_renderer = True
+            rendered_ja = await render_spoken_ja(segment_text)
+            spoken_ja, tts_guard_reason, pronunciation_hits = (
+                _finalize_rendered_japanese_for_tts(
+                    rendered_ja,
+                    pronunciation_entries,
+                )
+            )
+            if spoken_ja and spoken_ja.strip() == segment_text:
+                logger.warning(
+                    "Speech renderer returned the original subtitle text; skip voice lane to avoid feeding zh text into ja TTS."
+                )
+                spoken_ja = ""
+                tts_guard_reason = "same_as_source"
+            provider = (
+                getattr(translate_engine, "last_provider", "")
+                if translate_engine
+                else ""
+            )
+            speech_repaired = (
+                bool(getattr(translate_engine, "last_speech_repaired", False))
+                if translate_engine
+                else False
+            )
+            if not spoken_ja and not fallback_guard_reason:
+                fallback_guard_reason = tts_guard_reason
+                fallback_source = segment_text
+        else:
+            continue
+
+        segment_presentation = speech_policy.create_envelope(response_type="chat")
+        segment_presentation.append_display(
+            raw_text=display_text_source,
+            display_text=display_text_source,
+        )
+        speech_policy.set_source(segment_presentation, segment_text)
+        segment_presentation.expression_hint = presentation.expression_hint
+        segment_presentation.metadata.update(
+            {
+                "policy_kind": kind,
+                "policy_reason": policy_reason,
+                "segment_index": segment_index,
+                "segment_count": len(speech_plan),
+            }
+        )
+        segment_presentation.attach_speech_result(
+            rendered_text=rendered_ja,
+            spoken_text=spoken_ja,
+            guard_reason=tts_guard_reason,
+            provider=provider,
+            pronunciation_hits=pronunciation_hits,
+            speech_repaired=speech_repaired,
+        )
+        _log_tts_pipeline(
+            speech_source=segment_text,
+            rendered_ja=rendered_ja,
+            final_tts=segment_presentation.spoken_text,
+            guard_reason=tts_guard_reason,
+            provider=provider,
+            pronunciation_hits=pronunciation_hits,
+            speech_repaired=speech_repaired,
+            presentation=segment_presentation,
+        )
+
+        if segment_presentation.spoken_text:
+            await queue_spoken_text(segment_presentation.spoken_text)
+            queued_spoken_count += 1
+
+    if (
+        queued_spoken_count == 0
+        and fallback_source
+        and len(source_segments) <= 1
+        and len(fallback_source) <= 80
+        and tts_manager.can_queue_speech_fallback()
+    ):
+        fallback_ja, fallback_reason, fallback_hits = (
+            _build_renderer_failure_fallback_ja(
+                fallback_guard_reason or "empty",
+                fallback_source,
+                pronunciation_entries,
+            )
+        )
+        if fallback_ja:
+            logger.warning(
+                "Speech renderer produced no usable deferred TTS; queueing one safe fallback line. reason={}",
+                fallback_guard_reason,
+            )
+            fallback_presentation = speech_policy.create_envelope(response_type="chat")
+            fallback_presentation.append_display(
+                raw_text=display_text_source,
+                display_text=display_text_source,
+            )
+            speech_policy.set_source(fallback_presentation, fallback_source)
+            fallback_presentation.metadata.update(
+                {
+                    "policy_kind": "fallback",
+                    "policy_reason": fallback_reason,
+                    "segment_index": 1,
+                    "segment_count": 1,
+                }
+            )
+            fallback_presentation.attach_speech_result(
+                rendered_text=fallback_ja,
+                spoken_text=fallback_ja,
+                guard_reason=fallback_reason,
+                provider="local:fallback",
+                pronunciation_hits=fallback_hits,
+                speech_repaired=False,
+            )
+            _log_tts_pipeline(
+                speech_source=fallback_source,
+                rendered_ja=fallback_ja,
+                final_tts=fallback_ja,
+                guard_reason=fallback_reason,
+                provider="local:fallback",
+                pronunciation_hits=fallback_hits,
+                speech_repaired=False,
+                presentation=fallback_presentation,
+            )
+            tts_manager.mark_speech_fallback_queued()
+            await queue_spoken_text(fallback_ja)
+            queued_spoken_count += 1
+
+    emotion_key = (
+        getattr(translate_engine, "last_emotion", "")
+        if translate_engine and used_renderer
+        else ""
+    )
+    presentation.expression_hint = _canonicalize_emotion(
+        emotion_key or (pending_tags[-1] if pending_tags else "neutral")
+    )
+    if emotion_key:
+        await emit_emotion_from_key(emotion_key)
+    elif pending_tags:
+        await emit_emotion(pending_tags)
+    else:
+        await emit_emotion_from_key("neutral")
+
+    if queued_spoken_count == 0:
+        logger.warning("No deferred spoken Japanese generated; skipping voice lane.")
 
 
 async def handle_audio_output(
@@ -1726,15 +2723,21 @@ async def finalize_conversation_turn(
 
         try:
             response = await asyncio.wait_for(
-                message_handler.wait_for_response(client_uid, "frontend-playback-complete"),
+                message_handler.wait_for_response(
+                    client_uid, "frontend-playback-complete"
+                ),
                 timeout=30,
             )
         except asyncio.TimeoutError:
             response = None
-            logger.warning(f"Playback completion timeout for {client_uid}; forcing turn finalize.")
+            logger.warning(
+                f"Playback completion timeout for {client_uid}; forcing turn finalize."
+            )
 
         if not response:
-            logger.warning(f"No playback completion response from {client_uid}; continuing finalize.")
+            logger.warning(
+                f"No playback completion response from {client_uid}; continuing finalize."
+            )
 
     await websocket_send(json.dumps({"type": "force-new-message"}))
 

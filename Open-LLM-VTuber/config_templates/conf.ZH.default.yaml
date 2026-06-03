@@ -13,6 +13,7 @@ system_config:
   tool_prompts: # 要插入到角色提示词中的工具提示词
     response_contract_prompt: 'response_contract_prompt'
     runtime_policy_prompt: 'runtime_policy_prompt'
+    response_policy_prompt: 'response_policy_prompt'
     live2d_expression_prompt: 'live2d_expression_prompt' # 将追加到系统提示末尾，让 LLM（大型语言模型）包含控制面部表情的关键字。支持的关键字将自动加载到 `[<insert_emomap_keys>]` 的位置。
     # 启用 think_tag_prompt 可让不具备思考输出的 LLM 也能展示内心想法、心理活动和动作（以括号形式呈现），但不会进行语音合成。更多详情请参考 think_tag_prompt。
     # think_tag_prompt: 'think_tag_prompt'
@@ -25,7 +26,6 @@ system_config:
     # 当AI被要求主动说话时使用的提示词
     proactive_speak_prompt: 'proactive_speak_prompt'
     # 用来增强LLM输出可发音文本的提示词
-    # speakable_prompt: 'speakable_prompt'
     # 额外指导 LLM 如何使用工具的提示词
     # tool_guidance_prompt: 'tool_guidance_prompt' 
 

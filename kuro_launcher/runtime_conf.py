@@ -79,6 +79,7 @@ def build_runtime_conf(
     if isinstance(tool_prompts, dict):
         tool_prompts.setdefault("response_contract_prompt", "response_contract_prompt")
         tool_prompts.setdefault("runtime_policy_prompt", "runtime_policy_prompt")
+        tool_prompts.setdefault("response_policy_prompt", "response_policy_prompt")
 
     merged.setdefault("translator_config", {})
     translator_cfg = merged["translator_config"]
@@ -97,6 +98,7 @@ def build_runtime_conf(
                 repo_root,
                 str(gsv_cfg.get("ref_audio_path") or ""),
             )
+            gsv_cfg.setdefault("speed_factor", 1.2)
 
     tts_preprocessor = character_cfg.get("tts_preprocessor_config")
     if isinstance(tts_preprocessor, dict):

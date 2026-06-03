@@ -10,6 +10,7 @@ system_config:
   tool_prompts:
     response_contract_prompt: 'response_contract_prompt'
     runtime_policy_prompt: 'runtime_policy_prompt'
+    response_policy_prompt: 'response_policy_prompt'
     # This will be appended to the end of system prompt to let LLM include keywords to control facial expressions.
     # Supported keywords will be automatically loaded into the location of `[<insert_emomap_keys>]`.
     live2d_expression_prompt: 'live2d_expression_prompt'
@@ -24,7 +25,6 @@ system_config:
     # Prompt used when AI is asked to speak proactively
     proactive_speak_prompt: 'proactive_speak_prompt'
     # Prompt to enhance the LLM's ability to output speakable text
-    # speakable_prompt: 'speakable_prompt'
     # Additional guidance for LLM on how to use tools
     # tool_guidance_prompt: 'tool_guidance_prompt' 
 

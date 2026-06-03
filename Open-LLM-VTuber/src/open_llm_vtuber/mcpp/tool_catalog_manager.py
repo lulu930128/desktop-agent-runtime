@@ -68,7 +68,9 @@ class ToolCatalog:
                 return cls(json.loads(path.read_text(encoding="utf-8")))
             except Exception as exc:
                 logger.warning(f"Failed to load tool catalog from {path}: {exc}")
-        return cls({"version": 1, "routing": {"max_candidate_tools": 6}, "categories": {}})
+        return cls(
+            {"version": 1, "routing": {"max_candidate_tools": 6}, "categories": {}}
+        )
 
     @property
     def enabled(self) -> bool:
@@ -107,7 +109,9 @@ class ToolCatalog:
 
         scored = self._score_categories(text, intent)
         if not scored:
-            return ToolRoute([], [], "No tool category matched this turn.", intent=intent)
+            return ToolRoute(
+                [], [], "No tool category matched this turn.", intent=intent
+            )
 
         selected_categories = [category_id for category_id, _score in scored]
         candidates: list[ToolCandidate] = []
@@ -145,7 +149,9 @@ class ToolCatalog:
                 )
 
         candidates = sorted(candidates, key=lambda item: item.score, reverse=True)
-        candidate_names = [candidate.name for candidate in candidates[: self.max_candidate_tools]]
+        candidate_names = [
+            candidate.name for candidate in candidates[: self.max_candidate_tools]
+        ]
 
         if not candidate_names:
             return ToolRoute(
@@ -292,6 +298,9 @@ class ToolCatalog:
         if intent.needs_web_research:
             scores["web_research"] = scores.get("web_research", 0) + 18
 
+        if intent.market_needs_web_enrichment:
+            scores["web_research"] = scores.get("web_research", 0) + 12
+
         if intent.needs_market_intelligence:
             scores["market_intelligence"] = scores.get("market_intelligence", 0) + 32
             if (
@@ -322,12 +331,23 @@ class ToolCatalog:
 
         if intent.needs_mail:
             scores["mail"] = scores.get("mail", 0) + 32
-            if not intent.has_path and not intent.needs_directory_scan and not intent.needs_file_read:
+            if (
+                not intent.has_path
+                and not intent.needs_directory_scan
+                and not intent.needs_file_read
+            ):
                 scores.pop("local_files", None)
-            if not intent.has_url and not intent.needs_source_verification and not intent.needs_media_lookup:
+            if (
+                not intent.has_url
+                and not intent.needs_source_verification
+                and not intent.needs_media_lookup
+            ):
                 scores.pop("web_research", None)
 
-        if re.search(r"(?i)\b(error|traceback|exception|config|prompt|launcher|runtime)\b", normalized_text):
+        if re.search(
+            r"(?i)\b(error|traceback|exception|config|prompt|launcher|runtime)\b",
+            normalized_text,
+        ):
             scores["local_files"] = scores.get("local_files", 0) + 2
 
         return sorted(scores.items(), key=lambda item: item[1], reverse=True)
@@ -414,7 +434,9 @@ class ToolCatalog:
     ) -> tuple[int, str]:
         tool_name = str(item.get("name") or "").strip()
         level = str(item.get("level") or "").strip().lower()
-        capabilities = [str(value).strip().lower() for value in item.get("capabilities") or []]
+        capabilities = [
+            str(value).strip().lower() for value in item.get("capabilities") or []
+        ]
         score = category_score * 10 - order_index
         reasons: list[str] = [f"category score {category_score}"]
 
@@ -471,13 +493,20 @@ class ToolCatalog:
                     score += 10
                     reasons.append("mail auth status is lightweight")
         elif category_id == "local_files":
-            if intent.needs_directory_scan and tool_name in {"list_directory", "search_files"}:
+            if intent.needs_directory_scan and tool_name in {
+                "list_directory",
+                "search_files",
+            }:
                 score += 14
                 reasons.append("directory/project scan")
             if intent.needs_file_read and tool_name == "read_text_file":
                 score += 14
                 reasons.append("specific file read")
-            if intent.has_path and tool_name in {"read_text_file", "list_directory", "search_files"}:
+            if intent.has_path and tool_name in {
+                "read_text_file",
+                "list_directory",
+                "search_files",
+            }:
                 score += 10
                 reasons.append("path-like request")
             if "search" in tool_name:
@@ -524,24 +553,35 @@ def infer_tool_intent(text: str, thinking_power: str = "normal") -> ToolIntent:
     needs_source_verification = _looks_like_source_verification_request(normalized_text)
     needs_media_lookup = _looks_like_visual_lookup_request(normalized_text)
     needs_local_files = has_path or _looks_like_local_file_request(normalized_text)
-    needs_directory_scan = needs_local_files and _looks_like_directory_scan_request(normalized_text)
-    needs_file_read = needs_local_files and _looks_like_file_read_request(normalized_text)
+    needs_directory_scan = needs_local_files and _looks_like_directory_scan_request(
+        normalized_text
+    )
+    needs_file_read = needs_local_files and _looks_like_file_read_request(
+        normalized_text
+    )
     needs_time = _looks_like_time_request(normalized_text)
     needs_memory = _looks_like_memory_request(normalized_text)
     needs_runtime_control = _looks_like_runtime_control_request(normalized_text)
     needs_mail = _looks_like_mail_request(normalized_text)
-    needs_dashboard_update = needs_mail and _looks_like_dashboard_update_request(normalized_text)
+    needs_dashboard_update = needs_mail and _looks_like_dashboard_update_request(
+        normalized_text
+    )
     needs_market_intelligence = _looks_like_market_intelligence_request(normalized_text)
     market_needs_web_enrichment = (
         needs_market_intelligence
         and _looks_like_market_web_enrichment_request(normalized_text)
     )
-    needs_web_research = has_url or needs_current_info or needs_source_verification or needs_media_lookup
+    needs_web_research = (
+        has_url or needs_current_info or needs_source_verification or needs_media_lookup
+    )
 
     if has_url:
         mark("url", "URL detected")
     if needs_market_intelligence:
-        mark("market_intelligence", "stock/market request should use local OMI data first")
+        mark(
+            "market_intelligence",
+            "stock/market request should use local OMI data first",
+        )
     if market_needs_web_enrichment:
         mark("web_enrichment", "fresh public market context may be useful after OMI")
     if needs_current_info:
@@ -569,7 +609,9 @@ def infer_tool_intent(text: str, thinking_power: str = "normal") -> ToolIntent:
     if needs_dashboard_update:
         mark("dashboard_update", "mail request should refresh the local briefing panel")
 
-    confidence = min(1.0, 0.25 + len(labels) * 0.12 + (0.16 if has_url or has_path else 0.0))
+    confidence = min(
+        1.0, 0.25 + len(labels) * 0.12 + (0.16 if has_url or has_path else 0.0)
+    )
     return ToolIntent(
         labels=labels,
         desired_depth=desired_depth,
@@ -601,7 +643,9 @@ def _infer_desired_depth(text: str, thinking_power: str) -> str:
         return "fast"
     if mode == "deep":
         return "deep"
-    if re.search(r"(?i)(深入|詳細|完整|多來源|查證|來源|比較|deep|thorough|verify|compare)", text):
+    if re.search(
+        r"(?i)(深入|詳細|完整|多來源|查證|來源|比較|deep|thorough|verify|compare)", text
+    ):
         return "deep"
     if re.search(r"(?i)(簡單|快速|大概|quick|brief)", text):
         return "fast"
@@ -747,6 +791,12 @@ def _looks_like_market_intelligence_request(text: str) -> bool:
 
 def _looks_like_market_web_enrichment_request(text: str) -> bool:
     web_enrichment_terms = [
+        "今天",
+        "現在",
+        "目前",
+        "現況",
+        "近況",
+        "最新",
         "最新消息",
         "即時",
         "新聞",
@@ -929,7 +979,10 @@ def _looks_like_time_request(text: str) -> bool:
 
 
 def _looks_like_memory_request(text: str) -> bool:
-    return any(term in text for term in ["記憶", "記住", "忘記", "偏好", "memory", "remember", "forget"])
+    return any(
+        term in text
+        for term in ["記憶", "記住", "忘記", "偏好", "memory", "remember", "forget"]
+    )
 
 
 def _looks_like_runtime_control_request(text: str) -> bool:

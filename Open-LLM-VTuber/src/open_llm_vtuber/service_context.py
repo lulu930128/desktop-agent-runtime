@@ -48,9 +48,15 @@ def _character_log_summary(character_config: CharacterConfig) -> dict:
         "conf_uid": character_config.conf_uid,
         "live2d_model_name": character_config.live2d_model_name,
         "character_name": character_config.character_name,
-        "tts_model": character_config.tts_config.tts_model if character_config.tts_config else None,
-        "asr_model": character_config.asr_config.asr_model if character_config.asr_config else None,
-        "agent": character_config.agent_config.conversation_agent_choice if character_config.agent_config else None,
+        "tts_model": character_config.tts_config.tts_model
+        if character_config.tts_config
+        else None,
+        "asr_model": character_config.asr_config.asr_model
+        if character_config.asr_config
+        else None,
+        "agent": character_config.agent_config.conversation_agent_choice
+        if character_config.agent_config
+        else None,
         "llm_provider": basic_agent.llm_provider if basic_agent else None,
     }
 
@@ -161,7 +167,10 @@ class ServiceContext:
 
                 raw_tools_dict = self.tool_adapter.get_last_formatted_tools_dict()
                 if not raw_tools_dict:
-                    _, raw_tools_dict = await self.tool_adapter.get_server_and_tool_info(
+                    (
+                        _,
+                        raw_tools_dict,
+                    ) = await self.tool_adapter.get_server_and_tool_info(
                         enabled_servers
                     )
                 self.tool_manager = ToolManager(
@@ -172,9 +181,7 @@ class ServiceContext:
                 )
                 catalog_prompt = self.tool_manager.get_tool_catalog_prompt()
                 if catalog_prompt:
-                    self.mcp_prompt = (
-                        f"{catalog_prompt}\n\nAvailable tool details:\n{mcp_prompt_string}"
-                    )
+                    self.mcp_prompt = f"{catalog_prompt}\n\nAvailable tool details:\n{mcp_prompt_string}"
                 logger.info("ToolManager initialized with dynamically fetched tools.")
 
             except Exception as e:
@@ -279,7 +286,9 @@ class ServiceContext:
             self.character_config.agent_config.agent_settings.basic_memory_agent.mcp_enabled_servers,
         )
 
-        logger.debug(f"Loaded service context with cache: {_character_log_summary(character_config)}")
+        logger.debug(
+            f"Loaded service context with cache: {_character_log_summary(character_config)}"
+        )
 
     async def load_from_config(self, config: Config) -> None:
         """
@@ -396,7 +405,9 @@ class ServiceContext:
         else:
             logger.info("VAD already initialized with the same config.")
 
-    def _prompt_signature(self, character_config: CharacterConfig | None) -> tuple[str, ...]:
+    def _prompt_signature(
+        self, character_config: CharacterConfig | None
+    ) -> tuple[str, ...]:
         if character_config is None:
             return ("", "", "", "", "", "", "", "")
         return (
@@ -406,7 +417,9 @@ class ServiceContext:
             character_config.tool_prompt_path or "",
             character_config.response_style_prompt_path or "",
             character_config.active_project_id or "",
-            getattr(self.system_config, "thinking_power", "normal") if self.system_config else "normal",
+            getattr(self.system_config, "thinking_power", "normal")
+            if self.system_config
+            else "normal",
             self.mcp_prompt or "",
         )
 
@@ -508,7 +521,9 @@ class ServiceContext:
 
     # ==== utils
 
-    def _append_prompt_section(self, parts: list[str], title: str, content: str) -> None:
+    def _append_prompt_section(
+        self, parts: list[str], title: str, content: str
+    ) -> None:
         content = (content or "").strip()
         if not content:
             return
@@ -554,6 +569,14 @@ class ServiceContext:
                 parts,
                 "Runtime Policy",
                 prompt_loader.load_util(runtime_policy_name),
+            )
+
+        response_policy_name = tool_prompts.get("response_policy_prompt", "")
+        if response_policy_name:
+            self._append_prompt_section(
+                parts,
+                "Response Policy",
+                prompt_loader.load_util(response_policy_name),
             )
 
         thinking_power = (
@@ -604,6 +627,7 @@ class ServiceContext:
         reserved_names = {
             "response_contract_prompt",
             "runtime_policy_prompt",
+            "response_policy_prompt",
             "live2d_expression_prompt",
             "group_conversation_prompt",
             "proactive_speak_prompt",

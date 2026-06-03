@@ -26,6 +26,63 @@ class TTSTaskManager:
         # Counter for maintaining order
         self._sequence_counter = 0
         self._next_sequence_to_send = 0
+        self.voice_task_count = 0
+        self.speech_fallback_count = 0
+        self._deferred_speech_display_parts: List[str] = []
+        self._deferred_speech_tts_parts: List[str] = []
+        self._deferred_speech_display: Optional[DisplayText] = None
+        self._deferred_speech_actions: Optional[Actions] = None
+        self._deferred_speech_tags: List[str] = []
+
+    def has_voice_output(self) -> bool:
+        return self.voice_task_count > 0
+
+    def can_queue_speech_fallback(self) -> bool:
+        return not self.has_voice_output() and self.speech_fallback_count == 0
+
+    def mark_speech_fallback_queued(self) -> None:
+        self.speech_fallback_count += 1
+
+    def add_deferred_speech(
+        self,
+        *,
+        display_text: str,
+        tts_text: str,
+        display: Optional[DisplayText],
+        actions: Optional[Actions],
+        emotion_tags: Optional[List[str]] = None,
+    ) -> None:
+        if display_text:
+            self._deferred_speech_display_parts.append(str(display_text))
+        if tts_text:
+            self._deferred_speech_tts_parts.append(str(tts_text))
+        if display is not None:
+            self._deferred_speech_display = display
+        if actions is not None:
+            self._deferred_speech_actions = actions
+        if emotion_tags:
+            self._deferred_speech_tags.extend(str(tag) for tag in emotion_tags if tag)
+
+    def pop_deferred_speech(self) -> Optional[Dict]:
+        if (
+            not self._deferred_speech_display_parts
+            and not self._deferred_speech_tts_parts
+        ):
+            return None
+
+        payload = {
+            "display_text": "".join(self._deferred_speech_display_parts),
+            "tts_text": "".join(self._deferred_speech_tts_parts),
+            "display": self._deferred_speech_display,
+            "actions": self._deferred_speech_actions,
+            "emotion_tags": list(self._deferred_speech_tags),
+        }
+        self._deferred_speech_display_parts.clear()
+        self._deferred_speech_tts_parts.clear()
+        self._deferred_speech_display = None
+        self._deferred_speech_actions = None
+        self._deferred_speech_tags.clear()
+        return payload
 
     async def speak(
         self,
@@ -66,6 +123,7 @@ class TTSTaskManager:
         logger.debug(
             f"🏃Queuing TTS task for: '''{tts_text}''' (by {display_text.name})"
         )
+        self.voice_task_count += 1
 
         # Get current sequence number
         current_sequence = self._sequence_counter
@@ -110,7 +168,9 @@ class TTSTaskManager:
                         await websocket_send(json.dumps(next_payload))
                     except Exception as e:
                         # Never let a transient websocket error kill the sender loop.
-                        logger.warning(f"WebSocket send failed (seq={self._next_sequence_to_send}): {e}")
+                        logger.warning(
+                            f"WebSocket send failed (seq={self._next_sequence_to_send}): {e}"
+                        )
                     finally:
                         # Advance sequence to avoid deadlock on a single failed send.
                         self._next_sequence_to_send += 1

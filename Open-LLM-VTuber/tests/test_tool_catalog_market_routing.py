@@ -25,6 +25,11 @@ class ToolCatalogMarketRoutingTest(unittest.TestCase):
             ["omi.ask"],
         )
 
+    def test_current_stock_status_keeps_web_fallback(self) -> None:
+        tools = self.route_tools("可以幫我看今天2303這支股票的狀況嗎")
+        self.assertEqual(tools[0], "omi.ask")
+        self.assertIn("advanced_search_web", tools)
+
     def test_cjk_adjacent_stock_code_keeps_omi_before_web(self) -> None:
         tools = self.route_tools("2330今天最新消息")
         self.assertGreaterEqual(len(tools), 2)

@@ -13,6 +13,7 @@ from .conversation_utils import (
     summarize_uploaded_files,
     finalize_conversation_turn,
     cleanup_conversation,
+    flush_deferred_sentence_speech,
     EMOJI_LIST,
 )
 from .types import WebSocketSend
@@ -21,6 +22,7 @@ from ..chat_event_manager import store_history_event
 from ..chat_history_manager import store_message
 from ..character_memory_manager import process_character_memory_turn
 from ..service_context import ServiceContext
+
 # =========================
 # Default translation engine (Bridge)
 # Ensures legacy/plain-text path can still translate zh->ja to avoid Chinese being spoken.
@@ -54,17 +56,59 @@ class BridgeSpeechEngine:
         self,
         style_prompt_ja: str = "",
         endpoint: str | None = None,
-        timeout_s: float = 18.0,
+        translate_endpoint: str | None = None,
+        timeout_s: float = 30.0,
         pronunciation_entries: list[PronunciationEntry] | None = None,
     ) -> None:
-        self.endpoint = (endpoint or os.getenv("BRIDGE_RENDER_URL", "http://127.0.0.1:1188/render_spoken")).strip()
-        self.timeout_s = float(timeout_s)
+        self.endpoint = (
+            endpoint
+            or os.getenv("BRIDGE_RENDER_URL", "http://127.0.0.1:1188/render_spoken")
+        ).strip()
+        self.translate_endpoint = (
+            translate_endpoint
+            or os.getenv("BRIDGE_TRANSLATE_URL", "")
+            or self.endpoint.rsplit("/", 1)[0] + "/translate"
+        ).strip()
+        configured_timeout = (os.getenv("BRIDGE_RENDER_TIMEOUT_S", "") or "").strip()
+        try:
+            self.timeout_s = (
+                float(configured_timeout) if configured_timeout else float(timeout_s)
+            )
+        except ValueError:
+            logger.warning(
+                f"Invalid BRIDGE_RENDER_TIMEOUT_S={configured_timeout!r}; using {timeout_s}s."
+            )
+            self.timeout_s = float(timeout_s)
         self.style_prompt_ja = (style_prompt_ja or "").strip()
-        self.pronunciation_entries = normalize_pronunciation_entries(pronunciation_entries or [])
+        self.pronunciation_entries = normalize_pronunciation_entries(
+            pronunciation_entries or []
+        )
         self.last_emotion: str = "neutral"
         self.last_provider: str = ""
         self.last_pronunciation_hits: list[str] = []
         self.last_speech_repaired: bool = False
+
+    def _post_json(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
+            raw = resp.read().decode("utf-8", errors="ignore")
+        obj = json.loads(raw) if raw else {}
+        return obj if isinstance(obj, dict) else {}
+
+    def _translate_only(self, text: str) -> str:
+        obj = self._post_json(self.translate_endpoint, {"text": text})
+        out = (obj.get("data") or "").strip()
+        if out:
+            self.last_emotion = "neutral"
+            self.last_provider = (obj.get("provider") or "bridge:translate").strip()
+            self.last_pronunciation_hits = []
+            self.last_speech_repaired = False
+        return out
 
     def translate(self, text: str) -> str:
         t = (text or "").strip()
@@ -78,23 +122,26 @@ class BridgeSpeechEngine:
         if self.pronunciation_entries:
             payload["pronunciation"] = self.pronunciation_entries
 
-        req = urllib.request.Request(
-            self.endpoint,
-            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
-                raw = resp.read().decode("utf-8", errors="ignore")
-            obj = json.loads(raw) if raw else {}
+            obj = self._post_json(self.endpoint, payload)
             if isinstance(obj, dict):
-                self.last_emotion = (obj.get("emotion") or "neutral").strip() or "neutral"
+                self.last_emotion = (
+                    obj.get("emotion") or "neutral"
+                ).strip() or "neutral"
                 self.last_provider = (obj.get("provider") or "").strip()
                 hits = obj.get("pronunciation_hits")
-                self.last_pronunciation_hits = [str(item) for item in hits] if isinstance(hits, list) else []
+                self.last_pronunciation_hits = (
+                    [str(item) for item in hits] if isinstance(hits, list) else []
+                )
                 self.last_speech_repaired = bool(obj.get("speech_repaired"))
                 out = (obj.get("data") or "").strip()
+                if not out and self.translate_endpoint:
+                    try:
+                        out = self._translate_only(t)
+                    except Exception as fallback_exc:
+                        logger.warning(
+                            f"BridgeSpeechEngine translate-only fallback failed: {fallback_exc}"
+                        )
                 return out
             self.last_emotion = "neutral"
             self.last_provider = ""
@@ -107,22 +154,6 @@ class BridgeSpeechEngine:
             self.last_provider = ""
             self.last_pronunciation_hits = []
             self.last_speech_repaired = False
-            return ""
-
-        req = urllib.request.Request(
-            self.endpoint,
-            data=json.dumps({"text": t}).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
-                raw = resp.read().decode("utf-8", errors="ignore")
-            obj = json.loads(raw) if raw else {}
-            out = obj.get("data") if isinstance(obj, dict) else ""
-            return (out or "").strip()
-        except Exception as e:
-            logger.warning(f"BridgeSpeechEngine translate failed: {e}")
             return ""
 
 
@@ -197,8 +228,12 @@ def _load_speech_style_prompt(context: "ServiceContext") -> str:
     return ""
 
 
-def _load_tts_pronunciation_entries(context: "ServiceContext") -> list[PronunciationEntry]:
-    project_id = str(getattr(context.character_config, "active_project_id", "") or "").strip()
+def _load_tts_pronunciation_entries(
+    context: "ServiceContext",
+) -> list[PronunciationEntry]:
+    project_id = str(
+        getattr(context.character_config, "active_project_id", "") or ""
+    ).strip()
     character_keys = _character_keys(context)
     open_llm_root = _open_llm_root()
     repo_root = _repo_root()
@@ -218,7 +253,9 @@ def _load_tts_pronunciation_entries(context: "ServiceContext") -> list[Pronuncia
         ]
     )
     if project_id:
-        candidate_paths.append(repo_root / "projects" / project_id / "tts_pronunciation.json")
+        candidate_paths.append(
+            repo_root / "projects" / project_id / "tts_pronunciation.json"
+        )
 
     for path in candidate_paths:
         payload = _read_json_file(path)
@@ -308,9 +345,7 @@ def _store_tool_status_event(
 
 def _memory_event_summary(memory_notes: List[str]) -> str:
     upserts = sum(
-        1
-        for note in memory_notes
-        if note == "upsert" or note.startswith("upsert:")
+        1 for note in memory_notes if note == "upsert" or note.startswith("upsert:")
     )
     disabled = sum(
         int(note.split(":", 1)[1])
@@ -384,7 +419,9 @@ async def process_single_conversation(
                 ]
                 if part
             )
-        visible_input_text = format_uploaded_file_display_text(display_input_text, files)
+        visible_input_text = format_uploaded_file_display_text(
+            display_input_text, files
+        )
 
         # Create batch input
         batch_input = create_batch_input(
@@ -411,7 +448,9 @@ async def process_single_conversation(
 
         logger.info(f"User input: {visible_input_text}")
         if file_notes:
-            logger.debug(f"Uploaded file analysis added to agent input: {len(file_notes)} section(s)")
+            logger.debug(
+                f"Uploaded file analysis added to agent input: {len(file_notes)} section(s)"
+            )
         if images:
             logger.info(f"With {len(images)} images")
         if files:
@@ -447,6 +486,7 @@ async def process_single_conversation(
                         websocket_send=websocket_send,  # Pass websocket_send for audio/tts messages
                         tts_manager=tts_manager,
                         translate_engine=translate_engine_to_use,
+                        defer_sentence_voice=isinstance(output_item, SentenceOutput),
                     )
                     # Ensure response_part is treated as a string before concatenation
                     response_part_str = (
@@ -473,6 +513,14 @@ async def process_single_conversation(
             )
             # full_response will contain partial response before error
         # --- End processing agent response ---
+
+        await flush_deferred_sentence_speech(
+            live2d_model=context.live2d_model,
+            tts_engine=context.tts_engine,
+            websocket_send=websocket_send,
+            tts_manager=tts_manager,
+            translate_engine=translate_engine_to_use,
+        )
 
         # Wait for any pending TTS tasks
         if tts_manager.task_list:
