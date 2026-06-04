@@ -9,6 +9,8 @@ from typing import (
     Optional,
 )
 from loguru import logger
+import asyncio
+import datetime
 import os
 from .agent_interface import AgentInterface
 from ..output_types import SentenceOutput, DisplayText
@@ -29,6 +31,12 @@ from ...mcpp.tool_manager import ToolManager
 from ...mcpp.json_detector import StreamJSONDetector
 from ...mcpp.types import ToolCallObject
 from ...mcpp.tool_executor import ToolExecutor
+from ...mcpp.market_preflight import (
+    build_autonomous_omi_args,
+    extract_omi_resolution_from_tool_results,
+    format_omi_response_for_llm,
+    should_autorun_omi,
+)
 from ...character_memory_manager import format_character_memories_for_prompt
 from ...conversation_history_index import format_past_conversations_for_prompt
 
@@ -74,6 +82,7 @@ class BasicMemoryAgent(AgentInterface):
         self._memory_history_uid = ""
         self._short_term_memory_token_budget = 4200
         self._short_term_memory_min_recent_messages = 8
+        self._last_omi_resolution: dict[str, Any] | None = None
 
         self._formatted_tools_openai = []
         self._formatted_tools_claude = []
@@ -445,6 +454,65 @@ class BasicMemoryAgent(AgentInterface):
         if route_text:
             sections.append(route_text)
         return "\n\n".join(sections)
+
+    def _remove_formatted_tool(
+        self,
+        tools: List[Dict[str, Any]] | None,
+        *,
+        tool_name: str,
+        tool_mode: str | None,
+    ) -> List[Dict[str, Any]]:
+        if not tools:
+            return []
+
+        names_to_remove = {tool_name}
+        if self._tool_manager:
+            tool_info = self._tool_manager.get_tool(tool_name)
+            api_name = getattr(tool_info, "api_name", "") if tool_info else ""
+            if api_name:
+                names_to_remove.add(api_name)
+
+        filtered: List[Dict[str, Any]] = []
+        for tool in tools:
+            if tool_mode == "OpenAI":
+                exposed_name = str(tool.get("function", {}).get("name") or "")
+            else:
+                exposed_name = str(tool.get("name") or "")
+            if exposed_name not in names_to_remove:
+                filtered.append(tool)
+        return filtered
+
+    def _format_autonomous_omi_context(
+        self,
+        tool_results: List[Dict[str, Any]],
+    ) -> str:
+        result_texts = [
+            format_omi_response_for_llm(str(result.get("content") or "").strip())
+            for result in tool_results
+            if isinstance(result, dict) and str(result.get("content") or "").strip()
+        ]
+        if not result_texts:
+            return ""
+
+        combined = "\n\n".join(result_texts)
+        return (
+            "[Autonomous read-only OMI result]\n"
+            "Kuro already called omi.ask because this turn asks for stock, market, "
+            "watchlist, or financial data. Use this result as the primary evidence. "
+            "Do not ask for confirmation just to read OMI data. If the OMI result "
+            "is stale or incomplete, state that briefly and answer the parts that "
+            "are supported.\n\n"
+            f"{combined}"
+        )
+
+    def _autonomous_omi_route_prompt(self) -> str:
+        return (
+            "Runtime note: read-only omi.ask was executed automatically before this "
+            "LLM response. Answer from the provided OMI result first. Do not call "
+            "omi.ask again unless the prior result explicitly failed or is clearly "
+            "insufficient. Use web tools only as a fallback/enrichment when the user "
+            "needs fresh public context that OMI lacks."
+        )
 
     async def _claude_tool_interaction_loop(
         self,
@@ -818,6 +886,121 @@ class BasicMemoryAgent(AgentInterface):
                             f"intent={route.intent.labels if route.intent else []}, "
                             f"tools={route.tool_names}"
                         )
+                    if (
+                        route
+                        and should_autorun_omi(route)
+                        and self._tool_executor
+                    ):
+                        tool_args = build_autonomous_omi_args(
+                            current_text=request_text_for_tools,
+                            route_text=route_request_text,
+                            last_resolution=self._last_omi_resolution,
+                        )
+                        logger.info(
+                            "Autonomous read-only OMI preflight selected: "
+                            f"target={tool_args.get('target')}, "
+                            f"mode={tool_args.get('mode')}"
+                        )
+
+                        tool_results_for_llm = []
+                        tool_executor_iterator = self._tool_executor.execute_tools(
+                            tool_calls=[
+                                {
+                                    "id": "autonomous_omi_preflight",
+                                    "name": "omi.ask",
+                                    "input": tool_args,
+                                }
+                            ],
+                            caller_mode="Prompt",
+                        )
+                        try:
+                            while True:
+                                update = await anext(tool_executor_iterator)
+                                if update.get("type") == "final_tool_results":
+                                    tool_results_for_llm = update.get("results", [])
+                                    break
+                                yield update
+                        except asyncio.CancelledError as exc:
+                            current_task = asyncio.current_task()
+                            cancelling = getattr(current_task, "cancelling", None)
+                            if callable(cancelling) and cancelling():
+                                raise
+
+                            error_text = (
+                                "Error: omi.ask was cancelled by the MCP transport "
+                                "before returning a result. Treat OMI as temporarily "
+                                "unavailable for this turn; answer only what can be "
+                                "answered without OMI, or use another available data "
+                                "source if the route allows it."
+                            )
+                            logger.warning(
+                                "Autonomous OMI preflight cancelled by MCP transport: "
+                                f"{exc}"
+                            )
+                            yield {
+                                "type": "tool_call_status",
+                                "tool_id": "autonomous_omi_preflight",
+                                "tool_name": "omi.ask",
+                                "status": "error",
+                                "content": error_text,
+                                "timestamp": datetime.datetime.now(
+                                    datetime.timezone.utc
+                                ).isoformat()
+                                + "Z",
+                            }
+                            formatted_result = (
+                                self._tool_executor.format_tool_result(
+                                    "Prompt",
+                                    "autonomous_omi_preflight",
+                                    error_text,
+                                    True,
+                                )
+                                if self._tool_executor
+                                else None
+                            )
+                            if formatted_result:
+                                tool_results_for_llm = [formatted_result]
+                        except StopAsyncIteration:
+                            logger.warning(
+                                "Autonomous OMI preflight finished without final results marker."
+                            )
+
+                        autonomous_context = self._format_autonomous_omi_context(
+                            tool_results_for_llm
+                        )
+                        last_resolution = extract_omi_resolution_from_tool_results(
+                            tool_results_for_llm
+                        )
+                        if last_resolution:
+                            self._last_omi_resolution = last_resolution
+                            logger.debug(
+                                "Updated last OMI resolution for follow-up turns."
+                            )
+                        if autonomous_context:
+                            messages.append(
+                                {"role": "user", "content": autonomous_context}
+                            )
+                            route_prompt = "\n\n".join(
+                                [
+                                    text
+                                    for text in [
+                                        route_prompt,
+                                        self._autonomous_omi_route_prompt(),
+                                    ]
+                                    if text
+                                ]
+                            )
+
+                        tools = self._remove_formatted_tool(
+                            tools,
+                            tool_name="omi.ask",
+                            tool_mode=tool_mode,
+                        )
+                        if not tools:
+                            logger.info(
+                                "No remaining candidate tools after autonomous OMI preflight."
+                            )
+                            tool_mode = None
 
             if self._use_mcpp and tool_mode == "Claude":
                 logger.debug(

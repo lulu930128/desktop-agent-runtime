@@ -33,6 +33,20 @@ def _safe_speed_factor(value, default: float = 1.0) -> float:
     return max(0.6, min(1.65, speed))
 
 
+def _response_dump_payload(response: requests.Response) -> dict:
+    payload = {
+        "ts": time.time(),
+        "status": response.status_code,
+        "url": getattr(response.request, "url", None),
+        "content_type": response.headers.get("Content-Type", ""),
+        "content_length": response.headers.get("Content-Length", ""),
+        "response_bytes": len(response.content or b""),
+    }
+    if response.status_code != 200:
+        payload["body_preview"] = (response.text or "")[:500]
+    return payload
+
+
 class TTSEngine(TTSInterface):
     def __init__(
         self,
@@ -102,12 +116,7 @@ class TTSEngine(TTSInterface):
         with response_dump_path.open("a", encoding="utf-8") as handle:
             handle.write(
                 json.dumps(
-                    {
-                        "ts": time.time(),
-                        "status": response.status_code,
-                        "url": getattr(response.request, "url", None),
-                        "resp_text": (response.text or "")[:2000],
-                    },
+                    _response_dump_payload(response),
                     ensure_ascii=False,
                 )
                 + "\n"

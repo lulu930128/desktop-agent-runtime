@@ -508,6 +508,9 @@
     .mail-message {
       padding: 12px;
       cursor: pointer;
+      contain: content;
+      content-visibility: auto;
+      contain-intrinsic-size: 140px;
       -webkit-app-region: no-drag;
     }
 
@@ -533,6 +536,17 @@
 
     .mail-message.muted {
       opacity: 0.68;
+    }
+
+    .mail-list-footer {
+      display: flex;
+      justify-content: center;
+      padding: 4px 0 2px;
+    }
+
+    .mail-load-more {
+      width: 100%;
+      min-height: 34px;
     }
 
     .mail-message-head {
@@ -1405,6 +1419,8 @@
     let activeMailSettingsPanel = "basic";
     let mailSettingsSaving = false;
     let mailMessageLoading = false;
+    const MAIL_MESSAGE_BATCH_SIZE = 40;
+    let mailVisibleLimit = MAIL_MESSAGE_BATCH_SIZE;
 
     const navEl = document.getElementById("nav");
     const gridEl = document.getElementById("moduleGrid");
@@ -1994,6 +2010,7 @@
       if (!payload.snapshot.sections.length) {
         return false;
       }
+      mailVisibleLimit = MAIL_MESSAGE_BATCH_SIZE;
       briefingData = payload;
       sections.splice(0, sections.length, ...payload.snapshot.sections);
       if (!sections.some((section) => section.key === activeKey)) {
@@ -2107,9 +2124,12 @@
         : [];
       const row = document.createElement("article");
       row.className = `mail-message ${level}`;
-      row.tabIndex = 0;
-      row.setAttribute("role", "button");
-      row.setAttribute("aria-label", `開啟信件：${message.subject || ""}`);
+      if (message.id) {
+        row.dataset.messageId = message.id;
+        row.tabIndex = 0;
+        row.setAttribute("role", "button");
+        row.setAttribute("aria-label", `開啟信件：${message.subject || ""}`);
+      }
       row.innerHTML = `
         <div class="mail-message-head">
           <div>
@@ -2129,14 +2149,53 @@
           <span class="mail-tag">${escapeHtml(formatMailDate(message.date) || "無日期")}</span>
         </div>
       `;
-      row.addEventListener("click", () => openMailMessage(message.id));
-      row.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          openMailMessage(message.id);
+      return row;
+    }
+
+    function getMailMessageRow(target, list) {
+      const row = target && target.closest ? target.closest(".mail-message[data-message-id]") : null;
+      return row && list.contains(row) ? row : null;
+    }
+
+    function bindMailList(list) {
+      list.addEventListener("click", (event) => {
+        const row = getMailMessageRow(event.target, list);
+        if (row) {
+          openMailMessage(row.dataset.messageId);
         }
       });
-      return row;
+      list.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+          return;
+        }
+        const row = getMailMessageRow(event.target, list);
+        if (row) {
+          event.preventDefault();
+          openMailMessage(row.dataset.messageId);
+        }
+      });
+    }
+
+    function createMailLoadMoreButton(visibleCount, totalCount, section) {
+      const footer = document.createElement("div");
+      const nextCount = Math.min(MAIL_MESSAGE_BATCH_SIZE, totalCount - visibleCount);
+      footer.className = "mail-list-footer";
+      footer.innerHTML = `
+        <button type="button" class="command-button mail-load-more">
+          載入更多 ${escapeHtml(nextCount)} 封（目前 ${escapeHtml(visibleCount)} / ${escapeHtml(totalCount)}）
+        </button>
+      `;
+      const button = footer.querySelector("button");
+      button.addEventListener("click", () => {
+        const scrollHost = document.querySelector(".shell");
+        const scrollTop = scrollHost ? scrollHost.scrollTop : 0;
+        mailVisibleLimit = Math.min(totalCount, mailVisibleLimit + MAIL_MESSAGE_BATCH_SIZE);
+        renderMailSection(section);
+        if (scrollHost) {
+          scrollHost.scrollTop = scrollTop;
+        }
+      });
+      return footer;
     }
 
     function renderMailSection(section) {
@@ -2176,9 +2235,14 @@
         <div class="mail-list"></div>
       `;
       const list = main.querySelector(".mail-list");
+      bindMailList(list);
       if (messages.length) {
-        for (const message of messages) {
+        const visibleCount = Math.min(mailVisibleLimit, messages.length);
+        for (const message of messages.slice(0, visibleCount)) {
           list.appendChild(createMailMessage(message));
+        }
+        if (visibleCount < messages.length) {
+          list.appendChild(createMailLoadMoreButton(visibleCount, messages.length, section));
         }
       } else {
         list.innerHTML = `<div class="mail-empty">目前查詢條件沒有符合的信件。</div>`;

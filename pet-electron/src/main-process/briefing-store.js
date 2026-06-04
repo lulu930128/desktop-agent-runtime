@@ -1,5 +1,11 @@
 const fs = require("fs");
 const path = require("path");
+const { buildTodaySnapshot, mergeTodaySections } = require("./today-classifier");
+const {
+  mergeStudyIntoSnapshot,
+  normalizeStudySnapshot,
+  readStudySnapshotFile
+} = require("./study-briefing");
 
 const STORE_VERSION = 1;
 const MAX_MEMORY_CANDIDATES = 100;
@@ -408,14 +414,26 @@ function normalizeMailSnapshot(candidate, fallbackMail) {
 
 function normalizeSnapshot(candidate, fallbackSnapshot) {
   const now = new Date();
-  const source = isObject(candidate) ? candidate : {};
+  const candidateSource = isObject(candidate) ? candidate : {};
   const fallback = isObject(fallbackSnapshot) ? fallbackSnapshot : {};
+  const source = mergeStudyIntoSnapshot(candidateSource, candidateSource.study || fallback.study);
   const sectionsSource = Array.isArray(source.sections)
     ? source.sections
     : Array.isArray(fallback.sections)
       ? fallback.sections
       : defaultSections();
-  const sections = sectionsSource.map(normalizeSection).filter((section) => section.key);
+  const mail = normalizeMailSnapshot(source.mail, fallback.mail);
+  const study = normalizeStudySnapshot(source.study, fallback.study);
+  const today = buildTodaySnapshot({
+    mail,
+    sourceToday: source.today,
+    fallbackToday: fallback.today,
+    updatedAt: boundedText(source.updatedAt, 40, fallback.updatedAt || now.toISOString())
+  });
+  const sections = mergeTodaySections(
+    sectionsSource.map(normalizeSection).filter((section) => section.key),
+    today
+  );
   const sourceStatus = Array.isArray(source.sourceStatus)
     ? source.sourceStatus.map(normalizeSourceStatus).filter(Boolean)
     : Array.isArray(fallback.sourceStatus)
@@ -429,7 +447,9 @@ function normalizeSnapshot(candidate, fallbackSnapshot) {
     updatedAt: boundedText(source.updatedAt, 40, now.toISOString()),
     sections,
     sourceStatus,
-    mail: normalizeMailSnapshot(source.mail, fallback.mail)
+    mail,
+    study,
+    today
   };
 }
 
@@ -520,8 +540,23 @@ function writeStoreFile(storePath, data, log) {
   }
 }
 
-function createBriefingStore({ storePath, log } = {}) {
+function createBriefingStore({ storePath, log, studySnapshotPath } = {}) {
   let data = readStoreFile(storePath, log);
+
+  function readLocalStudySnapshot() {
+    return readStudySnapshotFile(studySnapshotPath, log);
+  }
+
+  function enrichSnapshot(snapshot) {
+    const localStudy = readLocalStudySnapshot();
+    return localStudy ? mergeStudyIntoSnapshot(snapshot, localStudy) : snapshot;
+  }
+
+  function refreshExternalSnapshots() {
+    if (studySnapshotPath) {
+      data.snapshot = normalizeSnapshot(enrichSnapshot(data.snapshot), data.snapshot);
+    }
+  }
 
   function persist() {
     data.updatedAt = new Date().toISOString();
@@ -529,11 +564,12 @@ function createBriefingStore({ storePath, log } = {}) {
   }
 
   function getData() {
+    refreshExternalSnapshots();
     return clone(data);
   }
 
   function replaceSnapshot(snapshot) {
-    data.snapshot = normalizeSnapshot(snapshot, data.snapshot);
+    data.snapshot = normalizeSnapshot(enrichSnapshot(snapshot), data.snapshot);
     persist();
     return getData();
   }

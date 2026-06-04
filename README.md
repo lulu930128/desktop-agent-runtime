@@ -263,7 +263,7 @@ Current dashboard roles:
 
 - Kuro pet: conversational and personality interface.
 - Reader: short dialog or subtitle output.
-- Briefing: structured daily intelligence and assistant output.
+- Briefing: structured daily intelligence, Today priorities, and assistant output.
 - Launcher: runtime control and engineering console.
 
 The first version includes sections such as:
@@ -284,6 +284,13 @@ Dashboard data is split into:
 | `snapshot` | Today's visible Dashboard data. Safe to update frequently. |
 | `memoryCandidates` | Suggestions that may become long-term memory only after approval. |
 | `sourceStatus` | Health/status state for mail, news, stocks, messages, and other adapters. |
+
+The dashboard can merge local adapter snapshots before rendering. The current
+implementation reads study progress from
+`Open-LLM-VTuber/private/study/study_snapshot.json`, combines it with mail
+priority data, and rebuilds Today / Tasks sections from normalized items. The
+private study directory is ignored by git, so workbook data and learning
+progress stay local.
 
 Control APIs are exposed through the pet shell control server:
 
@@ -379,6 +386,11 @@ Kuro separates what the user sees, what the voice engine speaks, and what the
 Live2D shell animates. This keeps technical content readable while preventing
 URLs, diagnostics, code, or tool artifacts from leaking into speech.
 
+Voice output is intentionally a spoken briefing layer, not a transcript reader.
+The full Traditional Chinese answer stays visible, while the voice lane asks the
+bridge to produce a concise Japanese report that preserves conclusions,
+uncertainty, risk, the top reasons, and the next action.
+
 ```mermaid
 flowchart TD
     Stream["Agent streaming response"] --> Transform["Transformers<br/>sentence divider / action parser / TTS filter"]
@@ -388,9 +400,10 @@ flowchart TD
     Subtitle --> SilentPayload["Silent payload<br/>audio = null, display_text preserved"]
 
     Output --> SpeechSource["Speech source lane<br/>remove URLs, paths, code, tool artifacts"]
-    SpeechSource --> SpokenRender["Bridge spoken rendering<br/>short voice-safe line + emotion"]
+    SpeechSource --> SpokenRender["Bridge spoken rendering<br/>report-style spoken brief + emotion"]
     SpokenRender --> Guard["Japanese TTS guard<br/>block JSON, non-speech text, invalid kana output"]
-    Guard -->|valid| TTS["GPT-SoVITS<br/>wav output"]
+    Guard --> SpeechBudget["Speech budget<br/>split long output / cap spoken segments"]
+    SpeechBudget -->|valid segments| TTS["GPT-SoVITS<br/>wav output"]
     Guard -->|blocked| SilentPayload
 
     Output --> Emotion["Emotion lane<br/>bridge emotion / inline tag / neutral"]
@@ -405,6 +418,23 @@ flowchart TD
     Renderer --> Playback["frontend-playback-complete"]
     Playback --> Runtime["Backend finalizes turn"]
 ```
+
+Speech behavior is controlled by two layers:
+
+| Layer | Role |
+| --- | --- |
+| Deterministic adapter source | Removes display-only spans, rewrites technical table names into speakable phrases, keeps explanatory lists, and still suppresses explicit choice lists. |
+| Bridge spoken renderer | Turns the cleaned Traditional Chinese source into a short Japanese spoken report instead of reading the reply verbatim. |
+
+Long replies are split and capped before they reach GPT-SoVITS. Extra details
+remain on screen instead of turning the desktop pet into a long-form narrator.
+Useful tuning variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `SPOKEN_MAX_CHARS` | Target length for the bridge spoken report. |
+| `KURO_SPOKEN_TTS_SEGMENT_MAX_CHARS` | Maximum size of each TTS content segment. |
+| `KURO_SPOKEN_TTS_MAX_CONTENT_SEGMENTS` | Maximum number of content segments spoken for one response. |
 
 ## Tool Integration
 
@@ -445,6 +475,13 @@ Kuro user question
   -> OMI POST /api/ai/ask
 ```
 
+Kuro can now run a read-only OMI preflight before the model writes the final
+answer when tool routing clearly identifies a stock or market question. The
+preflight sends the OMI v2 contract with `target={type:auto}`, keeps the prior
+resolved target for follow-up turns, and removes `omi.ask` from the model's
+remaining tool list so the same lookup is not called twice. If the MCP transport
+cancels the call, Kuro falls back to a partial answer path instead of stalling.
+
 Tracked routing files:
 
 | File | Role |
@@ -452,6 +489,7 @@ Tracked routing files:
 | `Open-LLM-VTuber/tool_catalog.json` | Exposes market intelligence and `omi.ask` as the stock/market tool category. |
 | `Open-LLM-VTuber/tool_policy.json` | Allows read-only `omi.ask` and blocks report/LLM/write arguments by default. |
 | `Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_catalog_manager.py` | Implements OMI-first routing and web-as-enrichment ranking. |
+| `Open-LLM-VTuber/src/open_llm_vtuber/mcpp/market_preflight.py` | Builds the OMI v2 read-only preflight envelope and formats OMI results for model context. |
 | `Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_policy_manager.py` | Enforces argument-level policy guards before tool execution. |
 
 Local enablement files are intentionally ignored by git:

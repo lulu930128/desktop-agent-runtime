@@ -46,6 +46,16 @@ class ToolCatalogMarketRoutingTest(unittest.TestCase):
         self.assertNotIn("omi.ask", tools)
         self.assertEqual(tools[0], "advanced_search_web")
 
+    def test_confirmation_followup_keeps_market_route_from_context(self) -> None:
+        tools = self.route_tools(
+            "user: 可以幫我查查台積電的數據嗎\n"
+            "assistant: 想要哪個期間的歷史財報？\n"
+            "user: 幫我查近五年的吧\n"
+            "assistant: 我就抓最近五個完整會計年度，這樣可以嗎？\n"
+            "user: 可以"
+        )
+        self.assertEqual(tools[0], "omi.ask")
+
 
 if __name__ == "__main__":
     unittest.main()

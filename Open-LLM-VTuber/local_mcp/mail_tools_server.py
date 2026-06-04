@@ -769,6 +769,7 @@ def _mail_payload_from_briefing_snapshot(
         },
         "messages": messages[:response_limit],
         "priorityMessages": priority_messages[:response_limit],
+        "today": snapshot.get("today", {}),
         "rules": mail.get("rules", {}),
         "preferences": mail.get("preferences", {}),
         "briefing_snapshot": snapshot,
@@ -782,7 +783,7 @@ def _mail_payload_from_briefing_snapshot(
         ),
         "next_step": (
             "This payload is read from the same Kuro Briefing dashboard snapshot. "
-            "Use counts and priorityMessages when answering dashboard mail questions."
+            "Use counts, priorityMessages, and today classification when answering dashboard mail questions."
         ),
     }
 

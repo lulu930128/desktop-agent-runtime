@@ -25,8 +25,11 @@ except ModuleNotFoundError:
 from open_llm_vtuber.conversations.conversation_utils import (  # noqa: E402
     _build_speech_plan,
     _build_speech_source,
+    _build_spoken_adapter_source,
     _build_renderer_failure_fallback_ja,
     _finalize_rendered_japanese_for_tts,
+    _select_spoken_tts_segments,
+    _split_speech_units,
 )
 from open_llm_vtuber.conversations.speech_presentation import (  # noqa: E402
     SPEECH_POLICY_CODE_JA,
@@ -308,6 +311,99 @@ class TTSPipelineTest(unittest.TestCase):
                 },
             ],
         )
+
+    def test_speech_plan_does_not_label_explanatory_bullets_as_options(self) -> None:
+        plan = _build_speech_plan(
+            "ADR（美國掛牌版本）原則上和台股走勢高度相關，但有幾個不同點要注意： "
+            "- 價格與時差：ADR 在美股時段交易，短線可能出現價格差異或時差反應。"
+            "- 匯率與成本：你會承擔美元/台幣匯率風險。"
+            "- 流動性與價差：部分時段 ADR 量能可能較小。"
+            "要我現在幫你抓最新 ADR 報價、成交量與和台股的價差比較嗎？",
+            "",
+            self.entries,
+        )
+
+        self.assertEqual(
+            plan,
+            [
+                {
+                    "kind": "source",
+                    "text": "ADR（美國掛牌版本）原則上和台股走勢高度相關，但有幾個不同點要注意：",
+                    "reason": "source",
+                },
+                {
+                    "kind": "fixed_ja",
+                    "text": SPEECH_POLICY_DETAIL_ITEMS_JA,
+                    "reason": "detail_items_displayed",
+                },
+                {
+                    "kind": "source",
+                    "text": "要我現在幫你抓最新 ADR 報價、成交量與和台股的價差比較嗎？",
+                    "reason": "source",
+                },
+            ],
+        )
+
+    def test_spoken_adapter_rewrites_technical_table_names(self) -> None:
+        source = _build_spoken_adapter_source(
+            "確認，OMI 目前的聯電資料不完整，缺少最新日收盤價、成交量、法人籌碼與財報等關鍵資料欄位。"
+            "缺少 market_daily_price、institutional_trade_daily、margin_trading、shareholding_weekly、"
+            "monthly_revenue、quarterly_financial、broker_branch 等資料，會導致動能與籌碼面判讀不可靠。"
+            "簡短交易看法：短線風險偏高，保守者可先空手觀察。",
+            "",
+            self.entries,
+        )
+
+        self.assertIn("最新價格與成交量資料", source)
+        self.assertIn("法人買賣超資料", source)
+        self.assertIn("融資融券資料", source)
+        self.assertIn("季報財務資料", source)
+        self.assertIn("會導致動能與籌碼面判讀不可靠", source)
+        self.assertIn("短線風險偏高", source)
+        self.assertNotIn("market_daily_price", source)
+        self.assertNotIn("institutional_trade_daily", source)
+
+    def test_spoken_adapter_skips_explicit_choice_lists(self) -> None:
+        source = _build_spoken_adapter_source(
+            "你想查哪種「數據」？選一項或告訴我想要的細節："
+            "1) 最新財報重點。"
+            "2) 歷史財務數字。"
+            "要我現在開始抓第幾項？",
+            "",
+            self.entries,
+        )
+
+        self.assertEqual(source, "")
+
+    def test_long_spoken_tts_without_punctuation_is_hard_split(self) -> None:
+        long_text = (
+            "\u3053\u308c\u306f\u3068\u3066\u3082\u9577\u3044"
+            "\u5831\u544a\u306e\u8aac\u660e\u3067\u3059"
+            * 20
+        )
+
+        segments = _split_speech_units(long_text, max_chars=24)
+
+        self.assertGreater(len(segments), 1)
+        self.assertTrue(all(len(segment) <= 24 for segment in segments))
+
+    def test_spoken_tts_budget_adds_display_hint_when_truncated(self) -> None:
+        long_text = (
+            "\u3053\u308c\u306f\u9577\u3044\u8aac\u660e\u3067\u3059\u3002"
+            "\u6b21\u306e\u91cd\u8981\u70b9\u3092\u8a71\u3057\u307e\u3059\u3002"
+            "\u3055\u3089\u306b\u8a73\u7d30\u3092\u88dc\u8db3\u3057\u307e\u3059\u3002"
+            "\u6700\u5f8c\u306b\u6b21\u306e\u884c\u52d5\u3092\u8a71\u3057\u307e\u3059\u3002"
+        )
+
+        segments, truncated = _select_spoken_tts_segments(
+            long_text,
+            max_content_segments=2,
+            max_chars=40,
+        )
+
+        self.assertTrue(truncated)
+        self.assertEqual(len(segments), 3)
+        self.assertEqual(segments[-1], SPEECH_POLICY_DETAIL_ITEMS_JA)
 
     def test_speech_plan_replaces_inline_detail_items_not_whole_sentence(self) -> None:
         plan = _build_speech_plan(

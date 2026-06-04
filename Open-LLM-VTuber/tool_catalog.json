@@ -405,7 +405,7 @@
             "brief"
           ],
           "risk": "read_only",
-          "when": "Use for Taiwan market, stock, watchlist, data freshness, and prompt-ready brief or trusted read-only OMI LLM analysis backed by local Open Market Intelligence data. Prefer mode=data_only or mode=brief for evidence, and mode=analysis with allow_llm=true when OMI should do its own non-persistent LLM synthesis. Do not request report generation or allow_write unless the runtime policy is explicitly changed."
+          "when": "Use for Taiwan market, US/ADR stock context, stock, watchlist, data freshness, and prompt-ready brief or trusted OMI LLM analysis backed by Open Market Intelligence data. Send contract_version=omi.ai.ask.v2 and target={type:auto} unless OMI already returned a concrete target in the previous turn. Do not send legacy scope_type or scope_id to omi.ask. Kuro may set allow_external_fetch=true with a small tool_budget so OMI can refresh stale Taiwan stock evidence by its default stale-first policy or choose from backend allowlisted market APIs; Kuro must not call those APIs directly. Prefer mode=data_only or mode=brief for evidence, and mode=analysis with allow_llm=true when OMI should do its own non-persistent LLM synthesis. Do not request report generation or allow_write unless the runtime policy is explicitly changed."
         }
       ]
     },

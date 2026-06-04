@@ -44,6 +44,7 @@ const readerEntry = path.join(__dirname, "reader-window.html");
 const readerPreloadPath = path.join(__dirname, "reader-preload.js");
 const briefingEntry = path.join(__dirname, "briefing-window.html");
 const briefingPreloadPath = path.join(__dirname, "briefing-preload.js");
+const studySnapshotPath = path.join(repoRoot, "Open-LLM-VTuber", "private", "study", "study_snapshot.json");
 const MIN_PET_ZOOM_SCALE = 0.2;
 const MAX_PET_ZOOM_SCALE = 8;
 const MIN_PET_WINDOW_WIDTH = 280;
@@ -65,6 +66,8 @@ let hoveredComponents = new Map();
 let activeWindowDrag = null;
 let controlServer = null;
 let mailBriefingService = null;
+let studySnapshotWatcher = null;
+let studySnapshotBroadcastTimer = null;
 const taskbarHiddenNativeHandles = new Set();
 let latestFrontendState = {
   wsConnected: false,
@@ -710,6 +713,35 @@ function broadcastBriefingData() {
     briefingWindow.webContents.send("briefing-data", getBriefingDataPayload());
   } catch (error) {
     petLog("briefing-data-broadcast-failed", error);
+  }
+}
+
+function scheduleStudySnapshotBroadcast() {
+  if (studySnapshotBroadcastTimer) {
+    clearTimeout(studySnapshotBroadcastTimer);
+  }
+  studySnapshotBroadcastTimer = setTimeout(() => {
+    studySnapshotBroadcastTimer = null;
+    broadcastBriefingData();
+  }, 350);
+}
+
+function startStudySnapshotWatcher() {
+  if (studySnapshotWatcher) {
+    return;
+  }
+  const studyDir = path.dirname(studySnapshotPath);
+  if (!fs.existsSync(studyDir)) {
+    return;
+  }
+  try {
+    studySnapshotWatcher = fs.watch(studyDir, (_eventType, filename) => {
+      if (!filename || String(filename) === path.basename(studySnapshotPath)) {
+        scheduleStudySnapshotBroadcast();
+      }
+    });
+  } catch (error) {
+    petLog("study-snapshot-watch-failed", error);
   }
 }
 
@@ -2006,6 +2038,7 @@ if (!singleInstanceLock) {
     appState = mergeState(loadState(statePath));
     briefingStore = createBriefingStore({
       storePath: briefingStorePath,
+      studySnapshotPath,
       log: petLog
     });
     latestFrontendState.currentOutfitId = appState.outfit.outfitId;
@@ -2036,6 +2069,7 @@ if (!singleInstanceLock) {
     createWindow();
     createReaderWindow();
     createBriefingWindow();
+    startStudySnapshotWatcher();
 
     screen.on("display-added", () => refreshLayoutForDisplayTopology("display-added"));
     screen.on("display-removed", () => refreshLayoutForDisplayTopology("display-removed"));
@@ -2078,6 +2112,18 @@ if (!singleInstanceLock) {
         petLog("control-server-close-error", error);
       }
       controlServer = null;
+    }
+    if (studySnapshotBroadcastTimer) {
+      clearTimeout(studySnapshotBroadcastTimer);
+      studySnapshotBroadcastTimer = null;
+    }
+    if (studySnapshotWatcher) {
+      try {
+        studySnapshotWatcher.close();
+      } catch (error) {
+        petLog("study-snapshot-watch-close-error", error);
+      }
+      studySnapshotWatcher = null;
     }
   });
 }

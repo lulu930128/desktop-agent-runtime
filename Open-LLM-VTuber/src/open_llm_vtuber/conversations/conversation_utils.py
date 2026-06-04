@@ -27,6 +27,7 @@ from .speech_presentation import (
     SPEECH_PLAN_SKIP,
     SPEECH_PLAN_SOURCE,
     SPEECH_POLICY_CODE_JA,
+    SPEECH_POLICY_DETAIL_ITEMS_JA,
     SPEECH_POLICY_ERROR_JA,
     SPEECH_POLICY_STOCK_NUMBERS_JA,
     SPEECH_POLICY_TABLE_JA,
@@ -290,8 +291,54 @@ _STOCK_NUMBER_RE = re.compile(
 _LIST_MARKER_RE = re.compile(
     r"^\s*(?:[-*+•]|\d+[.)、]|[一二三四五六七八九十]+[、.])\s+"
 )
+_CHOICE_LIST_CONTEXT_RE = re.compile(
+    r"(?:選\s*(?:一項|一個|哪一項|哪一個)|第幾項|哪種|哪個方案|哪個策略|"
+    r"(?:方案|策略)\s*[（(]\s*選一個\s*[）)]|"
+    r"要我(?:現在)?(?:開始)?(?:抓|查|做|執行)?第幾項)"
+)
+_DETAIL_LIST_CONTEXT_RE = re.compile(
+    r"(?:重點|觀察|注意|注意事項|不同點|差異|原因|包含|如下|整理|說明|補充|"
+    r"幾個|幾項|列表|清單)"
+)
+_SNAKE_CASE_TECH_TOKEN_RE = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
+_TOOL_STATUS_LINE_RE = re.compile(
+    r"(?i)^\s*(?:工具完成|工具呼叫|tool(?:\s+call)?(?:\s+done)?)\s*[:：]"
+)
+_TECHNICAL_TOKEN_SPEECH_MAP = {
+    "market_daily_price": "最新價格與成交量資料",
+    "institutional_trade_daily": "法人買賣超資料",
+    "margin_trading": "融資融券資料",
+    "shareholding_weekly": "股權分布資料",
+    "monthly_revenue": "月營收資料",
+    "quarterly_financial": "季報財務資料",
+    "broker_branch": "券商分點資料",
+}
 _SPEECH_SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？!?；;])\s*")
 _SPEECH_CLAUSE_SPLIT_RE = re.compile(r"(?<=[，、,])\s*")
+def _env_int(name: str, default: int, *, min_value: int, max_value: int) -> int:
+    try:
+        value = int((os.getenv(name, "") or "").strip() or default)
+    except (TypeError, ValueError):
+        return default
+    return max(min_value, min(max_value, value))
+
+
+_SPOKEN_TTS_SEGMENT_MAX_CHARS = _env_int(
+    "KURO_SPOKEN_TTS_SEGMENT_MAX_CHARS",
+    140,
+    min_value=60,
+    max_value=260,
+)
+_SPOKEN_TTS_MAX_CONTENT_SEGMENTS = _env_int(
+    "KURO_SPOKEN_TTS_MAX_CONTENT_SEGMENTS",
+    4,
+    min_value=1,
+    max_value=8,
+)
+_SPEECH_HARD_SPLIT_CHARS = (
+    " \t,.;:!?"
+    "\u3001\u3002\uff0c\uff1b\uff1a\uff01\uff1f"
+)
 _JSON_LIKE_LINE_RE = re.compile(r"^\s*(?:[{[]|[]}]|\"[^\"]+\"\s*:|'.+'\s*:)")
 _RAW_DATA_LABEL_RE = re.compile(
     r"(?i)^\s*(?:raw data|payload|request|response|headers?|body|debug|log|token|uuid|id)\s*[:=]"
@@ -307,6 +354,9 @@ _INLINE_DISPLAY_BLOCK_RE = re.compile(
 )
 _EMBEDDED_LIST_BOUNDARY_RE = re.compile(
     r"(?<=[。！？!?；;:：])\s*(?=(?:[-*+•]|\d+[.)、]|[一二三四五六七八九十]+[、.])\s+)"
+)
+_FOLLOWUP_QUESTION_BOUNDARY_RE = re.compile(
+    r"(?<=[。！？!?])\s*(?=(?:要我|你想|是否|要不要|需不需要)[^。！？!?]{1,100}[？?])"
 )
 _KANJI_ONLY_TTS_ALLOWLIST = {
     "\u5927\u4e08\u592b",  # daijoubu
@@ -840,11 +890,143 @@ def _line_has_speakable_context(
     )
 
 
+def _infer_list_context(source: str, list_like_count: int) -> str:
+    if list_like_count < 2:
+        return "none"
+
+    compact = _compact_speech_text(source)
+    if _CHOICE_LIST_CONTEXT_RE.search(compact):
+        return "choice"
+    if _DETAIL_LIST_CONTEXT_RE.search(compact):
+        return "detail"
+    return "neutral"
+
+
+def _replace_technical_tokens_for_speech(text: str) -> str:
+    seen_unknown = False
+
+    def repl(match: re.Match[str]) -> str:
+        nonlocal seen_unknown
+        token = match.group(0)
+        replacement = _TECHNICAL_TOKEN_SPEECH_MAP.get(token)
+        if replacement:
+            return replacement
+        seen_unknown = True
+        return "其他技術資料"
+
+    adapted = _SNAKE_CASE_TECH_TOKEN_RE.sub(repl, text or "")
+    if seen_unknown:
+        adapted = re.sub(
+            r"(?:其他技術資料\s*[、,，]\s*)+其他技術資料",
+            "其他技術資料",
+            adapted,
+        )
+    return adapted
+
+
+def _is_hard_display_only_for_spoken_adapter(line: str) -> bool:
+    text = (line or "").strip()
+    if not text:
+        return True
+    if _TOOL_STATUS_LINE_RE.search(text):
+        return True
+    if _MARKDOWN_TABLE_SEPARATOR_RE.match(text) or _MARKDOWN_TABLE_LINE_RE.match(text):
+        return True
+    if _STACK_TRACE_RE.search(text):
+        return True
+    if _DEBUG_LOG_RE.search(text):
+        return True
+    if _JSON_LIKE_LINE_RE.search(text) or _RAW_DATA_LABEL_RE.search(text):
+        return True
+    if _is_token_or_id_line(text) and _count_matches(_CJK_RE, text) < 4:
+        return True
+    if _is_path_like_only(text):
+        return True
+    if _is_dense_stock_number_line(text):
+        return True
+    return False
+
+
+def _adapt_line_for_spoken_adapter(
+    raw_line: str,
+    *,
+    pronunciation_entries: list[PronunciationEntry] | None = None,
+    list_like_count: int = 0,
+    list_context: str = "none",
+) -> str:
+    line = (raw_line or "").strip()
+    if not line:
+        return ""
+
+    is_list_item = bool(list_like_count >= 2 and _LIST_MARKER_RE.match(line))
+    if is_list_item:
+        if list_context == "choice":
+            return ""
+        line = _LIST_MARKER_RE.sub("", line, count=1).strip()
+
+    if _is_hard_display_only_for_spoken_adapter(line):
+        return ""
+
+    line = _replace_technical_tokens_for_speech(line)
+    line = _sanitize_speech_line(line, pronunciation_entries)
+    if not line:
+        return ""
+    return line
+
+
+def _build_spoken_adapter_source(
+    display_text: str,
+    tts_text: str,
+    pronunciation_entries: list[PronunciationEntry] | None = None,
+) -> str:
+    """Build faithful, speakable Chinese source for the bridge spoken renderer.
+
+    This keeps the bridge as the natural-language adapter while the deterministic
+    layer only removes or rewrites display-only spans. It intentionally returns
+    empty for explicit choice lists so the older fixed-choice behavior remains.
+    """
+    source = (display_text or "").strip() or (tts_text or "").strip()
+    if not source:
+        return ""
+
+    source = _strip_emotion_tags_preserve_layout(source)
+    source = _EMBEDDED_LIST_BOUNDARY_RE.sub("\n", source)
+    source = _FOLLOWUP_QUESTION_BOUNDARY_RE.sub("\n", source)
+    raw_lines = re.split(r"\r\n?|\n", source)
+    list_like_count = sum(1 for line in raw_lines if _LIST_MARKER_RE.match(line or ""))
+    list_context = _infer_list_context(source, list_like_count)
+    if list_context == "choice":
+        return ""
+
+    parts: list[str] = []
+    in_code_block = False
+    for raw_line in raw_lines:
+        stripped = (raw_line or "").strip()
+        if stripped.startswith("```"):
+            in_code_block = not in_code_block
+            continue
+        if in_code_block:
+            continue
+        adapted = _adapt_line_for_spoken_adapter(
+            stripped,
+            pronunciation_entries=pronunciation_entries,
+            list_like_count=list_like_count,
+            list_context=list_context,
+        )
+        if adapted:
+            parts.append(adapted)
+
+    if not parts:
+        return ""
+    return _trim_speech_source(" ".join(parts), max_chars=700)
+
+
 def _classify_speech_line(
     raw_line: str,
     *,
     pronunciation_entries: list[PronunciationEntry] | None = None,
     list_like_count: int = 0,
+    list_context: str = "none",
 ) -> Dict[str, str]:
     line = (raw_line or "").strip()
     if not line:
@@ -852,6 +1034,18 @@ def _classify_speech_line(
 
     if list_like_count >= 2 and _LIST_MARKER_RE.match(line):
         sanitized = _sanitize_speech_line(line, pronunciation_entries)
+        if list_context == "detail":
+            if _line_has_speakable_context(sanitized, pronunciation_entries):
+                return _speech_plan_item(
+                    SPEECH_PLAN_FIXED_JA,
+                    SPEECH_POLICY_DETAIL_ITEMS_JA,
+                    "detail_items_displayed",
+                )
+            return _speech_plan_item(SPEECH_PLAN_SKIP, reason="detail_item_display_only")
+        if list_context != "choice":
+            if _line_has_speakable_context(sanitized, pronunciation_entries):
+                return _speech_plan_item(SPEECH_PLAN_SOURCE, sanitized, "list_item")
+            return _speech_plan_item(SPEECH_PLAN_SKIP, reason="list_item_display_only")
         if _line_has_speakable_context(sanitized, pronunciation_entries):
             return _speech_plan_item(SPEECH_PLAN_SOURCE, sanitized, "choice_item")
         return _speech_plan_item(SPEECH_PLAN_SKIP, reason="choice_item_display_only")
@@ -937,6 +1131,36 @@ def _classify_speech_line(
     return _speech_plan_item(SPEECH_PLAN_SOURCE, sanitized, "source")
 
 
+def _hard_split_speech_unit(unit: str, max_chars: int) -> list[str]:
+    unit = _compact_speech_text(unit)
+    if not unit:
+        return []
+    if len(unit) <= max_chars:
+        return [unit]
+
+    chunks: list[str] = []
+    rest = unit
+    min_backtrack = max(1, max_chars // 2)
+    while len(rest) > max_chars:
+        window = rest[: max_chars + 1]
+        split_at = -1
+        for idx in range(len(window) - 1, min_backtrack - 1, -1):
+            if window[idx] in _SPEECH_HARD_SPLIT_CHARS:
+                split_at = idx + 1
+                break
+        if split_at <= 0:
+            split_at = max_chars
+
+        chunk = rest[:split_at].strip()
+        if chunk:
+            chunks.append(chunk)
+        rest = rest[split_at:].strip()
+
+    if rest:
+        chunks.append(rest)
+    return chunks
+
+
 def _split_long_speech_unit(unit: str, max_chars: int = 150) -> list[str]:
     unit = _compact_speech_text(unit)
     if not unit:
@@ -946,7 +1170,7 @@ def _split_long_speech_unit(unit: str, max_chars: int = 150) -> list[str]:
 
     pieces = [part.strip() for part in _SPEECH_CLAUSE_SPLIT_RE.split(unit) if part]
     if len(pieces) <= 1:
-        return [unit]
+        return _hard_split_speech_unit(unit, max_chars)
 
     groups: list[str] = []
     current = ""
@@ -959,10 +1183,13 @@ def _split_long_speech_unit(unit: str, max_chars: int = 150) -> list[str]:
             current = candidate
     if current:
         groups.append(current)
-    return groups or [unit]
+    split_groups: list[str] = []
+    for group in groups or [unit]:
+        split_groups.extend(_hard_split_speech_unit(group, max_chars))
+    return split_groups
 
 
-def _split_speech_units(text: str) -> list[str]:
+def _split_speech_units(text: str, max_chars: int = 150) -> list[str]:
     source = _compact_speech_text(text)
     if not source:
         return []
@@ -971,8 +1198,28 @@ def _split_speech_units(text: str) -> list[str]:
         part = _compact_speech_text(part)
         if not part:
             continue
-        units.extend(_split_long_speech_unit(part))
+        units.extend(_split_long_speech_unit(part, max_chars=max_chars))
     return units
+
+
+def _select_spoken_tts_segments(
+    spoken_text: str,
+    *,
+    max_content_segments: int = _SPOKEN_TTS_MAX_CONTENT_SEGMENTS,
+    max_chars: int = _SPOKEN_TTS_SEGMENT_MAX_CHARS,
+    include_truncation_hint: bool = True,
+) -> tuple[list[str], bool]:
+    units = _split_speech_units(spoken_text, max_chars=max_chars)
+    if not units:
+        return [], False
+
+    max_content_segments = max(1, max_content_segments)
+    selected = units[:max_content_segments]
+    truncated = len(units) > len(selected)
+    if truncated and include_truncation_hint:
+        if not selected or selected[-1] != SPEECH_POLICY_DETAIL_ITEMS_JA:
+            selected.append(SPEECH_POLICY_DETAIL_ITEMS_JA)
+    return selected, truncated
 
 
 def _append_speech_plan_item(
@@ -1004,6 +1251,7 @@ def _append_mixed_inline_speech_plan(
     *,
     pronunciation_entries: list[PronunciationEntry] | None = None,
     list_like_count: int = 0,
+    list_context: str = "none",
     seen_fixed_reasons: set[str],
 ) -> bool:
     """Split one visual line into speakable text and display-only blocks."""
@@ -1023,6 +1271,7 @@ def _append_mixed_inline_speech_plan(
                     before,
                     pronunciation_entries=pronunciation_entries,
                     list_like_count=list_like_count,
+                    list_context=list_context,
                 ),
                 seen_fixed_reasons,
             )
@@ -1061,6 +1310,7 @@ def _append_mixed_inline_speech_plan(
                 after,
                 pronunciation_entries=pronunciation_entries,
                 list_like_count=list_like_count,
+                list_context=list_context,
             ),
             seen_fixed_reasons,
         )
@@ -1085,8 +1335,10 @@ def _build_speech_plan(
 
     source = _strip_emotion_tags_preserve_layout(source)
     source = _EMBEDDED_LIST_BOUNDARY_RE.sub("\n", source)
+    source = _FOLLOWUP_QUESTION_BOUNDARY_RE.sub("\n", source)
     raw_lines = re.split(r"\r\n?|\n", source)
     list_like_count = sum(1 for line in raw_lines if _LIST_MARKER_RE.match(line or ""))
+    list_context = _infer_list_context(source, list_like_count)
     plan: list[Dict[str, str]] = []
     seen_fixed_reasons: set[str] = set()
     in_code_block = False
@@ -1117,6 +1369,7 @@ def _build_speech_plan(
             line,
             pronunciation_entries=pronunciation_entries,
             list_like_count=list_like_count,
+            list_context=list_context,
             seen_fixed_reasons=seen_fixed_reasons,
         ):
             continue
@@ -1125,6 +1378,7 @@ def _build_speech_plan(
             line,
             pronunciation_entries=pronunciation_entries,
             list_like_count=list_like_count,
+            list_context=list_context,
         )
         _append_speech_plan_item(plan, item, seen_fixed_reasons)
 
@@ -2277,8 +2531,18 @@ async def handle_sentence_output(
     # Keep display and speech intentionally separate: visual-only details stay visible
     # but do not get fed into Japanese TTS.
     full_zh_text = full_zh.strip()
-    speech_zh_text = _trim_speech_source(" ".join(speech_zh_parts))
+    adapter_source = _build_spoken_adapter_source(
+        full_zh_text,
+        full_tts,
+        pronunciation_entries,
+    )
+    speech_zh_text = adapter_source or _trim_speech_source(" ".join(speech_zh_parts))
     speech_policy.set_source(presentation, speech_zh_text)
+    if adapter_source:
+        presentation.metadata["speech_adapter_source"] = _compact_tts_debug_text(
+            adapter_source,
+            max_len=240,
+        )
     if full_zh_text and not presentation.speech_source:
         logger.info(
             "Speech-source lane is empty after sanitizing; display-only response will stay silent."
@@ -2458,6 +2722,11 @@ async def flush_deferred_sentence_speech(
         tts_text_source,
         pronunciation_entries,
     )
+    adapter_source = _build_spoken_adapter_source(
+        display_text_source,
+        tts_text_source,
+        pronunciation_entries,
+    )
     source_segments = [
         item["text"]
         for item in speech_plan
@@ -2473,6 +2742,11 @@ async def flush_deferred_sentence_speech(
         }
         for item in speech_plan
     ]
+    if adapter_source:
+        presentation.metadata["speech_adapter_source"] = _compact_tts_debug_text(
+            adapter_source,
+            max_len=240,
+        )
     if display_text_source.strip() and not speech_plan:
         logger.info(
             "Deferred speech-source lane is empty after sanitizing; display-only response will stay silent."
@@ -2499,75 +2773,44 @@ async def flush_deferred_sentence_speech(
             websocket_send=websocket_send,
         )
 
-    for segment_index, item in enumerate(speech_plan, start=1):
-        kind = item.get("kind", "")
-        segment_text = item.get("text", "")
-        policy_reason = item.get("reason", "")
-        if not segment_text:
-            continue
+    if adapter_source and translate_engine:
+        rendered_ja = await render_spoken_ja(adapter_source)
+        spoken_ja, tts_guard_reason, pronunciation_hits = (
+            _finalize_rendered_japanese_for_tts(
+                rendered_ja,
+                pronunciation_entries,
+            )
+        )
+        if spoken_ja and spoken_ja.strip() == adapter_source:
+            logger.warning(
+                "Speech adapter returned the original subtitle text; falling back to deterministic speech plan."
+            )
+            spoken_ja = ""
+            tts_guard_reason = "same_as_adapter_source"
+        provider = getattr(translate_engine, "last_provider", "") if translate_engine else ""
+        speech_repaired = (
+            bool(getattr(translate_engine, "last_speech_repaired", False))
+            if translate_engine
+            else False
+        )
 
-        rendered_ja = ""
-        spoken_ja = ""
-        tts_guard_reason = "not_rendered"
-        pronunciation_hits: list[str] = []
-        provider = "local:speech_policy"
-        speech_repaired = False
-
-        if kind == SPEECH_PLAN_FIXED_JA:
-            rendered_ja = segment_text
-            spoken_ja, tts_guard_reason, pronunciation_hits = (
-                _finalize_rendered_japanese_for_tts(
-                    rendered_ja,
-                    pronunciation_entries,
-                )
-            )
-        elif kind == SPEECH_PLAN_SOURCE:
-            used_renderer = True
-            rendered_ja = await render_spoken_ja(segment_text)
-            spoken_ja, tts_guard_reason, pronunciation_hits = (
-                _finalize_rendered_japanese_for_tts(
-                    rendered_ja,
-                    pronunciation_entries,
-                )
-            )
-            if spoken_ja and spoken_ja.strip() == segment_text:
-                logger.warning(
-                    "Speech renderer returned the original subtitle text; skip voice lane to avoid feeding zh text into ja TTS."
-                )
-                spoken_ja = ""
-                tts_guard_reason = "same_as_source"
-            provider = (
-                getattr(translate_engine, "last_provider", "")
-                if translate_engine
-                else ""
-            )
-            speech_repaired = (
-                bool(getattr(translate_engine, "last_speech_repaired", False))
-                if translate_engine
-                else False
-            )
-            if not spoken_ja and not fallback_guard_reason:
-                fallback_guard_reason = tts_guard_reason
-                fallback_source = segment_text
-        else:
-            continue
-
-        segment_presentation = speech_policy.create_envelope(response_type="chat")
-        segment_presentation.append_display(
+        adapter_presentation = speech_policy.create_envelope(response_type="chat")
+        adapter_presentation.append_display(
             raw_text=display_text_source,
             display_text=display_text_source,
         )
-        speech_policy.set_source(segment_presentation, segment_text)
-        segment_presentation.expression_hint = presentation.expression_hint
-        segment_presentation.metadata.update(
+        speech_policy.set_source(adapter_presentation, adapter_source)
+        adapter_presentation.expression_hint = presentation.expression_hint
+        adapter_presentation.metadata.update(
             {
-                "policy_kind": kind,
-                "policy_reason": policy_reason,
-                "segment_index": segment_index,
-                "segment_count": len(speech_plan),
+                "policy_kind": "speech_adapter",
+                "policy_reason": "faithful_spoken_adapter",
+                "segment_index": 1,
+                "segment_count": 1,
+                "fallback_plan": presentation.metadata.get("speech_plan", []),
             }
         )
-        segment_presentation.attach_speech_result(
+        adapter_presentation.attach_speech_result(
             rendered_text=rendered_ja,
             spoken_text=spoken_ja,
             guard_reason=tts_guard_reason,
@@ -2575,20 +2818,129 @@ async def flush_deferred_sentence_speech(
             pronunciation_hits=pronunciation_hits,
             speech_repaired=speech_repaired,
         )
+        tts_segments: list[str] = []
+        budget_truncated = False
+        if adapter_presentation.spoken_text:
+            tts_segments, budget_truncated = _select_spoken_tts_segments(
+                adapter_presentation.spoken_text
+            )
+            adapter_presentation.metadata["tts_segment_count"] = len(tts_segments)
+            adapter_presentation.metadata["tts_budget_truncated"] = budget_truncated
         _log_tts_pipeline(
-            speech_source=segment_text,
+            speech_source=adapter_source,
             rendered_ja=rendered_ja,
-            final_tts=segment_presentation.spoken_text,
+            final_tts=adapter_presentation.spoken_text,
             guard_reason=tts_guard_reason,
             provider=provider,
             pronunciation_hits=pronunciation_hits,
             speech_repaired=speech_repaired,
-            presentation=segment_presentation,
+            presentation=adapter_presentation,
         )
+        if adapter_presentation.spoken_text:
+            for tts_segment in tts_segments:
+                await queue_spoken_text(tts_segment)
+                queued_spoken_count += 1
+            used_renderer = True
+        else:
+            fallback_guard_reason = tts_guard_reason
+            fallback_source = adapter_source
 
-        if segment_presentation.spoken_text:
-            await queue_spoken_text(segment_presentation.spoken_text)
-            queued_spoken_count += 1
+    if queued_spoken_count == 0:
+        for segment_index, item in enumerate(speech_plan, start=1):
+            if queued_spoken_count >= _SPOKEN_TTS_MAX_CONTENT_SEGMENTS:
+                logger.info(
+                    "Deferred speech budget reached; remaining deterministic segments stay display-only."
+                )
+                break
+            kind = item.get("kind", "")
+            segment_text = item.get("text", "")
+            policy_reason = item.get("reason", "")
+            if not segment_text:
+                continue
+
+            rendered_ja = ""
+            spoken_ja = ""
+            tts_guard_reason = "not_rendered"
+            pronunciation_hits: list[str] = []
+            provider = "local:speech_policy"
+            speech_repaired = False
+
+            if kind == SPEECH_PLAN_FIXED_JA:
+                rendered_ja = segment_text
+                spoken_ja, tts_guard_reason, pronunciation_hits = (
+                    _finalize_rendered_japanese_for_tts(
+                        rendered_ja,
+                        pronunciation_entries,
+                    )
+                )
+            elif kind == SPEECH_PLAN_SOURCE:
+                used_renderer = True
+                rendered_ja = await render_spoken_ja(segment_text)
+                spoken_ja, tts_guard_reason, pronunciation_hits = (
+                    _finalize_rendered_japanese_for_tts(
+                        rendered_ja,
+                        pronunciation_entries,
+                    )
+                )
+                if spoken_ja and spoken_ja.strip() == segment_text:
+                    logger.warning(
+                        "Speech renderer returned the original subtitle text; skip voice lane to avoid feeding zh text into ja TTS."
+                    )
+                    spoken_ja = ""
+                    tts_guard_reason = "same_as_source"
+                provider = (
+                    getattr(translate_engine, "last_provider", "")
+                    if translate_engine
+                    else ""
+                )
+                speech_repaired = (
+                    bool(getattr(translate_engine, "last_speech_repaired", False))
+                    if translate_engine
+                    else False
+                )
+                if not spoken_ja and not fallback_guard_reason:
+                    fallback_guard_reason = tts_guard_reason
+                    fallback_source = segment_text
+            else:
+                continue
+
+            segment_presentation = speech_policy.create_envelope(response_type="chat")
+            segment_presentation.append_display(
+                raw_text=display_text_source,
+                display_text=display_text_source,
+            )
+            speech_policy.set_source(segment_presentation, segment_text)
+            segment_presentation.expression_hint = presentation.expression_hint
+            segment_presentation.metadata.update(
+                {
+                    "policy_kind": kind,
+                    "policy_reason": policy_reason,
+                    "segment_index": segment_index,
+                    "segment_count": len(speech_plan),
+                }
+            )
+            segment_presentation.attach_speech_result(
+                rendered_text=rendered_ja,
+                spoken_text=spoken_ja,
+                guard_reason=tts_guard_reason,
+                provider=provider,
+                pronunciation_hits=pronunciation_hits,
+                speech_repaired=speech_repaired,
+            )
+            _log_tts_pipeline(
+                speech_source=segment_text,
+                rendered_ja=rendered_ja,
+                final_tts=segment_presentation.spoken_text,
+                guard_reason=tts_guard_reason,
+                provider=provider,
+                pronunciation_hits=pronunciation_hits,
+                speech_repaired=speech_repaired,
+                presentation=segment_presentation,
+            )
+
+            if segment_presentation.spoken_text:
+                await queue_spoken_text(segment_presentation.spoken_text)
+                queued_spoken_count += 1
 
     if (
         queued_spoken_count == 0
