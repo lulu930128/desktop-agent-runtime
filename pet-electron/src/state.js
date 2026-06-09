@@ -8,8 +8,8 @@ const DEFAULT_STATE = {
   petZoomScale: 1,
   petAnchor: null,
   petGameMode: false,
-  readerVisible: true,
-  briefingVisible: true,
+  readerVisible: false,
+  briefingVisible: false,
   briefingBounds: null,
   outfit: {
     outfitId: "normal",

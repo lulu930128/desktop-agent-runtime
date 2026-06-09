@@ -11,7 +11,13 @@ import urllib.request
 
 from .config import AppConfig
 from .procs import ManagedProc, spawn_process
-from .utils import port_is_open, log_ts, sanitize_ascii, read_yaml_file
+from .utils import (
+    log_ts,
+    port_is_open,
+    read_yaml_file,
+    sanitize_ascii,
+    windows_hidden_subprocess_kwargs,
+)
 
 
 def _probe_llm_import(python_llm: str, open_llm_dir: Path, env: dict, logger_cb):
@@ -33,6 +39,7 @@ def _probe_llm_import(python_llm: str, open_llm_dir: Path, env: dict, logger_cb)
         capture_output=True,
         text=True,
         timeout=10,
+        **windows_hidden_subprocess_kwargs(),
     )
     out = (r.stdout or "") + (r.stderr or "")
     logger_cb(f"[{log_ts()}] [LLM-PY-PROBE]\n{out}")

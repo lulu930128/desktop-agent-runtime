@@ -25,6 +25,54 @@
       "category": "project"
     },
     {
+      "surface": "OpenAI",
+      "reading": "オープンエーアイ",
+      "aliases": ["openai"],
+      "category": "ai"
+    },
+    {
+      "surface": "Gemini",
+      "reading": "ジェミニ",
+      "aliases": ["gemini"],
+      "category": "ai"
+    },
+    {
+      "surface": "Claude",
+      "reading": "クロード",
+      "aliases": ["claude"],
+      "category": "ai"
+    },
+    {
+      "surface": "Anthropic",
+      "reading": "アンソロピック",
+      "aliases": ["anthropic"],
+      "category": "ai"
+    },
+    {
+      "surface": "Google",
+      "reading": "グーグル",
+      "aliases": ["google"],
+      "category": "company"
+    },
+    {
+      "surface": "GPT",
+      "reading": "ジーピーティー",
+      "aliases": ["gpt"],
+      "category": "ai"
+    },
+    {
+      "surface": "GPT-5",
+      "reading": "ジーピーティー ファイブ",
+      "aliases": ["gpt-5", "GPT5", "gpt5"],
+      "category": "ai"
+    },
+    {
+      "surface": "GPT-5-mini",
+      "reading": "ジーピーティー ファイブ ミニ",
+      "aliases": ["gpt-5-mini", "GPT-5 mini", "gpt-5 mini"],
+      "category": "ai"
+    },
+    {
       "surface": "GPT-SoVITS",
       "reading": "ジーピーティー ソビッツ",
       "category": "tool"
@@ -50,9 +98,83 @@
       "category": "term"
     },
     {
+      "surface": "MCP",
+      "reading": "エムシーピー",
+      "category": "term"
+    },
+    {
+      "surface": "OMI",
+      "reading": "オーエムアイ",
+      "category": "project"
+    },
+    {
       "surface": "API",
       "reading": "エーピーアイ",
       "category": "term"
+    },
+    {
+      "surface": "SDK",
+      "reading": "エスディーケー",
+      "category": "term"
+    },
+    {
+      "surface": "JSON",
+      "reading": "ジェイソン",
+      "category": "term"
+    },
+    {
+      "surface": "GitHub",
+      "reading": "ギットハブ",
+      "aliases": ["github"],
+      "category": "tool"
+    },
+    {
+      "surface": "Codex",
+      "reading": "コーデックス",
+      "aliases": ["codex"],
+      "category": "tool"
+    },
+    {
+      "surface": "Vercel",
+      "reading": "バーセル",
+      "aliases": ["vercel"],
+      "category": "tool"
+    },
+    {
+      "surface": "Python",
+      "reading": "パイソン",
+      "aliases": ["python"],
+      "category": "language"
+    },
+    {
+      "surface": "TypeScript",
+      "reading": "タイプスクリプト",
+      "aliases": ["typescript", "TS"],
+      "category": "language"
+    },
+    {
+      "surface": "JavaScript",
+      "reading": "ジャバスクリプト",
+      "aliases": ["javascript", "JS"],
+      "category": "language"
+    },
+    {
+      "surface": "Node.js",
+      "reading": "ノードジェイエス",
+      "aliases": ["node.js", "Node"],
+      "category": "tool"
+    },
+    {
+      "surface": "Next.js",
+      "reading": "ネクストジェイエス",
+      "aliases": ["next.js", "Next"],
+      "category": "framework"
+    },
+    {
+      "surface": "React",
+      "reading": "リアクト",
+      "aliases": ["react"],
+      "category": "framework"
     },
     {
       "surface": "launcher",

@@ -95,13 +95,36 @@ def port_is_open(host: str, port: int, timeout: float = 0.2) -> bool:
         return False
 
 
+def windows_hidden_subprocess_kwargs(extra_creationflags: int = 0) -> Dict[str, Any]:
+    """Return Windows subprocess kwargs that keep console tools from flashing windows."""
+    if os.name != "nt":
+        return {}
+
+    creationflags = int(extra_creationflags) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    kwargs: Dict[str, Any] = {"creationflags": creationflags}
+
+    if hasattr(subprocess, "STARTUPINFO"):
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
+        startupinfo.wShowWindow = 0
+        kwargs["startupinfo"] = startupinfo
+
+    return kwargs
+
+
 def get_listening_pid_windows(port: int) -> Optional[int]:
     """Best-effort: find PID listening on tcp:<port> (Windows only)."""
     if os.name != "nt":
         return None
     try:
         # netstat output:  TCP  127.0.0.1:1188  0.0.0.0:0  LISTENING  1234
-        out = subprocess.check_output(["netstat", "-ano"], text=True, encoding="utf-8", errors="ignore")
+        out = subprocess.check_output(
+            ["netstat", "-ano"],
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+            **windows_hidden_subprocess_kwargs(),
+        )
         needle = f":{int(port)}"
         for line in out.splitlines():
             if "LISTENING" not in line:
@@ -171,7 +194,12 @@ def taskkill_tree(pid: int) -> None:
 
     if os.name == "nt":
         # /T = terminate child processes, /F = force
-        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], check=False, capture_output=True)
+        subprocess.run(
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            check=False,
+            capture_output=True,
+            **windows_hidden_subprocess_kwargs(),
+        )
     else:
         # best-effort on *nix
         try:

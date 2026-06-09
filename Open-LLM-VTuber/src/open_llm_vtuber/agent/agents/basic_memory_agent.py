@@ -18,6 +18,7 @@ from ..stateless_llm.stateless_llm_interface import StatelessLLMInterface
 from ..stateless_llm.claude_llm import AsyncLLM as ClaudeAsyncLLM
 from ..stateless_llm.openai_compatible_llm import AsyncLLM as OpenAICompatibleAsyncLLM
 from ...chat_history_manager import get_history
+from ...chat_event_manager import read_history_events
 from ..transformers import (
     sentence_divider,
     actions_extractor,
@@ -34,6 +35,7 @@ from ...mcpp.tool_executor import ToolExecutor
 from ...mcpp.market_preflight import (
     build_autonomous_omi_args,
     extract_omi_resolution_from_tool_results,
+    format_omi_events_for_memory,
     format_omi_response_for_llm,
     should_autorun_omi,
 )
@@ -256,6 +258,21 @@ class BasicMemoryAgent(AgentInterface):
                 )
             else:
                 logger.warning(f"Skipping invalid message from history: {msg}")
+        omi_memory = format_omi_events_for_memory(
+            read_history_events(
+                conf_uid,
+                history_uid,
+                event_types={"omi_evidence"},
+                limit=12,
+            )
+        )
+        if omi_memory:
+            self._memory.append(
+                {
+                    "role": "assistant",
+                    "content": omi_memory,
+                }
+            )
         logger.info(f"Loaded {len(self._memory)} messages from history.")
 
     def handle_interrupt(self, heard_response: str) -> None:

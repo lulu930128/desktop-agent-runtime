@@ -1149,6 +1149,11 @@ async function handleControlAction(action, payload = {}) {
         live2dInspectorOverlayEnabled: enabled
       };
     }
+    case "send-text":
+      return sendTextToFrontend(
+        String(payload.text || ""),
+        Array.isArray(payload.attachments) ? payload.attachments : []
+      );
     case "toggle-subtitle":
       return setReaderVisible(!(readerWindow && !readerWindow.isDestroyed() && readerWindow.isVisible()));
     case "toggle-camera":
@@ -2050,6 +2055,8 @@ if (!singleInstanceLock) {
     appState.mode = "pet";
     appState.forceIgnoreMouse = true;
     appState.petSpanAllDisplays = true;
+    appState.readerVisible = false;
+    appState.briefingVisible = false;
     appState.petZoomScale = normalizePetZoomScale(appState.petZoomScale);
     ensurePetAnchor();
     saveCurrentState();
@@ -2067,8 +2074,12 @@ if (!singleInstanceLock) {
     mailBriefingService.start();
     createTray();
     createWindow();
-    createReaderWindow();
-    createBriefingWindow();
+    if (appState.readerVisible) {
+      createReaderWindow();
+    }
+    if (appState.briefingVisible) {
+      createBriefingWindow();
+    }
     startStudySnapshotWatcher();
 
     screen.on("display-added", () => refreshLayoutForDisplayTopology("display-added"));
@@ -2082,10 +2093,10 @@ if (!singleInstanceLock) {
     if (!mainWindow) {
       createWindow();
     }
-    if (!readerWindow) {
+    if (appState.readerVisible && !readerWindow) {
       createReaderWindow();
     }
-    if (!briefingWindow) {
+    if (appState.briefingVisible && !briefingWindow) {
       createBriefingWindow();
     }
   });

@@ -8,7 +8,9 @@ sys.path.insert(0, str(SRC))
 
 from open_llm_vtuber.mcpp.market_preflight import (
     build_autonomous_omi_args,
+    build_omi_evidence_snapshot,
     extract_omi_resolution_from_tool_results,
+    format_omi_evidence_for_history,
     format_omi_response_for_llm,
 )
 
@@ -104,6 +106,31 @@ class MarketPreflightTest(unittest.TestCase):
 
         self.assertIsNotNone(resolution)
         self.assertEqual(resolution["target"]["id"], "2330")
+
+    def test_builds_bounded_omi_evidence_snapshot(self) -> None:
+        content = (
+            '{"contract_version":"omi.ai.ask.v2","question":"科技股狀況",'
+            '"target":{"type":"watchlist","id":"technology","label":"科技股","market":"TW"},'
+            '"mode":{"requested":"auto","effective":"analysis"},"answer_ready":true,'
+            '"report_level":"analysis","analysis":{"kind":"watchlist_sector_digest",'
+            '"as_of":"2026-06-08","display":"科技股偏空",'
+            '"human_answer":{"text":"結論：科技股短線偏空，先等量價回穩。"}},'
+            '"resolution":{"target":{"type":"watchlist","id":"technology","label":"科技股","market":"TW"},'
+            '"confidence":"high"},"tool_runs":[{"tool":"tw.refresh_watchlist_evidence","status":"success"}],'
+            '"missing":["broker_branch_trade_daily"],"warnings":["資料仍有缺口"]}'
+        )
+
+        evidence = build_omi_evidence_snapshot(content)
+
+        self.assertIsNotNone(evidence)
+        assert evidence is not None
+        self.assertEqual(evidence["target"]["label"], "科技股")
+        self.assertEqual(evidence["as_of"], "2026-06-08")
+        self.assertIn("科技股短線偏空", evidence["human_answer"])
+        self.assertEqual(evidence["tool_runs"][0]["tool"], "tw.refresh_watchlist_evidence")
+        summary = format_omi_evidence_for_history(evidence)
+        self.assertIn("OMI evidence", summary)
+        self.assertIn("科技股", summary)
 
 
 if __name__ == "__main__":

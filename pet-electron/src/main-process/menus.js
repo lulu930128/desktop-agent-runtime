@@ -7,14 +7,6 @@ function buildCommonMenuItems(state, actions) {
       click: actions.toggleIgnoreMouse
     },
     {
-      label: state.readerVisible ? "隱藏閱讀框" : "顯示閱讀框",
-      click: actions.toggleReader
-    },
-    {
-      label: state.briefingVisible ? "\u96b1\u85cf\u4eca\u65e5\u7c21\u5831" : "\u986f\u793a\u4eca\u65e5\u7c21\u5831",
-      click: actions.toggleBriefing
-    },
-    {
       label: "Game mode",
       type: "checkbox",
       checked: Boolean(state.petGameMode),

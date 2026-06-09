@@ -18,6 +18,37 @@ SPEECH_POLICY_STOCK_NUMBERS_JA = "詳しい数字は画面に出しています�
 SPEECH_POLICY_OPTIONS_JA = "選択肢は画面に表示しています。"
 SPEECH_POLICY_DETAIL_ITEMS_JA = "詳しい項目は画面に表示しています。"
 
+_SUBSTANTIVE_SOURCE_HINTS = (
+    "結論",
+    "答案",
+    "重點",
+    "核心",
+    "建議",
+    "看法",
+    "提醒",
+    "注意",
+    "風險",
+    "限制",
+    "不確定",
+    "資料",
+    "趨勢",
+    "比較",
+    "差異",
+    "主要",
+    "適合",
+    "取決",
+    "可以",
+    "不能",
+    "沒有絕對",
+)
+_FOLLOWUP_QUESTION_RE = re.compile(
+    r"^(?:要我|你想|是否|要不要|需不需要|請告訴我|如果要)"
+)
+_HEADING_ONLY_LABEL_RE = re.compile(
+    r"^(?:簡短)?(?:重點|要點|結論|原因|建議|提醒|風險|補充|說明|比較|整理|如下|"
+    r"核心結論(?:（[^）]{1,12}）)?)$"
+)
+
 
 def _clip_text(text: str, max_len: int | None) -> str:
     value = str(text or "")
@@ -65,6 +96,49 @@ def _is_question(text: str) -> bool:
 def _is_list_intro(text: str) -> bool:
     value = str(text or "").strip()
     return value.endswith((":", "："))
+
+
+def _is_heading_only(text: str) -> bool:
+    value = str(text or "").strip()
+    if not value.endswith((":", "：")):
+        return False
+    label = value.rstrip(":：").strip(" -•*+")
+    if not label:
+        return True
+    if len(label) > 16:
+        return False
+    return bool(_HEADING_ONLY_LABEL_RE.match(label))
+
+
+def _is_followup_question(text: str) -> bool:
+    value = str(text or "").strip()
+    return _is_question(value) and bool(_FOLLOWUP_QUESTION_RE.search(value))
+
+
+def _source_content_score(text: str) -> int:
+    value = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not value:
+        return -100
+    if _is_heading_only(value):
+        return -80
+
+    score = 0
+    cjk_count = len(re.findall(r"[\u4e00-\u9fff]", value))
+    score += min(cjk_count, 40)
+
+    if _is_question(value):
+        score -= 18
+        if _is_followup_question(value):
+            score -= 8
+    if _is_list_intro(value):
+        score -= 8
+    if cjk_count < 6:
+        score -= 18
+    if any(hint in value for hint in _SUBSTANTIVE_SOURCE_HINTS):
+        score += 18
+    if re.search(r"(?:但|不過|然而|所以|因此|因為|取決|建議|注意|風險)", value):
+        score += 10
+    return score
 
 
 def _looks_like_inline_detail_items(text: str) -> bool:
@@ -191,49 +265,120 @@ def normalize_speech_plan_for_presentation(
 
         result.append(speech_plan_item(kind, text, reason))
 
+    has_non_heading_source = any(
+        item.get("kind") == SPEECH_PLAN_SOURCE
+        and not _is_heading_only(item.get("text", ""))
+        for item in result
+    )
+    if has_non_heading_source:
+        result = [
+            item
+            for item in result
+            if not (
+                item.get("kind") == SPEECH_PLAN_SOURCE
+                and _is_heading_only(item.get("text", ""))
+            )
+        ]
+
     if len(result) <= max_spoken_segments:
         return result
 
-    # Keep natural dialogue shape: leading question/intro, one display notice, final question.
-    priority: list[dict[str, str]] = []
-    for item in result:
-        if item.get("kind") == SPEECH_PLAN_SOURCE and _is_question(
-            item.get("text", "")
-        ):
-            priority.append(item)
-            break
-    if not priority and result:
-        priority.append(result[0])
+    # Keep natural dialogue shape for long answers: substantive content first,
+    # one display notice if details were skipped, then the final follow-up.
+    indexed = list(enumerate(result))
+    chosen: list[int] = []
 
-    for item in result:
-        if item.get("kind") == SPEECH_PLAN_FIXED_JA and item not in priority:
-            priority.append(item)
-            break
+    def add(index: int | None) -> None:
+        if index is None:
+            return
+        if index in chosen:
+            return
+        if len(chosen) >= max_spoken_segments:
+            return
+        chosen.append(index)
 
-    final_question = next(
+    def source_indices(*, include_questions: bool = False) -> list[int]:
+        candidates: list[int] = []
+        for idx, item in indexed:
+            if item.get("kind") != SPEECH_PLAN_SOURCE:
+                continue
+            text = item.get("text", "")
+            if _is_heading_only(text):
+                continue
+            if not include_questions and _is_question(text):
+                continue
+            candidates.append(idx)
+        return candidates
+
+    has_choice_notice = any(
+        item.get("kind") == SPEECH_PLAN_FIXED_JA
+        and item.get("reason") == "choice_options_displayed"
+        for item in result
+    )
+    primary_pool = [
+        idx
+        for idx in source_indices()
+        if not _is_list_intro(result[idx].get("text", ""))
+    ] or source_indices()
+    if has_choice_notice:
+        add(
+            next(
+                (
+                    idx
+                    for idx, item in indexed
+                    if item.get("kind") == SPEECH_PLAN_SOURCE
+                    and _is_question(item.get("text", ""))
+                ),
+                None,
+            )
+        )
+    elif primary_pool:
+        add(
+            max(
+                primary_pool,
+                key=lambda idx: (
+                    _source_content_score(result[idx].get("text", "")),
+                    -idx,
+                ),
+            )
+        )
+
+    fixed_idx = next(
+        (idx for idx, item in indexed if item.get("kind") == SPEECH_PLAN_FIXED_JA),
+        None,
+    )
+    add(fixed_idx)
+
+    final_question_idx = next(
         (
-            item
-            for item in reversed(result)
+            idx
+            for idx, item in reversed(indexed)
             if item.get("kind") == SPEECH_PLAN_SOURCE
             and _is_question(item.get("text", ""))
-            and item not in priority
+            and not _is_heading_only(item.get("text", ""))
         ),
         None,
     )
-    if final_question is not None:
-        priority.append(final_question)
+    add(final_question_idx)
 
-    if len(priority) < max_spoken_segments:
-        for item in result:
-            if item in priority:
-                continue
-            if item.get("kind") == SPEECH_PLAN_SOURCE and _is_list_intro(
-                item.get("text", "")
-            ):
-                priority.append(item)
+    if len(chosen) < max_spoken_segments:
+        remaining_sources = sorted(
+            [idx for idx in source_indices() if idx not in chosen],
+            key=lambda idx: (
+                _source_content_score(result[idx].get("text", "")),
+                -idx,
+            ),
+            reverse=True,
+        )
+        for idx in remaining_sources:
+            add(idx)
+            if len(chosen) >= max_spoken_segments:
                 break
 
-    return priority[:max_spoken_segments]
+    if not chosen:
+        add(indexed[0][0] if indexed else None)
+
+    return [result[idx] for idx in sorted(chosen)][:max_spoken_segments]
 
 
 @dataclass

@@ -11,6 +11,7 @@ from .chat_history_manager import _get_safe_history_path
 
 HistoryEventType = Literal[
     "tool_call",
+    "omi_evidence",
     "memory_update",
     "memory_skipped",
 ]
@@ -49,6 +50,8 @@ def store_history_event(
     title: str = "",
     summary: str = "",
     detail: Any = None,
+    compact_detail: bool = True,
+    detail_max_len: int = 1200,
 ) -> bool:
     if not conf_uid or not history_uid:
         return False
@@ -62,7 +65,10 @@ def store_history_event(
         "timestamp": _now_iso(),
     }
     if detail is not None:
-        event["detail"] = _compact_text(detail, max_len=1200)
+        if compact_detail:
+            event["detail"] = _compact_text(detail, max_len=max(120, detail_max_len))
+        else:
+            event["detail"] = detail
 
     try:
         path = _event_path(conf_uid, history_uid)
@@ -74,3 +80,46 @@ def store_history_event(
     except Exception as e:
         logger.warning(f"Failed to store history event: {e}")
         return False
+
+
+def read_history_events(
+    conf_uid: str,
+    history_uid: str,
+    *,
+    event_types: set[str] | None = None,
+    limit: int = 80,
+) -> list[dict[str, Any]]:
+    if not conf_uid or not history_uid:
+        return []
+
+    try:
+        path = _event_path(conf_uid, history_uid)
+    except Exception:
+        return []
+
+    if not os.path.exists(path):
+        return []
+
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except Exception as e:
+        logger.warning(f"Failed to read history events: {e}")
+        return []
+
+    events: list[dict[str, Any]] = []
+    for line in lines[-max(1, limit) :]:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except Exception:
+            continue
+        if not isinstance(event, dict):
+            continue
+        event_type = str(event.get("type") or "")
+        if event_types and event_type not in event_types:
+            continue
+        events.append(event)
+    return events

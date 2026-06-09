@@ -61,7 +61,7 @@ The current integrated desktop assistant layer includes:
 
 ```mermaid
 flowchart TD
-    User["User / desktop"] --> Launcher["launcher.py<br/>operator console"]
+    User["User / desktop"] --> Launcher["launcher_qt.py<br/>Qt desktop console"]
     Launcher --> Config["kuro_launcher.settings.yaml<br/>paths / ports / startup_profile"]
     Launcher --> RuntimeConf["Open-LLM-VTuber runtime config"]
     Launcher --> PetShell["pet-electron<br/>Live2D desktop shell"]
@@ -95,7 +95,8 @@ Important boundaries:
 
 | Path | Responsibility |
 | --- | --- |
-| `launcher.py` | Main launcher UI, startup profile application, service orchestration, and pet shell controls. |
+| `launcher_qt.py` | Current Qt desktop console, startup profile application, service orchestration, chat, Briefing, memory, and pet shell controls. |
+| `launcher.py` | Legacy Tkinter launcher fallback. |
 | `kuro_launcher/` | Launcher config parsing, service helpers, runtime config generation, memory panel, and records. |
 | `kuro_launcher.settings.yaml` | Local runtime source of truth for paths, ports, LLM env names, and startup profile. |
 | `Open-LLM-VTuber/` | Agent runtime, WebSocket protocol, character configs, prompt/runtime logic, MCP/tool integration, and memory system. |
@@ -114,7 +115,7 @@ From the repository root:
 
 ```powershell
 cd C:\project\kuro
-.\envs\kuro-llm310\python.exe .\launcher.py
+.\envs\kuro-llm310\python.exe .\launcher_qt.py
 ```
 
 The VBS launcher can also be used from Explorer:
@@ -132,7 +133,7 @@ envs\kuro-llm310\python.exe
 and falls back to:
 
 ```powershell
-py .\launcher.py
+py .\launcher_qt.py
 ```
 
 This project currently assumes a prepared local runtime environment. It is a
@@ -218,6 +219,24 @@ kuro.desktop-agent
 
 This groups the launcher, pet, Reader, and Dashboard windows together on the
 Windows taskbar.
+
+### Qt Widgets launcher
+
+`launcher_qt.py` is the current PySide6 / Qt Widgets shell for the integrated
+desktop app. It keeps the existing runtime, Electron pet shell,
+character memory, chat history, and Briefing data pipeline intact while exposing
+a pure-pet console for Briefing, runtime controls, profile selection,
+chat/history management, file attachments over `/client-ws`, memory CRUD,
+expression/outfit controls, and diagnostics. It intentionally does not embed the
+legacy Web UI.
+
+```powershell
+.\envs\kuro-llm310\python.exe -m pip install -r .\requirements-qt.txt
+.\envs\kuro-llm310\python.exe .\launcher_qt.py
+```
+
+The legacy `launcher.py` is retained as a fallback only; normal startup uses the
+Qt console.
 
 ## Electron Pet Shell
 
@@ -522,7 +541,7 @@ http://<tts_host>:<tts_port>/tts
 Python syntax checks:
 
 ```powershell
-.\envs\kuro-llm310\python.exe -m py_compile .\launcher.py .\kuro_launcher\config.py .\kuro_launcher\runtime_conf.py
+.\envs\kuro-llm310\python.exe -m py_compile .\launcher_qt.py .\kuro_launcher\qt_app.py .\kuro_launcher\qt_controller.py .\kuro_launcher\qt_chat_client.py
 ```
 
 Electron main-process checks:

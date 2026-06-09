@@ -80,6 +80,7 @@ from kuro_launcher.utils import (
     sanitize_ascii,
     strip_ansi_and_ctrl,
     taskkill_tree,
+    windows_hidden_subprocess_kwargs,
 )
 from kuro_launcher.text_helpers import (
     compact_history_text as _compact_history_text,
@@ -4471,6 +4472,7 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
                 getattr(subprocess, "DETACHED_PROCESS", 0)
                 | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
             )
+        popen_kwargs = windows_hidden_subprocess_kwargs(creationflags)
 
         env = os.environ.copy()
         env["KURO_BACKEND_BASE_URL"] = self.cfg.llm_url
@@ -4481,9 +4483,9 @@ class LauncherApp(MemoryPanelMixin, ctk.CTk):
         self.proc_pet_electron = subprocess.Popen(
             [str(runtime_exe), "."],
             cwd=str(self.cfg.pet_electron_dir),
-            creationflags=creationflags,
             close_fds=True,
             env=env,
+            **popen_kwargs,
         )
         self.log(f"[{log_ts()}] 已開啟自製桌寵殼：{self.cfg.pet_electron_dir}")
         return True

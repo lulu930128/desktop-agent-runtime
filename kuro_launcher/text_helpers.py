@@ -103,6 +103,75 @@ def history_tool_name(event: dict) -> str:
     return "tool"
 
 
+def _omi_target_label(target: dict) -> str:
+    if not isinstance(target, dict):
+        return "unknown"
+    parts = [
+        str(target.get("type") or "").strip(),
+        str(target.get("id") or "").strip(),
+        str(target.get("label") or target.get("name") or "").strip(),
+    ]
+    market = str(target.get("market") or "").strip()
+    if market:
+        parts.append(market)
+    return " ".join(part for part in parts if part) or "unknown"
+
+
+def _omi_mode_label(mode: dict, report_level: str = "") -> str:
+    if not isinstance(mode, dict):
+        return report_level or "-"
+    return str(mode.get("effective") or mode.get("requested") or report_level or "-").strip()
+
+
+def format_omi_evidence_event_inline(event: dict) -> str:
+    detail = history_event_detail(event)
+    if not detail:
+        return str(event.get("summary") or "OMI 證據").strip()
+
+    target = _omi_target_label(detail.get("target") if isinstance(detail.get("target"), dict) else {})
+    mode = _omi_mode_label(
+        detail.get("mode") if isinstance(detail.get("mode"), dict) else {},
+        str(detail.get("report_level") or ""),
+    )
+    headline_parts = ["OMI 證據", target]
+    as_of = str(detail.get("as_of") or "").strip()
+    if as_of:
+        headline_parts.append(f"as_of {as_of}")
+    if mode and mode != "-":
+        headline_parts.append(mode)
+
+    lines = [" · ".join(headline_parts)]
+    analysis = detail.get("analysis") if isinstance(detail.get("analysis"), dict) else {}
+    display = str(analysis.get("display") or analysis.get("selected_summary") or "").strip()
+    if display:
+        lines.append(compact_history_text(display, 180))
+
+    human_answer = str(detail.get("human_answer") or "").strip()
+    if human_answer:
+        lines.append(compact_history_text(human_answer, 320))
+
+    warnings = detail.get("warnings") if isinstance(detail.get("warnings"), list) else []
+    if warnings:
+        lines.append("警告：" + " | ".join(compact_history_text(str(item), 80) for item in warnings[:3]))
+
+    missing = detail.get("missing") if isinstance(detail.get("missing"), list) else []
+    if missing:
+        lines.append("缺資料：" + ", ".join(compact_history_text(str(item), 48) for item in missing[:6]))
+
+    tool_runs = detail.get("tool_runs") if isinstance(detail.get("tool_runs"), list) else []
+    run_labels = []
+    for run in tool_runs[:5]:
+        if not isinstance(run, dict):
+            continue
+        tool = str(run.get("tool") or "").strip()
+        status = str(run.get("status") or "").strip()
+        if tool:
+            run_labels.append(f"{tool}:{status or '-'}")
+    if run_labels:
+        lines.append("工具：" + " | ".join(run_labels))
+    return "\n".join(line for line in lines if line)
+
+
 def format_history_tool_event_inline(event: dict) -> str:
     status = str(event.get("status") or "").strip().lower()
     tool_name = history_tool_name(event)

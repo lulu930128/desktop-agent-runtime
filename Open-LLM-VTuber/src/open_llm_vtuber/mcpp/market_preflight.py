@@ -77,6 +77,262 @@ def parse_omi_response_text(text: str) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
+def _compact_text(value: Any, max_len: int = 900) -> str:
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        try:
+            value = json.dumps(value, ensure_ascii=False, sort_keys=True)
+        except Exception:
+            value = str(value)
+    compact = " ".join(value.replace("\r", " ").replace("\n", " ").split())
+    if len(compact) <= max_len:
+        return compact
+    return compact[: max_len - 1].rstrip(" ，、。,.!?！？；;:：") + "…"
+
+
+def _compact_list(values: Any, *, max_items: int = 8, max_len: int = 160) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    output: list[str] = []
+    for item in values[:max_items]:
+        text = _compact_text(item, max_len=max_len)
+        if text:
+            output.append(text)
+    return output
+
+
+def _compact_mapping(
+    value: Any,
+    keys: tuple[str, ...],
+    *,
+    max_len: int = 180,
+) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    output: dict[str, Any] = {}
+    for key in keys:
+        item = value.get(key)
+        if item is None or item == "":
+            continue
+        if isinstance(item, (int, float, bool)):
+            output[key] = item
+        elif isinstance(item, dict):
+            output[key] = _compact_mapping(
+                item,
+                ("type", "id", "label", "market", "name", "status", "date", "as_of"),
+                max_len=max_len,
+            )
+        elif isinstance(item, list):
+            output[key] = _compact_list(item, max_items=6, max_len=max_len)
+        else:
+            output[key] = _compact_text(item, max_len=max_len)
+    return output
+
+
+def _first_mapping(*values: Any) -> dict[str, Any]:
+    for value in values:
+        if isinstance(value, dict) and value:
+            return value
+    return {}
+
+
+def _extract_result_data(parsed: dict[str, Any]) -> dict[str, Any]:
+    result = parsed.get("result") if isinstance(parsed.get("result"), dict) else {}
+    data = result.get("data") if isinstance(result.get("data"), dict) else {}
+    return data
+
+
+def _extract_human_answer_text(
+    *,
+    parsed: dict[str, Any],
+    analysis: dict[str, Any],
+    result_data: dict[str, Any],
+) -> str:
+    human_answer = analysis.get("human_answer")
+    if isinstance(human_answer, dict):
+        text = str(human_answer.get("text") or "").strip()
+        if text:
+            return _compact_text(text, max_len=1200)
+        lines = human_answer.get("lines")
+        if isinstance(lines, list):
+            return _compact_text("\n".join(str(line) for line in lines), max_len=1200)
+
+    overview = result_data.get("overview") if isinstance(result_data.get("overview"), dict) else {}
+    human_answer = overview.get("human_answer") if isinstance(overview.get("human_answer"), dict) else {}
+    text = str(human_answer.get("text") or "").strip()
+    if text:
+        return _compact_text(text, max_len=1200)
+    lines = human_answer.get("lines")
+    if isinstance(lines, list):
+        return _compact_text("\n".join(str(line) for line in lines), max_len=1200)
+
+    for key in ("human_answer", "answer", "display", "summary"):
+        text = str(parsed.get(key) or analysis.get(key) or "").strip()
+        if text:
+            return _compact_text(text, max_len=1200)
+    return ""
+
+
+def _extract_as_of(
+    *,
+    parsed: dict[str, Any],
+    analysis: dict[str, Any],
+    result_data: dict[str, Any],
+) -> str:
+    freshness = parsed.get("freshness") if isinstance(parsed.get("freshness"), dict) else {}
+    overview = result_data.get("overview") if isinstance(result_data.get("overview"), dict) else {}
+    candidates = [
+        parsed.get("as_of"),
+        analysis.get("as_of"),
+        overview.get("as_of"),
+        freshness.get("as_of"),
+        result_data.get("as_of"),
+    ]
+    for candidate in candidates:
+        text = _compact_text(candidate, max_len=80)
+        if text:
+            return text
+    return ""
+
+
+def build_omi_evidence_snapshot(text: str) -> dict[str, Any] | None:
+    parsed = parse_omi_response_text(text)
+    if not parsed or parsed.get("contract_version") != OMI_ASK_CONTRACT_VERSION:
+        return None
+
+    analysis = parsed.get("analysis") if isinstance(parsed.get("analysis"), dict) else {}
+    mode = parsed.get("mode") if isinstance(parsed.get("mode"), dict) else {}
+    resolution = parsed.get("resolution") if isinstance(parsed.get("resolution"), dict) else {}
+    target = _first_mapping(
+        resolution.get("target") if isinstance(resolution.get("target"), dict) else {},
+        parsed.get("target") if isinstance(parsed.get("target"), dict) else {},
+    )
+    result_data = _extract_result_data(parsed)
+    tool_runs = parsed.get("tool_runs") if isinstance(parsed.get("tool_runs"), list) else []
+
+    evidence = {
+        "kind": "omi_evidence",
+        "contract_version": OMI_ASK_CONTRACT_VERSION,
+        "question": _compact_text(parsed.get("question"), max_len=420),
+        "target": _compact_mapping(
+            target,
+            ("type", "id", "label", "market", "name"),
+            max_len=120,
+        ),
+        "mode": _compact_mapping(mode, ("requested", "effective"), max_len=80),
+        "action": _compact_text(parsed.get("action"), max_len=120),
+        "report_level": _compact_text(parsed.get("report_level"), max_len=80),
+        "answer_ready": bool(parsed.get("answer_ready")),
+        "as_of": _extract_as_of(parsed=parsed, analysis=analysis, result_data=result_data),
+        "resolution": _compact_mapping(
+            resolution,
+            ("confidence", "assumption", "target"),
+            max_len=180,
+        ),
+        "analysis": _compact_mapping(
+            analysis,
+            (
+                "kind",
+                "display",
+                "selected_horizon",
+                "horizon_label",
+                "selected_timeframe",
+                "selected_score",
+                "score_display",
+                "selected_title",
+                "selected_summary",
+                "selected_confidence",
+                "stance",
+                "confidence",
+                "as_of",
+            ),
+            max_len=240,
+        ),
+        "human_answer": _extract_human_answer_text(
+            parsed=parsed,
+            analysis=analysis,
+            result_data=result_data,
+        ),
+        "missing": _compact_list(parsed.get("missing"), max_items=12, max_len=120),
+        "warnings": _compact_list(parsed.get("warnings"), max_items=8, max_len=180),
+        "tool_runs": [
+            _compact_mapping(
+                run,
+                ("tool", "status", "error", "as_of", "message"),
+                max_len=180,
+            )
+            for run in tool_runs[:12]
+            if isinstance(run, dict)
+        ],
+        "source_refs": [
+            _compact_mapping(
+                ref,
+                ("label", "kind", "table", "date", "as_of"),
+                max_len=160,
+            )
+            for ref in (
+                parsed.get("source_refs")
+                if isinstance(parsed.get("source_refs"), list)
+                else []
+            )[:8]
+            if isinstance(ref, dict)
+        ],
+    }
+
+    return {
+        key: value
+        for key, value in evidence.items()
+        if value not in ("", [], {}, None)
+    }
+
+
+def format_omi_evidence_for_history(evidence: dict[str, Any], *, max_len: int = 720) -> str:
+    if not isinstance(evidence, dict) or evidence.get("kind") != "omi_evidence":
+        return ""
+
+    target = _format_target(evidence.get("target"))
+    mode = evidence.get("mode") if isinstance(evidence.get("mode"), dict) else {}
+    analysis = evidence.get("analysis") if isinstance(evidence.get("analysis"), dict) else {}
+    resolution = evidence.get("resolution") if isinstance(evidence.get("resolution"), dict) else {}
+    mode_text = mode.get("effective") or mode.get("requested") or evidence.get("report_level") or "unknown"
+    parts = [f"OMI evidence: {target}"]
+    if evidence.get("as_of"):
+        parts.append(f"as_of={evidence.get('as_of')}")
+    parts.append(f"mode={mode_text}")
+    if resolution.get("confidence"):
+        parts.append(f"confidence={resolution.get('confidence')}")
+    if analysis.get("display"):
+        parts.append(str(analysis.get("display")))
+    elif analysis.get("selected_summary"):
+        parts.append(str(analysis.get("selected_summary")))
+    if evidence.get("human_answer"):
+        parts.append(str(evidence.get("human_answer")))
+    if evidence.get("warnings"):
+        parts.append("warnings=" + " | ".join(str(item) for item in evidence["warnings"][:4]))
+    if evidence.get("missing"):
+        parts.append("missing=" + ", ".join(str(item) for item in evidence["missing"][:6]))
+    return _compact_text(" / ".join(part for part in parts if part), max_len=max_len)
+
+
+def format_omi_events_for_memory(events: list[dict[str, Any]], *, limit: int = 4) -> str:
+    if not events:
+        return ""
+
+    lines = ["[Persisted OMI evidence from recent tool calls]"]
+    selected = events[-max(1, limit) :]
+    for event in selected:
+        detail = event.get("detail")
+        if isinstance(detail, str):
+            detail = parse_omi_response_text(detail) or {}
+        if not isinstance(detail, dict):
+            continue
+        summary = format_omi_evidence_for_history(detail, max_len=520)
+        if summary:
+            lines.append(f"- {event.get('timestamp') or '-'}: {summary}")
+    return "\n".join(lines) if len(lines) > 1 else ""
+
+
 def extract_omi_resolution_from_tool_results(
     tool_results: list[dict[str, Any]],
 ) -> dict[str, Any] | None:

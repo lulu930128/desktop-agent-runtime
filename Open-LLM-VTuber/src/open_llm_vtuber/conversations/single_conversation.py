@@ -21,6 +21,10 @@ from .tts_manager import TTSTaskManager
 from ..chat_event_manager import store_history_event
 from ..chat_history_manager import store_message
 from ..character_memory_manager import process_character_memory_turn
+from ..mcpp.market_preflight import (
+    build_omi_evidence_snapshot,
+    format_omi_evidence_for_history,
+)
 from ..service_context import ServiceContext
 
 # =========================
@@ -79,6 +83,20 @@ class BridgeSpeechEngine:
                 f"Invalid BRIDGE_RENDER_TIMEOUT_S={configured_timeout!r}; using {timeout_s}s."
             )
             self.timeout_s = float(timeout_s)
+        configured_translate_fallback_max = (
+            os.getenv("BRIDGE_TRANSLATE_FALLBACK_MAX_SOURCE_CHARS", "") or ""
+        ).strip()
+        try:
+            self.translate_fallback_max_source_chars = (
+                int(configured_translate_fallback_max)
+                if configured_translate_fallback_max
+                else 120
+            )
+        except ValueError:
+            logger.warning(
+                f"Invalid BRIDGE_TRANSLATE_FALLBACK_MAX_SOURCE_CHARS={configured_translate_fallback_max!r}; using 120."
+            )
+            self.translate_fallback_max_source_chars = 120
         self.style_prompt_ja = (style_prompt_ja or "").strip()
         self.pronunciation_entries = normalize_pronunciation_entries(
             pronunciation_entries or []
@@ -135,7 +153,11 @@ class BridgeSpeechEngine:
                 )
                 self.last_speech_repaired = bool(obj.get("speech_repaired"))
                 out = (obj.get("data") or "").strip()
-                if not out and self.translate_endpoint:
+                if (
+                    not out
+                    and self.translate_endpoint
+                    and len(t) <= self.translate_fallback_max_source_chars
+                ):
                     try:
                         out = self._translate_only(t)
                     except Exception as fallback_exc:
@@ -313,6 +335,21 @@ def _store_tool_status_event(
         return
 
     tool_name = str(output_item.get("tool_name") or "tool").strip() or "tool"
+    if status == "completed" and tool_name == "omi.ask":
+        evidence = build_omi_evidence_snapshot(str(output_item.get("content") or ""))
+        if evidence:
+            store_history_event(
+                conf_uid=context.character_config.conf_uid,
+                history_uid=context.history_uid,
+                event_type="omi_evidence",
+                status=status,
+                title="OMI 證據",
+                summary=format_omi_evidence_for_history(evidence, max_len=360),
+                detail=evidence,
+                compact_detail=False,
+            )
+            return
+
     content_preview = _compact_event_text(output_item.get("content"), max_len=180)
     if status == "completed":
         summary = f"{tool_name} 已完成"

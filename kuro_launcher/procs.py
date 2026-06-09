@@ -5,14 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, TextIO
 
-from .utils import taskkill_tree, build_logs_dir, strip_ansi_and_ctrl
-
-
-def _win_creationflags() -> int:
-    """Windows creationflags to avoid popping a console window for child processes."""
-    if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
-        return subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
-    return 0
+from .utils import taskkill_tree, build_logs_dir, strip_ansi_and_ctrl, windows_hidden_subprocess_kwargs
 
 
 def _no_color_env(base: Dict[str, str]) -> Dict[str, str]:
@@ -107,7 +100,7 @@ def spawn_process(
         errors="replace",
         bufsize=1,
         universal_newlines=True,
-        creationflags=_win_creationflags(),
+        **windows_hidden_subprocess_kwargs(),
     )
 
     if p.stdout is not None:

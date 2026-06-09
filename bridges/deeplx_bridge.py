@@ -345,7 +345,14 @@ async def _translate_impl(payload: Dict[str, Any]) -> Dict[str, Any]:
 # =======================
 EMOTION_KEYS = ["neutral","joy","smirk","surprise","anger","sadness","fear","disgust"]
 SPOKEN_MAX_CHARS = int(os.getenv("SPOKEN_MAX_CHARS", "120"))
+RENDER_SPOKEN_MAX_OUTPUT_TOKENS = int(os.getenv("OPENAI_RENDER_SPOKEN_MAX_OUTPUT_TOKENS", "1536"))
 ENABLE_SPEECH_REPAIR = os.getenv("ENABLE_SPEECH_REPAIR", "1").strip().lower() in ("1", "true", "yes", "y")
+TRANSLATE_ONLY_SPOKEN_MAX_SOURCE_CHARS = int(
+    os.getenv("TRANSLATE_ONLY_SPOKEN_MAX_SOURCE_CHARS", "120")
+)
+TRANSLATE_ONLY_SPOKEN_MAX_OUTPUT_CHARS = int(
+    os.getenv("TRANSLATE_ONLY_SPOKEN_MAX_OUTPUT_CHARS", "180")
+)
 _JA_SENTENCE_MARKERS = (
     "です",
     "ます",
@@ -540,6 +547,33 @@ def _safe_json_parse(s: str) -> Dict[str, Any]:
     return {}
 
 
+def _coerce_spoken_render_obj(obj: Dict[str, Any], raw_text: str = "") -> Dict[str, Any]:
+    """Unwrap renderer responses where the ja field itself is a JSON string."""
+    current = obj if isinstance(obj, dict) else {}
+    if not current and raw_text:
+        current = _safe_json_parse(raw_text)
+
+    for _ in range(3):
+        if not isinstance(current, dict):
+            return {}
+
+        nested: Dict[str, Any] = {}
+        ja_value = current.get("ja")
+        if isinstance(ja_value, dict):
+            nested = ja_value
+        elif isinstance(ja_value, str):
+            nested = _safe_json_parse(ja_value.strip())
+
+        if not nested:
+            return current
+
+        if current.get("emotion") and not nested.get("emotion"):
+            nested["emotion"] = current.get("emotion")
+        current = nested
+
+    return current if isinstance(current, dict) else {}
+
+
 def _count_kana(s: str) -> int:
     return sum(1 for ch in s or "" if 0x3040 <= ord(ch) <= 0x30FF or 0x31F0 <= ord(ch) <= 0x31FF)
 
@@ -584,7 +618,11 @@ def _spoken_japanese_quality_issue(ja: str) -> str:
         return "latin_leak"
     if digits > 12 and digits > kana:
         return "dense_numbers"
-    if re.search(r"[這個麼嗎妳們裡讓說話語會應該與為於後臺台檔號訊]", text) and kana / max(1, kana + cjk) < 0.55:
+    if (
+        re.search(r"[這個麼嗎妳們裡讓說話語會應該與為於後臺台檔號訊]", text)
+        and kana / max(1, kana + cjk) < 0.55
+        and not is_mostly_japanese(text)
+    ):
         return "looks_chinese"
 
     # Names or very short confirmations may be valid without a full sentence shape.
@@ -613,6 +651,24 @@ def _prepare_spoken_output(
     if issue:
         raise RuntimeError(f"low-quality spoken Japanese ({issue}): {ja[:200]!r}")
     return ja, hits
+
+
+def _is_short_translate_only_fallback(source_text: str, spoken_text: str) -> bool:
+    source = re.sub(r"\s+", " ", source_text or "").strip()
+    spoken = re.sub(r"\s+", " ", spoken_text or "").strip()
+    if not source or not spoken:
+        return False
+    if len(source) > TRANSLATE_ONLY_SPOKEN_MAX_SOURCE_CHARS:
+        return False
+    if len(spoken) > TRANSLATE_ONLY_SPOKEN_MAX_OUTPUT_CHARS:
+        return False
+
+    units = [
+        part.strip()
+        for part in re.split(r"(?<=[。！？!?；;])\s*", spoken)
+        if part.strip()
+    ]
+    return len(units) <= 2
 
 
 async def render_openai_spoken_short(
@@ -690,7 +746,7 @@ async def render_openai_spoken_short(
             "model": OPENAI_MODEL,
             "instructions": instructions,
             "input": input_text,
-            "max_output_tokens": 512,
+            "max_output_tokens": RENDER_SPOKEN_MAX_OUTPUT_TOKENS,
             "store": False,
         }
 
@@ -703,10 +759,13 @@ async def render_openai_spoken_short(
         data = r.json()
         out_raw = _extract_output_text(data).replace("\ufeff", "").strip()
         if not out_raw:
-            raise RuntimeError("OpenAI empty output_text for render_spoken.")
+            raise RuntimeError(
+                f"OpenAI empty output_text for render_spoken. Raw: {json.dumps(data)[:1000]}"
+            )
         return out_raw, _safe_json_parse(out_raw)
 
     out_raw, obj = await call_renderer(text, base_rules)
+    obj = _coerce_spoken_render_obj(obj, out_raw)
     ja = (obj.get("ja") or "").strip()
     emo = _canonical_emotion(obj.get("emotion"))
 
@@ -741,6 +800,7 @@ async def render_openai_spoken_short(
         )
         try:
             repair_raw, repair_obj = await call_renderer(repair_input, repair_rules)
+            repair_obj = _coerce_spoken_render_obj(repair_obj, repair_raw)
             repair_ja = (repair_obj.get("ja") or "").strip()
             repair_emo = _canonical_emotion(repair_obj.get("emotion"))
             if not repair_ja and is_mostly_japanese(repair_raw):
@@ -861,6 +921,8 @@ async def render_spoken(req: Request):
         try:
             out = await translate_ollama_to_ja(text)
             out, hits = _prepare_spoken_output(out, pronunciation_entries)
+            if not _is_short_translate_only_fallback(text, out):
+                raise RuntimeError("translate_only fallback is too long for spoken output.")
             return json_utf8({"code": 200, "data": out, "emotion": "neutral", "provider": f"ollama:{OLLAMA_MODEL}:translate_only", "pronunciation_hits": hits, "errors": errors})
         except Exception as e:
             errors["ollama_translate"] = str(e)
@@ -871,6 +933,8 @@ async def render_spoken(req: Request):
     try:
         out = await translate_openai_to_ja(text)
         out, hits = _prepare_spoken_output(out, pronunciation_entries)
+        if not _is_short_translate_only_fallback(text, out):
+            raise RuntimeError("translate_only fallback is too long for spoken output.")
         return json_utf8({"code": 200, "data": out, "emotion": "neutral", "provider": f"openai:{OPENAI_MODEL}:translate_only", "pronunciation_hits": hits, "errors": errors})
     except Exception as e:
         errors["translate_only"] = str(e)
@@ -881,6 +945,8 @@ async def render_spoken(req: Request):
         try:
             out = await translate_deeplx_to_ja(text)
             out, hits = _prepare_spoken_output(out, pronunciation_entries)
+            if not _is_short_translate_only_fallback(text, out):
+                raise RuntimeError("translate_only fallback is too long for spoken output.")
             return json_utf8({"code": 200, "data": out, "emotion": "neutral", "provider": "deeplx", "pronunciation_hits": hits, "errors": errors})
         except Exception as e:
             errors["deeplx"] = str(e)

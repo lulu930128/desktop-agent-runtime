@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 REPO_ROOT = ROOT.parent
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(SRC))
 
 try:
@@ -25,11 +26,16 @@ except ModuleNotFoundError:
 from open_llm_vtuber.conversations.conversation_utils import (  # noqa: E402
     _build_speech_plan,
     _build_speech_source,
+    _build_speech_digest_source,
     _build_spoken_adapter_source,
     _build_renderer_failure_fallback_ja,
+    _choose_renderer_failure_fallback_source,
+    _choose_speech_renderer_source,
     _finalize_rendered_japanese_for_tts,
+    _is_thin_acknowledgement_source,
     _select_spoken_tts_segments,
     _split_speech_units,
+    _translate_only_block_reason,
 )
 from open_llm_vtuber.conversations.speech_presentation import (  # noqa: E402
     SPEECH_POLICY_CODE_JA,
@@ -41,6 +47,9 @@ from open_llm_vtuber.conversations.speech_presentation import (  # noqa: E402
     SPEECH_ROUTE_RENDER_THEN_TTS,
     SPEECH_ROUTE_SILENT_DISPLAY,
     SpeechPolicyEngine,
+)
+from open_llm_vtuber.conversations.single_conversation import (  # noqa: E402
+    BridgeSpeechEngine,
 )
 from open_llm_vtuber.speech_pronunciation import (  # noqa: E402
     apply_pronunciation,
@@ -66,6 +75,9 @@ class TTSPipelineTest(unittest.TestCase):
             [
                 {"surface": "Thomas", "reading": "トーマス", "aliases": ["thomas"]},
                 {"surface": "LLM", "reading": "エルエルエム"},
+                {"surface": "OpenAI", "reading": "オープンエーアイ"},
+                {"surface": "Gemini", "reading": "ジェミニ"},
+                {"surface": "GPT-5-mini", "reading": "ジーピーティー ファイブ ミニ"},
             ]
         )
 
@@ -375,6 +387,94 @@ class TTSPipelineTest(unittest.TestCase):
 
         self.assertEqual(source, "")
 
+    def test_spoken_adapter_keeps_known_foreign_terms_and_removes_visual_artifacts(self) -> None:
+        source = _build_spoken_adapter_source(
+            "OpenAI 和 Gemini 的比較可以看畫面：https://example.com。"
+            "程式碼 `client.responses.create()` 不用念，但結論是兩者要看任務選。",
+            "",
+            self.entries,
+        )
+
+        self.assertIn("OpenAI", source)
+        self.assertIn("Gemini", source)
+        self.assertIn("結論是兩者要看任務選", source)
+        self.assertNotIn("https://example.com", source)
+        self.assertNotIn("client.responses.create", source)
+
+    def test_long_benchmark_answer_keeps_substantive_voice_not_heading_only(self) -> None:
+        text = (
+            "有的，社群與研究團隊都有專門整理分數的 leaderboard，但要注意多數 benchmark "
+            "在 2025–2026 年已接近飽和且可能有測試集汙染，所以「絕對數字」要搭配出處與更新日期一起看。"
+            "簡短重點："
+            "- 哪裡能看到「具體數字」：常見來源有 LiveBench / Artificial Analysis、"
+            "Learn-Prompting 的比較整理、LXT 的總覽報告與多個社群 tracker。"
+            "- 數據趨勢：GPT-5 系列通常在程式碼、複雜推理上略勝一籌；"
+            "Gemini 3 在跨模態、延遲/成本優勢與某些語境整合測試上接近或更好。"
+            "- 風險提醒：不同 tracker 的測試集、採樣方式、prompt 設定與去重策略不同，"
+            "會導致數值有明顯落差。"
+            "要不要我現在去抓最新的 leaderboard 表格並把每個模型的最新分數列成比較表？"
+        )
+
+        plan = _build_speech_plan(text, "", self.entries)
+        spoken_texts = [item["text"] for item in plan]
+
+        self.assertLessEqual(len(plan), 3)
+        self.assertIn("有的，社群與研究團隊都有專門整理分數", spoken_texts[0])
+        self.assertIn(SPEECH_POLICY_DETAIL_ITEMS_JA, spoken_texts)
+        self.assertIn("要不要我現在去抓最新的 leaderboard 表格", spoken_texts[-1])
+        self.assertNotIn("簡短重點：", spoken_texts)
+
+    def test_long_benchmark_answer_uses_digest_source_for_bridge_renderer(self) -> None:
+        text = (
+            "有的，社群與研究團隊都有專門整理分數的 leaderboard，但要注意多數 benchmark "
+            "在 2025–2026 年已接近飽和且可能有測試集汙染，所以「絕對數字」要搭配出處與更新日期一起看。"
+            "簡短重點："
+            "- 哪裡能看到「具體數字」：常見來源有 LiveBench / Artificial Analysis、"
+            "Learn-Prompting 的比較整理、LXT 的總覽報告與多個社群 tracker。"
+            "- 數據趨勢：GPT-5 系列通常在程式碼、複雜推理上略勝一籌；"
+            "Gemini 3 在跨模態、延遲/成本優勢與某些語境整合測試上接近或更好。"
+            "- 風險提醒：不同 tracker 的測試集、採樣方式、prompt 設定與去重策略不同，"
+            "會導致數值有明顯落差。"
+            "要不要我現在去抓最新的 leaderboard 表格並把每個模型的最新分數列成比較表？"
+        )
+
+        adapter_source = _build_spoken_adapter_source(text, "", self.entries)
+        digest_source = _build_speech_digest_source(text, "", self.entries)
+        renderer_source, source_kind = _choose_speech_renderer_source(
+            adapter_source=adapter_source,
+            digest_source=digest_source,
+        )
+
+        self.assertGreater(len(adapter_source), 240)
+        self.assertLessEqual(len(digest_source), 120)
+        self.assertEqual(source_kind, "digest")
+        self.assertEqual(renderer_source, digest_source)
+        self.assertIn("絕對數字", digest_source)
+        self.assertNotIn("簡短重點", digest_source)
+
+    def test_medium_image_description_uses_digest_for_bridge_renderer(self) -> None:
+        text = (
+            "我有看到這張靜態畫面。畫面中有兩個人並排坐在鏡頭前："
+            "左邊穿淺色上衣、黑色短髮，視線偏向左側；"
+            "右邊穿白色上衣，坐在一張粉色／淺色的電競椅前，視線偏向右下方。"
+            "背景可見床鋪、枕頭和蓋毯，牆上有一張動畫風格的海報，"
+            "整體像是臥室或工作室的室內場景，燈光為室內白光。"
+        )
+
+        adapter_source = _build_spoken_adapter_source(text, "", self.entries)
+        digest_source = _build_speech_digest_source(text, "", self.entries)
+        renderer_source, source_kind = _choose_speech_renderer_source(
+            adapter_source=adapter_source,
+            digest_source=digest_source,
+        )
+
+        self.assertGreater(len(adapter_source), 120)
+        self.assertLessEqual(len(digest_source), 120)
+        self.assertEqual(source_kind, "digest")
+        self.assertEqual(renderer_source, digest_source)
+        self.assertIn("畫面中有兩個人", digest_source)
+        self.assertIn("背景可見床鋪", digest_source)
+
     def test_long_spoken_tts_without_punctuation_is_hard_split(self) -> None:
         long_text = (
             "\u3053\u308c\u306f\u3068\u3066\u3082\u9577\u3044"
@@ -479,6 +579,19 @@ class TTSPipelineTest(unittest.TestCase):
         self.assertEqual(final, "トーマス、これはそのまま直せます。")
         self.assertIn("Thomas", hits)
 
+    def test_rendered_ai_terms_are_rewritten_before_tts(self) -> None:
+        final, reason, hits = _finalize_rendered_japanese_for_tts(
+            "OpenAIとGeminiなら、GPT-5-miniの使い方を先に決めます。",
+            self.entries,
+        )
+
+        self.assertEqual(reason, "ok")
+        self.assertIn("オープンエーアイ", final)
+        self.assertIn("ジェミニ", final)
+        self.assertIn("ジーピーティー ファイブ ミニ", final)
+        self.assertIn("OpenAI", hits)
+        self.assertIn("Gemini", hits)
+
     def test_raw_chinese_is_rejected_before_tts(self) -> None:
         final, reason, _hits = _finalize_rendered_japanese_for_tts(
             "這段可以直接改。",
@@ -512,8 +625,37 @@ class TTSPipelineTest(unittest.TestCase):
             self.entries,
         )
 
-        self.assertEqual(fallback, "詳しい内容は画面に表示しています。")
+        self.assertEqual(
+            fallback,
+            "内容は確認しました。詳しい内容は画面に表示しています。",
+        )
         self.assertEqual(fallback_reason, "renderer_unreadable_fallback")
+
+    def test_renderer_failure_fallback_source_prefers_digest(self) -> None:
+        source = _choose_renderer_failure_fallback_source(
+            renderer_source="畫面中有兩個人並排坐在鏡頭前。背景可見床鋪與海報。",
+            digest_source="畫面中有兩個人並排坐在鏡頭前。背景可見床鋪與海報。",
+            adapter_source="我有看到這張靜態畫面。畫面中有兩個人並排坐在鏡頭前。背景可見床鋪與海報。",
+            speech_source="我有看到這張靜態畫面。",
+            speech_plan=[
+                {
+                    "kind": "source",
+                    "reason": "source",
+                    "text": "我有看到這張靜態畫面。",
+                }
+            ],
+        )
+
+        self.assertIn("畫面中有兩個人", source)
+        self.assertNotEqual(source, "我有看到這張靜態畫面。")
+
+    def test_thin_acknowledgement_source_is_not_enough_after_digest_failure(self) -> None:
+        self.assertTrue(_is_thin_acknowledgement_source("我有看到這張靜態畫面。"))
+        self.assertFalse(
+            _is_thin_acknowledgement_source(
+                "畫面中有兩個人並排坐在鏡頭前，背景可見床鋪與海報。"
+            )
+        )
 
     def test_sigh_tokens_are_removed_before_tts(self) -> None:
         final, reason, _hits = _finalize_rendered_japanese_for_tts(
@@ -551,6 +693,20 @@ class TTSPipelineTest(unittest.TestCase):
             "json_artifact",
         )
 
+    def test_bridge_unwraps_nested_json_ja_response(self) -> None:
+        bridge = _load_bridge_module()
+
+        obj = bridge._coerce_spoken_render_obj(
+            {
+                "ja": r"{\"ja\":\"\u753b\u9762\u306b\u306f\u4e8c\u4eba\u304c\u5ea7\u3063\u3066\u3044\u307e\u3059\u3002\",\"emotion\":\"neutral\"}",
+                "emotion": "surprise",
+            }
+        )
+
+        self.assertEqual(obj["ja"], "画面には二人が座っています。")
+        self.assertEqual(obj["emotion"], "neutral")
+        self.assertEqual(bridge._spoken_japanese_quality_issue(obj["ja"]), "")
+
     def test_json_artifacts_and_single_kanji_are_rejected_before_tts(self) -> None:
         final, reason, _hits = _finalize_rendered_japanese_for_tts(
             r"{\"ja\":\"\u3053\u308c\u306f\u305d\u306e\u307e\u307e\u76f4\u305b\u307e\u3059\u3002\"}",
@@ -567,6 +723,120 @@ class TTSPipelineTest(unittest.TestCase):
 
         self.assertEqual(final, "")
         self.assertEqual(reason, "no_kana")
+
+    def test_translate_only_long_fallback_is_blocked_before_tts(self) -> None:
+        reason = _translate_only_block_reason(
+            "openai:gpt-5-mini:translate_only",
+            "這是一段很長的比較。" * 20,
+            "これは長い翻訳です。" * 20,
+        )
+
+        self.assertEqual(reason, "translate_only_source_too_long")
+
+    def test_translate_only_short_fallback_can_still_speak(self) -> None:
+        reason = _translate_only_block_reason(
+            "openai:gpt-5-mini:translate_only",
+            "要我現在幫你刷新資料嗎？",
+            "今、データを更新しましょうか？",
+        )
+
+        self.assertEqual(reason, "")
+
+    def test_bridge_translate_only_fallback_length_gate(self) -> None:
+        bridge = _load_bridge_module()
+
+        self.assertTrue(
+            bridge._is_short_translate_only_fallback(
+                "要我現在刷新資料嗎？",
+                "今、データを更新しましょうか？",
+            )
+        )
+        self.assertFalse(
+            bridge._is_short_translate_only_fallback(
+                "這是一段很長的比較。" * 20,
+                "これは長い翻訳です。" * 20,
+            )
+        )
+
+    def test_bridge_accepts_short_benchmark_translate_only_fallback(self) -> None:
+        bridge = _load_bridge_module()
+        source = (
+            "有的，社群與研究團隊都有專門整理分數的 leaderboard，但要注意多數 benchmark "
+            "已接近飽和且可能有測試集汙染，所以絕對數字要搭配出處與更新日期一起看。"
+        )
+        spoken = (
+            "あります。コミュニティや研究チームがスコアを整理したリーダーボードを用意していることもありますが、"
+            "多くのベンチマークは既に飽和に近く、出典と更新日を合わせて確認してください。"
+        )
+
+        self.assertEqual(bridge._spoken_japanese_quality_issue(spoken), "")
+        self.assertTrue(bridge._is_short_translate_only_fallback(source, spoken))
+
+    def test_bridge_quality_allows_japanese_with_taiwan_company_names(self) -> None:
+        bridge = _load_bridge_module()
+        spoken = (
+            "聯華電子は台湾の大手ファウンドリ半導体企業で、1980年に設立され、"
+            "本社は台湾にあります。聯電の最新の財務報告をお調べしましょうか？"
+        )
+
+        self.assertEqual(bridge._spoken_japanese_quality_issue(spoken), "")
+
+    def test_bridge_speech_engine_does_not_translate_only_fallback_for_long_source(self) -> None:
+        engine = BridgeSpeechEngine(
+            endpoint="http://bridge/render_spoken",
+            translate_endpoint="http://bridge/translate",
+        )
+        engine.translate_fallback_max_source_chars = 20
+        calls: list[str] = []
+
+        def fake_post_json(url: str, _payload: dict[str, object]) -> dict[str, object]:
+            calls.append(url)
+            return {
+                "code": 200,
+                "data": "",
+                "emotion": "neutral",
+                "provider": "blocked-low-quality",
+            }
+
+        engine._post_json = fake_post_json  # type: ignore[method-assign]
+
+        out = engine.translate("這是一段太長、不該只靠翻譯補救的助理回答。")
+
+        self.assertEqual(out, "")
+        self.assertEqual(calls, ["http://bridge/render_spoken"])
+
+    def test_bridge_speech_engine_allows_translate_only_fallback_for_short_source(self) -> None:
+        engine = BridgeSpeechEngine(
+            endpoint="http://bridge/render_spoken",
+            translate_endpoint="http://bridge/translate",
+        )
+        engine.translate_fallback_max_source_chars = 20
+        calls: list[str] = []
+
+        def fake_post_json(url: str, _payload: dict[str, object]) -> dict[str, object]:
+            calls.append(url)
+            if url.endswith("/translate"):
+                return {
+                    "code": 200,
+                    "data": "はい、できます。",
+                    "provider": "bridge:translate",
+                }
+            return {
+                "code": 200,
+                "data": "",
+                "emotion": "neutral",
+                "provider": "blocked-low-quality",
+            }
+
+        engine._post_json = fake_post_json  # type: ignore[method-assign]
+
+        out = engine.translate("可以嗎？")
+
+        self.assertEqual(out, "はい、できます。")
+        self.assertEqual(
+            calls,
+            ["http://bridge/render_spoken", "http://bridge/translate"],
+        )
 
 
 if __name__ == "__main__":

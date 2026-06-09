@@ -335,6 +335,30 @@ _SPOKEN_TTS_MAX_CONTENT_SEGMENTS = _env_int(
     min_value=1,
     max_value=8,
 )
+_TRANSLATE_ONLY_TTS_MAX_SOURCE_CHARS = _env_int(
+    "KURO_TRANSLATE_ONLY_TTS_MAX_SOURCE_CHARS",
+    120,
+    min_value=40,
+    max_value=400,
+)
+_TRANSLATE_ONLY_TTS_MAX_OUTPUT_CHARS = _env_int(
+    "KURO_TRANSLATE_ONLY_TTS_MAX_OUTPUT_CHARS",
+    180,
+    min_value=60,
+    max_value=500,
+)
+_SPEECH_DIGEST_SOURCE_MAX_CHARS = _env_int(
+    "KURO_SPEECH_DIGEST_SOURCE_MAX_CHARS",
+    120,
+    min_value=80,
+    max_value=420,
+)
+_SPEECH_DIGEST_TRIGGER_CHARS = _env_int(
+    "KURO_SPEECH_DIGEST_TRIGGER_CHARS",
+    120,
+    min_value=100,
+    max_value=700,
+)
 _SPEECH_HARD_SPLIT_CHARS = (
     " \t,.;:!?"
     "\u3001\u3002\uff0c\uff1b\uff1a\uff01\uff1f"
@@ -577,7 +601,7 @@ def _sanitize_speech_line(
     s = _WINDOWS_PATH_RE.sub(" ", s)
     s = _POSIX_PATH_RE.sub(" ", s)
     s = _HTML_TAG_RE.sub(" ", s)
-    s = _INLINE_CODE_RE.sub(r"\1", s)
+    s = _INLINE_CODE_RE.sub(" ", s)
     had_trailing_latin_parenthetical = bool(_TRAILING_LATIN_PAREN_FRAGMENT_RE.search(s))
     s = _strip_display_only_latin_terms(s, pronunciation_entries)
     s = re.sub(r"\b[A-Za-z][A-Za-z0-9._/-]{12,}\b", " ", s)
@@ -733,7 +757,7 @@ def _build_renderer_failure_fallback_ja(
         return "", guard_reason or "empty_source", []
     if (guard_reason or "").strip().lower() == "ok":
         return "", "ok", []
-    fallback = "詳しい内容は画面に表示しています。"
+    fallback = "内容は確認しました。詳しい内容は画面に表示しています。"
     spoken, fallback_guard, hits = _finalize_rendered_japanese_for_tts(
         fallback,
         pronunciation_entries,
@@ -741,6 +765,44 @@ def _build_renderer_failure_fallback_ja(
     if not spoken:
         return "", f"fallback_rejected:{fallback_guard}", hits
     return spoken, f"{guard_reason or 'renderer_failed'}_fallback", hits
+
+
+def _choose_renderer_failure_fallback_source(
+    *,
+    renderer_source: str = "",
+    digest_source: str = "",
+    adapter_source: str = "",
+    speech_source: str = "",
+    speech_plan: list[Dict[str, str]] | None = None,
+) -> str:
+    """Pick the best source for logging/guarding a safe fixed fallback."""
+    for candidate in (renderer_source, digest_source, adapter_source, speech_source):
+        compact = _compact_speech_text(candidate)
+        if compact:
+            return compact
+
+    parts: list[str] = []
+    for item in speech_plan or []:
+        if item.get("kind") != SPEECH_PLAN_SOURCE:
+            continue
+        text = _compact_speech_text(item.get("text", ""))
+        if text:
+            parts.append(text)
+    if parts:
+        return _trim_speech_source(" ".join(parts))
+    return ""
+
+
+def _is_thin_acknowledgement_source(text: str) -> bool:
+    value = _compact_speech_text(text)
+    if len(value) > 28:
+        return False
+    return bool(
+        re.match(
+            r"^(?:我有看到|我看到了|我看到|我知道|了解|好的|可以|沒問題|已確認|我確認了)",
+            value,
+        )
+    )
 
 
 def _compact_tts_debug_text(text: str, max_len: int = 220) -> str:
@@ -832,7 +894,7 @@ def _trim_speech_source(text: str, max_chars: int = 420) -> str:
 
     if kept:
         return _compact_speech_text(" ".join(kept))
-    return text[:max_chars].rstrip("，、；：,.!?！？ ") + "。"
+    return text[: max(1, max_chars - 1)].rstrip("，、；：,.!?！？ ") + "。"
 
 
 def _speech_plan_item(kind: str, text: str = "", reason: str = "") -> Dict[str, str]:
@@ -1021,6 +1083,48 @@ def _build_spoken_adapter_source(
     return _trim_speech_source(" ".join(parts), max_chars=700)
 
 
+def _build_speech_digest_source_from_plan(
+    plan: list[Dict[str, str]],
+    *,
+    max_chars: int = _SPEECH_DIGEST_SOURCE_MAX_CHARS,
+) -> str:
+    pieces: list[str] = []
+    for item in plan:
+        if item.get("kind") != SPEECH_PLAN_SOURCE:
+            continue
+        text = _compact_speech_text(item.get("text", ""))
+        if text:
+            pieces.append(text)
+
+    if not pieces:
+        return ""
+    return _trim_speech_source(" ".join(pieces), max_chars=max_chars)
+
+
+def _build_speech_digest_source(
+    display_text: str,
+    tts_text: str,
+    pronunciation_entries: list[PronunciationEntry] | None = None,
+) -> str:
+    return _build_speech_digest_source_from_plan(
+        _build_speech_plan(display_text, tts_text, pronunciation_entries)
+    )
+
+
+def _choose_speech_renderer_source(
+    *,
+    adapter_source: str,
+    digest_source: str,
+) -> tuple[str, str]:
+    adapter = _compact_speech_text(adapter_source)
+    digest = _compact_speech_text(digest_source)
+    if adapter and digest and len(adapter) > _SPEECH_DIGEST_TRIGGER_CHARS:
+        return digest, "digest"
+    if adapter:
+        return adapter, "adapter"
+    return "", "empty"
+
+
 def _classify_speech_line(
     raw_line: str,
     *,
@@ -1033,7 +1137,10 @@ def _classify_speech_line(
         return _speech_plan_item(SPEECH_PLAN_SKIP, reason="empty")
 
     if list_like_count >= 2 and _LIST_MARKER_RE.match(line):
-        sanitized = _sanitize_speech_line(line, pronunciation_entries)
+        sanitized = _sanitize_speech_line(
+            _replace_technical_tokens_for_speech(line),
+            pronunciation_entries,
+        )
         if list_context == "detail":
             if _line_has_speakable_context(sanitized, pronunciation_entries):
                 return _speech_plan_item(
@@ -1097,7 +1204,10 @@ def _classify_speech_line(
         )
 
     if _URL_RE.search(line):
-        sanitized = _sanitize_speech_line(line, pronunciation_entries)
+        sanitized = _sanitize_speech_line(
+            _replace_technical_tokens_for_speech(line),
+            pronunciation_entries,
+        )
         if _line_has_speakable_context(sanitized, pronunciation_entries):
             return _speech_plan_item(
                 SPEECH_PLAN_SOURCE,
@@ -1112,7 +1222,10 @@ def _classify_speech_line(
 
     code_like = bool(_CODE_LIKE_RE.search(line) or _INLINE_CODE_RE.search(line))
     if code_like:
-        sanitized = _sanitize_speech_line(line, pronunciation_entries)
+        sanitized = _sanitize_speech_line(
+            _replace_technical_tokens_for_speech(line),
+            pronunciation_entries,
+        )
         if _line_has_speakable_context(sanitized, pronunciation_entries):
             return _speech_plan_item(
                 SPEECH_PLAN_SOURCE,
@@ -1125,7 +1238,10 @@ def _classify_speech_line(
             "code",
         )
 
-    sanitized = _sanitize_speech_line(line, pronunciation_entries)
+    sanitized = _sanitize_speech_line(
+        _replace_technical_tokens_for_speech(line),
+        pronunciation_entries,
+    )
     if not sanitized:
         return _speech_plan_item(SPEECH_PLAN_SKIP, reason="display_only")
     return _speech_plan_item(SPEECH_PLAN_SOURCE, sanitized, "source")
@@ -1220,6 +1336,40 @@ def _select_spoken_tts_segments(
         if not selected or selected[-1] != SPEECH_POLICY_DETAIL_ITEMS_JA:
             selected.append(SPEECH_POLICY_DETAIL_ITEMS_JA)
     return selected, truncated
+
+
+def _translate_only_block_reason(
+    provider: str,
+    source_text: str,
+    spoken_text: str,
+) -> str:
+    provider_key = (provider or "").strip().lower()
+    if not provider_key:
+        return ""
+    if "render_spoken" in provider_key or provider_key in {
+        "skip-ja",
+        "local:speech_policy",
+        "local:fallback",
+    }:
+        return ""
+    is_translate_only = (
+        "translate_only" in provider_key
+        or provider_key in {"bridge:translate", "deeplx"}
+    )
+    if not is_translate_only:
+        return ""
+
+    source = _compact_speech_text(source_text)
+    spoken = _compact_speech_text(spoken_text)
+    if len(source) > _TRANSLATE_ONLY_TTS_MAX_SOURCE_CHARS:
+        return "translate_only_source_too_long"
+    if len(spoken) > _TRANSLATE_ONLY_TTS_MAX_OUTPUT_CHARS:
+        return "translate_only_output_too_long"
+
+    units = _split_speech_units(spoken, max_chars=_SPOKEN_TTS_SEGMENT_MAX_CHARS)
+    if len(units) > 2:
+        return "translate_only_too_many_units"
+    return ""
 
 
 def _append_speech_plan_item(
@@ -2531,18 +2681,42 @@ async def handle_sentence_output(
     # Keep display and speech intentionally separate: visual-only details stay visible
     # but do not get fed into Japanese TTS.
     full_zh_text = full_zh.strip()
+    speech_plan = _build_speech_plan(
+        full_zh_text,
+        full_tts,
+        pronunciation_entries,
+    )
     adapter_source = _build_spoken_adapter_source(
         full_zh_text,
         full_tts,
         pronunciation_entries,
     )
-    speech_zh_text = adapter_source or _trim_speech_source(" ".join(speech_zh_parts))
+    digest_source = _build_speech_digest_source_from_plan(speech_plan)
+    renderer_source, renderer_source_kind = _choose_speech_renderer_source(
+        adapter_source=adapter_source,
+        digest_source=digest_source,
+    )
+    speech_zh_text = renderer_source or _trim_speech_source(" ".join(speech_zh_parts))
     speech_policy.set_source(presentation, speech_zh_text)
+    presentation.metadata["speech_plan"] = [
+        {
+            "kind": item.get("kind", ""),
+            "reason": item.get("reason", ""),
+            "text": _compact_tts_debug_text(item.get("text", ""), max_len=120),
+        }
+        for item in speech_plan
+    ]
     if adapter_source:
         presentation.metadata["speech_adapter_source"] = _compact_tts_debug_text(
             adapter_source,
             max_len=240,
         )
+    if digest_source:
+        presentation.metadata["speech_digest_source"] = _compact_tts_debug_text(
+            digest_source,
+            max_len=240,
+        )
+    presentation.metadata["speech_renderer_source_kind"] = renderer_source_kind
     if full_zh_text and not presentation.speech_source:
         logger.info(
             "Speech-source lane is empty after sanitizing; display-only response will stay silent."
@@ -2561,11 +2735,39 @@ async def handle_sentence_output(
         )
         spoken_ja = ""
         tts_guard_reason = "same_as_source"
+    provider = (
+        getattr(translate_engine, "last_provider", "") if translate_engine else ""
+    )
+    speech_repaired = (
+        bool(getattr(translate_engine, "last_speech_repaired", False))
+        if translate_engine
+        else False
+    )
+    translate_only_block_reason = _translate_only_block_reason(
+        provider,
+        presentation.speech_source,
+        spoken_ja,
+    )
+    if spoken_ja and translate_only_block_reason:
+        logger.warning(
+            "Translate-only speech fallback is too long for TTS; keeping details display-only. provider={} reason={}",
+            provider or "unknown",
+            translate_only_block_reason,
+        )
+        spoken_ja = ""
+        tts_guard_reason = translate_only_block_reason
     if not spoken_ja and tts_manager.can_queue_speech_fallback():
+        fallback_source = _choose_renderer_failure_fallback_source(
+            renderer_source=renderer_source,
+            digest_source=digest_source,
+            adapter_source=adapter_source,
+            speech_source=presentation.speech_source,
+            speech_plan=speech_plan,
+        )
         fallback_ja, fallback_reason, fallback_hits = (
             _build_renderer_failure_fallback_ja(
                 tts_guard_reason,
-                presentation.speech_source,
+                fallback_source,
                 pronunciation_entries,
             )
         )
@@ -2578,14 +2780,6 @@ async def handle_sentence_output(
             tts_guard_reason = fallback_reason
             pronunciation_hits = sorted(set([*pronunciation_hits, *fallback_hits]))
             tts_manager.mark_speech_fallback_queued()
-    provider = (
-        getattr(translate_engine, "last_provider", "") if translate_engine else ""
-    )
-    speech_repaired = (
-        bool(getattr(translate_engine, "last_speech_repaired", False))
-        if translate_engine
-        else False
-    )
     emotion_key = (
         getattr(translate_engine, "last_emotion", "") if translate_engine else ""
     )
@@ -2600,6 +2794,14 @@ async def handle_sentence_output(
         pronunciation_hits=pronunciation_hits,
         speech_repaired=speech_repaired,
     )
+    tts_segments: list[str] = []
+    budget_truncated = False
+    if presentation.spoken_text:
+        tts_segments, budget_truncated = _select_spoken_tts_segments(
+            presentation.spoken_text
+        )
+        presentation.metadata["tts_segment_count"] = len(tts_segments)
+        presentation.metadata["tts_budget_truncated"] = budget_truncated
     _log_tts_pipeline(
         speech_source=presentation.speech_source,
         rendered_ja=rendered_ja,
@@ -2619,8 +2821,8 @@ async def handle_sentence_output(
     else:
         await _emit_emotion_from_key("neutral")
 
-    if presentation.spoken_text:
-        # Speak one Japanese audio. Subtitle has already been updated via 'full-text', so avoid re-sending it here to prevent duplicates.
+    if tts_segments:
+        # Subtitle has already been updated via 'full-text', so avoid re-sending it here to prevent duplicates.
         if last_display is not None:
             dt2 = copy.deepcopy(last_display)
             dt2.text = ""
@@ -2629,14 +2831,15 @@ async def handle_sentence_output(
             if dt2 is not None:
                 dt2.text = ""
 
-        await tts_manager.speak(
-            tts_text=presentation.spoken_text,
-            display_text=dt2,
-            actions=last_actions,
-            live2d_model=live2d_model,
-            tts_engine=tts_engine,
-            websocket_send=websocket_send,
-        )
+        for tts_segment in tts_segments:
+            await tts_manager.speak(
+                tts_text=tts_segment,
+                display_text=dt2,
+                actions=last_actions,
+                live2d_model=live2d_model,
+                tts_engine=tts_engine,
+                websocket_send=websocket_send,
+            )
     else:
         logger.warning(
             "No spoken Japanese generated; skipping voice lane for this turn."
@@ -2727,6 +2930,11 @@ async def flush_deferred_sentence_speech(
         tts_text_source,
         pronunciation_entries,
     )
+    digest_source = _build_speech_digest_source_from_plan(speech_plan)
+    renderer_source, renderer_source_kind = _choose_speech_renderer_source(
+        adapter_source=adapter_source,
+        digest_source=digest_source,
+    )
     source_segments = [
         item["text"]
         for item in speech_plan
@@ -2747,13 +2955,25 @@ async def flush_deferred_sentence_speech(
             adapter_source,
             max_len=240,
         )
+    if digest_source:
+        presentation.metadata["speech_digest_source"] = _compact_tts_debug_text(
+            digest_source,
+            max_len=240,
+        )
+    presentation.metadata["speech_renderer_source_kind"] = renderer_source_kind
     if display_text_source.strip() and not speech_plan:
         logger.info(
             "Deferred speech-source lane is empty after sanitizing; display-only response will stay silent."
         )
 
     queued_spoken_count = 0
-    fallback_source = speech_zh_text
+    fallback_source = _choose_renderer_failure_fallback_source(
+        renderer_source=renderer_source,
+        digest_source=digest_source,
+        adapter_source=adapter_source,
+        speech_source=speech_zh_text,
+        speech_plan=speech_plan,
+    )
     fallback_guard_reason = ""
     used_renderer = False
 
@@ -2773,15 +2993,15 @@ async def flush_deferred_sentence_speech(
             websocket_send=websocket_send,
         )
 
-    if adapter_source and translate_engine:
-        rendered_ja = await render_spoken_ja(adapter_source)
+    if renderer_source and translate_engine:
+        rendered_ja = await render_spoken_ja(renderer_source)
         spoken_ja, tts_guard_reason, pronunciation_hits = (
             _finalize_rendered_japanese_for_tts(
                 rendered_ja,
                 pronunciation_entries,
             )
         )
-        if spoken_ja and spoken_ja.strip() == adapter_source:
+        if spoken_ja and spoken_ja.strip() == renderer_source:
             logger.warning(
                 "Speech adapter returned the original subtitle text; falling back to deterministic speech plan."
             )
@@ -2793,21 +3013,39 @@ async def flush_deferred_sentence_speech(
             if translate_engine
             else False
         )
+        translate_only_block_reason = _translate_only_block_reason(
+            provider,
+            renderer_source,
+            spoken_ja,
+        )
+        if spoken_ja and translate_only_block_reason:
+            logger.warning(
+                "Translate-only speech adapter is too long for TTS; falling back to deterministic speech plan. provider={} reason={}",
+                provider or "unknown",
+                translate_only_block_reason,
+            )
+            spoken_ja = ""
+            tts_guard_reason = translate_only_block_reason
 
         adapter_presentation = speech_policy.create_envelope(response_type="chat")
         adapter_presentation.append_display(
             raw_text=display_text_source,
             display_text=display_text_source,
         )
-        speech_policy.set_source(adapter_presentation, adapter_source)
+        speech_policy.set_source(adapter_presentation, renderer_source)
         adapter_presentation.expression_hint = presentation.expression_hint
         adapter_presentation.metadata.update(
             {
-                "policy_kind": "speech_adapter",
-                "policy_reason": "faithful_spoken_adapter",
+                "policy_kind": f"speech_{renderer_source_kind}",
+                "policy_reason": (
+                    "digest_spoken_adapter"
+                    if renderer_source_kind == "digest"
+                    else "faithful_spoken_adapter"
+                ),
                 "segment_index": 1,
                 "segment_count": 1,
                 "fallback_plan": presentation.metadata.get("speech_plan", []),
+                "speech_renderer_source_kind": renderer_source_kind,
             }
         )
         adapter_presentation.attach_speech_result(
@@ -2827,7 +3065,7 @@ async def flush_deferred_sentence_speech(
             adapter_presentation.metadata["tts_segment_count"] = len(tts_segments)
             adapter_presentation.metadata["tts_budget_truncated"] = budget_truncated
         _log_tts_pipeline(
-            speech_source=adapter_source,
+            speech_source=renderer_source,
             rendered_ja=rendered_ja,
             final_tts=adapter_presentation.spoken_text,
             guard_reason=tts_guard_reason,
@@ -2843,7 +3081,7 @@ async def flush_deferred_sentence_speech(
             used_renderer = True
         else:
             fallback_guard_reason = tts_guard_reason
-            fallback_source = adapter_source
+            fallback_source = renderer_source
 
     if queued_spoken_count == 0:
         for segment_index, item in enumerate(speech_plan, start=1):
@@ -2874,6 +3112,15 @@ async def flush_deferred_sentence_speech(
                     )
                 )
             elif kind == SPEECH_PLAN_SOURCE:
+                if (
+                    renderer_source_kind == "digest"
+                    and renderer_source
+                    and _is_thin_acknowledgement_source(segment_text)
+                ):
+                    if not fallback_guard_reason:
+                        fallback_guard_reason = "thin_ack_after_digest_failure"
+                    continue
+
                 used_renderer = True
                 rendered_ja = await render_spoken_ja(segment_text)
                 spoken_ja, tts_guard_reason, pronunciation_hits = (
@@ -2898,6 +3145,19 @@ async def flush_deferred_sentence_speech(
                     if translate_engine
                     else False
                 )
+                translate_only_block_reason = _translate_only_block_reason(
+                    provider,
+                    segment_text,
+                    spoken_ja,
+                )
+                if spoken_ja and translate_only_block_reason:
+                    logger.warning(
+                        "Translate-only speech segment is too long for TTS; keeping details display-only. provider={} reason={}",
+                        provider or "unknown",
+                        translate_only_block_reason,
+                    )
+                    spoken_ja = ""
+                    tts_guard_reason = translate_only_block_reason
                 if not spoken_ja and not fallback_guard_reason:
                     fallback_guard_reason = tts_guard_reason
                     fallback_source = segment_text
@@ -2945,8 +3205,6 @@ async def flush_deferred_sentence_speech(
     if (
         queued_spoken_count == 0
         and fallback_source
-        and len(source_segments) <= 1
-        and len(fallback_source) <= 80
         and tts_manager.can_queue_speech_fallback()
     ):
         fallback_ja, fallback_reason, fallback_hits = (
