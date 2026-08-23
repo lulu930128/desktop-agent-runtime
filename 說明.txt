@@ -79,7 +79,7 @@ Launcher
 
 ```powershell
 cd <repo-root>
-.\envs\kuro-llm310\python.exe .\launcher.py
+.\envs\kuro-llm310\python.exe .\launcher_qt.py
 ```
 
 如果要用根目錄的 VBS 啟動器，現在也會以該檔所在資料夾當成 repo root。

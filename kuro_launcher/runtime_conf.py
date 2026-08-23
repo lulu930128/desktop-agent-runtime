@@ -64,6 +64,7 @@ def build_runtime_conf(
     openai_api_key_env: str,
     openai_fallback_key_env: str,
     thinking_power: str = "normal",
+    openai_model_override: str = "",
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     base_conf_path = find_base_conf(open_llm_dir)
     base = read_yaml_file(base_conf_path)
@@ -146,7 +147,8 @@ def build_runtime_conf(
         openai_cfg = llm_configs.setdefault("openai_llm", {})
 
         model = (
-            os.environ.get(openai_model_env)
+            openai_model_override
+            or os.environ.get(openai_model_env)
             or openai_cfg.get("model")
             or openai_default_model
         ).strip()

@@ -1204,15 +1204,17 @@ export class LAppModel extends CubismUserModel {
     }
 
     const existing = this._externalParameterTargets.get(key);
+    const nextTargetValue = clampExternalParameterValue(targetValue);
+    const immediate = Number(durationSeconds) <= 0;
     this._externalParameterTargets.set(key, {
       id:
         normalizedIndex === null
           ? existing?.id || CubismFramework.getIdManager().getId(normalizedParameterId)
           : null,
       parameterIndex: normalizedIndex,
-      currentValue: existing?.currentValue ?? 0,
-      targetValue: clampExternalParameterValue(targetValue),
-      durationSeconds: Math.max(0.08, durationSeconds)
+      currentValue: immediate ? nextTargetValue : existing?.currentValue ?? 0,
+      targetValue: nextTargetValue,
+      durationSeconds: immediate ? 0 : Math.max(0.08, durationSeconds)
     });
   }
 
@@ -2164,12 +2166,16 @@ export class LAppModel extends CubismUserModel {
     }
 
     for (const parameter of this._externalParameterTargets.values()) {
-      const follow = Math.min(
-        1,
-        Math.max(0.02, deltaTimeSeconds / parameter.durationSeconds)
-      );
-      parameter.currentValue +=
-        (parameter.targetValue - parameter.currentValue) * follow;
+      if (parameter.durationSeconds <= 0) {
+        parameter.currentValue = parameter.targetValue;
+      } else {
+        const follow = Math.min(
+          1,
+          Math.max(0.02, deltaTimeSeconds / parameter.durationSeconds)
+        );
+        parameter.currentValue +=
+          (parameter.targetValue - parameter.currentValue) * follow;
+      }
       if (Math.abs(parameter.targetValue - parameter.currentValue) < 0.001) {
         parameter.currentValue = parameter.targetValue;
       }

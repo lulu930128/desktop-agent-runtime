@@ -42,6 +42,16 @@ def _coerce_bool(value: Any, default: bool = False) -> bool:
     return default
 
 
+def _coerce_string_tuple(value: Any, fallback: tuple[str, ...]) -> tuple[str, ...]:
+    items = value if isinstance(value, (list, tuple)) else []
+    normalized: list[str] = []
+    for item in items:
+        text = str(item or "").strip()
+        if text and text not in normalized:
+            normalized.append(text)
+    return tuple(normalized) or fallback
+
+
 @dataclass(frozen=True)
 class AppConfig:
     config_path: Path
@@ -75,11 +85,14 @@ class AppConfig:
     llm_port: int
     pet_control_host: str
     pet_control_port: int
+    launcher_control_host: str
+    launcher_control_port: int
 
     llm_provider_env: str
     llm_default_provider: str
     openai_model_env: str
     openai_default_model: str
+    openai_models: tuple[str, ...]
     openai_temp_env: str
     openai_inject_key_env: str
     openai_api_key_env: str
@@ -107,6 +120,10 @@ class AppConfig:
     @property
     def pet_control_url(self) -> str:
         return f"http://{self.pet_control_host}:{self.pet_control_port}"
+
+    @property
+    def launcher_control_url(self) -> str:
+        return f"http://{self.launcher_control_host}:{self.launcher_control_port}"
 
 
 def load_config(config_path: Path) -> AppConfig:
@@ -176,6 +193,7 @@ def load_config(config_path: Path) -> AppConfig:
     tts_net = net.get("tts") or {}
     llm_net = net.get("llm") or {}
     pet_control_net = net.get("pet_control") or {}
+    launcher_control_net = net.get("launcher_control") or {}
 
     llm = cfg.get("llm") or {}
     openai = llm.get("openai") or {}
@@ -209,15 +227,21 @@ def load_config(config_path: Path) -> AppConfig:
         bridge_host=str(bridge_net.get("host", "127.0.0.1")),
         bridge_port=int(bridge_net.get("port", 1188)),
         tts_host=str(tts_net.get("host", "127.0.0.1")),
-        tts_port=int(tts_net.get("port", 9881)),
+        tts_port=int(tts_net.get("port", 9981)),
         llm_host=str(llm_net.get("host", "127.0.0.1")),
         llm_port=int(llm_net.get("port", 23456)),
         pet_control_host=str(pet_control_net.get("host", "127.0.0.1")),
         pet_control_port=int(pet_control_net.get("port", 23567)),
+        launcher_control_host=str(launcher_control_net.get("host", "127.0.0.1")),
+        launcher_control_port=int(launcher_control_net.get("port", 23568)),
         llm_provider_env=str(llm.get("provider_env", "KURO_LLM_PROVIDER")),
         llm_default_provider=str(llm.get("default_provider", "openai_llm")),
         openai_model_env=str(openai.get("model_env", "OPENAI_LLM_MODEL")),
         openai_default_model=str(openai.get("default_model", "gpt-5-mini")),
+        openai_models=_coerce_string_tuple(
+            openai.get("models"),
+            (str(openai.get("default_model", "gpt-5-mini")),),
+        ),
         openai_temp_env=str(openai.get("temperature_env", "OPENAI_LLM_TEMPERATURE")),
         openai_inject_key_env=str(
             openai.get("inject_key_env", "OPENAI_LLM_INJECT_KEY")

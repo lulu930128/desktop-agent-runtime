@@ -109,6 +109,28 @@ class ToolPolicy:
                         reason=f"Tool '{tool_name}' cannot use value '{args.get(arg_key)}' for argument '{arg_key}' under the current policy.",
                     )
 
+        max_numeric_args = tool_cfg.get("max_numeric_args") or {}
+        if isinstance(max_numeric_args, dict):
+            for arg_path, max_value in max_numeric_args.items():
+                arg_key = str(arg_path)
+                value = _nested_arg_value(args, arg_key)
+                if value is None:
+                    continue
+                numeric_value = _numeric_arg_value(value)
+                numeric_limit = _numeric_arg_value(max_value)
+                if numeric_value is None or numeric_limit is None:
+                    return ToolPolicyDecision(
+                        allowed=False,
+                        status="blocked",
+                        reason=f"Tool '{tool_name}' cannot use non-numeric value for argument '{arg_key}' under the current policy.",
+                    )
+                if numeric_value > numeric_limit:
+                    return ToolPolicyDecision(
+                        allowed=False,
+                        status="blocked",
+                        reason=f"Tool '{tool_name}' cannot use argument '{arg_key}' above {numeric_limit:g} under the current policy.",
+                    )
+
         return ToolPolicyDecision(True, "allowed", "Allowed by runtime policy.")
 
     def _check_path_args(
@@ -234,6 +256,24 @@ def _is_truthy_arg(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y", "on"}
     return bool(value)
+
+
+def _nested_arg_value(args: dict[str, Any], arg_path: str) -> Any:
+    current: Any = args
+    for part in arg_path.split("."):
+        if not part or not isinstance(current, dict) or part not in current:
+            return None
+        current = current[part]
+    return current
+
+
+def _numeric_arg_value(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _normalized_arg_value(value: Any) -> str:

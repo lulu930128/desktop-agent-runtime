@@ -17,10 +17,23 @@ export type RendererState = {
   currentExpressionId: string;
   currentExpressionLabel: string;
   micEnabled: boolean;
+  micPaused: boolean;
   cameraEnabled: boolean;
   screenEnabled: boolean;
   browserPanelEnabled: boolean;
   live2dInspectorOverlayEnabled: boolean;
+};
+
+export type MicrophoneControlAction = "start" | "pause" | "resume" | "submit" | "cancel";
+
+export type MicrophoneControlResult = {
+  ok: boolean;
+  error?: string;
+  micEnabled?: boolean;
+  micPaused?: boolean;
+  submitted?: boolean;
+  discarded?: boolean;
+  empty?: boolean;
 };
 
 export type BackendConfig = {

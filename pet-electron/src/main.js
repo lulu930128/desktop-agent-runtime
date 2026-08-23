@@ -1,11 +1,14 @@
 ﻿const path = require("path");
 const fs = require("fs");
+const http = require("http");
+const https = require("https");
 const { spawn } = require("child_process");
 const {
   app,
   BrowserWindow,
   Tray,
   desktopCapturer,
+  dialog,
   ipcMain,
   nativeImage,
   screen,
@@ -28,6 +31,9 @@ const APP_USER_MODEL_ID = "kuro.desktop-agent";
 const TEMP_MAX_RENDER_PERFORMANCE = true;
 const CONTROL_HOST = process.env.KURO_PET_CONTROL_HOST || "127.0.0.1";
 const CONTROL_PORT = Number(process.env.KURO_PET_CONTROL_PORT || "23567");
+const LAUNCHER_CONTROL_URL = process.env.KURO_LAUNCHER_CONTROL_URL || "http://127.0.0.1:23568";
+const LAUNCHER_CONTROL_TOKEN = process.env.KURO_LAUNCHER_CONTROL_TOKEN || "";
+const MAX_LAUNCHER_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 if (TEMP_MAX_RENDER_PERFORMANCE) {
   app.commandLine.appendSwitch("disable-frame-rate-limit");
@@ -39,10 +45,10 @@ if (TEMP_MAX_RENDER_PERFORMANCE) {
 const projectRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(projectRoot, "..");
 const rendererEntry = path.join(projectRoot, "renderer-dist", "index.html");
+const workPanelEntry = path.join(projectRoot, "renderer-dist", "work-panel.html");
 const iconPath = path.join(projectRoot, "src", "assets", "favicon.ico");
 const readerEntry = path.join(__dirname, "reader-window.html");
 const readerPreloadPath = path.join(__dirname, "reader-preload.js");
-const briefingEntry = path.join(__dirname, "briefing-window.html");
 const briefingPreloadPath = path.join(__dirname, "briefing-preload.js");
 const studySnapshotPath = path.join(repoRoot, "Open-LLM-VTuber", "private", "study", "study_snapshot.json");
 const MIN_PET_ZOOM_SCALE = 0.2;
@@ -51,8 +57,8 @@ const MIN_PET_WINDOW_WIDTH = 280;
 const MIN_PET_WINDOW_HEIGHT = 420;
 const MIN_READER_WINDOW_WIDTH = 360;
 const MIN_READER_WINDOW_HEIGHT = 236;
-const MIN_BRIEFING_WINDOW_WIDTH = 720;
-const MIN_BRIEFING_WINDOW_HEIGHT = 420;
+const MIN_BRIEFING_WINDOW_WIDTH = 820;
+const MIN_BRIEFING_WINDOW_HEIGHT = 540;
 
 let mainWindow = null;
 let readerWindow = null;
@@ -68,6 +74,7 @@ let controlServer = null;
 let mailBriefingService = null;
 let studySnapshotWatcher = null;
 let studySnapshotBroadcastTimer = null;
+let live2dPreviewCaptureInFlight = null;
 const taskbarHiddenNativeHandles = new Set();
 let latestFrontendState = {
   wsConnected: false,
@@ -86,6 +93,11 @@ let latestFrontendState = {
   currentOutfitValue: 0,
   currentExpressionId: "neutral",
   currentExpressionLabel: "一般",
+  micEnabled: false,
+  micPaused: false,
+  cameraEnabled: false,
+  screenEnabled: false,
+  browserPanelEnabled: false,
   live2dInspectorOverlayEnabled: false
 };
 
@@ -147,17 +159,17 @@ function setReaderBounds(bounds) {
 function getDefaultBriefingBounds() {
   const area = getVirtualWorkAreaBounds();
   const width = Math.min(
-    1040,
-    Math.max(MIN_BRIEFING_WINDOW_WIDTH, Math.round(area.width * 0.46))
+    1280,
+    Math.max(MIN_BRIEFING_WINDOW_WIDTH, Math.round(area.width * 0.74))
   );
   const height = Math.min(
-    640,
-    Math.max(MIN_BRIEFING_WINDOW_HEIGHT, Math.round(area.height * 0.42))
+    820,
+    Math.max(MIN_BRIEFING_WINDOW_HEIGHT, Math.round(area.height * 0.72))
   );
 
   return {
-    x: area.x + 24,
-    y: area.y + Math.max(24, area.height - height - 24),
+    x: area.x + Math.max(20, Math.round((area.width - width) / 2)),
+    y: area.y + Math.max(20, Math.round((area.height - height) / 2)),
     width,
     height
   };
@@ -503,6 +515,7 @@ function setPetGameMode(enabled) {
   applyPetFocusPolicy();
   applyIgnoreMouseState();
   updateTrayMenu();
+  broadcastBriefingState();
   return appState.petGameMode;
 }
 
@@ -570,8 +583,181 @@ function getReaderStatePayload() {
     confUid: latestFrontendState.confUid || "",
     currentHistoryUid: latestFrontendState.currentHistoryUid || "",
     currentHistoryTitle: latestFrontendState.currentHistoryTitle || "",
+    micEnabled: Boolean(latestFrontendState.micEnabled),
+    micPaused: Boolean(latestFrontendState.micPaused),
+    cameraEnabled: Boolean(latestFrontendState.cameraEnabled),
+    screenEnabled: Boolean(latestFrontendState.screenEnabled),
+    browserPanelEnabled: Boolean(latestFrontendState.browserPanelEnabled),
     readerVisible: Boolean(readerWindow && !readerWindow.isDestroyed() && readerWindow.isVisible())
   };
+}
+
+function isLoopbackHostname(hostname) {
+  const normalized = String(hostname || "").trim().toLowerCase();
+  return normalized === "127.0.0.1" || normalized === "localhost" || normalized === "::1" || normalized === "[::1]";
+}
+
+function launcherControlRequest(pathname, { method = "GET", payload = null, timeoutMs = 150000 } = {}) {
+  return new Promise((resolve) => {
+    if (!LAUNCHER_CONTROL_TOKEN) {
+      resolve({ ok: false, error: "launcher-control-token-missing" });
+      return;
+    }
+    let target;
+    try {
+      target = new URL(pathname, LAUNCHER_CONTROL_URL);
+    } catch (_error) {
+      resolve({ ok: false, error: "launcher-control-url-invalid" });
+      return;
+    }
+    if (!isLoopbackHostname(target.hostname) || !["http:", "https:"].includes(target.protocol)) {
+      resolve({ ok: false, error: "launcher-control-url-not-loopback" });
+      return;
+    }
+    const body = payload && method !== "GET" ? Buffer.from(JSON.stringify(payload), "utf8") : null;
+    const transport = target.protocol === "https:" ? https : http;
+    const request = transport.request(
+      target,
+      {
+        method,
+        headers: {
+          "Authorization": `Bearer ${LAUNCHER_CONTROL_TOKEN}`,
+          ...(body
+            ? {
+                "Content-Type": "application/json; charset=utf-8",
+                "Content-Length": String(body.length)
+              }
+            : {})
+        }
+      },
+      (response) => {
+        const chunks = [];
+        let size = 0;
+        response.on("data", (chunk) => {
+          size += chunk.length;
+          if (size > MAX_LAUNCHER_RESPONSE_BYTES) {
+            request.destroy(new Error("launcher-control-response-too-large"));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        response.on("end", () => {
+          try {
+            const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+            if (response.statusCode && response.statusCode >= 400) {
+              resolve({ ok: false, ...parsed, status: response.statusCode });
+              return;
+            }
+            resolve(parsed && typeof parsed === "object" ? parsed : { ok: false, error: "launcher-control-invalid-response" });
+          } catch (_error) {
+            resolve({ ok: false, error: "launcher-control-invalid-response", status: response.statusCode || 0 });
+          }
+        });
+      }
+    );
+    request.setTimeout(timeoutMs, () => request.destroy(new Error("launcher-control-timeout")));
+    request.on("error", (error) => resolve({ ok: false, error: error.message || "launcher-control-unavailable" }));
+    if (body) request.write(body);
+    request.end();
+  });
+}
+
+async function confirmWorkPanelAction({ title, message, detail = "" }) {
+  const parent = briefingWindow && !briefingWindow.isDestroyed() ? briefingWindow : undefined;
+  const options = {
+    type: "warning",
+    title: String(title || "確認操作"),
+    message: String(message || "要繼續這項操作嗎？"),
+    detail: String(detail || ""),
+    buttons: ["取消", "繼續"],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true
+  };
+  const result = parent
+    ? await dialog.showMessageBox(parent, options)
+    : await dialog.showMessageBox(options);
+  return result.response === 1;
+}
+
+function normalizeHistoryContent(value) {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => normalizeHistoryContent(item))
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+  }
+  if (value && typeof value === "object") {
+    return normalizeHistoryContent(value.text ?? value.content ?? value.value ?? "");
+  }
+  return "";
+}
+
+function isSafeHistorySegment(value) {
+  const normalized = String(value || "").trim();
+  return Boolean(
+    normalized &&
+    normalized !== "." &&
+    normalized !== ".." &&
+    path.basename(normalized) === normalized &&
+    !normalized.includes("/") &&
+    !normalized.includes("\\")
+  );
+}
+
+function getActiveChatHistoryPayload() {
+  const confUid = String(latestFrontendState.confUid || "").trim();
+  const historyUid = String(latestFrontendState.currentHistoryUid || "").trim();
+  const title = String(latestFrontendState.currentHistoryTitle || "").trim();
+  if (!confUid || !historyUid) {
+    return {
+      ok: true,
+      confUid,
+      historyUid,
+      title,
+      messages: []
+    };
+  }
+  if (!isSafeHistorySegment(confUid) || !isSafeHistorySegment(historyUid)) {
+    return { ok: false, error: "history-unavailable", confUid: "", historyUid: "", title, messages: [] };
+  }
+
+  const historyRoot = path.resolve(repoRoot, "Open-LLM-VTuber", "chat_history");
+  const characterRoot = path.resolve(historyRoot, confUid);
+  const historyPath = path.resolve(characterRoot, `${historyUid}.json`);
+  const expectedPrefix = `${characterRoot}${path.sep}`.toLowerCase();
+  if (!historyPath.toLowerCase().startsWith(expectedPrefix)) {
+    return { ok: false, error: "history-unavailable", confUid, historyUid, title, messages: [] };
+  }
+
+  try {
+    if (!fs.existsSync(historyPath)) {
+      return { ok: true, confUid, historyUid, title, messages: [] };
+    }
+    const payload = JSON.parse(fs.readFileSync(historyPath, "utf8"));
+    if (!Array.isArray(payload)) {
+      return { ok: false, error: "history-invalid", confUid, historyUid, title, messages: [] };
+    }
+
+    const messages = payload
+      .filter((item) => item && typeof item === "object")
+      .map((item) => ({
+        role: String(item.role || "").trim().toLowerCase(),
+        timestamp: String(item.timestamp || "").trim(),
+        content: normalizeHistoryContent(item.content)
+      }))
+      .filter((item) => item.role && item.role !== "metadata" && item.content)
+      .slice(-120);
+
+    return { ok: true, confUid, historyUid, title, messages };
+  } catch (error) {
+    petLog("work-panel-history-read-failed", error);
+    return { ok: false, error: "history-unavailable", confUid, historyUid, title, messages: [] };
+  }
 }
 
 function getBriefingStatePayload() {
@@ -588,9 +774,17 @@ function getBriefingStatePayload() {
     currentHistoryUid: latestFrontendState.currentHistoryUid || "",
     currentHistoryTitle: latestFrontendState.currentHistoryTitle || "",
     latestAssistantText: latestFrontendState.latestAssistantText || "",
-    briefingVisible: Boolean(
-      briefingWindow && !briefingWindow.isDestroyed() && briefingWindow.isVisible()
-    ),
+    forceIgnoreMouse: Boolean(appState.forceIgnoreMouse),
+    petGameMode: Boolean(appState.petGameMode),
+    currentOutfitId: latestFrontendState.currentOutfitId || appState.outfit?.outfitId || "normal",
+    currentExpressionId: latestFrontendState.currentExpressionId || appState.expression?.expressionId || "neutral",
+    currentExpressionLabel: latestFrontendState.currentExpressionLabel || appState.expression?.expressionLabel || "一般",
+    micEnabled: Boolean(latestFrontendState.micEnabled),
+    micPaused: Boolean(latestFrontendState.micPaused),
+    cameraEnabled: Boolean(latestFrontendState.cameraEnabled),
+    screenEnabled: Boolean(latestFrontendState.screenEnabled),
+    browserPanelEnabled: Boolean(latestFrontendState.browserPanelEnabled),
+    briefingVisible: isBriefingWindowVisible(),
     briefingDate: data?.snapshot?.date || "",
     briefingUpdatedAt: data?.snapshot?.updatedAt || data?.updatedAt || "",
     mailBriefing: mailBriefingService ? mailBriefingService.readStatus() : null,
@@ -684,13 +878,16 @@ async function refreshMailBriefing() {
 }
 
 function broadcastReaderState() {
-  if (!readerWindow || readerWindow.isDestroyed()) {
-    return;
-  }
-  try {
-    readerWindow.webContents.send("reader-state", getReaderStatePayload());
-  } catch (error) {
-    petLog("reader-state-broadcast-failed", error);
+  const targets = [readerWindow, briefingWindow];
+  for (const target of targets) {
+    if (!target || target.isDestroyed()) {
+      continue;
+    }
+    try {
+      target.webContents.send("reader-state", getReaderStatePayload());
+    } catch (error) {
+      petLog("reader-state-broadcast-failed", error);
+    }
   }
 }
 
@@ -865,6 +1062,51 @@ async function readLive2DInspectorSnapshot() {
   );
 }
 
+async function captureLive2DPreview(options = {}) {
+  if (live2dPreviewCaptureInFlight) {
+    return live2dPreviewCaptureInFlight;
+  }
+  live2dPreviewCaptureInFlight = captureLive2DPreviewImpl(options);
+  try {
+    return await live2dPreviewCaptureInFlight;
+  } finally {
+    live2dPreviewCaptureInFlight = null;
+  }
+}
+
+async function captureLive2DPreviewImpl(options = {}) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return null;
+  }
+  try {
+    const dataUrl = await executeRenderer(`((options) => {
+      if (window.__kuroLive2DPreview && typeof window.__kuroLive2DPreview.capture === "function") {
+        return Promise.race([
+          window.__kuroLive2DPreview.capture(options),
+          new Promise((resolve) => setTimeout(() => resolve(null), 4200))
+        ]);
+      }
+      return null;
+    })(${JSON.stringify(options || {})});`);
+    const pngPrefix = "data:image/png;base64,";
+    if (typeof dataUrl === "string" && dataUrl.startsWith(pngPrefix)) {
+      return Buffer.from(dataUrl.slice(pngPrefix.length), "base64");
+    }
+
+    await executeRenderer(`new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)));
+    });`);
+    const image = await mainWindow.webContents.capturePage();
+    if (!image || image.isEmpty()) {
+      return null;
+    }
+    return image.toPNG();
+  } catch (error) {
+    petLog("live2d-preview-capture-failed", error);
+    return null;
+  }
+}
+
 async function applyRendererBackendConfig(baseUrl, wsUrl, reload = true) {
   const payload = await executeRenderer(`((baseUrlValue, wsUrlValue, shouldReconnect) => {
     if (typeof window.__kuroPetApplyBackendConfig === "function") {
@@ -932,6 +1174,34 @@ async function sendTextToFrontend(text, attachments = []) {
   return result;
 }
 
+async function setFrontendInputEnabled(kind, enabled) {
+  const normalizedKind = String(kind || "").trim();
+  if (!["microphone", "camera", "screen", "browser"].includes(normalizedKind)) {
+    return { ok: false, error: "unsupported-input-kind" };
+  }
+  const result = await executeRenderer(`((kind, enabled) => {
+    if (typeof window.__kuroPetSetInputEnabled !== "function") {
+      return { ok: false, error: "frontend-input-bridge-missing" };
+    }
+    return window.__kuroPetSetInputEnabled(kind, enabled);
+  })(${JSON.stringify(normalizedKind)}, ${JSON.stringify(Boolean(enabled))});`);
+  return result && typeof result === "object" ? result : { ok: false, error: "renderer-unavailable" };
+}
+
+async function controlFrontendMicrophone(action) {
+  const normalizedAction = String(action || "").trim().toLowerCase();
+  if (!["start", "pause", "resume", "submit", "cancel"].includes(normalizedAction)) {
+    return { ok: false, error: "unsupported-microphone-action" };
+  }
+  const result = await executeRenderer(`((action) => {
+    if (typeof window.__kuroPetControlMicrophone !== "function") {
+      return { ok: false, error: "frontend-microphone-bridge-missing" };
+    }
+    return window.__kuroPetControlMicrophone(action);
+  })(${JSON.stringify(normalizedAction)});`);
+  return result && typeof result === "object" ? result : { ok: false, error: "renderer-unavailable" };
+}
+
 function setReaderVisible(visible) {
   appState.readerVisible = Boolean(visible);
   if (!readerWindow || readerWindow.isDestroyed()) {
@@ -955,6 +1225,52 @@ function setReaderVisible(visible) {
   };
 }
 
+function isBriefingWindowVisible() {
+  return Boolean(
+    briefingWindow &&
+      !briefingWindow.isDestroyed() &&
+      briefingWindow.isVisible() &&
+      !briefingWindow.isMinimized()
+  );
+}
+
+function revealBriefingWindow() {
+  if (!briefingWindow || briefingWindow.isDestroyed()) {
+    return false;
+  }
+
+  const wasVisible = briefingWindow.isVisible();
+  const wasMinimized = briefingWindow.isMinimized();
+  if (wasMinimized) {
+    briefingWindow.restore();
+  }
+
+  const currentBounds = briefingWindow.getBounds();
+  const visibleBounds = clampBriefingBounds(currentBounds);
+  if (
+    currentBounds.x !== visibleBounds.x ||
+    currentBounds.y !== visibleBounds.y ||
+    currentBounds.width !== visibleBounds.width ||
+    currentBounds.height !== visibleBounds.height
+  ) {
+    briefingWindow.setBounds(visibleBounds, false);
+  }
+
+  briefingWindow.show();
+  briefingWindow.moveTop();
+  if (process.platform === "win32") {
+    app.focus({ steal: true });
+  }
+  briefingWindow.focus();
+  petLog("work-panel-reveal", {
+    wasVisible,
+    wasMinimized,
+    bounds: briefingWindow.getBounds(),
+    focused: briefingWindow.isFocused()
+  });
+  return true;
+}
+
 function setBriefingVisible(visible) {
   appState.briefingVisible = Boolean(visible);
   if (!briefingWindow || briefingWindow.isDestroyed()) {
@@ -962,8 +1278,7 @@ function setBriefingVisible(visible) {
       createBriefingWindow();
     }
   } else if (appState.briefingVisible) {
-    briefingWindow.show();
-    briefingWindow.focus();
+    revealBriefingWindow();
   } else {
     briefingWindow.hide();
   }
@@ -973,7 +1288,8 @@ function setBriefingVisible(visible) {
     ok: true,
     route: "window",
     action: "set-briefing-visible",
-    briefingVisible: appState.briefingVisible
+    briefingVisible: isBriefingWindowVisible(),
+    briefingPending: Boolean(appState.briefingVisible && !isBriefingWindowVisible())
   };
 }
 
@@ -1033,8 +1349,17 @@ function setBriefingMemoryCandidateStatus(candidateId, status) {
 async function handleControlAction(action, payload = {}) {
   switch (action) {
     case "mic-toggle":
-      broadcast("pet-command", { type: "mic-toggle", enabled: Boolean(payload.enabled) });
-      return { ok: true, route: "ipc", action };
+      return { ...(await setFrontendInputEnabled("microphone", Boolean(payload.enabled))), action };
+    case "mic-start":
+      return { ...(await controlFrontendMicrophone("start")), action };
+    case "mic-pause":
+      return { ...(await controlFrontendMicrophone("pause")), action };
+    case "mic-resume":
+      return { ...(await controlFrontendMicrophone("resume")), action };
+    case "mic-submit":
+      return { ...(await controlFrontendMicrophone("submit")), action };
+    case "mic-cancel":
+      return { ...(await controlFrontendMicrophone("cancel")), action };
     case "interrupt":
       broadcast("pet-command", { type: "interrupt" });
       return { ok: true, route: "ipc", action };
@@ -1043,9 +1368,7 @@ async function handleControlAction(action, payload = {}) {
     case "set-briefing-visible":
       return setBriefingVisible(Boolean(payload.enabled));
     case "toggle-briefing":
-      return setBriefingVisible(
-        !(briefingWindow && !briefingWindow.isDestroyed() && briefingWindow.isVisible())
-      );
+      return setBriefingVisible(!isBriefingWindowVisible());
     case "set-briefing-snapshot":
       return replaceBriefingSnapshot(payload.snapshot || payload);
     case "add-briefing-memory-candidate":
@@ -1157,14 +1480,11 @@ async function handleControlAction(action, payload = {}) {
     case "toggle-subtitle":
       return setReaderVisible(!(readerWindow && !readerWindow.isDestroyed() && readerWindow.isVisible()));
     case "toggle-camera":
-      broadcast("pet-command", { type: "camera-toggle", enabled: Boolean(payload.enabled) });
-      return { ok: true, route: "ipc", action };
+      return { ...(await setFrontendInputEnabled("camera", Boolean(payload.enabled))), action };
     case "toggle-screen":
-      broadcast("pet-command", { type: "screen-toggle", enabled: Boolean(payload.enabled) });
-      return { ok: true, route: "ipc", action };
+      return { ...(await setFrontendInputEnabled("screen", Boolean(payload.enabled))), action };
     case "toggle-browser":
-      broadcast("pet-command", { type: "browser-toggle", enabled: Boolean(payload.enabled) });
-      return { ok: true, route: "ipc", action };
+      return { ...(await setFrontendInputEnabled("browser", Boolean(payload.enabled))), action };
     case "reload-frontend":
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.reloadIgnoringCache();
@@ -1189,6 +1509,18 @@ async function handleControlAction(action, payload = {}) {
         ok: true,
         action,
         petGameMode: setPetGameMode(Boolean(payload.enabled))
+      };
+    case "set-force-ignore-mouse":
+      appState.forceIgnoreMouse = Boolean(payload.enabled);
+      saveCurrentState();
+      applyIgnoreMouseState();
+      broadcast("force-ignore-mouse-changed", appState.forceIgnoreMouse);
+      updateTrayMenu();
+      broadcastBriefingState();
+      return {
+        ok: true,
+        action,
+        forceIgnoreMouse: appState.forceIgnoreMouse
       };
     case "toggle-game-mode":
       return {
@@ -1353,20 +1685,6 @@ function toggleReaderWindow() {
   }
 }
 
-function toggleBriefingWindow() {
-  if (!briefingWindow || briefingWindow.isDestroyed()) {
-    appState.briefingVisible = true;
-    createBriefingWindow();
-    return;
-  }
-  if (briefingWindow.isVisible()) {
-    briefingWindow.hide();
-  } else {
-    briefingWindow.show();
-    briefingWindow.focus();
-  }
-}
-
 function reloadMainWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.reloadIgnoringCache();
@@ -1384,7 +1702,7 @@ function getMenuState() {
     forceIgnoreMouse: appState.forceIgnoreMouse,
     petGameMode: appState.petGameMode,
     readerVisible: appState.readerVisible,
-    briefingVisible: appState.briefingVisible
+    briefingVisible: isBriefingWindowVisible()
   };
 }
 
@@ -1394,7 +1712,10 @@ function getMenuActions() {
     toggleIgnoreMouse: toggleForceIgnoreMouse,
     toggleGameMode: togglePetGameMode,
     toggleReader: toggleReaderWindow,
-    toggleBriefing: toggleBriefingWindow,
+    showBriefing: () => setBriefingVisible(true),
+    interruptOutput: () => {
+      handleControlAction("interrupt").catch((error) => petLog("menu-interrupt-failed", error));
+    },
     moveNextDisplay: moveWindowToNextDisplay,
     reloadFrontend: reloadMainWindow,
     quit: () => app.quit()
@@ -1428,6 +1749,7 @@ function startControlServer() {
     port: CONTROL_PORT,
     readRendererStatus,
     readLive2DInspectorSnapshot,
+    captureLive2DPreview,
     getShellStatus: () => ({
       mode: appState.mode,
       forceIgnoreMouse: appState.forceIgnoreMouse,
@@ -1436,10 +1758,18 @@ function startControlServer() {
       petHostBounds: getPetHostBounds(),
       petAnchor: ensurePetAnchor(),
       bounds: mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : null,
-      briefingVisible: Boolean(appState.briefingVisible)
+      briefingVisible: isBriefingWindowVisible(),
+      briefingFocused: Boolean(
+        briefingWindow && !briefingWindow.isDestroyed() && briefingWindow.isFocused()
+      ),
+      briefingMinimized: Boolean(
+        briefingWindow && !briefingWindow.isDestroyed() && briefingWindow.isMinimized()
+      ),
+      briefingBounds:
+        briefingWindow && !briefingWindow.isDestroyed() ? briefingWindow.getBounds() : null
     }),
     isReaderVisible: () => Boolean(appState.readerVisible),
-    isBriefingVisible: () => Boolean(appState.briefingVisible),
+    isBriefingVisible: isBriefingWindowVisible,
     readBriefingData: getBriefingDataPayload,
     readMailBriefingStatus,
     readMailPreferences,
@@ -1563,8 +1893,7 @@ function createReaderWindow() {
 function createBriefingWindow() {
   if (briefingWindow && !briefingWindow.isDestroyed()) {
     if (appState.briefingVisible) {
-      briefingWindow.show();
-      briefingWindow.focus();
+      revealBriefingWindow();
     }
     return;
   }
@@ -1580,14 +1909,14 @@ function createBriefingWindow() {
     show: false,
     frame: false,
     transparent: false,
-    backgroundColor: "#090a0f",
+    backgroundColor: "#11151f",
     resizable: true,
     maximizable: true,
     minimizable: true,
     skipTaskbar: false,
     fullscreenable: true,
     alwaysOnTop: false,
-    title: `${APP_NAME} Briefing`,
+    title: "Kuro 工作面板",
     icon: iconPath,
     autoHideMenuBar: true,
     webPreferences: {
@@ -1628,21 +1957,52 @@ function createBriefingWindow() {
     updateTrayMenu();
   });
 
-  briefingWindow.on("closed", () => {
-    briefingWindow = null;
+  briefingWindow.on("minimize", () => {
+    appState.briefingVisible = false;
+    saveCurrentState();
+    broadcastBriefingState();
+    updateTrayMenu();
   });
 
-  briefingWindow.webContents.on("did-finish-load", () => {
+  briefingWindow.on("restore", () => {
+    appState.briefingVisible = true;
+    saveCurrentState();
     broadcastBriefingState();
-    broadcastBriefingData();
+    updateTrayMenu();
+  });
+
+  briefingWindow.on("closed", () => {
+    briefingWindow = null;
+    appState.briefingVisible = false;
+    saveCurrentState();
+    broadcastBriefingState();
+    updateTrayMenu();
+  });
+
+  briefingWindow.once("ready-to-show", () => {
     if (appState.briefingVisible) {
-      briefingWindow.show();
-      briefingWindow.focus();
+      revealBriefingWindow();
     }
   });
 
-  briefingWindow.loadFile(briefingEntry).catch((error) => {
-    petLog("Failed to load briefing window", error);
+  briefingWindow.webContents.on("did-finish-load", () => {
+    broadcastReaderState();
+    broadcastBriefingState();
+    broadcastBriefingData();
+    if (appState.briefingVisible) {
+      revealBriefingWindow();
+    }
+  });
+
+  briefingWindow.loadFile(workPanelEntry).catch((error) => {
+    petLog("Failed to load work panel", error);
+    appState.briefingVisible = false;
+    saveCurrentState();
+    broadcastBriefingState();
+    updateTrayMenu();
+    if (briefingWindow && !briefingWindow.isDestroyed()) {
+      briefingWindow.destroy();
+    }
   });
 }
 
@@ -1871,6 +2231,104 @@ function registerIpc() {
     return sendTextToFrontend(text, attachments);
   });
 
+  ipcMain.handle("work-panel-get-chat-history", async () => {
+    const result = await launcherControlRequest("/v1/history");
+    return result?.ok ? result : getActiveChatHistoryPayload();
+  });
+
+  ipcMain.handle("work-panel-get-profile", () => launcherControlRequest("/v1/profile"));
+  ipcMain.handle("work-panel-apply-profile", async (_event, payload) => {
+    const confirmed = await confirmWorkPanelAction({
+      title: "套用助理設定",
+      message: "要切換目前的角色、專案、模型或推理深度嗎？",
+      detail: "Kuro 可能會重新載入 TTS 與對話 runtime；目前對話仍會保存在本機。"
+    });
+    if (!confirmed) return { ok: false, cancelled: true, error: "cancelled" };
+    return launcherControlRequest("/v1/profile/apply", {
+      method: "POST",
+      payload: { ...(payload || {}), confirmed: true }
+    });
+  });
+  ipcMain.handle("work-panel-get-histories", (_event, historyUid) => {
+    const suffix = String(historyUid || "").trim();
+    return launcherControlRequest(`/v1/history${suffix ? `?history_uid=${encodeURIComponent(suffix)}` : ""}`);
+  });
+  ipcMain.handle("work-panel-create-history", () =>
+    launcherControlRequest("/v1/history/create", { method: "POST", payload: {} })
+  );
+  ipcMain.handle("work-panel-select-history", (_event, historyUid) =>
+    launcherControlRequest("/v1/history/select", { method: "POST", payload: { history_uid: historyUid } })
+  );
+  ipcMain.handle("work-panel-delete-history", async (_event, historyUid, historyTitle) => {
+    const confirmed = await confirmWorkPanelAction({
+      title: "刪除對話",
+      message: `確定要刪除「${String(historyTitle || "這段對話")}」嗎？`,
+      detail: "這會刪除本機對話檔；若刪除目前對話，Kuro 會自動建立一段新對話。"
+    });
+    if (!confirmed) return { ok: false, cancelled: true, error: "cancelled" };
+    return launcherControlRequest("/v1/history/delete", {
+      method: "POST",
+      payload: { history_uid: historyUid, confirmed: true }
+    });
+  });
+  ipcMain.handle("work-panel-get-memories", () => launcherControlRequest("/v1/memories"));
+  ipcMain.handle("work-panel-memory-action", async (_event, action, payload) => {
+    const routes = new Map([
+      ["add", "/v1/memory/add"],
+      ["status", "/v1/memory/status"],
+      ["delete", "/v1/memory/delete"],
+      ["compact", "/v1/memory/compact"]
+    ]);
+    const normalizedAction = String(action || "");
+    const route = routes.get(normalizedAction);
+    if (!route) return { ok: false, error: "work-panel-memory-action-not-allowed" };
+    const labels = {
+      add: ["新增長期記憶", "要把這段內容加入目前角色的長期記憶嗎？"],
+      status: ["變更記憶狀態", "要變更這條長期記憶的啟用狀態嗎？"],
+      delete: ["刪除長期記憶", "確定要永久刪除這條長期記憶嗎？"],
+      compact: ["整理長期記憶", "要整理並合併目前角色的長期記憶嗎？"]
+    };
+    const [title, message] = labels[normalizedAction];
+    const confirmed = await confirmWorkPanelAction({
+      title,
+      message,
+      detail: "這項操作會寫入 Kuro 的本機記憶資料，完成後會刷新目前 runtime 的記憶 prompt。"
+    });
+    if (!confirmed) return { ok: false, cancelled: true, error: "cancelled" };
+    return launcherControlRequest(route, {
+      method: "POST",
+      payload: { ...(payload || {}), confirmed: true }
+    });
+  });
+  ipcMain.handle("work-panel-get-tools", () => launcherControlRequest("/v1/tools"));
+
+  ipcMain.handle("work-panel-control", async (_event, action, payload) => {
+    const allowedActions = new Set([
+      "interrupt",
+      "show-pet",
+      "move-next-display",
+      "set-game-mode",
+      "set-force-ignore-mouse",
+      "mic-toggle",
+      "mic-start",
+      "mic-pause",
+      "mic-resume",
+      "mic-submit",
+      "mic-cancel",
+      "toggle-camera",
+      "toggle-screen",
+      "toggle-browser",
+      "set-outfit",
+      "set-expression",
+      "play-motion"
+    ]);
+    const normalizedAction = String(action || "").trim();
+    if (!allowedActions.has(normalizedAction)) {
+      return { ok: false, error: "work-panel-action-not-allowed" };
+    }
+    return handleControlAction(normalizedAction, payload && typeof payload === "object" ? payload : {});
+  });
+
   ipcMain.on("reader-close", () => {
     if (readerWindow && !readerWindow.isDestroyed()) {
       readerWindow.hide();
@@ -2032,6 +2490,9 @@ if (!singleInstanceLock) {
       mainWindow.restore();
     }
     showPetWindow();
+    if (appState.briefingVisible) {
+      revealBriefingWindow();
+    }
   });
 
   app.whenReady().then(() => {
@@ -2096,8 +2557,12 @@ if (!singleInstanceLock) {
     if (appState.readerVisible && !readerWindow) {
       createReaderWindow();
     }
-    if (appState.briefingVisible && !briefingWindow) {
-      createBriefingWindow();
+    if (appState.briefingVisible) {
+      if (!briefingWindow) {
+        createBriefingWindow();
+      } else {
+        revealBriefingWindow();
+      }
     }
   });
 

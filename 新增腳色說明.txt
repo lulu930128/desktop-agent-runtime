@@ -210,7 +210,7 @@ custom:
 
 ```powershell
 cd <repo-root>
-.\envs\kuro-llm310\python.exe .\launcher.py
+.\envs\kuro-llm310\python.exe .\launcher_qt.py
 ```
 
 確認這些項目：

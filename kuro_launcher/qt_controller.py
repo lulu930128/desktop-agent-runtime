@@ -7,6 +7,8 @@ import subprocess
 import threading
 import time
 import urllib.error
+import urllib.parse
+import urllib.request
 import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
@@ -233,6 +235,7 @@ class QtLauncherController:
         self.proc_tts: Optional[ManagedProc] = None
         self.proc_llm: Optional[ManagedProc] = None
         self.proc_pet_electron: Optional[subprocess.Popen] = None
+        self.work_panel_control_token = ""
         self.current_run_id: Optional[str] = None
         self.character_records: Dict[str, CharacterRecord] = {}
         self.project_records: Dict[str, ProjectDefinition] = {}
@@ -240,6 +243,8 @@ class QtLauncherController:
         self.selected_project_key = ""
         self.outfit_id = "hoodie" if cfg.startup_outfit.strip().lower() == "hoodie" else "normal"
         self.thinking_power = "normal"
+        configured_model = str(os.environ.get(cfg.openai_model_env) or cfg.openai_default_model).strip()
+        self.llm_model = configured_model if configured_model in cfg.openai_models else cfg.openai_default_model
         self.reload_profiles()
 
     def reload_profiles(self) -> None:
@@ -351,7 +356,230 @@ class QtLauncherController:
         self.outfit_id = outfit_id if outfit_id in {"normal", "hoodie"} else "normal"
 
     def set_thinking_power(self, thinking_power: str) -> None:
-        self.thinking_power = thinking_power if thinking_power in {"low", "normal", "high"} else "normal"
+        aliases = {
+            "low": "fast",
+            "quick": "fast",
+            "fast": "fast",
+            "normal": "normal",
+            "medium": "normal",
+            "high": "deep",
+            "deep": "deep",
+        }
+        self.thinking_power = aliases.get(str(thinking_power or "").strip().lower(), "normal")
+
+    def set_llm_model(self, model: str) -> None:
+        normalized = str(model or "").strip()
+        if normalized not in self.cfg.openai_models:
+            raise ValueError("選取的模型不在本機允許清單中。")
+        self.llm_model = normalized
+
+    def work_panel_profile_state(self) -> dict:
+        character = self.selected_character()
+        project = self.selected_project()
+        characters = [
+            {
+                "id": record.conf_uid,
+                "name": record.conf_name,
+                "model": record.live2d_model_name,
+                "default_project_id": record.default_project_id,
+            }
+            for record in self.character_records.values()
+            if record.conf_uid
+        ]
+        projects = [
+            {
+                "id": record.project_id,
+                "name": record.display_name,
+            }
+            for record in self.project_records.values()
+            if record.project_id
+        ]
+        expressions = [
+            {
+                "id": expression_id,
+                "label": str(preset.get("label") or expression_id),
+                "parameters": dict(preset.get("parameters") or {}),
+            }
+            for expression_id, preset in EXPRESSION_PRESETS.items()
+        ]
+        return {
+            "ok": True,
+            "characters": characters,
+            "projects": projects,
+            "models": list(self.cfg.openai_models),
+            "thinking_options": ["fast", "normal", "deep"],
+            "expressions": expressions,
+            "outfits": [
+                {"id": "normal", "label": "一般"},
+                {"id": "hoodie", "label": "帽T"},
+            ],
+            "selected": {
+                "character_id": character.conf_uid if character else "",
+                "project_id": project.project_id if project else "",
+                "model": self.llm_model,
+                "thinking_power": self.thinking_power,
+            },
+        }
+
+    def apply_work_panel_profile(
+        self,
+        *,
+        character_id: str,
+        project_id: str,
+        model: str,
+        thinking_power: str,
+    ) -> dict:
+        character_key = next(
+            (key for key, item in self.character_records.items() if item.conf_uid == character_id),
+            "",
+        )
+        project_key = next(
+            (key for key, item in self.project_records.items() if item.project_id == project_id),
+            "",
+        )
+        if not character_key:
+            raise ValueError("找不到選取的角色。")
+        if not project_key:
+            raise ValueError("找不到選取的專案。")
+
+        previous = (
+            self.selected_character_key,
+            self.selected_project_key,
+            self.llm_model,
+            self.thinking_power,
+        )
+        try:
+            self.set_selected_character(character_key)
+            self.set_selected_project(project_key)
+            self.set_llm_model(model)
+            self.set_thinking_power(thinking_power)
+            result = self.start_profile()
+        except Exception:
+            (
+                self.selected_character_key,
+                self.selected_project_key,
+                self.llm_model,
+                self.thinking_power,
+            ) = previous
+            raise
+        return {
+            "ok": True,
+            "result": result,
+            "profile": self.work_panel_profile_state(),
+        }
+
+    def work_panel_history_state(self, history_uid: str = "") -> dict:
+        current_uid = self._runtime_current_history_uid()
+        records = self.read_history_records()
+        selected_uid = str(history_uid or current_uid).strip()
+        messages = []
+        if selected_uid:
+            messages = [
+                {
+                    "role": item.role,
+                    "timestamp": item.timestamp,
+                    "content": item.content,
+                }
+                for item in self.read_history_timeline(selected_uid, limit=120)
+            ]
+        selected_record = next((item for item in records if item.uid == selected_uid), None)
+        return {
+            "ok": True,
+            "current_history_uid": current_uid,
+            "selected_history_uid": selected_uid,
+            "title": selected_record.title if selected_record else "",
+            "histories": [
+                {
+                    "uid": item.uid,
+                    "title": item.title,
+                    "preview": item.preview,
+                    "timestamp": item.timestamp,
+                    "is_empty": item.is_empty,
+                }
+                for item in records
+            ],
+            "messages": messages,
+        }
+
+    def work_panel_memory_state(self) -> dict:
+        character = self.selected_character()
+        records = self.read_memory_records()
+        return {
+            "ok": True,
+            "character_id": character.conf_uid if character else "",
+            "character_name": character.conf_name if character else "",
+            "memories": [
+                {
+                    "id": item.entry_id,
+                    "content": item.content,
+                    "memory_type": item.memory_type,
+                    "enabled": item.enabled,
+                    "status": item.status,
+                    "scope": item.scope_level,
+                    "source": item.source,
+                    "updated_at": item.updated_at,
+                }
+                for item in records
+            ],
+        }
+
+    def work_panel_tool_policy_state(self) -> dict:
+        policy_path = self.cfg.open_llm_dir / "tool_policy.json"
+        catalog_path = self.cfg.open_llm_dir / "tool_catalog.json"
+        policy: dict = {}
+        catalog: dict = {}
+        try:
+            loaded = json.loads(policy_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                policy = loaded
+        except Exception as exc:
+            return {"ok": False, "error": f"工具政策讀取失敗：{exc}", "tools": []}
+        try:
+            loaded = json.loads(catalog_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                catalog = loaded
+        except Exception:
+            catalog = {}
+
+        category_metadata = catalog.get("categories")
+        category_metadata = category_metadata if isinstance(category_metadata, dict) else {}
+        tool_config = policy.get("tools")
+        tool_config = tool_config if isinstance(tool_config, dict) else {}
+        tools = []
+        for name, raw in tool_config.items():
+            config = raw if isinstance(raw, dict) else {}
+            mode = str(config.get("mode") or policy.get("default_mode") or "blocked").strip().lower()
+            tools.append(
+                {
+                    "name": str(name),
+                    "category": str(config.get("category") or "other"),
+                    "mode": mode,
+                    "allowed": mode not in {"blocked", "deny", "disabled", "confirm", "needs_confirmation"},
+                    "reason": (
+                        "目前 runtime 尚未提供逐次確認流程。"
+                        if mode in {"confirm", "needs_confirmation"}
+                        else "由本機 runtime policy 允許唯讀使用。"
+                        if mode in {"read_only", "allowed", "auto"}
+                        else "由本機 runtime policy 封鎖。"
+                    ),
+                }
+            )
+        categories = [
+            {
+                "id": str(category_id),
+                "title": str(data.get("title") or category_id) if isinstance(data, dict) else str(category_id),
+                "description": str(data.get("description") or "") if isinstance(data, dict) else "",
+            }
+            for category_id, data in category_metadata.items()
+        ]
+        return {
+            "ok": True,
+            "version": policy.get("version"),
+            "default_mode": str(policy.get("default_mode") or "blocked"),
+            "confirmation_available": False,
+            "categories": categories,
+            "tools": tools,
+        }
 
     def preview_asset(self) -> PreviewAsset:
         character = self.selected_character()
@@ -359,13 +587,32 @@ class QtLauncherController:
             return PreviewAsset(error="尚未選擇角色。")
         path, kind = self._resolve_preview_asset(character)
         if not path:
-            return PreviewAsset(kind=kind, error="這個角色目前沒有可直接顯示的預覽圖。")
+            return PreviewAsset(
+                kind=kind,
+                error=(
+                    "目前沒有整張角色預覽。請先啟動 Pet Shell 產生 Live2D 快照，"
+                    "或在 avatars / live2d model folder 放置 preview PNG。"
+                ),
+            )
         return PreviewAsset(path=str(path), kind=kind)
 
     def _find_avatar_preview(self, character: CharacterRecord) -> Optional[Path]:
         avatars_dir = self.cfg.open_llm_dir / "avatars"
         if not avatars_dir.exists():
             return None
+
+        avatar_name = (character.avatar or "").strip()
+        if avatar_name:
+            avatar_path = Path(avatar_name)
+            candidates = []
+            if avatar_path.is_absolute():
+                candidates.append(avatar_path)
+            else:
+                candidates.append(avatars_dir / avatar_name)
+                candidates.append(self.cfg.open_llm_dir / avatar_name)
+            for candidate in candidates:
+                if candidate.is_file() and candidate.suffix.lower() in IMAGE_EXTENSIONS:
+                    return candidate
 
         for stem in (character.conf_name, character.live2d_model_name):
             stem = (stem or "").strip()
@@ -420,10 +667,6 @@ class QtLauncherController:
         if not model_root.exists():
             return None
 
-        outfit_texture = self._preferred_outfit_texture(character, outfit_id)
-        if outfit_texture:
-            return outfit_texture
-
         files = sorted(
             path
             for path in model_root.rglob("*")
@@ -436,19 +679,66 @@ class QtLauncherController:
         for path in files:
             if "texture" not in path.stem.lower():
                 return path
-        return files[0] if files else None
+        return None
 
     def _resolve_preview_asset(self, character: CharacterRecord) -> tuple[Optional[Path], str]:
-        outfit_texture = self._preferred_outfit_texture(character, self.outfit_id)
-        if outfit_texture:
-            return outfit_texture, "Live2D texture"
+        live2d_capture = self._capture_live2d_preview(character)
+        if live2d_capture:
+            return live2d_capture, "Live2D renderer preview"
         avatar = self._find_avatar_preview(character)
         if avatar:
             return avatar, "角色圖預覽"
         live2d = self._find_live2d_preview(character, self.outfit_id)
         if live2d:
             return live2d, "Live2D 素材預覽"
-        return None, "尚未找到可用預覽"
+        return None, "尚未找到整張角色預覽"
+
+    def _capture_live2d_preview(self, character: CharacterRecord) -> Optional[Path]:
+        model_name = (character.live2d_model_name or "").strip()
+        if not model_name:
+            return None
+
+        try:
+            status = http_get_json(f"{self.cfg.pet_control_url}/status", timeout=1.2)
+        except Exception:
+            return None
+
+        renderer = status.get("renderer") if isinstance(status, dict) else {}
+        if not isinstance(renderer, dict):
+            return None
+        current_model_url = str(renderer.get("currentModelUrl") or "")
+        if model_name.lower() not in current_model_url.lower():
+            return None
+
+        preview_query = urllib.parse.urlencode(
+            {
+                "outfitId": self.outfit_id,
+                "parameterId": "Param10",
+                "value": "1" if self.outfit_id == "hoodie" else "0",
+            }
+        )
+        preview_url = f"{self.cfg.pet_control_url}/live2d-preview.png?{preview_query}"
+        try:
+            req = urllib.request.Request(preview_url, method="GET")
+            with urllib.request.urlopen(req, timeout=2.5) as resp:
+                image_bytes = resp.read()
+        except Exception as exc:
+            self.log(f"[{log_ts()}] Live2D preview capture failed: {exc}")
+            return None
+
+        if not image_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+            return None
+
+        raw_key = sanitize_ascii(character.conf_name or model_name or "character")
+        safe_key = "".join(
+            ch if ch.isalnum() or ch in "._-" else "_"
+            for ch in raw_key
+        ).strip("._-") or "character"
+        cache_dir = self.cfg.logs_dir / "ui_preview_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_path = cache_dir / f"{safe_key}_live2d_preview.png"
+        cache_path.write_bytes(image_bytes)
+        return cache_path
 
     def read_prompt_preview(self, key: str) -> PromptPreview:
         character = self.selected_character()
@@ -840,7 +1130,8 @@ class QtLauncherController:
                 None,
             )
             title = str(metadata.get("title") or "").strip()
-            if not title:
+            generic_titles = {"新對話", "New Chat", "New conversation", "Untitled"}
+            if not title or title in generic_titles:
                 seed = ""
                 if first_human:
                     seed = str(first_human.get("content") or "")
@@ -1281,6 +1572,25 @@ class QtLauncherController:
             sections=tuple(sections),
         )
 
+    def refresh_daily_briefing(self) -> dict:
+        try:
+            result = http_post_json(
+                self.pet_control_endpoint("/briefing/mail/refresh"),
+                {},
+                timeout=90.0,
+            )
+        except urllib.error.HTTPError as exc:
+            code, payload, raw = self._decode_http_error(exc)
+            message = payload.get("error") or payload.get("message") or raw[:240] or f"HTTP {code}"
+            raise RuntimeError(f"每日 Briefing 更新失敗：HTTP {code} {message}") from exc
+        except Exception as exc:
+            raise RuntimeError(f"每日 Briefing 更新失敗：{exc}") from exc
+
+        if not result.get("ok", True):
+            raise RuntimeError(str(result.get("error") or result.get("message") or "每日 Briefing 更新失敗。"))
+        self.log(f"[{log_ts()}] {result.get('message') or '每日 Briefing 已更新。'}")
+        return result
+
     def _parse_briefing_section(self, section: dict) -> BriefingSection:
         modules: list[BriefingModule] = []
         for module in section.get("modules") or []:
@@ -1559,6 +1869,7 @@ class QtLauncherController:
                 openai_api_key_env=self.cfg.openai_api_key_env,
                 openai_fallback_key_env=self.cfg.openai_fallback_key_env,
                 thinking_power=self.thinking_power,
+                openai_model_override=self.llm_model,
             )
             write_runtime_conf(self.cfg.runtime_conf_path, runtime_conf)
             conf_uid = str(char_cfg.get("conf_uid") or "").strip()
@@ -1567,6 +1878,7 @@ class QtLauncherController:
             self.log(f"[{log_ts()}] runtime conf: {self.cfg.runtime_conf_path}")
             self.log(f"[{log_ts()}] active_project_id: {char_cfg.get('active_project_id', '')}")
             self.log(f"[{log_ts()}] thinking_power: {self.thinking_power}")
+            self.log(f"[{log_ts()}] llm_model: {self.llm_model}")
             return runtime_conf, char_cfg
         except Exception as exc:
             self.log(f"[{log_ts()}] 準備 runtime conf 失敗：{exc}")
@@ -1799,6 +2111,9 @@ class QtLauncherController:
         env["KURO_BACKEND_WS_URL"] = f"ws://{self.cfg.llm_host}:{self.cfg.llm_port}/client-ws"
         env["KURO_PET_CONTROL_HOST"] = self.cfg.pet_control_host
         env["KURO_PET_CONTROL_PORT"] = str(self.cfg.pet_control_port)
+        env["KURO_LAUNCHER_CONTROL_URL"] = self.cfg.launcher_control_url
+        if self.work_panel_control_token:
+            env["KURO_LAUNCHER_CONTROL_TOKEN"] = self.work_panel_control_token
         self.proc_pet_electron = subprocess.Popen(
             [str(runtime_exe), "."],
             cwd=str(self.cfg.pet_electron_dir),
@@ -1871,6 +2186,8 @@ class QtLauncherController:
 
     def set_pet_toggle(self, action: str, enabled: bool) -> dict:
         allowed = {
+            "set-reader-visible",
+            "set-briefing-visible",
             "mic-toggle",
             "toggle-camera",
             "toggle-screen",
@@ -1929,6 +2246,29 @@ class QtLauncherController:
                 "attachments": attachments,
             },
         )
+
+    def send_pet_text_for_chat(
+        self,
+        text: str,
+        attachments: Optional[list[dict]] = None,
+        *,
+        create_history: bool = False,
+    ) -> dict:
+        result: dict = {
+            "ok": True,
+            "history": {},
+            "send": {},
+        }
+        if create_history:
+            history_result = self.create_history()
+            result["history"] = history_result
+            history_uid = str(history_result.get("history_uid") or "").strip()
+            if history_uid:
+                result["history_uid"] = history_uid
+                time.sleep(0.2)
+
+        result["send"] = self.send_pet_text(text, attachments)
+        return result
 
     def expression_options(self) -> tuple[tuple[str, str], ...]:
         return tuple(

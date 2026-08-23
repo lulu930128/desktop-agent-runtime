@@ -33,11 +33,15 @@ from ...mcpp.json_detector import StreamJSONDetector
 from ...mcpp.types import ToolCallObject
 from ...mcpp.tool_executor import ToolExecutor
 from ...mcpp.market_preflight import (
+    OMI_ASK_STREAM_TOOL_NAME,
     build_autonomous_omi_args,
     extract_omi_resolution_from_tool_results,
     format_omi_events_for_memory,
     format_omi_response_for_llm,
+    format_omi_stream_final_tool_result,
+    format_omi_stream_status_update,
     should_autorun_omi,
+    stream_omi_ask_events,
 )
 from ...character_memory_manager import format_character_memories_for_prompt
 from ...conversation_history_index import format_past_conversations_for_prompt
@@ -920,67 +924,126 @@ class BasicMemoryAgent(AgentInterface):
                         )
 
                         tool_results_for_llm = []
-                        tool_executor_iterator = self._tool_executor.execute_tools(
-                            tool_calls=[
-                                {
-                                    "id": "autonomous_omi_preflight",
-                                    "name": "omi.ask",
-                                    "input": tool_args,
-                                }
-                            ],
-                            caller_mode="Prompt",
-                        )
-                        try:
-                            while True:
-                                update = await anext(tool_executor_iterator)
-                                if update.get("type") == "final_tool_results":
-                                    tool_results_for_llm = update.get("results", [])
-                                    break
-                                yield update
-                        except asyncio.CancelledError as exc:
-                            current_task = asyncio.current_task()
-                            cancelling = getattr(current_task, "cancelling", None)
-                            if callable(cancelling) and cancelling():
-                                raise
-
-                            error_text = (
-                                "Error: omi.ask was cancelled by the MCP transport "
-                                "before returning a result. Treat OMI as temporarily "
-                                "unavailable for this turn; answer only what can be "
-                                "answered without OMI, or use another available data "
-                                "source if the route allows it."
+                        stream_preflight_succeeded = False
+                        stream_policy_allowed = True
+                        tool_policy = getattr(self._tool_executor, "_tool_policy", None)
+                        if tool_policy:
+                            policy_decision = tool_policy.check(
+                                OMI_ASK_STREAM_TOOL_NAME,
+                                tool_args,
                             )
-                            logger.warning(
-                                "Autonomous OMI preflight cancelled by MCP transport: "
-                                f"{exc}"
-                            )
-                            yield {
-                                "type": "tool_call_status",
-                                "tool_id": "autonomous_omi_preflight",
-                                "tool_name": "omi.ask",
-                                "status": "error",
-                                "content": error_text,
-                                "timestamp": datetime.datetime.now(
-                                    datetime.timezone.utc
-                                ).isoformat()
-                                + "Z",
-                            }
-                            formatted_result = (
-                                self._tool_executor.format_tool_result(
-                                    "Prompt",
-                                    "autonomous_omi_preflight",
-                                    error_text,
-                                    True,
+                            stream_policy_allowed = policy_decision.allowed
+                            if not stream_policy_allowed:
+                                logger.debug(
+                                    "Autonomous OMI stream preflight skipped by policy: "
+                                    f"{policy_decision.reason}"
                                 )
-                                if self._tool_executor
-                                else None
+
+                        if stream_policy_allowed:
+                            stream_events: List[Dict[str, Any]] = []
+                            try:
+                                async for event in stream_omi_ask_events(tool_args):
+                                    if event.get("event") == "transport_error":
+                                        logger.warning(
+                                            "Autonomous OMI stream preflight transport failed; "
+                                            "falling back to MCP omi.ask: "
+                                            f"{event.get('data')}"
+                                        )
+                                        break
+
+                                    stream_events.append(event)
+                                    status_update = format_omi_stream_status_update(event)
+                                    if status_update:
+                                        yield status_update
+
+                                formatted_result = format_omi_stream_final_tool_result(
+                                    stream_events
+                                )
+                                if formatted_result:
+                                    tool_results_for_llm = [formatted_result]
+                                    stream_preflight_succeeded = True
+                                elif stream_events:
+                                    logger.warning(
+                                        "Autonomous OMI stream preflight ended without "
+                                        "a final, error, or delta result."
+                                    )
+                            except asyncio.CancelledError:
+                                current_task = asyncio.current_task()
+                                cancelling = getattr(current_task, "cancelling", None)
+                                if callable(cancelling) and cancelling():
+                                    raise
+                                logger.warning(
+                                    "Autonomous OMI stream preflight was cancelled; "
+                                    "falling back to MCP omi.ask."
+                                )
+                            except Exception as exc:
+                                logger.warning(
+                                    "Autonomous OMI stream preflight failed; "
+                                    f"falling back to MCP omi.ask: {exc}"
+                                )
+
+                        if not stream_preflight_succeeded:
+                            tool_executor_iterator = self._tool_executor.execute_tools(
+                                tool_calls=[
+                                    {
+                                        "id": "autonomous_omi_preflight",
+                                        "name": "omi.ask",
+                                        "input": tool_args,
+                                    }
+                                ],
+                                caller_mode="Prompt",
                             )
-                            if formatted_result:
-                                tool_results_for_llm = [formatted_result]
-                        except StopAsyncIteration:
-                            logger.warning(
-                                "Autonomous OMI preflight finished without final results marker."
-                            )
+                            try:
+                                while True:
+                                    update = await anext(tool_executor_iterator)
+                                    if update.get("type") == "final_tool_results":
+                                        tool_results_for_llm = update.get("results", [])
+                                        break
+                                    yield update
+                            except asyncio.CancelledError as exc:
+                                current_task = asyncio.current_task()
+                                cancelling = getattr(current_task, "cancelling", None)
+                                if callable(cancelling) and cancelling():
+                                    raise
+
+                                error_text = (
+                                    "Error: omi.ask was cancelled by the MCP transport "
+                                    "before returning a result. Treat OMI as temporarily "
+                                    "unavailable for this turn; answer only what can be "
+                                    "answered without OMI, or use another available data "
+                                    "source if the route allows it."
+                                )
+                                logger.warning(
+                                    "Autonomous OMI preflight cancelled by MCP transport: "
+                                    f"{exc}"
+                                )
+                                yield {
+                                    "type": "tool_call_status",
+                                    "tool_id": "autonomous_omi_preflight",
+                                    "tool_name": "omi.ask",
+                                    "status": "error",
+                                    "content": error_text,
+                                    "timestamp": datetime.datetime.now(
+                                        datetime.timezone.utc
+                                    ).isoformat()
+                                    + "Z",
+                                }
+                                formatted_result = (
+                                    self._tool_executor.format_tool_result(
+                                        "Prompt",
+                                        "autonomous_omi_preflight",
+                                        error_text,
+                                        True,
+                                    )
+                                    if self._tool_executor
+                                    else None
+                                )
+                                if formatted_result:
+                                    tool_results_for_llm = [formatted_result]
+                            except StopAsyncIteration:
+                                logger.warning(
+                                    "Autonomous OMI preflight finished without final results marker."
+                                )
 
                         autonomous_context = self._format_autonomous_omi_context(
                             tool_results_for_llm
@@ -1011,6 +1074,11 @@ class BasicMemoryAgent(AgentInterface):
                         tools = self._remove_formatted_tool(
                             tools,
                             tool_name="omi.ask",
+                            tool_mode=tool_mode,
+                        )
+                        tools = self._remove_formatted_tool(
+                            tools,
+                            tool_name=OMI_ASK_STREAM_TOOL_NAME,
                             tool_mode=tool_mode,
                         )
                         if not tools:

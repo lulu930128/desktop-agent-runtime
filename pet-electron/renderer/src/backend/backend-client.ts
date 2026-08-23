@@ -11,6 +11,8 @@ import type {
   BackendConfig,
   BackendFilePayload,
   BackendImagePayload,
+  MicrophoneControlAction,
+  MicrophoneControlResult,
   RendererState,
   SpeechLipSyncEnvelope,
   UserAttachmentPayload
@@ -36,6 +38,7 @@ export class BackendClient {
   private micSource: MediaStreamAudioSourceNode | null;
   private micProcessor: ScriptProcessorNode | null;
   private micSamples: number[];
+  private micPaused: boolean;
   private cameraStream: MediaStream | null;
   private screenStream: MediaStream | null;
   private cameraVideo: HTMLVideoElement | null;
@@ -75,6 +78,7 @@ export class BackendClient {
     this.micSource = null;
     this.micProcessor = null;
     this.micSamples = [];
+    this.micPaused = false;
     this.cameraStream = null;
     this.screenStream = null;
     this.cameraVideo = null;
@@ -275,11 +279,20 @@ export class BackendClient {
     });
   }
 
-  public async setMicrophoneEnabled(enabled: boolean): Promise<{ ok: boolean; error?: string }> {
+  public async setMicrophoneEnabled(enabled: boolean): Promise<MicrophoneControlResult> {
     if (enabled) {
       return this.startMicrophoneCapture();
     }
     return await this.stopMicrophoneCapture(true);
+  }
+
+  public async controlMicrophone(action: MicrophoneControlAction): Promise<MicrophoneControlResult> {
+    if (action === "start") return this.startMicrophoneCapture();
+    if (action === "pause") return this.pauseMicrophoneCapture();
+    if (action === "resume") return this.resumeMicrophoneCapture();
+    if (action === "submit") return this.stopMicrophoneCapture(true);
+    if (action === "cancel") return this.stopMicrophoneCapture(false);
+    return { ok: false, error: "unsupported-microphone-action" };
   }
 
   public async setCameraEnabled(enabled: boolean): Promise<{ ok: boolean; error?: string }> {
@@ -689,14 +702,17 @@ export class BackendClient {
     return { images, files };
   }
 
-  private async startMicrophoneCapture(): Promise<{ ok: boolean; error?: string }> {
+  private async startMicrophoneCapture(): Promise<MicrophoneControlResult> {
     if (this.micStream) {
-      this.updateState({ micEnabled: true });
-      return { ok: true };
+      if (this.micPaused) {
+        return this.resumeMicrophoneCapture();
+      }
+      this.updateState({ micEnabled: true, micPaused: false });
+      return { ok: true, micEnabled: true, micPaused: false };
     }
 
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      this.updateState({ micEnabled: false });
+      this.updateState({ micEnabled: false, micPaused: false });
       return { ok: false, error: "websocket-not-open" };
     }
 
@@ -718,6 +734,9 @@ export class BackendClient {
 
       this.micSamples = [];
       processor.onaudioprocess = (event) => {
+        if (this.micPaused) {
+          return;
+        }
         const channel = event.inputBuffer.getChannelData(0);
         const samples = downsampleFloat32(channel, audioContext.sampleRate, 16000);
         this.micSamples.push(...samples);
@@ -731,12 +750,47 @@ export class BackendClient {
       this.micAudioContext = audioContext;
       this.micSource = source;
       this.micProcessor = processor;
-      this.updateState({ micEnabled: true, aiState: "listening" });
-      return { ok: true };
+      this.micPaused = false;
+      this.updateState({ micEnabled: true, micPaused: false, aiState: "listening" });
+      return { ok: true, micEnabled: true, micPaused: false };
     } catch (error) {
       console.warn("[pet-renderer] Microphone capture failed", error);
       this.stopMicrophoneNodes();
-      this.updateState({ micEnabled: false });
+      this.updateState({ micEnabled: false, micPaused: false });
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  private async pauseMicrophoneCapture(): Promise<MicrophoneControlResult> {
+    if (!this.micStream || !this.micAudioContext) {
+      return { ok: false, error: "microphone-not-active" };
+    }
+    if (this.micPaused) {
+      return { ok: true, micEnabled: true, micPaused: true };
+    }
+    try {
+      await this.micAudioContext.suspend();
+      this.micPaused = true;
+      this.updateState({ micEnabled: true, micPaused: true, aiState: "listening" });
+      return { ok: true, micEnabled: true, micPaused: true };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  private async resumeMicrophoneCapture(): Promise<MicrophoneControlResult> {
+    if (!this.micStream || !this.micAudioContext) {
+      return { ok: false, error: "microphone-not-active" };
+    }
+    if (!this.micPaused) {
+      return { ok: true, micEnabled: true, micPaused: false };
+    }
+    try {
+      await this.micAudioContext.resume();
+      this.micPaused = false;
+      this.updateState({ micEnabled: true, micPaused: false, aiState: "listening" });
+      return { ok: true, micEnabled: true, micPaused: false };
+    } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
   }
@@ -758,17 +812,24 @@ export class BackendClient {
     this.micAudioContext = null;
     this.micSource = null;
     this.micProcessor = null;
+    this.micPaused = false;
   }
 
-  private async stopMicrophoneCapture(submit: boolean): Promise<{ ok: boolean; error?: string }> {
+  private async stopMicrophoneCapture(submit: boolean): Promise<MicrophoneControlResult> {
     const samples = this.micSamples.slice();
     this.micSamples = [];
     this.stopMicrophoneNodes();
-    this.updateState({ micEnabled: false });
+    this.updateState({ micEnabled: false, micPaused: false });
 
     if (!submit || samples.length === 0) {
       this.updateState({ aiState: "idle" });
-      return { ok: true };
+      return {
+        ok: true,
+        micEnabled: false,
+        micPaused: false,
+        discarded: !submit,
+        empty: submit && samples.length === 0
+      };
     }
 
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
@@ -789,7 +850,7 @@ export class BackendClient {
       JSON.stringify(this.protocolAdapter.createMicAudioEndMessage({ images }))
     );
     this.updateState({ latestAssistantText: "", aiState: "thinking" });
-    return { ok: true };
+    return { ok: true, micEnabled: false, micPaused: false, submitted: true };
   }
 
   private resetPlaybackTurn(): void {

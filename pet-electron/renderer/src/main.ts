@@ -71,6 +71,7 @@ const rendererState: RendererState = {
   currentExpressionId: "neutral",
   currentExpressionLabel: "一般",
   micEnabled: false,
+  micPaused: false,
   cameraEnabled: false,
   screenEnabled: false,
   browserPanelEnabled: false,
@@ -147,6 +148,36 @@ window.__kuroPetSendTextInput = (text: string, attachments: UserAttachmentPayloa
   client.sendText(text, attachments);
 window.__kuroPetApplyBackendConfig = (baseUrl: string, wsUrl: string, reconnect = true) =>
   client.applyConfig(baseUrl, wsUrl, reconnect);
+window.__kuroPetSetInputEnabled = async (kind: string, enabled: boolean) => {
+  if (kind === "microphone") return client.setMicrophoneEnabled(enabled);
+  if (kind === "camera") return client.setCameraEnabled(enabled);
+  if (kind === "screen") return client.setScreenEnabled(enabled);
+  if (kind === "browser") return client.setBrowserPanelEnabled(enabled);
+  return { ok: false, error: "unsupported-input-kind" };
+};
+window.__kuroPetControlMicrophone = (action) => client.controlMicrophone(action);
+window.__kuroLive2DPreview = {
+  capture: async (options = {}) => {
+    const outfitId = String(options.outfitId || "").trim();
+    const parameterId = String(options.parameterId || DEFAULT_OUTFIT_PARAMETER_ID).trim();
+    const parameterIndex =
+      Number.isInteger(options.parameterIndex) && options.parameterIndex !== null
+        ? options.parameterIndex
+        : null;
+    const value = Number.isFinite(Number(options.value))
+      ? Math.max(0, Math.min(1, Number(options.value)))
+      : outfitId === "hoodie"
+        ? 1
+        : outfitId === "normal"
+          ? 0
+          : rendererState.currentOutfitValue;
+    return renderer.capturePreviewDataUrl({
+      parameterId,
+      parameterIndex,
+      value
+    });
+  }
+};
 
 reportState({
   baseUrl: initialConfig.baseUrl,

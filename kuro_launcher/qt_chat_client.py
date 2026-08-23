@@ -45,6 +45,14 @@ class QtRuntimeChatClient(QObject):
     def connected(self) -> bool:
         return self._connected
 
+    @property
+    def running(self) -> bool:
+        return bool(self._thread and self._thread.is_alive())
+
+    @property
+    def ws_url(self) -> str:
+        return self._ws_url
+
     def connect_to(self, ws_url: str) -> None:
         ws_url = (ws_url or "").strip()
         if not ws_url:
@@ -140,7 +148,6 @@ class QtRuntimeChatClient(QObject):
         self._assistant_text = ""
         self.state_changed.emit("connected", True)
         self.log_event.emit("chat websocket connected")
-        self._send_json({"type": "create-new-history"}, require_connected=False)
 
     def _on_close(self, _app: websocket.WebSocketApp, status_code: int, message: str) -> None:
         was_connected = self._connected

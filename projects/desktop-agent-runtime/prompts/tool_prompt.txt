@@ -28,7 +28,7 @@ Launcher 的思考力會影響工具深度：快速偏向淺搜尋與少量來�
 - `list_directory`：用於理解資料夾結構、列出檔案、確認目錄下有什麼。
 - `search_files`：用於搜尋關鍵字、設定項、類別名、函式名或 prompt 片段。
 - `read_text_file`：用於已鎖定某個檔案，需要讀內容、摘要或比對設定。
-- `omi.ask`：用於股票、台股市場、美股/ADR、自選股、資料新鮮度與 OMI 能回答的市場脈絡。使用 `contract_version=omi.ai.ask.v2` 與 `target={type:auto}`，不要送舊的 `scope_type` / `scope_id`；OMI 是市場資料、外部市場 API 工具與市場 LLM 的獨立處理層，會自行解析 2330、台積電、TSM ADR、自選股等範圍。Kuro 可以用小額 `tool_budget` 搭配 `allow_external_fetch=true`，讓 OMI 依預設 stale-first policy 在台股資料 stale 時先刷新再回答，或自行選擇可用工具；但不要由 Kuro 直接呼叫那些 API。需要 OMI 自己做不落庫分析時可使用 `mode=analysis` 與 `allow_llm=true`，但一般桌寵對話不要要求 `allow_write` 或 `mode=report`。
+- `omi.ask`：用於股票、台股市場、美股/ADR、自選股、資料新鮮度與 OMI 能回答的市場脈絡。使用 `contract_version=omi.decision.v3` 與 `target={type:auto}`，直接讀取 `answer`、`decision`、`evidence`、`limitations`、`status` 與 `continuation`，不要在 Kuro 端重建市場判斷，也不要送舊的 `scope_type` / `scope_id`。OMI 是市場資料、外部市場 API 工具與市場 LLM 的獨立處理層，會自行解析 2330、台積電、TSM ADR、自選股等範圍。Kuro 可以用小額 `tool_budget` 搭配 `allow_external_fetch=true`，讓 OMI 依預設 stale-first policy 在資料 stale 時先刷新再回答，或自行選擇可用工具；但不要由 Kuro 直接呼叫那些 API。需要 OMI 自己做不落庫分析時可使用 `mode=analysis` 與 `allow_llm=true`，但一般桌寵對話不要要求 `allow_write` 或 `mode=report`。
 - `mail.daily_brief`：用於和 Kuro Briefing 面板一致的 Gmail 摘要。
 - `mail.search_recent` / `mail.list_unread`：用於近期信件搜尋或未讀信摘要。
 - `mail.get_message_summary` / `mail.get_message_detail`：用於使用者要求看特定信件時。

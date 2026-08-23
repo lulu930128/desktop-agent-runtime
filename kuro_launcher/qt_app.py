@@ -86,9 +86,11 @@ class KuroQtLauncherWindow(QMainWindow):
     task_failed = Signal(str, str)
     log_signal = Signal(str)
 
-    def __init__(self, cfg: AppConfig):
+    def __init__(self, cfg: AppConfig, *, open_work_panel_on_start: bool = False):
         super().__init__()
         self.cfg = cfg
+        self.open_work_panel_on_start = bool(open_work_panel_on_start)
+        self.startup_work_panel_requested = False
         self.controller = QtLauncherController(cfg, self._append_log_threadsafe)
         self.nav_buttons: dict[str, QPushButton] = {}
         self.nav_base_labels: dict[str, str] = {}
@@ -1330,9 +1332,9 @@ class KuroQtLauncherWindow(QMainWindow):
             combo.blockSignals(False)
 
     def _populate_thinking_combo(self, combo: QComboBox) -> None:
-        combo.addItem("Normal", "normal")
-        combo.addItem("High", "high")
-        combo.addItem("Low", "low")
+        combo.addItem("快速", "fast")
+        combo.addItem("普通", "normal")
+        combo.addItem("深度", "deep")
 
     def _sync_thinking_combos(self, value: str) -> None:
         for combo_name in ("thinking_combo", "chat_thinking_combo"):
@@ -1388,6 +1390,7 @@ class KuroQtLauncherWindow(QMainWindow):
     def _run_startup_auto_start(self) -> None:
         if not self.controller.selected_character() or not self.controller.selected_project():
             self._append_log(f"[{log_ts()}] startup_profile 自動啟動略過：角色或專案尚未選定。")
+            self._restore_startup_console("startup profile 缺少角色或專案。")
             return
         character = self.controller.selected_character()
         project = self.controller.selected_project()
@@ -1397,6 +1400,23 @@ class KuroQtLauncherWindow(QMainWindow):
             f"專案={project.display_name if project else '-'}"
         )
         self._start_profile()
+
+    def _open_startup_work_panel(self) -> None:
+        if not self.open_work_panel_on_start or self.startup_work_panel_requested:
+            return
+        self.startup_work_panel_requested = True
+        self._run_task(
+            "open-startup-work-panel",
+            lambda: self.controller.set_pet_toggle("set-briefing-visible", True),
+        )
+
+    def _restore_startup_console(self, reason: str) -> None:
+        if not self.open_work_panel_on_start:
+            return
+        self._append_log(
+            f"[{log_ts()}] 工作面板啟動失敗；依單一面板模式不開啟舊控制台：{reason}"
+        )
+        self.hide()
 
     def _start_profile(self) -> None:
         desired_history_uid = self.pending_history_uid
@@ -2367,14 +2387,16 @@ class KuroQtLauncherWindow(QMainWindow):
         if name in {"open-pet", "start-profile", "apply-outfit"}:
             QTimer.singleShot(700, self._request_preview_asset_refresh)
             QTimer.singleShot(1800, self._request_preview_asset_refresh)
-        if name == "start-profile" and isinstance(result, dict):
-            history_result = result.get("history") if isinstance(result.get("history"), dict) else {}
-            if history_result.get("ok") and not history_result.get("skipped"):
-                history_uid = str(history_result.get("history_uid") or "").strip()
-                if history_uid:
-                    self.selected_history_uid = history_uid
-                self._clear_pending_history_choice()
-                self._refresh_history_list()
+        if name == "start-profile":
+            if isinstance(result, dict):
+                history_result = result.get("history") if isinstance(result.get("history"), dict) else {}
+                if history_result.get("ok") and not history_result.get("skipped"):
+                    history_uid = str(history_result.get("history_uid") or "").strip()
+                    if history_uid:
+                        self.selected_history_uid = history_uid
+                    self._clear_pending_history_choice()
+                    self._refresh_history_list()
+            QTimer.singleShot(150, self._open_startup_work_panel)
         if name in {"select-history", "create-history", "delete-history"}:
             if name in {"select-history", "create-history"}:
                 self._clear_pending_history_choice()
@@ -2406,6 +2428,10 @@ class KuroQtLauncherWindow(QMainWindow):
         if name == "pet-send-text":
             self.pending_chat_submit = None
             self._update_chat_send_button()
+        if name == "open-startup-work-panel":
+            self.startup_work_panel_requested = False
+        if name in {"start-profile", "open-startup-work-panel"}:
+            self._restore_startup_console(message)
         self._append_log(f"[{log_ts()}] task failed: {name} / {message}")
         self._set_action_status(f"失敗：{name} / {message}", error=True)
         QMessageBox.warning(self, "Kuro Desktop Console", message)

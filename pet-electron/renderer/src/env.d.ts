@@ -88,10 +88,33 @@ declare global {
       wsUrl: string,
       reconnect?: boolean
     ) => { baseUrl: string; wsUrl: string };
+    __kuroPetSetInputEnabled?: (
+      kind: string,
+      enabled: boolean
+    ) => Promise<{ ok: boolean; error?: string }> | { ok: boolean; error?: string };
+    __kuroPetControlMicrophone?: (
+      action: "start" | "pause" | "resume" | "submit" | "cancel"
+    ) => Promise<{
+      ok: boolean;
+      error?: string;
+      micEnabled?: boolean;
+      micPaused?: boolean;
+      submitted?: boolean;
+      discarded?: boolean;
+      empty?: boolean;
+    }>;
     __kuroLive2DInspector?: {
       getSnapshot: () => Live2DInspectorSnapshot;
       setOverlayEnabled: (enabled: boolean) => Live2DInspectorSnapshot;
       toggleOverlay: () => Live2DInspectorSnapshot;
+    };
+    __kuroLive2DPreview?: {
+      capture: (options?: {
+        outfitId?: string;
+        parameterId?: string;
+        parameterIndex?: number | null;
+        value?: number;
+      }) => Promise<string | null>;
     };
   }
 }

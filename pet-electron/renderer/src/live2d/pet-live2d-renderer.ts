@@ -47,6 +47,12 @@ const MIN_MODEL_ZOOM_SCALE = 0.2;
 const MAX_MODEL_ZOOM_SCALE = 8;
 const MODEL_ZOOM_WHEEL_FACTOR = 1.06;
 
+export type OutfitParameterState = {
+  parameterId: string | null;
+  parameterIndex: number | null;
+  value: number;
+};
+
 let cubismInitialized = false;
 
 function ensureCubismReady() {
@@ -359,7 +365,8 @@ export class PetLive2DRenderer {
   public setOutfitParameter(
     parameterId: string,
     value: number,
-    parameterIndex: number | null = null
+    parameterIndex: number | null = null,
+    durationSeconds = 0.85
   ): void {
     const normalizedParameterId = String(parameterId || "").trim();
     const normalizedParameterIndex =
@@ -376,11 +383,138 @@ export class PetLive2DRenderer {
     this.model?.setExternalParameterTarget(
       this.outfitParameterId,
       this.outfitValue,
-      0.85,
+      durationSeconds,
       this.outfitParameterIndex
     );
     this.refreshDrawableBoundsDuringTransition(1100);
     this.bumpActivity(900);
+  }
+
+  public getOutfitParameterState(): OutfitParameterState {
+    return {
+      parameterId: this.outfitParameterId,
+      parameterIndex: this.outfitParameterIndex,
+      value: this.outfitValue
+    };
+  }
+
+  public async capturePreviewDataUrl(
+    outfit?: Partial<OutfitParameterState> | null
+  ): Promise<string | null> {
+    if (!this.getReadyModel()) {
+      return null;
+    }
+
+    const previous = this.getOutfitParameterState();
+    const hasPreviewOutfit = Boolean(
+      outfit &&
+        (String(outfit.parameterId || "").trim() ||
+          (Number.isInteger(outfit.parameterIndex) && outfit.parameterIndex !== null))
+    );
+
+    if (hasPreviewOutfit && outfit) {
+      this.setOutfitParameter(
+        String(outfit.parameterId || previous.parameterId || ""),
+        Number.isFinite(Number(outfit.value)) ? Number(outfit.value) : previous.value,
+        Number.isInteger(outfit.parameterIndex) && outfit.parameterIndex !== null
+          ? outfit.parameterIndex
+          : previous.parameterIndex,
+        0
+      );
+      await this.waitAnimationFrames(2);
+    } else {
+      this.bumpActivity(400);
+      await this.waitAnimationFrames(2);
+    }
+
+    let dataUrl = "";
+    try {
+      dataUrl = this.captureCroppedCanvasDataUrl() || this.canvas.toDataURL("image/png");
+    } catch (error) {
+      console.warn("[pet-renderer] Live2D preview capture failed", error);
+      dataUrl = "";
+    }
+
+    if (hasPreviewOutfit) {
+      this.setOutfitParameter(
+        previous.parameterId || "",
+        previous.value,
+        previous.parameterIndex,
+        0
+      );
+      await this.waitAnimationFrames(2);
+    }
+
+    return dataUrl || null;
+  }
+
+  private captureCroppedCanvasDataUrl(): string | null {
+    const sourceWidth = Math.max(1, this.canvas.width || 0);
+    const sourceHeight = Math.max(1, this.canvas.height || 0);
+    const scratch = document.createElement("canvas");
+    scratch.width = sourceWidth;
+    scratch.height = sourceHeight;
+    const scratchContext = scratch.getContext("2d", { willReadFrequently: true });
+    if (!scratchContext) {
+      return null;
+    }
+
+    scratchContext.clearRect(0, 0, sourceWidth, sourceHeight);
+    scratchContext.drawImage(this.canvas, 0, 0, sourceWidth, sourceHeight);
+
+    const imageData = scratchContext.getImageData(0, 0, sourceWidth, sourceHeight);
+    const data = imageData.data;
+    const alphaThreshold = 8;
+    let minX = sourceWidth;
+    let minY = sourceHeight;
+    let maxX = -1;
+    let maxY = -1;
+
+    for (let y = 0; y < sourceHeight; y += 1) {
+      const rowOffset = y * sourceWidth * 4;
+      for (let x = 0; x < sourceWidth; x += 1) {
+        if (data[rowOffset + x * 4 + 3] <= alphaThreshold) {
+          continue;
+        }
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+
+    if (maxX < minX || maxY < minY) {
+      return null;
+    }
+
+    const padding = Math.max(24, Math.round(32 * (window.devicePixelRatio || 1)));
+    const cropX = Math.max(0, minX - padding);
+    const cropY = Math.max(0, minY - padding);
+    const cropRight = Math.min(sourceWidth, maxX + padding + 1);
+    const cropBottom = Math.min(sourceHeight, maxY + padding + 1);
+    const cropWidth = Math.max(1, cropRight - cropX);
+    const cropHeight = Math.max(1, cropBottom - cropY);
+
+    const output = document.createElement("canvas");
+    output.width = cropWidth;
+    output.height = cropHeight;
+    const outputContext = output.getContext("2d");
+    if (!outputContext) {
+      return null;
+    }
+    outputContext.clearRect(0, 0, cropWidth, cropHeight);
+    outputContext.drawImage(
+      scratch,
+      cropX,
+      cropY,
+      cropWidth,
+      cropHeight,
+      0,
+      0,
+      cropWidth,
+      cropHeight
+    );
+    return output.toDataURL("image/png");
   }
 
   public setExpressionParameters(parameters: Record<string, number>): void {
@@ -557,6 +691,35 @@ export class PetLive2DRenderer {
       this.dynamicDrawableBoundsUntilMs,
       performance.now() + Math.max(0, durationMs)
     );
+  }
+
+  private waitAnimationFrames(frameCount: number, timeoutMs = 900): Promise<void> {
+    const targetCount = Math.max(1, Math.round(frameCount));
+    return new Promise((resolve) => {
+      let resolved = false;
+      const finish = () => {
+        if (resolved) {
+          return;
+        }
+        resolved = true;
+        window.clearTimeout(timerId);
+        resolve();
+      };
+      const timerId = window.setTimeout(finish, Math.max(80, timeoutMs));
+      let remaining = targetCount;
+      const tick = () => {
+        if (resolved) {
+          return;
+        }
+        remaining -= 1;
+        if (remaining <= 0) {
+          finish();
+          return;
+        }
+        window.requestAnimationFrame(tick);
+      };
+      window.requestAnimationFrame(tick);
+    });
   }
 
   private getTargetFps(): number {

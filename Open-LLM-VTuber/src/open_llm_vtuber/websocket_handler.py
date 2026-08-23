@@ -72,6 +72,7 @@ class WebSocketHandler:
     def __init__(self, default_context_cache: ServiceContext):
         """Initialize the WebSocket handler with default context"""
         self.client_connections: Dict[str, WebSocket] = {}
+        self.client_roles: Dict[str, str] = {}
         self.client_contexts: Dict[str, ServiceContext] = {}
         self.chat_group_manager = ChatGroupManager()
         self.current_conversation_tasks: Dict[str, Optional[asyncio.Task]] = {}
@@ -87,18 +88,34 @@ class WebSocketHandler:
             if task is None or task.done():
                 self.current_conversation_tasks.pop(task_key, None)
 
+    def _normalize_client_role(self, client_role: Optional[str]) -> str:
+        role = str(client_role or "").strip().lower()
+        if role in {"launcher-console", "launcher", "qt-launcher", "console"}:
+            return "launcher-console"
+        return "frontend"
+
+    def _controllable_client_uids(self, connected_clients: list[str]) -> list[str]:
+        return [
+            client_uid
+            for client_uid in connected_clients
+            if self.client_roles.get(client_uid, "frontend") != "launcher-console"
+        ]
+
     def _resolve_launcher_target(
         self, client_uid: Optional[str] = None
     ) -> tuple[Optional[str], list[str], Optional[str]]:
         connected_clients = sorted(self.client_connections.keys())
+        controllable_clients = self._controllable_client_uids(connected_clients)
         if client_uid:
             if client_uid not in self.client_connections:
                 return None, connected_clients, f"Client {client_uid} is not connected."
+            if self.client_roles.get(client_uid, "frontend") == "launcher-console":
+                return None, connected_clients, f"Client {client_uid} is a launcher console, not a frontend session."
             return client_uid, connected_clients, None
 
-        if len(connected_clients) == 1:
-            return connected_clients[0], connected_clients, None
-        if len(connected_clients) == 0:
+        if len(controllable_clients) == 1:
+            return controllable_clients[0], connected_clients, None
+        if len(controllable_clients) == 0:
             return None, connected_clients, None
         return None, connected_clients, "Multiple frontend clients are connected; hot switch is ambiguous."
 
@@ -243,6 +260,11 @@ class WebSocketHandler:
             "ok": True,
             "connected_client_count": len(connected_clients),
             "connected_client_uids": connected_clients,
+            "client_roles": {
+                client_uid: self.client_roles.get(client_uid, "frontend")
+                for client_uid in connected_clients
+            },
+            "controllable_client_uids": self._controllable_client_uids(connected_clients),
             "target_client_uid": resolved_client_uid,
             "can_hot_switch": False,
             "scope": "unavailable",
@@ -516,7 +538,11 @@ class WebSocketHandler:
         }
 
     async def handle_new_connection(
-        self, websocket: WebSocket, client_uid: str
+        self,
+        websocket: WebSocket,
+        client_uid: str,
+        *,
+        client_role: Optional[str] = None,
     ) -> None:
         """
         Handle new WebSocket connection setup
@@ -534,14 +560,20 @@ class WebSocketHandler:
             )
 
             await self._store_client_data(
-                websocket, client_uid, session_service_context
+                websocket,
+                client_uid,
+                session_service_context,
+                client_role=client_role,
             )
 
             await self._send_initial_messages(
                 websocket, client_uid, session_service_context
             )
 
-            logger.info(f"Connection established for client {client_uid}")
+            logger.info(
+                f"Connection established for client {client_uid} "
+                f"role={self.client_roles.get(client_uid, 'frontend')}"
+            )
 
         except Exception as e:
             logger.error(
@@ -555,9 +587,12 @@ class WebSocketHandler:
         websocket: WebSocket,
         client_uid: str,
         session_service_context: ServiceContext,
+        *,
+        client_role: Optional[str] = None,
     ):
         """Store client data and initialize group status"""
         self.client_connections[client_uid] = websocket
+        self.client_roles[client_uid] = self._normalize_client_role(client_role)
         self.client_contexts[client_uid] = session_service_context
         self.received_data_buffers[client_uid] = np.array([])
         self.pending_history_bootstrap[client_uid] = True
@@ -584,6 +619,7 @@ class WebSocketHandler:
                     "conf_name": session_service_context.character_config.conf_name,
                     "conf_uid": session_service_context.character_config.conf_uid,
                     "client_uid": client_uid,
+                    "client_role": self.client_roles.get(client_uid, "frontend"),
                 }
             )
         )
@@ -592,7 +628,8 @@ class WebSocketHandler:
         await self.send_group_update(websocket, client_uid)
 
         # Start microphone
-        await websocket.send_text(json.dumps({"type": "control", "text": "start-mic"}))
+        if self.client_roles.get(client_uid, "frontend") != "launcher-console":
+            await websocket.send_text(json.dumps({"type": "control", "text": "start-mic"}))
 
     async def _init_service_context(
         self, send_text: Callable, client_uid: str
@@ -718,6 +755,7 @@ class WebSocketHandler:
 
         # Clean up other client data
         self.client_connections.pop(client_uid, None)
+        self.client_roles.pop(client_uid, None)
         self.client_contexts.pop(client_uid, None)
         self.received_data_buffers.pop(client_uid, None)
         self.pending_history_bootstrap.pop(client_uid, None)
@@ -738,6 +776,7 @@ class WebSocketHandler:
     async def _cleanup_failed_connection(self, client_uid: str) -> None:
         """Clean up failed connection data"""
         self.client_connections.pop(client_uid, None)
+        self.client_roles.pop(client_uid, None)
         self.client_contexts.pop(client_uid, None)
         self.received_data_buffers.pop(client_uid, None)
         self.pending_history_bootstrap.pop(client_uid, None)

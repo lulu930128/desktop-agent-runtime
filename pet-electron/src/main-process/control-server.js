@@ -8,6 +8,14 @@ function writeJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function writeBinary(res, statusCode, contentType, payload) {
+  res.writeHead(statusCode, {
+    "Content-Type": contentType,
+    "Cache-Control": "no-store"
+  });
+  res.end(payload);
+}
+
 function readRequestBody(req) {
   return new Promise((resolve, reject) => {
     let raw = "";
@@ -32,6 +40,7 @@ function startControlServer({
   port,
   readRendererStatus,
   readLive2DInspectorSnapshot,
+  captureLive2DPreview,
   getShellStatus,
   isReaderVisible,
   isBriefingVisible,
@@ -74,6 +83,41 @@ function startControlServer({
         writeJson(res, 200, {
           ok: Boolean(snapshot),
           snapshot
+        });
+        return;
+      }
+
+      if (req.method === "GET" && requestUrl.pathname === "/live2d-preview.png") {
+        const outfitId = String(requestUrl.searchParams.get("outfitId") || "").trim();
+        const parameterId = String(requestUrl.searchParams.get("parameterId") || "Param10").trim();
+        const parameterIndexRaw = requestUrl.searchParams.get("parameterIndex");
+        const valueRaw = requestUrl.searchParams.get("value");
+        const captureOptions = {
+          outfitId,
+          parameterId,
+          parameterIndex:
+            parameterIndexRaw !== null && Number.isInteger(Number(parameterIndexRaw))
+              ? Number(parameterIndexRaw)
+              : null,
+          value:
+            valueRaw !== null && Number.isFinite(Number(valueRaw))
+              ? Number(valueRaw)
+              : outfitId === "hoodie"
+                ? 1
+                : outfitId === "normal"
+                  ? 0
+                  : undefined
+        };
+        const imageBuffer = typeof captureLive2DPreview === "function"
+          ? await captureLive2DPreview(captureOptions)
+          : null;
+        if (imageBuffer && imageBuffer.length) {
+          writeBinary(res, 200, "image/png", imageBuffer);
+          return;
+        }
+        writeJson(res, 503, {
+          ok: false,
+          error: "Live2D preview capture is not available."
         });
         return;
       }

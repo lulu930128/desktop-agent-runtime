@@ -34,6 +34,9 @@ network:
   pet_control:
     host: "127.0.0.1"
     port: 23567
+  launcher_control:
+    host: "127.0.0.1"
+    port: 23568
 
 bridge:
   translate_path: "/translate"
@@ -45,6 +48,10 @@ llm:
   openai:
     model_env: "OPENAI_LLM_MODEL"
     default_model: "gpt-5-mini"
+    models:
+      - "gpt-5-mini"
+      - "gpt-4o"
+      - "gpt-4o-mini"
     temperature_env: "OPENAI_LLM_TEMPERATURE"
     inject_key_env: "OPENAI_LLM_INJECT_KEY"
     api_key_env: "OPENAI_LLM_API_KEY"

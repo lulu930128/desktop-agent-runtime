@@ -3,11 +3,20 @@ const { Menu } = require("electron");
 function buildCommonMenuItems(state, actions) {
   return [
     {
+      label: "顯示 Kuro 工作面板",
+      click: actions.showBriefing
+    },
+    {
+      label: "停止目前輸出",
+      click: actions.interruptOutput
+    },
+    { type: "separator" },
+    {
       label: state.forceIgnoreMouse ? "關閉滑鼠穿透" : "開啟滑鼠穿透",
       click: actions.toggleIgnoreMouse
     },
     {
-      label: "Game mode",
+      label: "遊戲模式",
       type: "checkbox",
       checked: Boolean(state.petGameMode),
       click: actions.toggleGameMode
@@ -34,6 +43,7 @@ function createTrayMenu(state, actions) {
       label: "顯示桌寵",
       click: actions.showPet
     },
+    { type: "separator" },
     ...buildCommonMenuItems(state, actions)
   ]);
 }

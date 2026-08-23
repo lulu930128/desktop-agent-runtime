@@ -335,7 +335,7 @@ def _store_tool_status_event(
         return
 
     tool_name = str(output_item.get("tool_name") or "tool").strip() or "tool"
-    if status == "completed" and tool_name == "omi.ask":
+    if status == "completed" and tool_name in {"omi.ask", "omi.ask_stream"}:
         evidence = build_omi_evidence_snapshot(str(output_item.get("content") or ""))
         if evidence:
             store_history_event(

@@ -405,7 +405,21 @@
             "brief"
           ],
           "risk": "read_only",
-          "when": "Use for Taiwan market, US/ADR stock context, stock, watchlist, data freshness, and prompt-ready brief or trusted OMI LLM analysis backed by Open Market Intelligence data. Send contract_version=omi.ai.ask.v2 and target={type:auto} unless OMI already returned a concrete target in the previous turn. Do not send legacy scope_type or scope_id to omi.ask. Kuro may set allow_external_fetch=true with a small tool_budget so OMI can refresh stale Taiwan stock evidence by its default stale-first policy or choose from backend allowlisted market APIs; Kuro must not call those APIs directly. Prefer mode=data_only or mode=brief for evidence, and mode=analysis with allow_llm=true when OMI should do its own non-persistent LLM synthesis. Do not request report generation or allow_write unless the runtime policy is explicitly changed."
+          "when": "Use for Taiwan market, US/ADR stock context, stock, watchlist, data freshness, and prompt-ready brief or trusted OMI LLM analysis backed by Open Market Intelligence data. Send contract_version=omi.decision.v4 and target={type:auto} unless OMI already returned a concrete target in the previous turn. Use selection fields, limits, and max_response_bytes when only bounded evidence is needed. Consume answer, decision, evidence, limitations, status, and continuation directly; do not reconstruct OMI market semantics in Kuro. Do not send legacy scope_type or scope_id to omi.ask. Kuro may set allow_external_fetch=true with a small tool_budget so OMI can refresh stale evidence by its default stale-first policy or choose from backend allowlisted market APIs; Kuro must not call those APIs directly. Prefer mode=data_only or mode=brief for evidence, and mode=analysis with allow_llm=true when OMI should do its own non-persistent LLM synthesis. Do not request report generation or allow_write unless the runtime policy is explicitly changed."
+        },
+        {
+          "name": "omi.ask_stream",
+          "level": "read",
+          "capabilities": [
+            "market_data",
+            "stock_context",
+            "watchlist",
+            "data_freshness",
+            "brief",
+            "streaming_status"
+          ],
+          "risk": "read_only",
+          "when": "Use only when Kuro or another UI needs OMI status, evidence passport, tool_run, delta, and final events from the OMI streaming endpoint. Keep the same omi.decision.v4 payload rules as omi.ask, treat final as the canonical envelope, inspect done.transport_ok separately from done.ok, do not request report generation, and never set allow_write unless the runtime policy is explicitly changed."
         }
       ]
     },

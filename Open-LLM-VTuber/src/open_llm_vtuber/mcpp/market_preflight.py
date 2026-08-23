@@ -1,10 +1,21 @@
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator, Iterator
+import datetime
 import json
+import os
+import threading
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 
-OMI_ASK_CONTRACT_VERSION = "omi.ai.ask.v2"
+OMI_ASK_CONTRACT_VERSION = "omi.decision.v4"
+OMI_PREVIOUS_CONTRACT_VERSION = "omi.decision.v3"
+OMI_LEGACY_CONTRACT_VERSION = "omi.ai.ask.v2"
+OMI_ASK_STREAM_TOOL_NAME = "omi.ask_stream"
+OMI_AUTONOMOUS_TOOL_ID = "autonomous_omi_preflight"
 
 
 def should_autorun_omi(route: Any) -> bool:
@@ -13,7 +24,7 @@ def should_autorun_omi(route: Any) -> bool:
         return False
 
     tool_names = getattr(route, "tool_names", None) or []
-    if "omi.ask" not in tool_names:
+    if "omi.ask" not in tool_names and OMI_ASK_STREAM_TOOL_NAME not in tool_names:
         return False
 
     intent = getattr(route, "intent", None)
@@ -41,6 +52,9 @@ def build_autonomous_omi_args(
         ),
         "target": {"type": "auto"},
         "mode": "auto",
+        "output": "decision_with_evidence",
+        "realtime_policy": "prefer_live",
+        "selection": {"max_response_bytes": 65_536},
         "caller_profile": "kuro_readonly",
         "allow_llm": True,
         "allow_write": False,
@@ -66,6 +80,274 @@ def _compose_question(*, current_text: str, route_text: str) -> str:
     if len(question) > 3900:
         question = question[-3900:]
     return question
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, str(default)))
+    except ValueError:
+        return default
+
+
+def _omi_api_base_url() -> str:
+    return os.environ.get("OMI_API_BASE_URL", "http://127.0.0.1:8400").rstrip("/")
+
+
+def _omi_api_timeout_seconds() -> int:
+    return _env_int("OMI_API_TIMEOUT_SECONDS", 180)
+
+
+def _omi_ai_trust_token() -> str:
+    return (
+        os.environ.get("OMI_MCP_AI_TRUST_TOKEN")
+        or os.environ.get("OMI_AI_TRUST_TOKEN")
+        or ""
+    ).strip()
+
+
+def _utc_timestamp() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z"
+
+
+def iter_omi_sse_events_from_lines(lines: Iterator[str]) -> Iterator[dict[str, Any]]:
+    event_name = "message"
+    data_lines: list[str] = []
+
+    def build_event() -> dict[str, Any] | None:
+        nonlocal event_name, data_lines
+        if not data_lines and event_name == "message":
+            return None
+
+        data_text = "\n".join(data_lines)
+        try:
+            data: Any = json.loads(data_text) if data_text else {}
+        except json.JSONDecodeError:
+            data = {"text": data_text}
+
+        event = {"event": event_name, "data": data}
+        event_name = "message"
+        data_lines = []
+        return event
+
+    for raw_line in lines:
+        line = str(raw_line).rstrip("\r\n")
+        if not line:
+            event = build_event()
+            if event:
+                yield event
+            continue
+        if line.startswith(":"):
+            continue
+        if line.startswith("event:"):
+            event_name = line.removeprefix("event:").strip() or "message"
+            continue
+        if line.startswith("data:"):
+            data_lines.append(line.removeprefix("data:").lstrip())
+
+    event = build_event()
+    if event:
+        yield event
+
+
+def _iter_omi_sse_http_events(arguments: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    payload = json.dumps(arguments, ensure_ascii=False, default=str).encode("utf-8")
+    headers = {
+        "Accept": "text/event-stream",
+        "Content-Type": "application/json",
+        "User-Agent": "kuro-omi-preflight/0.1",
+    }
+    trust_token = _omi_ai_trust_token()
+    if trust_token:
+        headers["X-OMI-AI-Trust-Token"] = trust_token
+
+    request = Request(
+        f"{_omi_api_base_url()}/api/ai/ask/stream",
+        data=payload,
+        headers=headers,
+        method="POST",
+    )
+
+    try:
+        with urlopen(request, timeout=_omi_api_timeout_seconds()) as response:
+            lines = (
+                raw_line.decode("utf-8", errors="replace")
+                for raw_line in response
+            )
+            yield from iter_omi_sse_events_from_lines(lines)
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"OMI API HTTP {exc.code}: {body}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"OMI API unavailable at {_omi_api_base_url()}: {exc}") from exc
+
+
+async def stream_omi_ask_events(arguments: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+    def enqueue(item: dict[str, Any] | None) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, item)
+
+    def worker() -> None:
+        try:
+            for event in _iter_omi_sse_http_events(arguments):
+                enqueue(event)
+        except Exception as exc:
+            enqueue(
+                {
+                    "event": "transport_error",
+                    "data": {
+                        "error": str(exc),
+                        "kind": exc.__class__.__name__,
+                    },
+                }
+            )
+        finally:
+            enqueue(None)
+
+    threading.Thread(target=worker, name="kuro-omi-sse", daemon=True).start()
+
+    while True:
+        event = await queue.get()
+        if event is None:
+            break
+        yield event
+
+
+def _stream_event_data(event: dict[str, Any]) -> dict[str, Any]:
+    data = event.get("data") if isinstance(event, dict) else {}
+    return data if isinstance(data, dict) else {"value": data}
+
+
+def _stream_event_json(data: dict[str, Any]) -> str:
+    return json.dumps(data, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _compact_stream_summary(data: dict[str, Any], *, max_len: int = 520) -> str:
+    return _compact_text(data, max_len=max_len)
+
+
+def format_omi_stream_status_update(
+    event: dict[str, Any],
+    *,
+    tool_id: str = OMI_AUTONOMOUS_TOOL_ID,
+) -> dict[str, Any] | None:
+    event_type = str(event.get("event") or "message").strip()
+    data = _stream_event_data(event)
+    base = {
+        "type": "tool_call_status",
+        "tool_id": tool_id,
+        "tool_name": OMI_ASK_STREAM_TOOL_NAME,
+        "timestamp": _utc_timestamp(),
+    }
+
+    if event_type == "status":
+        stage = str(data.get("stage") or "").strip()
+        message = str(data.get("message") or "").strip()
+        content = message or f"OMI status: {stage or 'running'}"
+        return {**base, "status": "running", "content": content}
+
+    if event_type == "evidence":
+        parts = ["OMI 證據護照"]
+        trust_level = data.get("trust_level")
+        trust_score = data.get("trust_score")
+        freshness = data.get("data_freshness")
+        source_grade = data.get("source_grade")
+        if trust_level:
+            parts.append(f"trust={trust_level}")
+        if trust_score is not None:
+            parts.append(f"score={trust_score}")
+        if freshness:
+            parts.append(f"freshness={freshness}")
+        if source_grade:
+            parts.append(f"source={source_grade}")
+        summary = str(data.get("summary") or "").strip()
+        if summary:
+            parts.append(summary)
+        return {**base, "status": "running", "content": " / ".join(parts)}
+
+    if event_type == "tool_run":
+        tool_name = str(data.get("tool") or data.get("name") or "tool").strip()
+        status = str(data.get("status") or "running").strip()
+        detail = str(data.get("message") or data.get("error") or "").strip()
+        content = f"OMI tool run: {tool_name}:{status}"
+        if detail:
+            content = f"{content} - {_compact_text(detail, max_len=260)}"
+        return {**base, "status": "running", "content": content}
+
+    if event_type == "delta":
+        text = str(data.get("text") or "").strip()
+        if not text:
+            return None
+        return {**base, "status": "running", "content": text}
+
+    if event_type == "final":
+        ok = data.get("ok") is not False
+        return {
+            **base,
+            "status": "completed" if ok else "error",
+            "content": _stream_event_json(data),
+        }
+
+    if event_type in {"error", "transport_error"}:
+        return {
+            **base,
+            "status": "error",
+            "content": _compact_stream_summary(data),
+        }
+
+    if event_type == "done" and data.get("ok") is False:
+        return {
+            **base,
+            "status": "error",
+            "content": "OMI stream finished without a successful result.",
+        }
+
+    return None
+
+
+def format_omi_stream_final_tool_result(
+    events: list[dict[str, Any]],
+    *,
+    tool_id: str = OMI_AUTONOMOUS_TOOL_ID,
+) -> dict[str, Any] | None:
+    final_data: dict[str, Any] | None = None
+    error_data: dict[str, Any] | None = None
+    delta_parts: list[str] = []
+    for event in events:
+        event_type = str(event.get("event") or "").strip()
+        data = _stream_event_data(event)
+        if event_type == "final":
+            final_data = data
+        elif event_type in {"error", "transport_error"}:
+            error_data = data
+        elif event_type == "delta":
+            text = data.get("text")
+            if isinstance(text, str):
+                delta_parts.append(text)
+
+    if final_data:
+        return {
+            "tool_id": tool_id,
+            "content": _stream_event_json(final_data),
+            "is_error": final_data.get("ok") is False,
+        }
+
+    if error_data:
+        return {
+            "tool_id": tool_id,
+            "content": _compact_stream_summary(error_data, max_len=1200),
+            "is_error": True,
+        }
+
+    if delta_parts:
+        return {
+            "tool_id": tool_id,
+            "content": _compact_text("".join(delta_parts), max_len=1600),
+            "is_error": False,
+        }
+
+    return None
 
 
 def parse_omi_response_text(text: str) -> dict[str, Any] | None:
@@ -137,7 +419,29 @@ def _first_mapping(*values: Any) -> dict[str, Any]:
     return {}
 
 
+def _is_supported_omi_contract(parsed: dict[str, Any]) -> bool:
+    return parsed.get("contract_version") in {
+        OMI_ASK_CONTRACT_VERSION,
+        OMI_PREVIOUS_CONTRACT_VERSION,
+        OMI_LEGACY_CONTRACT_VERSION,
+    }
+
+
 def _extract_result_data(parsed: dict[str, Any]) -> dict[str, Any]:
+    evidence = parsed.get("evidence") if isinstance(parsed.get("evidence"), dict) else {}
+    canonical_result = (
+        evidence.get("result")
+        if isinstance(evidence.get("result"), dict)
+        else {}
+    )
+    if canonical_result:
+        canonical_data = (
+            canonical_result.get("data")
+            if isinstance(canonical_result.get("data"), dict)
+            else {}
+        )
+        return canonical_data
+
     result = parsed.get("result") if isinstance(parsed.get("result"), dict) else {}
     data = result.get("data") if isinstance(result.get("data"), dict) else {}
     return data
@@ -149,6 +453,21 @@ def _extract_human_answer_text(
     analysis: dict[str, Any],
     result_data: dict[str, Any],
 ) -> str:
+    canonical_answer = (
+        parsed.get("answer")
+        if isinstance(parsed.get("answer"), dict)
+        else {}
+    )
+    for key in ("text", "detail", "headline"):
+        text = str(canonical_answer.get(key) or "").strip()
+        if text:
+            return _compact_text(text, max_len=1200)
+    canonical_summary = canonical_answer.get("summary")
+    if isinstance(canonical_summary, list):
+        text = "\n".join(str(line) for line in canonical_summary if str(line).strip())
+        if text:
+            return _compact_text(text, max_len=1200)
+
     human_answer = analysis.get("human_answer")
     if isinstance(human_answer, dict):
         text = str(human_answer.get("text") or "").strip()
@@ -180,7 +499,15 @@ def _extract_as_of(
     analysis: dict[str, Any],
     result_data: dict[str, Any],
 ) -> str:
-    freshness = parsed.get("freshness") if isinstance(parsed.get("freshness"), dict) else {}
+    canonical_evidence = (
+        parsed.get("evidence")
+        if isinstance(parsed.get("evidence"), dict)
+        else {}
+    )
+    freshness = _first_mapping(
+        canonical_evidence.get("freshness"),
+        parsed.get("freshness"),
+    )
     overview = result_data.get("overview") if isinstance(result_data.get("overview"), dict) else {}
     candidates = [
         parsed.get("as_of"),
@@ -198,32 +525,74 @@ def _extract_as_of(
 
 def build_omi_evidence_snapshot(text: str) -> dict[str, Any] | None:
     parsed = parse_omi_response_text(text)
-    if not parsed or parsed.get("contract_version") != OMI_ASK_CONTRACT_VERSION:
+    if not parsed or not _is_supported_omi_contract(parsed):
         return None
 
     analysis = parsed.get("analysis") if isinstance(parsed.get("analysis"), dict) else {}
     mode = parsed.get("mode") if isinstance(parsed.get("mode"), dict) else {}
-    resolution = parsed.get("resolution") if isinstance(parsed.get("resolution"), dict) else {}
+    continuation = (
+        parsed.get("continuation")
+        if isinstance(parsed.get("continuation"), dict)
+        else {}
+    )
+    resolution = _first_mapping(
+        continuation.get("resolution"),
+        parsed.get("resolution"),
+    )
     target = _first_mapping(
         resolution.get("target") if isinstance(resolution.get("target"), dict) else {},
         parsed.get("target") if isinstance(parsed.get("target"), dict) else {},
     )
     result_data = _extract_result_data(parsed)
-    tool_runs = parsed.get("tool_runs") if isinstance(parsed.get("tool_runs"), list) else []
+    execution = (
+        parsed.get("execution")
+        if isinstance(parsed.get("execution"), dict)
+        else {}
+    )
+    status = parsed.get("status") if isinstance(parsed.get("status"), dict) else {}
+    readiness = (
+        status.get("readiness")
+        if isinstance(status.get("readiness"), dict)
+        else {}
+    )
+    limitations = (
+        parsed.get("limitations")
+        if isinstance(parsed.get("limitations"), dict)
+        else {}
+    )
+    canonical_evidence = (
+        parsed.get("evidence")
+        if isinstance(parsed.get("evidence"), dict)
+        else {}
+    )
+    tool_runs = execution.get("tool_runs")
+    if not isinstance(tool_runs, list):
+        tool_runs = parsed.get("tool_runs")
+    if not isinstance(tool_runs, list):
+        tool_runs = []
+    decision = parsed.get("decision") if isinstance(parsed.get("decision"), dict) else {}
 
     evidence = {
         "kind": "omi_evidence",
-        "contract_version": OMI_ASK_CONTRACT_VERSION,
+        "contract_version": parsed.get("contract_version"),
         "question": _compact_text(parsed.get("question"), max_len=420),
         "target": _compact_mapping(
             target,
             ("type", "id", "label", "market", "name"),
             max_len=120,
         ),
-        "mode": _compact_mapping(mode, ("requested", "effective"), max_len=80),
+        "mode": _compact_mapping(mode, ("requested", "effective", "response"), max_len=80),
         "action": _compact_text(parsed.get("action"), max_len=120),
-        "report_level": _compact_text(parsed.get("report_level"), max_len=80),
-        "answer_ready": bool(parsed.get("answer_ready")),
+        "report_level": _compact_text(
+            execution.get("report_level") or parsed.get("report_level"),
+            max_len=80,
+        ),
+        "answer_ready": bool(
+            readiness.get("answer_ready", parsed.get("answer_ready"))
+        ),
+        "decision_ready": bool(
+            readiness.get("decision_ready", parsed.get("decision_ready"))
+        ),
         "as_of": _extract_as_of(parsed=parsed, analysis=analysis, result_data=result_data),
         "resolution": _compact_mapping(
             resolution,
@@ -249,13 +618,26 @@ def build_omi_evidence_snapshot(text: str) -> dict[str, Any] | None:
             ),
             max_len=240,
         ),
+        "decision": _compact_mapping(
+            decision,
+            ("intent", "action_plan", "scenarios", "counter_evidence", "risks", "data_limits"),
+            max_len=240,
+        ),
         "human_answer": _extract_human_answer_text(
             parsed=parsed,
             analysis=analysis,
             result_data=result_data,
         ),
-        "missing": _compact_list(parsed.get("missing"), max_items=12, max_len=120),
-        "warnings": _compact_list(parsed.get("warnings"), max_items=8, max_len=180),
+        "missing": _compact_list(
+            limitations.get("missing", parsed.get("missing")),
+            max_items=12,
+            max_len=120,
+        ),
+        "warnings": _compact_list(
+            limitations.get("warnings", parsed.get("warnings")),
+            max_items=8,
+            max_len=180,
+        ),
         "tool_runs": [
             _compact_mapping(
                 run,
@@ -272,7 +654,9 @@ def build_omi_evidence_snapshot(text: str) -> dict[str, Any] | None:
                 max_len=160,
             )
             for ref in (
-                parsed.get("source_refs")
+                canonical_evidence.get("source_refs")
+                if isinstance(canonical_evidence.get("source_refs"), list)
+                else parsed.get("source_refs")
                 if isinstance(parsed.get("source_refs"), list)
                 else []
             )[:8]
@@ -341,10 +725,15 @@ def extract_omi_resolution_from_tool_results(
             continue
 
         parsed = parse_omi_response_text(str(result.get("content") or ""))
-        if not parsed or parsed.get("contract_version") != OMI_ASK_CONTRACT_VERSION:
+        if not parsed or not _is_supported_omi_contract(parsed):
             continue
 
-        resolution = parsed.get("resolution")
+        continuation = (
+            parsed.get("continuation")
+            if isinstance(parsed.get("continuation"), dict)
+            else {}
+        )
+        resolution = continuation.get("resolution") or parsed.get("resolution")
         if isinstance(resolution, dict):
             return resolution
 
@@ -353,8 +742,16 @@ def extract_omi_resolution_from_tool_results(
 
 def format_omi_response_for_llm(text: str) -> str:
     parsed = parse_omi_response_text(text)
-    if not parsed or parsed.get("contract_version") != OMI_ASK_CONTRACT_VERSION:
+    if not parsed or not _is_supported_omi_contract(parsed):
         return str(text or "").strip()
+    if parsed.get("contract_version") in {
+        OMI_ASK_CONTRACT_VERSION,
+        OMI_PREVIOUS_CONTRACT_VERSION,
+    }:
+        return (
+            "OMI canonical decision envelope:\n"
+            + json.dumps(parsed, ensure_ascii=False, sort_keys=True)
+        )
 
     target = parsed.get("target") if isinstance(parsed.get("target"), dict) else {}
     resolution = parsed.get("resolution") if isinstance(parsed.get("resolution"), dict) else {}

@@ -96,6 +96,24 @@
       "deny_truthy_args": ["allow_write"],
       "deny_values": {
         "mode": ["report"]
+      },
+      "max_numeric_args": {
+        "tool_budget.max_calls": 5,
+        "tool_budget.max_external_fetches": 3,
+        "tool_budget.max_total_seconds": 25
+      }
+    },
+    "omi.ask_stream": {
+      "mode": "read_only",
+      "category": "market_intelligence",
+      "deny_truthy_args": ["allow_write"],
+      "deny_values": {
+        "mode": ["report"]
+      },
+      "max_numeric_args": {
+        "tool_budget.max_calls": 5,
+        "tool_budget.max_external_fetches": 3,
+        "tool_budget.max_total_seconds": 25
       }
     }
   },

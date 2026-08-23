@@ -45,6 +45,45 @@ class OmiToolPolicyTest(unittest.TestCase):
         self.assertFalse(report_decision.allowed)
         self.assertIn("mode", report_decision.reason)
 
+    def test_omi_allows_bounded_external_fetch_budget(self) -> None:
+        decision = self.policy.check(
+            "omi.ask",
+            {
+                "question": "??? 2330",
+                "mode": "analysis",
+                "allow_llm": True,
+                "allow_external_fetch": True,
+                "allow_write": False,
+                "tool_budget": {
+                    "max_calls": 5,
+                    "max_external_fetches": 3,
+                    "max_total_seconds": 25,
+                },
+            },
+        )
+
+        self.assertTrue(decision.allowed, decision.reason)
+
+    def test_omi_blocks_over_budget_external_fetch(self) -> None:
+        decision = self.policy.check(
+            "omi.ask",
+            {
+                "question": "??? 2330",
+                "mode": "analysis",
+                "allow_llm": True,
+                "allow_external_fetch": True,
+                "allow_write": False,
+                "tool_budget": {
+                    "max_calls": 6,
+                    "max_external_fetches": 4,
+                    "max_total_seconds": 30,
+                },
+            },
+        )
+
+        self.assertFalse(decision.allowed)
+        self.assertIn("tool_budget.max_calls", decision.reason)
+
 
 if __name__ == "__main__":
     unittest.main()

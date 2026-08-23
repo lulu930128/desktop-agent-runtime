@@ -7,11 +7,15 @@ SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
 from open_llm_vtuber.mcpp.market_preflight import (
+    OMI_ASK_STREAM_TOOL_NAME,
     build_autonomous_omi_args,
     build_omi_evidence_snapshot,
     extract_omi_resolution_from_tool_results,
     format_omi_evidence_for_history,
     format_omi_response_for_llm,
+    format_omi_stream_final_tool_result,
+    format_omi_stream_status_update,
+    iter_omi_sse_events_from_lines,
 )
 
 
@@ -22,9 +26,12 @@ class MarketPreflightTest(unittest.TestCase):
             route_text="user: 幫我查2330近五年財報",
         )
 
-        self.assertEqual(args["contract_version"], "omi.ai.ask.v2")
+        self.assertEqual(args["contract_version"], "omi.decision.v4")
         self.assertEqual(args["target"], {"type": "auto"})
         self.assertEqual(args["mode"], "auto")
+        self.assertEqual(args["output"], "decision_with_evidence")
+        self.assertEqual(args["realtime_policy"], "prefer_live")
+        self.assertEqual(args["selection"]["max_response_bytes"], 65_536)
         self.assertEqual(args["caller_profile"], "kuro_readonly")
         self.assertTrue(args["allow_llm"])
         self.assertFalse(args["allow_write"])
@@ -131,6 +138,139 @@ class MarketPreflightTest(unittest.TestCase):
         summary = format_omi_evidence_for_history(evidence)
         self.assertIn("OMI evidence", summary)
         self.assertIn("科技股", summary)
+
+    def test_builds_snapshot_from_canonical_v4_envelope(self) -> None:
+        content = (
+            '{"kind":"omi_decision","contract_version":"omi.decision.v4",'
+            '"ok":true,"question":"2330 可以怎麼規劃？",'
+            '"target":{"type":"tw_stock","id":"2330","label":"台積電","market":"TW"},'
+            '"mode":{"requested":"auto","effective":"brief","response":"analysis"},'
+            '"status":{"readiness":{"answer_ready":true,"decision_ready":true}},'
+            '"answer":{"headline":"等待回測確認","text":"守住支撐且量能回升再評估。"},'
+            '"decision":{"intent":"entry_decision","risks":["跌破失效位"]},'
+            '"evidence":{"freshness":{"as_of":"2026-07-23"},'
+            '"source_refs":[{"kind":"table","label":"daily price"}],"result":{}},'
+            '"limitations":{"missing":[],"warnings":["僅到最近收盤"]},'
+            '"execution":{"report_level":"brief","tool_runs":[{"tool":"tw.read_stock","status":"success"}]},'
+            '"continuation":{"resolution":{"target":{"type":"tw_stock","id":"2330",'
+            '"label":"台積電","market":"TW"},"confidence":"high"}}}'
+        )
+
+        evidence = build_omi_evidence_snapshot(content)
+
+        self.assertIsNotNone(evidence)
+        assert evidence is not None
+        self.assertEqual(evidence["contract_version"], "omi.decision.v4")
+        self.assertEqual(evidence["target"]["id"], "2330")
+        self.assertTrue(evidence["decision_ready"])
+        self.assertIn("守住支撐", evidence["human_answer"])
+        self.assertEqual(evidence["warnings"], ["僅到最近收盤"])
+        self.assertEqual(evidence["tool_runs"][0]["tool"], "tw.read_stock")
+        self.assertIn(
+            "OMI canonical decision envelope",
+            format_omi_response_for_llm(content),
+        )
+
+    def test_parses_stream_events_for_kuro_status_and_llm_context(self) -> None:
+        lines = [
+            "event: status\n",
+            'data: {"stage":"resolving","message":"正在確認目標"}\n',
+            "\n",
+            "event: evidence\n",
+            'data: {"trust_level":"high","trust_score":92,"data_freshness":"current","source_grade":"official"}\n',
+            "\n",
+            "event: delta\n",
+            'data: {"text":"結論：短線偏多"}\n',
+            "\n",
+            "event: final\n",
+            'data: {"contract_version":"omi.decision.v4","ok":true,'
+            '"action":"omi.generate_stock_brief","continuation":{"resolution":'
+            '{"target":{"type":"tw_stock","id":"2330","label":"台積電"}}}}\n',
+            "\n",
+            "event: done\n",
+            'data: {"ok":true}\n',
+            "\n",
+        ]
+
+        events = list(iter_omi_sse_events_from_lines(iter(lines)))
+
+        self.assertEqual(
+            [event["event"] for event in events],
+            ["status", "evidence", "delta", "final", "done"],
+        )
+        evidence_update = format_omi_stream_status_update(events[1])
+        self.assertIsNotNone(evidence_update)
+        assert evidence_update is not None
+        self.assertEqual(evidence_update["tool_name"], OMI_ASK_STREAM_TOOL_NAME)
+        self.assertEqual(evidence_update["status"], "running")
+        self.assertIn("trust=high", evidence_update["content"])
+
+        final_update = format_omi_stream_status_update(events[3])
+        self.assertIsNotNone(final_update)
+        assert final_update is not None
+        self.assertEqual(final_update["status"], "completed")
+        self.assertIn("omi.generate_stock_brief", final_update["content"])
+
+        result = format_omi_stream_final_tool_result(events)
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertFalse(result["is_error"])
+        self.assertEqual(result["tool_id"], "autonomous_omi_preflight")
+        self.assertEqual(
+            extract_omi_resolution_from_tool_results([result])["target"]["id"],
+            "2330",
+        )
+
+    def test_stream_transport_error_becomes_prompt_tool_error(self) -> None:
+        events = [
+            {
+                "event": "transport_error",
+                "data": {"error": "OMI API unavailable at http://127.0.0.1:8400"},
+            }
+        ]
+
+        update = format_omi_stream_status_update(events[0])
+        self.assertIsNotNone(update)
+        assert update is not None
+        self.assertEqual(update["status"], "error")
+
+        result = format_omi_stream_final_tool_result(events)
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertTrue(result["is_error"])
+        self.assertIn("OMI API unavailable", result["content"])
+
+    def test_stream_business_error_keeps_final_envelope_and_marks_error(self) -> None:
+        events = [
+            {
+                "event": "final",
+                "data": {
+                    "contract_version": "omi.decision.v4",
+                    "ok": False,
+                    "request_status": "rejected",
+                    "error": {"code": "TARGET_NOT_FOUND"},
+                },
+            },
+            {
+                "event": "done",
+                "data": {
+                    "ok": False,
+                    "transport_ok": True,
+                    "request_status": "rejected",
+                },
+            },
+        ]
+
+        update = format_omi_stream_status_update(events[0])
+        self.assertIsNotNone(update)
+        assert update is not None
+        self.assertEqual(update["status"], "error")
+
+        result = format_omi_stream_final_tool_result(events)
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertTrue(result["is_error"])
+        self.assertIn("TARGET_NOT_FOUND", result["content"])
 
 
 if __name__ == "__main__":

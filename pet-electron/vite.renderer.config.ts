@@ -12,6 +12,12 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, "renderer-dist"),
     emptyOutDir: true,
-    sourcemap: true
+    sourcemap: true,
+    rollupOptions: {
+      input: {
+        pet: path.resolve(__dirname, "renderer", "index.html"),
+        workPanel: path.resolve(__dirname, "renderer", "work-panel.html")
+      }
+    }
   }
 });

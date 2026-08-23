@@ -1,6 +1,15 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("kuroBriefing", {
+function onChannel(channel, callback) {
+  if (typeof callback !== "function") {
+    return () => undefined;
+  }
+  const listener = (_event, payload) => callback(payload);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+}
+
+const briefingBridge = {
   getState() {
     return ipcRenderer.invoke("briefing-get-state");
   },
@@ -35,19 +44,57 @@ contextBridge.exposeInMainWorld("kuroBriefing", {
     ipcRenderer.send("briefing-toggle-maximize");
   },
   onState(callback) {
-    if (typeof callback !== "function") {
-      return () => undefined;
-    }
-    const listener = (_event, payload) => callback(payload);
-    ipcRenderer.on("briefing-state", listener);
-    return () => ipcRenderer.removeListener("briefing-state", listener);
+    return onChannel("briefing-state", callback);
   },
   onData(callback) {
-    if (typeof callback !== "function") {
-      return () => undefined;
-    }
-    const listener = (_event, payload) => callback(payload);
-    ipcRenderer.on("briefing-data", listener);
-    return () => ipcRenderer.removeListener("briefing-data", listener);
+    return onChannel("briefing-data", callback);
+  }
+};
+
+contextBridge.exposeInMainWorld("kuroBriefing", briefingBridge);
+
+contextBridge.exposeInMainWorld("kuroWorkPanel", {
+  ...briefingBridge,
+  getChatState() {
+    return ipcRenderer.invoke("reader-get-state");
+  },
+  getChatHistory() {
+    return ipcRenderer.invoke("work-panel-get-chat-history");
+  },
+  getProfile() {
+    return ipcRenderer.invoke("work-panel-get-profile");
+  },
+  applyProfile(payload) {
+    return ipcRenderer.invoke("work-panel-apply-profile", payload || {});
+  },
+  getHistories(historyUid) {
+    return ipcRenderer.invoke("work-panel-get-histories", historyUid || "");
+  },
+  createHistory() {
+    return ipcRenderer.invoke("work-panel-create-history");
+  },
+  selectHistory(historyUid) {
+    return ipcRenderer.invoke("work-panel-select-history", historyUid);
+  },
+  deleteHistory(historyUid, historyTitle) {
+    return ipcRenderer.invoke("work-panel-delete-history", historyUid, historyTitle || "");
+  },
+  getMemories() {
+    return ipcRenderer.invoke("work-panel-get-memories");
+  },
+  memoryAction(action, payload) {
+    return ipcRenderer.invoke("work-panel-memory-action", action, payload || {});
+  },
+  getTools() {
+    return ipcRenderer.invoke("work-panel-get-tools");
+  },
+  sendText(text, attachments) {
+    return ipcRenderer.invoke("reader-send-text", text, attachments || []);
+  },
+  control(action, payload) {
+    return ipcRenderer.invoke("work-panel-control", action, payload || {});
+  },
+  onChatState(callback) {
+    return onChannel("reader-state", callback);
   }
 });

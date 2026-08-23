@@ -28,13 +28,17 @@ def init_client_ws_route(default_context_cache: ServiceContext) -> APIRouter:
     ws_handler = WebSocketHandler(default_context_cache)
 
     @router.websocket("/client-ws")
-    async def websocket_endpoint(websocket: WebSocket):
+    async def websocket_endpoint(websocket: WebSocket, client_role: Optional[str] = None):
         """WebSocket endpoint for client connections"""
         await websocket.accept()
         client_uid = str(uuid4())
 
         try:
-            await ws_handler.handle_new_connection(websocket, client_uid)
+            await ws_handler.handle_new_connection(
+                websocket,
+                client_uid,
+                client_role=client_role,
+            )
             await ws_handler.handle_websocket_communication(websocket, client_uid)
         except WebSocketDisconnect:
             await ws_handler.handle_disconnect(client_uid)
