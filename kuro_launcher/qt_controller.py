@@ -9,6 +9,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
@@ -57,6 +58,8 @@ from .utils import (
 
 LogCallback = Callable[[str], None]
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+PET_CONTROL_SERVICE = "kuro-pet-control"
+PET_CONTROL_PROTOCOL_VERSION = 1
 MEMORY_STATUS_LABELS = {
     "active": "啟用",
     "pending_confirmation": "待確認",
@@ -124,6 +127,10 @@ EXPRESSION_PRESETS: dict[str, dict[str, object]] = {
         },
     },
 }
+
+
+class PetShellIdentityError(RuntimeError):
+    """Raised when tcp:23567 is not the expected Kuro Pet control contract."""
 
 
 @dataclass(frozen=True)
@@ -235,6 +242,8 @@ class QtLauncherController:
         self.proc_tts: Optional[ManagedProc] = None
         self.proc_llm: Optional[ManagedProc] = None
         self.proc_pet_electron: Optional[subprocess.Popen] = None
+        self._pet_lifecycle_lock = threading.RLock()
+        self._last_pet_exit_pid: Optional[int] = None
         self.work_panel_control_token = ""
         self.current_run_id: Optional[str] = None
         self.character_records: Dict[str, CharacterRecord] = {}
@@ -1440,8 +1449,10 @@ class QtLauncherController:
         briefing_updated_at = ""
 
         try:
-            status = http_get_json(self.pet_control_endpoint("/status"), timeout=0.8)
-            pet_shell = bool(status.get("ok"))
+            with self._pet_lifecycle_lock:
+                self._reconcile_tracked_pet_process()
+                status = self._read_pet_shell_status(timeout=0.8)
+            pet_shell = True
             pet_mode = str(status.get("mode") or "")
             renderer = status.get("renderer") or {}
             if isinstance(renderer, dict):
@@ -1720,21 +1731,32 @@ class QtLauncherController:
 
         if port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.2):
             if self._try_hot_switch_profile(runtime_conf, char_cfg, character, project):
-                self.launch_pet_electron()
+                pet_status = self.launch_pet_electron()
                 self.apply_outfit(wait_for_shell=True)
                 history_result = self._apply_history_choice_after_start(
                     character,
                     desired_history_uid=desired_history_uid,
                     force_new_history=force_new_history,
                 )
-                result = {"ok": True, "mode": "hot-switch", "history": history_result}
+                result = {
+                    "ok": True,
+                    "mode": "hot-switch",
+                    "history": history_result,
+                    "pet": {
+                        "pid": pet_status.get("pid"),
+                        "instance_id": pet_status.get("instanceId"),
+                    },
+                }
                 if history_result.get("warning"):
                     result["warning"] = history_result["warning"]
                 return result
             raise RuntimeError("LLM 已在執行但無法熱切換；請先停止 profile 再重新啟動。")
 
         previous_llm_pid = get_listening_pid_windows(self.cfg.llm_port)
-        self.stop_profile(silent=True, stop_bridge=False)
+        # The Work Panel is an independent presentation surface. Keep it alive
+        # while TTS/LLM are restarted so backend readiness cannot make the UI
+        # disappear during startup or profile changes.
+        self.stop_profile(silent=True, stop_bridge=False, stop_pet=False)
 
         for name, host, port in [
             ("TTS", self.cfg.tts_host, self.cfg.tts_port),
@@ -1758,7 +1780,7 @@ class QtLauncherController:
             timeout_s=120.0,
         )
         if not tts_ready:
-            self.stop_profile(silent=True)
+            self.stop_profile(silent=True, stop_pet=False)
             raise RuntimeError(tts_message)
         self.log(f"[{log_ts()}] TTS smoke test：{tts_message}")
 
@@ -1780,20 +1802,35 @@ class QtLauncherController:
             raise RuntimeError(llm_message)
 
         self.log(f"[{log_ts()}] {llm_message}：{self.cfg.llm_url}")
-        self.launch_pet_electron()
+        pet_status = self.launch_pet_electron()
         self.apply_outfit(wait_for_shell=True)
         history_result = self._apply_history_choice_after_start(
             character,
             desired_history_uid=desired_history_uid,
             force_new_history=force_new_history,
         )
-        result = {"ok": True, "mode": "fresh-start", "history": history_result}
+        result = {
+            "ok": True,
+            "mode": "fresh-start",
+            "history": history_result,
+            "pet": {
+                "pid": pet_status.get("pid"),
+                "instance_id": pet_status.get("instanceId"),
+            },
+        }
         if history_result.get("warning"):
             result["warning"] = history_result["warning"]
         return result
 
-    def stop_profile(self, *, silent: bool = False, stop_bridge: bool = True) -> None:
-        self.stop_pet_electron(silent=silent)
+    def stop_profile(
+        self,
+        *,
+        silent: bool = False,
+        stop_bridge: bool = True,
+        stop_pet: bool = True,
+    ) -> None:
+        if stop_pet:
+            self.stop_pet_electron(silent=silent)
 
         if self.proc_llm:
             try:
@@ -2085,19 +2122,51 @@ class QtLauncherController:
             return None, f"pet-electron 尚未安裝依賴，請先在 {pet_dir} 執行 npm install。"
         return None, "pet-electron 缺少 package.json。"
 
-    def launch_pet_electron(self) -> bool:
-        if self.proc_pet_electron and self.proc_pet_electron.poll() is None:
-            self.log(f"[{log_ts()}] 自製桌寵殼已在執行中。")
-            return True
-        if port_is_open(self.cfg.pet_control_host, self.cfg.pet_control_port, 0.2):
-            self.log(f"[{log_ts()}] 自製桌寵殼控制端已在線。")
-            return True
+    @staticmethod
+    def _validate_pet_shell_status(status: object) -> dict:
+        if not isinstance(status, dict) or status.get("ok") is not True:
+            raise PetShellIdentityError("Pet control status is not ready.")
+        if str(status.get("service") or "") != PET_CONTROL_SERVICE:
+            raise PetShellIdentityError("tcp:23567 is not the Kuro Pet control service.")
+        try:
+            protocol_version = int(status.get("protocolVersion"))
+        except (TypeError, ValueError) as exc:
+            raise PetShellIdentityError("Kuro Pet control protocol version is missing.") from exc
+        if protocol_version != PET_CONTROL_PROTOCOL_VERSION:
+            raise PetShellIdentityError(
+                f"Unsupported Kuro Pet control protocol version: {protocol_version}."
+            )
+        try:
+            pid = int(status.get("pid"))
+        except (TypeError, ValueError) as exc:
+            raise PetShellIdentityError("Kuro Pet control PID is missing.") from exc
+        if pid <= 0:
+            raise PetShellIdentityError("Kuro Pet control PID is invalid.")
+        if not str(status.get("instanceId") or "").strip():
+            raise PetShellIdentityError("Kuro Pet control instance ID is missing.")
+        return status
 
+    def _read_pet_shell_status(self, *, timeout: float = 0.8) -> dict:
+        status = http_get_json(self.pet_control_endpoint("/status"), timeout=timeout)
+        return self._validate_pet_shell_status(status)
+
+    def _reconcile_tracked_pet_process(self) -> None:
+        proc = self.proc_pet_electron
+        if proc is None:
+            return
+        exit_code = proc.poll()
+        if exit_code is None:
+            return
+        pid = int(proc.pid)
+        self.proc_pet_electron = None
+        if self._last_pet_exit_pid != pid:
+            self._last_pet_exit_pid = pid
+            self.log(f"[{log_ts()}] Kuro Pet shell 已退出：pid={pid}，exit_code={exit_code}")
+
+    def _spawn_pet_electron_locked(self) -> subprocess.Popen:
         runtime_exe, reason = self._pet_electron_runtime()
         if runtime_exe is None:
-            if reason:
-                self.log(f"[{log_ts()}] 新桌寵殼未啟動：{reason}")
-            return False
+            raise RuntimeError(reason or "找不到 Kuro Pet Electron runtime。")
 
         creationflags = 0
         if os.name == "nt":
@@ -2114,37 +2183,156 @@ class QtLauncherController:
         env["KURO_LAUNCHER_CONTROL_URL"] = self.cfg.launcher_control_url
         if self.work_panel_control_token:
             env["KURO_LAUNCHER_CONTROL_TOKEN"] = self.work_panel_control_token
-        self.proc_pet_electron = subprocess.Popen(
+        proc = subprocess.Popen(
             [str(runtime_exe), "."],
             cwd=str(self.cfg.pet_electron_dir),
             close_fds=True,
             env=env,
             **popen_kwargs,
         )
-        self.log(f"[{log_ts()}] 已開啟自製桌寵殼：{self.cfg.pet_electron_dir}")
-        return True
+        self.proc_pet_electron = proc
+        self._last_pet_exit_pid = None
+        self.log(
+            f"[{log_ts()}] 已啟動 Kuro Pet shell：pid={proc.pid}，cwd={self.cfg.pet_electron_dir}"
+        )
+        return proc
+
+    def _wait_for_pet_shell_ready_locked(
+        self,
+        proc: subprocess.Popen,
+        *,
+        timeout_s: float,
+    ) -> dict:
+        deadline = time.monotonic() + max(0.5, float(timeout_s))
+        last_error = "Pet control server 尚未回應。"
+        while time.monotonic() < deadline:
+            exit_code = proc.poll()
+            if exit_code is not None:
+                self._reconcile_tracked_pet_process()
+                raise RuntimeError(
+                    f"Kuro Pet shell 啟動後提前退出：pid={proc.pid}，exit_code={exit_code}"
+                )
+            try:
+                return self._read_pet_shell_status(timeout=0.6)
+            except PetShellIdentityError:
+                raise
+            except Exception as exc:
+                last_error = str(exc)
+            time.sleep(0.2)
+        raise RuntimeError(
+            f"Kuro Pet shell 在 {timeout_s:.1f}s 內未 ready：{last_error}"
+        )
+
+    def _ensure_pet_shell_ready_locked(self, *, timeout_s: float = 15.0) -> dict:
+        self._reconcile_tracked_pet_process()
+        proc = self.proc_pet_electron
+
+        if proc is None:
+            try:
+                status = self._read_pet_shell_status(timeout=0.6)
+            except PetShellIdentityError:
+                raise
+            except Exception as exc:
+                if port_is_open(self.cfg.pet_control_host, self.cfg.pet_control_port, 0.2):
+                    raise RuntimeError(
+                        "Pet control port 已被占用，但無法驗證為 Kuro Pet shell；不會沿用或終止該程序。"
+                    ) from exc
+            else:
+                self.log(
+                    f"[{log_ts()}] 已沿用驗證完成的 Kuro Pet shell："
+                    f"pid={status.get('pid')}，instance={status.get('instanceId')}"
+                )
+                return status
+            proc = self._spawn_pet_electron_locked()
+
+        return self._wait_for_pet_shell_ready_locked(proc, timeout_s=timeout_s)
+
+    def launch_pet_electron(self) -> dict:
+        with self._pet_lifecycle_lock:
+            status = self._ensure_pet_shell_ready_locked()
+        self.log(
+            f"[{log_ts()}] Kuro Pet shell ready："
+            f"pid={status.get('pid')}，instance={status.get('instanceId')}"
+        )
+        return status
+
+    def ensure_work_panel(self, *, timeout_s: float = 15.0) -> dict:
+        request_id = uuid.uuid4().hex[:12]
+        started_at = time.monotonic()
+        self.log(f"[{log_ts()}] ensure-work-panel start：request_id={request_id}")
+        with self._pet_lifecycle_lock:
+            status = self._ensure_pet_shell_ready_locked(timeout_s=timeout_s)
+            result = http_post_json(
+                self.pet_control_endpoint("/command"),
+                {"action": "set-briefing-visible", "enabled": True},
+                timeout=5.0,
+            )
+            if result.get("ok") is not True:
+                raise RuntimeError(
+                    str(result.get("message") or result.get("error") or "工作面板顯示失敗。")
+                )
+
+            verify_deadline = time.monotonic() + 5.0
+            while time.monotonic() < verify_deadline:
+                status = self._read_pet_shell_status(timeout=0.8)
+                renderer = status.get("renderer") or {}
+                if isinstance(renderer, dict) and renderer.get("briefingVisible") is True:
+                    duration_ms = int((time.monotonic() - started_at) * 1000)
+                    self.log(
+                        f"[{log_ts()}] ensure-work-panel ready：request_id={request_id}，"
+                        f"pid={status.get('pid')}，duration_ms={duration_ms}"
+                    )
+                    return {
+                        "ok": True,
+                        "request_id": request_id,
+                        "pid": status.get("pid"),
+                        "instance_id": status.get("instanceId"),
+                        "duration_ms": duration_ms,
+                    }
+                time.sleep(0.1)
+
+        raise RuntimeError("Kuro Pet shell 已 ready，但工作面板未在 5s 內變成可見。")
 
     def stop_pet_electron(self, *, silent: bool = False) -> None:
         stopped = False
-        if self.proc_pet_electron and self.proc_pet_electron.poll() is None:
+        with self._pet_lifecycle_lock:
+            self._reconcile_tracked_pet_process()
+            owned_pids: set[int] = set()
+            proc = self.proc_pet_electron
+            if proc is not None and proc.poll() is None:
+                owned_pids.add(int(proc.pid))
+
             try:
-                taskkill_tree(self.proc_pet_electron.pid)
-                stopped = True
+                status = self._read_pet_shell_status(timeout=0.6)
             except Exception:
+                status = None
+            if status is not None:
+                status_pid = int(status.get("pid"))
+                listener_pid = get_listening_pid_windows(self.cfg.pet_control_port)
+                if listener_pid is None or listener_pid == status_pid:
+                    owned_pids.add(status_pid)
+
+            if not owned_pids and port_is_open(
+                self.cfg.pet_control_host,
+                self.cfg.pet_control_port,
+                0.2,
+            ):
+                self.log(
+                    f"[{log_ts()}] Pet control port 有 listener，但身分未通過驗證；拒絕終止未知程序。"
+                )
+
+            for pid in sorted(owned_pids):
                 try:
-                    self.proc_pet_electron.terminate()
+                    taskkill_tree(pid)
                     stopped = True
                 except Exception:
-                    pass
-        self.proc_pet_electron = None
-
-        pid = get_listening_pid_windows(self.cfg.pet_control_port)
-        if pid:
-            try:
-                taskkill_tree(pid)
-                stopped = True
-            except Exception:
-                pass
+                    if proc is not None and int(proc.pid) == pid:
+                        try:
+                            proc.terminate()
+                            stopped = True
+                        except Exception:
+                            pass
+            self.proc_pet_electron = None
         if stopped and not silent:
             self.log(f"[{log_ts()}] 已停止自製桌寵殼。")
 

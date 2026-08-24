@@ -25,9 +25,15 @@ const { createMailBriefingService } = require("./main-process/mail-briefing-serv
 const { startControlServer: createControlServer } = require("./main-process/control-server");
 const { createPetContextMenu, createTrayMenu } = require("./main-process/menus");
 const { createPetLogger } = require("./main-process/pet-logger");
+const { resolvePetMousePolicy } = require("./main-process/pet-mouse-policy");
+const { resolvePetWindowPolicy } = require("./main-process/pet-window-policy");
 
 const APP_NAME = "Kuro Pet Electron";
 const APP_USER_MODEL_ID = "kuro.desktop-agent";
+const CONTROL_SERVICE = "kuro-pet-control";
+const CONTROL_PROTOCOL_VERSION = 1;
+const APP_STARTED_AT = new Date().toISOString();
+const APP_INSTANCE_ID = `${process.pid}-${Date.now().toString(36)}`;
 const TEMP_MAX_RENDER_PERFORMANCE = true;
 const CONTROL_HOST = process.env.KURO_PET_CONTROL_HOST || "127.0.0.1";
 const CONTROL_PORT = Number(process.env.KURO_PET_CONTROL_PORT || "23567");
@@ -70,6 +76,10 @@ let briefingStore = null;
 let briefingStorePath = "";
 let hoveredComponents = new Map();
 let activeWindowDrag = null;
+let lastPetMousePolicy = null;
+let lastPetWindowPolicy = null;
+let petWindowLayerRefreshGeneration = 0;
+let petWindowLayerRepairScheduled = false;
 let controlServer = null;
 let mailBriefingService = null;
 let studySnapshotWatcher = null;
@@ -100,6 +110,7 @@ let latestFrontendState = {
   browserPanelEnabled: false,
   live2dInspectorOverlayEnabled: false
 };
+let appIsQuitting = false;
 
 const petLog = createPetLogger(app);
 
@@ -368,17 +379,31 @@ function applyIgnoreMouseState() {
     return;
   }
 
-  const shouldIgnore =
-    appState.mode === "pet" &&
-    (
-      appState.petGameMode ||
-      (
-        appState.forceIgnoreMouse &&
-        !Array.from(hoveredComponents.values()).some(Boolean)
-      )
-    );
+  lastPetMousePolicy = resolvePetMousePolicy({
+    mode: appState.mode,
+    petGameMode: appState.petGameMode,
+    forceIgnoreMouse: appState.forceIgnoreMouse,
+    interactiveHover: Array.from(hoveredComponents.values()).some(Boolean)
+  });
+  mainWindow.setIgnoreMouseEvents(lastPetMousePolicy.ignoreMouseEvents, {
+    forward: lastPetMousePolicy.forwardMouseMoves
+  });
+}
 
-  mainWindow.setIgnoreMouseEvents(shouldIgnore, { forward: true });
+function clearPetInteractionState() {
+  activeWindowDrag = null;
+  hoveredComponents.clear();
+}
+
+function setForceIgnoreMouse(enabled) {
+  appState.forceIgnoreMouse = Boolean(enabled);
+  clearPetInteractionState();
+  saveCurrentState();
+  applyIgnoreMouseState();
+  broadcast("force-ignore-mouse-changed", appState.forceIgnoreMouse);
+  updateTrayMenu();
+  broadcastBriefingState();
+  return appState.forceIgnoreMouse;
 }
 
 function applyPetFocusPolicy() {
@@ -386,7 +411,68 @@ function applyPetFocusPolicy() {
     return;
   }
 
-  mainWindow.setFocusable(appState.mode !== "pet");
+  const policy = resolvePetWindowPolicy({ mode: appState.mode });
+  if (mainWindow.isFocusable() !== policy.focusable) {
+    mainWindow.setFocusable(policy.focusable);
+  }
+}
+
+function applyPetWindowLayerPolicy({ reason = "unspecified", moveTop = false } = {}) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    lastPetWindowPolicy = null;
+    return null;
+  }
+
+  const policy = resolvePetWindowPolicy({ mode: appState.mode });
+
+  // Focusability can mutate native window styles on Windows. Apply it before
+  // asserting the topmost band so the final operation owns the z-order.
+  if (mainWindow.isFocusable() !== policy.focusable) {
+    mainWindow.setFocusable(policy.focusable);
+  }
+  mainWindow.setAlwaysOnTop(policy.alwaysOnTop, policy.alwaysOnTopLevel);
+  mainWindow.setVisibleOnAllWorkspaces(policy.visibleOnAllWorkspaces, {
+    visibleOnFullScreen: policy.visibleOnFullScreen
+  });
+  mainWindow.setSkipTaskbar(policy.skipTaskbar);
+
+  if (moveTop && policy.moveTopOnShow && mainWindow.isVisible()) {
+    mainWindow.moveTop();
+  }
+
+  lastPetWindowPolicy = {
+    mode: policy.mode,
+    expectedAlwaysOnTop: policy.alwaysOnTop,
+    actualAlwaysOnTop: mainWindow.isAlwaysOnTop(),
+    expectedFocusable: policy.focusable,
+    actualFocusable: mainWindow.isFocusable(),
+    visible: mainWindow.isVisible(),
+    reason
+  };
+
+  if (
+    lastPetWindowPolicy.actualAlwaysOnTop !== lastPetWindowPolicy.expectedAlwaysOnTop ||
+    lastPetWindowPolicy.actualFocusable !== lastPetWindowPolicy.expectedFocusable
+  ) {
+    petLog("pet-window-layer-policy-mismatch", lastPetWindowPolicy);
+  }
+
+  return lastPetWindowPolicy;
+}
+
+function schedulePetWindowLayerRefresh(reason, { moveTop = false } = {}) {
+  const generation = ++petWindowLayerRefreshGeneration;
+  const refresh = () => {
+    if (generation !== petWindowLayerRefreshGeneration) {
+      return;
+    }
+    applyPetWindowLayerPolicy({ reason, moveTop });
+  };
+
+  refresh();
+  setTimeout(refresh, 0);
+  setTimeout(refresh, 250);
+  setTimeout(refresh, 1000);
 }
 
 function applyTaskbarPolicy() {
@@ -511,6 +597,7 @@ function scheduleTaskbarPolicyRefresh() {
 
 function setPetGameMode(enabled) {
   appState.petGameMode = Boolean(enabled);
+  clearPetInteractionState();
   saveCurrentState();
   applyPetFocusPolicy();
   applyIgnoreMouseState();
@@ -529,13 +616,13 @@ function showPetWindow({ focus = true } = {}) {
   }
 
   if (appState.mode === "pet") {
-    applyPetFocusPolicy();
     scheduleTaskbarPolicyRefresh();
     mainWindow.showInactive();
+    schedulePetWindowLayerRefresh("show-pet-window", { moveTop: true });
     return;
   }
 
-  applyPetFocusPolicy();
+  applyPetWindowLayerPolicy({ reason: "show-window" });
   scheduleTaskbarPolicyRefresh();
   mainWindow.show();
   if (focus) {
@@ -1511,16 +1598,10 @@ async function handleControlAction(action, payload = {}) {
         petGameMode: setPetGameMode(Boolean(payload.enabled))
       };
     case "set-force-ignore-mouse":
-      appState.forceIgnoreMouse = Boolean(payload.enabled);
-      saveCurrentState();
-      applyIgnoreMouseState();
-      broadcast("force-ignore-mouse-changed", appState.forceIgnoreMouse);
-      updateTrayMenu();
-      broadcastBriefingState();
       return {
         ok: true,
         action,
-        forceIgnoreMouse: appState.forceIgnoreMouse
+        forceIgnoreMouse: setForceIgnoreMouse(Boolean(payload.enabled))
       };
     case "toggle-game-mode":
       return {
@@ -1544,25 +1625,20 @@ function applyWindowMode(mode, { force = false } = {}) {
   }
 
   appState.mode = nextMode;
+  clearPetInteractionState();
   const targetBounds = resolveTargetBoundsForMode(nextMode);
 
   if (nextMode === "pet") {
     ensurePetAnchor();
-    mainWindow.setAlwaysOnTop(true, "screen-saver");
-    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    mainWindow.setSkipTaskbar(true);
     mainWindow.setResizable(false);
     mainWindow.setMinimumSize(1, 1);
   } else {
-    mainWindow.setAlwaysOnTop(false);
-    mainWindow.setVisibleOnAllWorkspaces(false);
-    mainWindow.setSkipTaskbar(true);
     mainWindow.setResizable(true);
     mainWindow.setMinimumSize(960, 640);
   }
 
   mainWindow.setBounds(targetBounds, false);
-  applyPetFocusPolicy();
+  applyPetWindowLayerPolicy({ reason: "apply-window-mode" });
   applyTaskbarPolicy();
   if (nextMode === "pet") {
     broadcastPetHostState("pet-host-set");
@@ -1663,11 +1739,7 @@ function showMainWindow() {
 }
 
 function toggleForceIgnoreMouse() {
-  appState.forceIgnoreMouse = !appState.forceIgnoreMouse;
-  saveCurrentState();
-  applyIgnoreMouseState();
-  broadcast("force-ignore-mouse-changed", appState.forceIgnoreMouse);
-  updateTrayMenu();
+  return setForceIgnoreMouse(!appState.forceIgnoreMouse);
 }
 
 function toggleReaderWindow() {
@@ -1751,9 +1823,24 @@ function startControlServer() {
     readLive2DInspectorSnapshot,
     captureLive2DPreview,
     getShellStatus: () => ({
+      service: CONTROL_SERVICE,
+      protocolVersion: CONTROL_PROTOCOL_VERSION,
+      pid: process.pid,
+      instanceId: APP_INSTANCE_ID,
+      startedAt: APP_STARTED_AT,
       mode: appState.mode,
       forceIgnoreMouse: appState.forceIgnoreMouse,
       petGameMode: appState.petGameMode,
+      petMousePolicy: lastPetMousePolicy,
+      petWindowPolicy:
+        mainWindow && !mainWindow.isDestroyed()
+          ? {
+              ...lastPetWindowPolicy,
+              actualAlwaysOnTop: mainWindow.isAlwaysOnTop(),
+              actualFocusable: mainWindow.isFocusable(),
+              visible: mainWindow.isVisible()
+            }
+          : null,
       petSpanAllDisplays: appState.petSpanAllDisplays,
       petHostBounds: getPetHostBounds(),
       petAnchor: ensurePetAnchor(),
@@ -1971,6 +2058,15 @@ function createBriefingWindow() {
     updateTrayMenu();
   });
 
+  briefingWindow.on("close", (event) => {
+    if (appIsQuitting || !briefingWindow || briefingWindow.isDestroyed()) {
+      return;
+    }
+    event.preventDefault();
+    briefingWindow.hide();
+    petLog("work-panel-hidden", { reason: "close-request" });
+  });
+
   briefingWindow.on("closed", () => {
     briefingWindow = null;
     appState.briefingVisible = false;
@@ -2025,6 +2121,7 @@ function createWindow() {
     resizable: false,
     skipTaskbar: true,
     focusable: false,
+    alwaysOnTop: appState.mode === "pet",
     fullscreenable: false,
     title: APP_NAME,
     icon: iconPath,
@@ -2051,8 +2148,26 @@ function createWindow() {
   mainWindow.setMenuBarVisibility(false);
   applyWindowMode(appState.mode, { force: true });
   scheduleTaskbarPolicyRefresh();
-  mainWindow.on("show", scheduleTaskbarPolicyRefresh);
-  mainWindow.on("restore", scheduleTaskbarPolicyRefresh);
+  mainWindow.on("show", () => {
+    scheduleTaskbarPolicyRefresh();
+    schedulePetWindowLayerRefresh("pet-window-show-event", { moveTop: appState.mode === "pet" });
+  });
+  mainWindow.on("restore", () => {
+    scheduleTaskbarPolicyRefresh();
+    schedulePetWindowLayerRefresh("pet-window-restore-event", { moveTop: appState.mode === "pet" });
+  });
+  mainWindow.on("always-on-top-changed", (_event, isAlwaysOnTop) => {
+    if (appState.mode !== "pet" || isAlwaysOnTop || petWindowLayerRepairScheduled) {
+      return;
+    }
+    petWindowLayerRepairScheduled = true;
+    setTimeout(() => {
+      petWindowLayerRepairScheduled = false;
+      if (mainWindow && !mainWindow.isDestroyed() && appState.mode === "pet") {
+        schedulePetWindowLayerRefresh("always-on-top-lost", { moveTop: true });
+      }
+    }, 0);
+  });
 
   mainWindow.on("move", () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -2066,7 +2181,21 @@ function createWindow() {
     }
   });
 
+  mainWindow.on("close", (event) => {
+    if (appIsQuitting || !mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+    event.preventDefault();
+    mainWindow.hide();
+    petLog("pet-window-hidden", { reason: "close-request" });
+  });
+
   mainWindow.on("closed", () => {
+    clearPetInteractionState();
+    lastPetMousePolicy = null;
+    lastPetWindowPolicy = null;
+    petWindowLayerRefreshGeneration += 1;
+    petWindowLayerRepairScheduled = false;
     mainWindow = null;
   });
 
@@ -2142,11 +2271,7 @@ function createWindow() {
     }
 
     if (input.key === "F10") {
-      appState.forceIgnoreMouse = !appState.forceIgnoreMouse;
-      saveCurrentState();
-      applyIgnoreMouseState();
-      broadcast("force-ignore-mouse-changed", appState.forceIgnoreMouse);
-      updateTrayMenu();
+      toggleForceIgnoreMouse();
     }
 
     if (input.key === "F11") {
@@ -2186,11 +2311,7 @@ function registerIpc() {
   });
 
   ipcMain.on("toggle-force-ignore-mouse", () => {
-    appState.forceIgnoreMouse = !appState.forceIgnoreMouse;
-    saveCurrentState();
-    applyIgnoreMouseState();
-    broadcast("force-ignore-mouse-changed", appState.forceIgnoreMouse);
-    updateTrayMenu();
+    toggleForceIgnoreMouse();
   });
 
   ipcMain.on("set-ignore-mouse-event", (_event, ignore) => {
@@ -2567,12 +2688,11 @@ if (!singleInstanceLock) {
   });
 
   app.on("window-all-closed", () => {
-    if (process.platform !== "darwin") {
-      app.quit();
-    }
+    petLog("all-windows-closed", { trayResident: true });
   });
 
   app.on("before-quit", () => {
+    appIsQuitting = true;
     if (mailBriefingService) {
       try {
         mailBriefingService.stop();

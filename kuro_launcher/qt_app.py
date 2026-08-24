@@ -90,7 +90,10 @@ class KuroQtLauncherWindow(QMainWindow):
         super().__init__()
         self.cfg = cfg
         self.open_work_panel_on_start = bool(open_work_panel_on_start)
-        self.startup_work_panel_requested = False
+        self.work_panel_activation_inflight = False
+        self.work_panel_activation_pending = False
+        self.work_panel_has_been_revealed = False
+        self.work_panel_last_revealed_instance_id = ""
         self.controller = QtLauncherController(cfg, self._append_log_threadsafe)
         self.nav_buttons: dict[str, QPushButton] = {}
         self.nav_base_labels: dict[str, str] = {}
@@ -1401,13 +1404,21 @@ class KuroQtLauncherWindow(QMainWindow):
         )
         self._start_profile()
 
-    def _open_startup_work_panel(self) -> None:
-        if not self.open_work_panel_on_start or self.startup_work_panel_requested:
+    def request_work_panel_activation(self, source: str = "launcher") -> None:
+        self.work_panel_activation_pending = True
+        self._append_log(f"[{log_ts()}] 工作面板 activation requested：{source}")
+        if self.work_panel_activation_inflight:
             return
-        self.startup_work_panel_requested = True
+        self._run_pending_work_panel_activation()
+
+    def _run_pending_work_panel_activation(self) -> None:
+        if self.work_panel_activation_inflight or not self.work_panel_activation_pending:
+            return
+        self.work_panel_activation_pending = False
+        self.work_panel_activation_inflight = True
         self._run_task(
-            "open-startup-work-panel",
-            lambda: self.controller.set_pet_toggle("set-briefing-visible", True),
+            "ensure-work-panel",
+            self.controller.ensure_work_panel,
         )
 
     def _restore_startup_console(self, reason: str) -> None:
@@ -2327,6 +2338,14 @@ class KuroQtLauncherWindow(QMainWindow):
         threading.Thread(target=runner, daemon=True).start()
 
     def _on_task_finished(self, name: str, result: object) -> None:
+        if name == "ensure-work-panel":
+            self.work_panel_activation_inflight = False
+            self.work_panel_activation_pending = False
+            self.work_panel_has_been_revealed = True
+            if isinstance(result, dict):
+                self.work_panel_last_revealed_instance_id = str(
+                    result.get("instance_id") or ""
+                ).strip()
         if name == "status" and isinstance(result, RuntimeStatus):
             self._apply_status(result)
             return
@@ -2388,15 +2407,28 @@ class KuroQtLauncherWindow(QMainWindow):
             QTimer.singleShot(700, self._request_preview_asset_refresh)
             QTimer.singleShot(1800, self._request_preview_asset_refresh)
         if name == "start-profile":
+            pet_instance_id = ""
             if isinstance(result, dict):
                 history_result = result.get("history") if isinstance(result.get("history"), dict) else {}
+                pet_result = result.get("pet") if isinstance(result.get("pet"), dict) else {}
+                pet_instance_id = str(pet_result.get("instance_id") or "").strip()
                 if history_result.get("ok") and not history_result.get("skipped"):
                     history_uid = str(history_result.get("history_uid") or "").strip()
                     if history_uid:
                         self.selected_history_uid = history_uid
                     self._clear_pending_history_choice()
                     self._refresh_history_list()
-            QTimer.singleShot(150, self._open_startup_work_panel)
+            pet_instance_changed = bool(
+                pet_instance_id
+                and pet_instance_id != self.work_panel_last_revealed_instance_id
+            )
+            if self.open_work_panel_on_start and (
+                not self.work_panel_has_been_revealed or pet_instance_changed
+            ):
+                QTimer.singleShot(
+                    150,
+                    lambda: self.request_work_panel_activation("profile-ready-reconcile"),
+                )
         if name in {"select-history", "create-history", "delete-history"}:
             if name in {"select-history", "create-history"}:
                 self._clear_pending_history_choice()
@@ -2428,14 +2460,16 @@ class KuroQtLauncherWindow(QMainWindow):
         if name == "pet-send-text":
             self.pending_chat_submit = None
             self._update_chat_send_button()
-        if name == "open-startup-work-panel":
-            self.startup_work_panel_requested = False
-        if name in {"start-profile", "open-startup-work-panel"}:
+        if name == "ensure-work-panel":
+            self.work_panel_activation_inflight = False
+        if name in {"start-profile", "ensure-work-panel"}:
             self._restore_startup_console(message)
         self._append_log(f"[{log_ts()}] task failed: {name} / {message}")
         self._set_action_status(f"失敗：{name} / {message}", error=True)
         QMessageBox.warning(self, "Kuro Desktop Console", message)
         self.refresh_status()
+        if name == "ensure-work-panel" and self.work_panel_activation_pending:
+            QTimer.singleShot(250, self._run_pending_work_panel_activation)
 
     def _set_action_status(self, text: str, *, error: bool = False) -> None:
         for label_name in ("workspace_status", "sidebar_action_status"):

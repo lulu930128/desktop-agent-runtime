@@ -25,11 +25,13 @@ WINDOWS_APP_USER_MODEL_ID = "kuro.desktop-agent"
 WORK_PANEL_ARG = "--work-panel"
 WINDOWS_INSTANCE_MUTEX_NAME = "Local\\KuroDesktopAgentLauncher"
 WINDOWS_INSTANCE_ACTIVATE_EVENT_NAME = "Local\\KuroDesktopAgentLauncherActivate"
+WINDOWS_WORK_PANEL_ACTIVATE_EVENT_NAME = "Local\\KuroDesktopAgentWorkPanelActivate"
 WINDOWS_ERROR_ALREADY_EXISTS = 183
 WINDOWS_EVENT_MODIFY_STATE = 0x0002
 WINDOWS_WAIT_OBJECT_0 = 0x00000000
 _instance_mutex_handle = None
 _instance_activate_event_handle = None
+_work_panel_activate_event_handle = None
 
 
 def _consume_work_panel_arg(argv: list[str]) -> tuple[bool, list[str]]:
@@ -94,7 +96,37 @@ def _create_launcher_activation_event() -> bool:
     return True
 
 
-def _signal_existing_launcher_console() -> bool:
+def _create_work_panel_activation_event() -> bool:
+    global _work_panel_activate_event_handle
+    if os.name != "nt":
+        return False
+
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateEventW.argtypes = (
+        wintypes.LPVOID,
+        wintypes.BOOL,
+        wintypes.BOOL,
+        wintypes.LPCWSTR,
+    )
+    kernel32.CreateEventW.restype = wintypes.HANDLE
+
+    handle = kernel32.CreateEventW(
+        None,
+        False,
+        False,
+        WINDOWS_WORK_PANEL_ACTIVATE_EVENT_NAME,
+    )
+    if not handle:
+        print("[launcher-qt][WARN] unable to create the work panel activation event.", flush=True)
+        return False
+    _work_panel_activate_event_handle = handle
+    return True
+
+
+def _signal_activation_event(event_name: str, label: str) -> bool:
     if os.name != "nt":
         return False
 
@@ -109,22 +141,40 @@ def _signal_existing_launcher_console() -> bool:
     kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
     kernel32.CloseHandle.restype = wintypes.BOOL
 
-    handle = kernel32.OpenEventW(
-        WINDOWS_EVENT_MODIFY_STATE,
-        False,
+    for attempt in range(20):
+        handle = kernel32.OpenEventW(
+            WINDOWS_EVENT_MODIFY_STATE,
+            False,
+            event_name,
+        )
+        if handle:
+            try:
+                if not kernel32.SetEvent(handle):
+                    print(f"[launcher-qt][WARN] unable to signal {label}.", flush=True)
+                    return False
+            finally:
+                kernel32.CloseHandle(handle)
+            print(f"[launcher-qt] {label} requested.", flush=True)
+            return True
+        if attempt < 19:
+            time.sleep(0.1)
+
+    print(f"[launcher-qt][WARN] {label} event is unavailable.", flush=True)
+    return False
+
+
+def _signal_existing_launcher_console() -> bool:
+    return _signal_activation_event(
         WINDOWS_INSTANCE_ACTIVATE_EVENT_NAME,
+        "existing launcher console reveal",
     )
-    if not handle:
-        print("[launcher-qt][WARN] existing launcher activation event is unavailable.", flush=True)
-        return False
-    try:
-        if not kernel32.SetEvent(handle):
-            print("[launcher-qt][WARN] unable to signal the existing launcher console.", flush=True)
-            return False
-    finally:
-        kernel32.CloseHandle(handle)
-    print("[launcher-qt] existing launcher console reveal requested.", flush=True)
-    return True
+
+
+def _signal_existing_work_panel() -> bool:
+    return _signal_activation_event(
+        WINDOWS_WORK_PANEL_ACTIVATE_EVENT_NAME,
+        "existing work panel activation",
+    )
 
 
 def _consume_launcher_activation_event() -> bool:
@@ -141,11 +191,26 @@ def _consume_launcher_activation_event() -> bool:
     return kernel32.WaitForSingleObject(handle, 0) == WINDOWS_WAIT_OBJECT_0
 
 
-def _close_launcher_activation_event() -> None:
-    global _instance_activate_event_handle
-    handle = _instance_activate_event_handle
-    _instance_activate_event_handle = None
+def _consume_work_panel_activation_event() -> bool:
+    handle = _work_panel_activate_event_handle
     if os.name != "nt" or not handle:
+        return False
+
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+    kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    return kernel32.WaitForSingleObject(handle, 0) == WINDOWS_WAIT_OBJECT_0
+
+
+def _close_launcher_activation_event() -> None:
+    global _instance_activate_event_handle, _work_panel_activate_event_handle
+    handles = (_instance_activate_event_handle, _work_panel_activate_event_handle)
+    _instance_activate_event_handle = None
+    _work_panel_activate_event_handle = None
+    if os.name != "nt":
         return
 
     import ctypes
@@ -154,39 +219,16 @@ def _close_launcher_activation_event() -> None:
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
     kernel32.CloseHandle.restype = wintypes.BOOL
-    kernel32.CloseHandle(handle)
-
-
-def _reveal_existing_work_panel(cfg) -> bool:
-    from kuro_launcher.utils import http_post_json
-
-    endpoint = f"http://{cfg.pet_control_host}:{cfg.pet_control_port}/command"
-    last_error = "pet control server is not ready"
-    for _attempt in range(10):
-        try:
-            result = http_post_json(
-                endpoint,
-                {"action": "set-briefing-visible", "enabled": True},
-                timeout=1.0,
-            )
-            if result.get("ok", True):
-                print("[launcher-qt] existing work panel reveal requested.", flush=True)
-                return True
-            last_error = str(result.get("message") or result.get("error") or last_error)
-        except Exception as exc:
-            last_error = str(exc)
-        time.sleep(0.5)
-
-    print(f"[launcher-qt][WARN] existing work panel reveal failed: {last_error}", flush=True)
-    return False
+    for handle in handles:
+        if handle:
+            kernel32.CloseHandle(handle)
 
 
 def _activate_existing_launcher(cfg, *, work_panel_mode: bool) -> bool:
     if work_panel_mode:
-        # Product entrypoints must never fall back to the legacy Qt console.
-        # If the Electron work panel cannot be revealed, fail closed and let
-        # the user start a clean instance after the existing owner exits.
-        return _reveal_existing_work_panel(cfg)
+        # The primary launcher owns Electron lifecycle and can recreate a
+        # missing shell. Secondary launchers only deliver the user intent.
+        return _signal_existing_work_panel()
     return _signal_existing_launcher_console()
 
 
@@ -258,10 +300,11 @@ def main() -> int:
 
     if not _acquire_launcher_instance():
         print("[launcher-qt] an existing launcher instance is already running.", flush=True)
-        _activate_existing_launcher(cfg, work_panel_mode=work_panel_mode)
-        return 0
+        activated = _activate_existing_launcher(cfg, work_panel_mode=work_panel_mode)
+        return 0 if activated else 3
 
     _create_launcher_activation_event()
+    _create_work_panel_activation_event()
 
     app = QApplication(qt_argv)
     app.setApplicationName("Kuro")
@@ -292,6 +335,9 @@ def main() -> int:
     activation_timer.setInterval(250)
 
     def reveal_console_if_requested() -> None:
+        if _consume_work_panel_activation_event():
+            print("[launcher-qt] existing work panel activation handled.", flush=True)
+            window.request_work_panel_activation("second-launch")
         if not _consume_launcher_activation_event():
             return
         print("[launcher-qt] existing launcher console reveal handled.", flush=True)
@@ -316,6 +362,9 @@ def main() -> int:
         )
     app.aboutToQuit.connect(launcher_control.stop)
     app.aboutToQuit.connect(_close_launcher_activation_event)
+
+    if open_work_panel_on_start:
+        QTimer.singleShot(0, lambda: window.request_work_panel_activation("startup"))
 
     if open_work_panel_on_start:
         window.hide()

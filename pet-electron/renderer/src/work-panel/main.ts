@@ -126,6 +126,10 @@ function isBusyState(aiState: unknown): boolean {
   return ["thinking", "speaking", "loading", "processing"].includes(text(aiState).toLowerCase());
 }
 
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
 function messageRoleLabel(role: string): string {
   const normalized = text(role).toLowerCase();
   if (["human", "user"].includes(normalized)) return "YOU";
@@ -202,6 +206,7 @@ class KuroWorkPanel {
   private historyOpen = false;
   private historyQuery = "";
   private profileApplying = false;
+  private pendingProfileSelection: NonNullable<ProfileState["selected"]> | null = null;
   private sensorPending = "";
   private settingsSection = window.localStorage.getItem("kuro.work-panel.settings-section") || "assistant";
   private compact = toBoolean(window.localStorage.getItem("kuro.work-panel.compact"));
@@ -317,6 +322,32 @@ class KuroWorkPanel {
     } catch (_error) {
       this.memories = { ok: false, error: "memory-unavailable", memories: [] };
     }
+  }
+
+  private async reconcileProfileRuntime(expectedCharacterId: string): Promise<boolean> {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const [runtimeResult, chatResult, profileResult] = await Promise.allSettled([
+        bridge.getState(),
+        bridge.getChatState(),
+        bridge.getProfile()
+      ]);
+      if (runtimeResult.status === "fulfilled") {
+        this.runtime = { ...this.runtime, ...runtimeResult.value };
+      }
+      if (chatResult.status === "fulfilled") {
+        this.chat = { ...this.chat, ...chatResult.value };
+      }
+      if (profileResult.status === "fulfilled" && profileResult.value?.ok) {
+        this.profile = profileResult.value;
+      }
+
+      const runtimeCharacterId = text(this.chat.confUid || this.runtime.confUid);
+      if (!expectedCharacterId || runtimeCharacterId === expectedCharacterId) {
+        return true;
+      }
+      if (attempt < 3) await wait(250);
+    }
+    return false;
   }
 
   private scheduleHistoryRefresh(): void {
@@ -649,6 +680,7 @@ class KuroWorkPanel {
       this.addFiles(fileInput.files).finally(() => { fileInput.value = ""; });
     });
     root.querySelector<HTMLButtonElement>("[data-composer-action]")?.addEventListener("click", () => {
+      if (this.profileApplying) return;
       if (isBusyState(this.chat.aiState) || this.sending) this.stopOutput();
       else this.sendCurrentText();
     });
@@ -702,7 +734,7 @@ class KuroWorkPanel {
 
   private populateChatControls(): void {
     if (this.mode !== "chat") return;
-    const selected = this.profile.selected || {};
+    const selected = this.pendingProfileSelection || this.profile.selected || {};
     const character = this.viewRoot().querySelector<HTMLSelectElement>("[data-character-select]");
     const model = this.viewRoot().querySelector<HTMLSelectElement>("[data-model-select]");
     const thinking = this.viewRoot().querySelector<HTMLSelectElement>("[data-thinking-select]");
@@ -771,27 +803,50 @@ class KuroWorkPanel {
       this.renderActiveView();
       return;
     }
+    this.pendingProfileSelection = payload;
     this.profileApplying = true;
-    if (this.mode === "chat") this.populateChatControls();
-    this.showToast("正在套用助理設定…");
-    const result = await bridge.applyProfile(payload) as Record<string, unknown> & {
-      cancelled?: boolean;
-      profile?: ProfileState;
-    };
-    this.profileApplying = false;
-    if (result?.cancelled) {
-      this.renderActiveView();
-      return;
-    }
-    if (!result?.ok) {
-      this.showToast(text(result?.error, "助理設定套用失敗。"), true);
-      this.renderActiveView();
-      return;
-    }
-    if (result.profile) this.profile = result.profile;
-    await Promise.all([this.refreshHistory(), this.refreshMemories()]);
-    this.showToast("助理設定已套用。");
     this.renderActiveView();
+    this.showToast("正在套用助理設定；角色語音不同時可能需要約 30 秒…", false, null);
+    try {
+      const result = await bridge.applyProfile(payload) as Record<string, unknown> & {
+        cancelled?: boolean;
+        profile?: ProfileState;
+        result?: { warning?: string };
+      };
+      if (result?.cancelled) {
+        await this.reconcileProfileRuntime("");
+        this.hideToast();
+        return;
+      }
+      if (!result?.ok) {
+        await this.reconcileProfileRuntime("");
+        this.showToast(text(result?.error, "助理設定套用失敗。"), true);
+        return;
+      }
+      if (result.profile) this.profile = result.profile;
+      const runtimeSynced = await this.reconcileProfileRuntime(payload.character_id);
+      await Promise.all([this.refreshHistory(), this.refreshMemories()]);
+      const characterName = text(
+        this.profile.characters?.find((item) => item.id === payload.character_id)?.name,
+        payload.character_id
+      );
+      const warning = text(result.result?.warning);
+      if (warning) {
+        this.showToast(`已切換為 ${characterName}，但有警告：${warning}`, true, 5200);
+      } else if (!runtimeSynced) {
+        this.showToast(`Launcher 已切換為 ${characterName}，但桌寵狀態尚未同步；請稍候或重新載入前端。`, true, 5200);
+      } else {
+        this.showToast(`已切換為 ${characterName}。`);
+      }
+    } catch (error) {
+      await this.reconcileProfileRuntime("");
+      const message = error instanceof Error ? error.message : text(error);
+      this.showToast(`助理設定套用失敗：${text(message, "未知錯誤")}`, true, 5200);
+    } finally {
+      this.pendingProfileSelection = null;
+      this.profileApplying = false;
+      this.renderActiveView();
+    }
   }
 
   private sensorEnabled(kind: string): boolean {
@@ -977,6 +1032,7 @@ class KuroWorkPanel {
     if (this.mode !== "chat") return;
     const action = this.viewRoot().querySelector<HTMLButtonElement>("[data-composer-action]");
     const attach = this.viewRoot().querySelector<HTMLButtonElement>("[data-attach]");
+    const input = this.viewRoot().querySelector<HTMLTextAreaElement>("[data-composer-input]");
     const notice = this.viewRoot().querySelector<HTMLElement>("[data-composer-notice]");
     const state = this.viewRoot().querySelector<HTMLElement>("[data-ai-state]");
     const busy = this.sending || isBusyState(this.chat.aiState);
@@ -985,12 +1041,22 @@ class KuroWorkPanel {
       action.classList.toggle("stop", busy);
       action.innerHTML = busy ? ICONS.stop : ICONS.send;
       action.setAttribute("aria-label", busy ? "停止目前輸出" : "送出訊息");
+      action.disabled = this.profileApplying;
     }
-    if (attach) attach.disabled = this.sending;
+    if (attach) attach.disabled = this.sending || this.profileApplying;
+    if (input) input.disabled = this.profileApplying;
     if (notice && !notice.classList.contains("is-error")) {
-      notice.textContent = this.chat.wsConnected ? "Enter 送出 · Shift + Enter 換行" : "Kuro 離線；可先保留草稿";
+      notice.textContent = this.profileApplying
+        ? "角色切換中；完成前暫停送出新訊息"
+        : this.chat.wsConnected
+          ? "Enter 送出 · Shift + Enter 換行"
+          : "Kuro 離線；可先保留草稿";
     }
-    if (state) state.textContent = text(this.chat.aiState, "idle").toUpperCase();
+    if (state) {
+      state.textContent = this.profileApplying
+        ? "SWITCHING"
+        : text(this.chat.aiState, "idle").toUpperCase();
+    }
   }
 
   private setComposerNotice(message: string, error = false): void {
@@ -1052,7 +1118,7 @@ class KuroWorkPanel {
   }
 
   private async sendCurrentText(): Promise<void> {
-    if (this.sending || isBusyState(this.chat.aiState)) return;
+    if (this.profileApplying || this.sending || isBusyState(this.chat.aiState)) return;
     const input = this.mode === "chat"
       ? this.viewRoot().querySelector<HTMLTextAreaElement>("[data-composer-input]")
       : null;
@@ -1416,7 +1482,7 @@ class KuroWorkPanel {
       group.appendChild(empty);
       return group;
     }
-    const selected = this.profile.selected || {};
+    const selected = this.pendingProfileSelection || this.profile.selected || {};
     const characters = this.settingsSelectRow(
       "角色",
       "切換人物、聲音、Live2D 與角色語氣；共享工作狀態不會分裂。",
@@ -1720,7 +1786,7 @@ class KuroWorkPanel {
     group.appendChild(appearanceActions);
     group.appendChild(this.settingToggle(
       "滑鼠穿透",
-      "讓桌寵不攔截滑鼠；工作面板本身仍可正常操作。",
+      "開啟後整個桌寵層完全穿透；關閉後只有角色本體可操作，透明區域仍會穿透。",
       Boolean(this.runtime.forceIgnoreMouse),
       () => this.setPetBoolean("set-force-ignore-mouse", "forceIgnoreMouse", !Boolean(this.runtime.forceIgnoreMouse))
     ));
@@ -1839,14 +1905,28 @@ class KuroWorkPanel {
     document.body.classList.toggle("reduce-motion", this.reduceMotion);
   }
 
-  private showToast(message: string, error = false): void {
+  private hideToast(): void {
+    const toast = appRoot.querySelector<HTMLElement>("[data-toast]");
+    if (!toast) return;
+    if (this.toastTimer) window.clearTimeout(this.toastTimer);
+    this.toastTimer = 0;
+    toast.classList.remove("is-visible", "is-error");
+  }
+
+  private showToast(message: string, error = false, durationMs: number | null = 2600): void {
     const toast = appRoot.querySelector<HTMLElement>("[data-toast]");
     if (!toast) return;
     toast.textContent = message;
     toast.classList.toggle("is-error", error);
     toast.classList.add("is-visible");
     if (this.toastTimer) window.clearTimeout(this.toastTimer);
-    this.toastTimer = window.setTimeout(() => toast.classList.remove("is-visible"), 2600);
+    this.toastTimer = 0;
+    if (durationMs !== null && durationMs > 0) {
+      this.toastTimer = window.setTimeout(() => {
+        toast.classList.remove("is-visible");
+        this.toastTimer = 0;
+      }, durationMs);
+    }
   }
 }
 

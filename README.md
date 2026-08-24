@@ -1,28 +1,54 @@
-# Kuro Desktop Agent Runtime
+# Kuro
 
-Kuro 是一套 **local-first 桌面工作助理 runtime**。它把 Qt 控制台、
-Open-LLM-VTuber 對話核心、MCP 工具、角色與專案 prompt、GPT-SoVITS 語音、
-Live2D Electron 桌寵、Reader、Briefing 與記憶管理整合在同一個 Windows 工作區。
+**Windows 上的 local-first 個人 AI 工作經理。**
 
-Live2D、語音與角色人格是 Kuro 的互動介面；產品核心仍是協助使用者理解狀況、
-整理工作、呼叫受控工具，並把重要資訊送到正確的畫面，而不是只做陪聊或角色展示。
+Kuro 把工作面板、Live2D 桌寵、Reader、Briefing、角色語音、受控工具與本機記憶整合在同一套桌面 runtime。它服務單一使用者，整理分散的工作狀態，說明現在該注意什麼、為什麼重要，以及下一步可以做什麼。
 
-> 這份 README 是目前程式的 **現況架構基線（as-is）**，不是最終架構宣言。
-> 它先回答每個區域現在做什麼、資料與設定由誰負責，以及後續重構不能破壞哪些邊界。
+角色、語音與 Live2D 是互動介面。工作狀態、工具權限與外部資料的真相來源仍由明確的系統 contract 管理，不交給角色 prompt 或展示層自行判斷。
 
 <p align="center">
-  <img src="docs/assets/readme/kuro-launcher-overview.png" alt="Kuro Qt 控制台、runtime 狀態與 Live2D 桌寵" width="960">
+  <img src="docs/assets/readme/kuro-v1-work-panel-settings.jpg" alt="Kuro 1.0.0 實際運行中的工作面板設定頁" width="1080">
 </p>
 
-## 目前能做什麼
+<p align="center"><sub>2026-08-24 實際運行畫面。為避免把對話、郵件或行事曆等私人內容放進 repo，主圖使用無私人資料的設定頁。</sub></p>
 
-- 由 `桌寵啟動器.vbs` 依 startup profile 啟動整套 runtime，Qt orchestrator 正常情況在背景運作。
-- 在單一工作面板切換普通對話、今天／行事曆與設定；對話模式內可管理歷史、附件、感知輸入、模型與推理深度。
-- 透過 Live2D 桌寵、Reader 與 Briefing 分別承載角色互動、長文字與結構化資訊。
-- 將繁中可見回答整理成適合語音播放的日文摘要，再交給 GPT-SoVITS 合成。
-- 透過明確的 tool catalog 與 tool policy 呼叫 MCP／本機工具。
-- 管理角色長期記憶，並把每日快照與待審核記憶候選分開保存。
-- 由外部 domain system 提供資料真相；例如市場資料與判斷由 OMI 負責，Kuro 只消費結果。
+> **目前大版本：`1.0.0`**
+>
+> 這個版本定義 Kuro 的第一個產品基線：工作面板是主要入口，Qt Launcher 回到背景 orchestration 與診斷角色，對話、Reader、Briefing、桌寵、語音與受控工具由同一套本機 runtime 協作。`kuro_core/` 目前仍是 shadow-only；`1.0.0` 不代表新版 Core 或整份 Roadmap 已完成 cutover。
+
+這份 README 記錄目前程式的 **現況架構（as-is）**、啟動方式與責任邊界。長期產品方向放在 [`docs/product/`](docs/product/)，單次實作與驗證證據放在 [`docs/agent-runs/`](docs/agent-runs/)。
+
+## 導覽
+
+- [Kuro 1.0.0 能做什麼](#kuro-100-能做什麼)
+- [介面與背景元件](#介面與背景元件)
+- [系統全貌](#系統全貌)
+- [元件責任地圖](#元件責任地圖)
+- [設定、資料與安全邊界](#設定與資料真相來源)
+- [啟動方式](#啟動方式)
+- [開發與驗證](#開發與驗證)
+- [已知限制](#目前已知的架構債)
+
+## Kuro 1.0.0 能做什麼
+
+- 由 `桌寵啟動器.vbs` 依 startup profile 啟動整套 runtime；Qt orchestrator 正常情況在背景運作，Electron 工作面板先顯示並持續回報各服務狀態。
+- 在單一工作面板切換普通對話、Today／行事曆與設定；對話模式內可管理歷史、附件、感知輸入、模型與推理深度。
+- 以 Live2D 桌寵承載短互動與狀態提示，以 Reader 呈現長回答與附件，以 Briefing 呈現可掃描的結構化資訊。
+- 將繁中可見回答整理成適合角色語音的日文短摘要，再交給 GPT-SoVITS 合成；語音失敗不影響完整文字結果。
+- 透過 tool catalog、tool policy 與 MCP／本機 adapter 使用外部能力；write、delete、send、publish、長期記憶寫入與高成本操作預設需要確認。
+- 管理角色長期記憶，並把 Briefing snapshot、tool result 與待審核 memory candidate 分開保存。
+- 保留外部 domain ownership。市場資料、freshness、證據與判斷由 OMI 負責，Kuro 只消費並呈現結果與限制。
+- 提供 shadow-only Kuro Core v0，驗證 versioned observation、freshness、SQLite persistence 與 decision trace；目前不取代 legacy Today／Briefing path。
+
+本機環境已完成時，可直接執行 `桌寵啟動器.vbs`。完整需求與命令見[啟動方式](#啟動方式)。
+
+<p align="center">
+  <img src="docs/assets/readme/kuro-v1-desktop-pet.jpg" alt="Kuro 1.0.0 實際運行中的 Live2D 桌寵" width="420">
+</p>
+
+<p align="center"><sub>同一次 runtime 實際顯示的 Live2D 桌寵；僅裁出角色區域，未帶入桌面背景內容。</sub></p>
+
+> `docs/assets/readme/` 內其餘舊截圖與概念圖素材只保留作為介面演進記錄，不代表 Kuro 1.0.0 的目前視覺。
 
 ## 介面與背景元件
 
@@ -32,14 +58,6 @@ Live2D、語音與角色人格是 Kuro 的互動介面；產品核心仍是協�
 | **Live2D 桌寵** | 常駐角色、表情、動作、音訊播放、lip sync、簡短對話提示。 | Tool orchestration、資料分析或長期記憶政策。 |
 | **Qt 控制台** | 背景管理 profile、服務生命週期與狀態；只有失敗或直接啟動 `launcher_qt.py` 時顯示診斷 UI。 | 正常啟動時成為第二個主面板。 |
 | **Reader／舊 Briefing contract** | 保留既有 IPC 與資料相容性，供工作面板漸進採用。 | 正常啟動時自動形成另一套主要導航。 |
-
-| Launcher 與 runtime | Briefing |
-| --- | --- |
-| <img src="docs/assets/readme/kuro-launcher-overview.png" alt="Kuro Launcher" width="480"> | <img src="docs/assets/readme/kuro-briefing-dashboard.png" alt="Kuro Briefing" width="480"> |
-
-| 桌面助理 | 開發工作情境 |
-| --- | --- |
-| <img src="docs/assets/readme/kuro-desktop-companion.png" alt="Kuro 桌面助理" width="480"> | <img src="docs/assets/readme/kuro-coding-companion.png" alt="Kuro 與 Reader 協助開發工作" width="480"> |
 
 ## 系統全貌
 
@@ -83,10 +101,11 @@ flowchart LR
 2. 使用者選擇 character、project、outfit 與 thinking power。
 3. `kuro_launcher/runtime_conf.py` 合併基礎設定、角色設定與 project prompt，產生
    `Open-LLM-VTuber/conf.launcher_runtime.yaml`。
-4. Launcher 啟動或沿用 Bridge，啟動 GPT-SoVITS，並用一小段真實音訊請求確認 TTS 可用。
-5. Launcher 啟動 Open-LLM-VTuber，等待 backend ready 後再啟動 Electron 桌寵殼。
-6. Qt chat client 與 Electron frontend 各自連到 `/client-ws`，Pet control server 則提供本機狀態與操作 API。
-7. Launcher 以每次啟動產生的臨時 token，讓 Electron main process 透過 `:23568` 讀取 profile、history、memory 與 tool policy；renderer 不會取得 token，寫入前仍須經 Electron 原生確認視窗。
+4. Launcher 先啟動或沿用具備正確 service identity 的 Electron 桌寵殼，讓工作面板不必等待 LLM／TTS readiness 就能顯示。
+5. Launcher 啟動或沿用 Bridge，啟動 GPT-SoVITS，並用一小段真實音訊請求確認 TTS 可用；接著啟動 Open-LLM-VTuber。
+6. Qt chat client 與 Electron frontend 在 LLM runtime ready 後各自連到 `/client-ws`；服務尚未 ready 時，工作面板保留可見並呈現各自狀態。
+7. Pet control server 提供帶有 service、protocol、PID 與 instance identity 的本機狀態與操作 API；Launcher 只會沿用或停止可驗證身分的 Pet shell。
+8. Launcher 以每次啟動產生的臨時 token，讓 Electron main process 透過 `:23568` 讀取 profile、history、memory 與 tool policy；renderer 不會取得 token，寫入前仍須經 Electron 原生確認視窗。
 
 `QtLauncherController` 也支援在條件允許時 hot switch profile；若 TTS 資產不同，仍需重啟 TTS。
 
@@ -301,12 +320,26 @@ Briefing 是短期狀態；長期記憶只保存穩定偏好、背景與持續�
 
 > `9981` 是目前 canonical TTS port。不要恢復舊的 `9881`；它可能落在 Windows reserved TCP range。
 
+## 版本來源
+
+Kuro 的產品版本以 repo root 的 [`VERSION`](VERSION) 為準，目前是 `1.0.0`。
+
+下列版本屬於子元件，不和 Kuro 產品版本綁在一起：
+
+- `pet-electron/package.json`：Electron shell 的 private package 版本。
+- `Open-LLM-VTuber/pyproject.toml`：conversation runtime fork 的元件版本。
+- 各項 schema、protocol 與 tool policy version：用來維護資料或 contract 相容性，不能拿來代替產品版本。
+
+因此，升級 Kuro 大版本時不應直接改寫所有子元件版本；只有對應元件本身發布或 contract 改變時才各自調整。
+
 ## Repo 結構
 
 ```text
 kuro/
+├─ VERSION                        # Kuro 產品版本；目前為 1.0.0
 ├─ launcher_qt.py                 # Qt 應用入口
 ├─ kuro_launcher/                 # Launcher UI、controller、config 與 process helpers
+├─ kuro_core/                     # Shadow-only Kuro Core contract、SQLite 與研究 trace
 ├─ kuro_launcher.settings.yaml    # Canonical local runtime 設定
 ├─ Open-LLM-VTuber/               # Conversation、agent、tools、memory、WebSocket
 ├─ projects/                      # Project prompt packs
@@ -378,7 +411,9 @@ Set-Location "C:\project\kuro"
 ```
 
 `桌寵啟動器.vbs` 會以工作面板模式啟動 Qt orchestrator。Qt 控制台在背景管理 runtime，
-不建立第二個可見面板；依 `startup_profile` 啟動服務後，唯一可見主介面是 Electron 工作面板。
+不建立第二個可見面板；Electron 工作面板會先顯示，不需要等待完整 `startup_profile` ready。
+再次執行同一支 VBS 時，secondary process 只向既有 Launcher 送出 activation intent；由既有 Launcher
+驗證、復用或重建 Pet shell，再把工作面板帶回前景。關閉工作面板只會隱藏視窗並保留 tray runtime。
 若啟動失敗，控制台才會例外恢復到前景顯示診斷資訊。
 
 需要直接進入完整 Qt 控制台時，仍可執行上方的 `launcher_qt.py` 命令。現在
@@ -462,6 +497,7 @@ Runtime 或 UI 變更不能只看 build；至少要確認實際 listener、`/sta
 5. **`compose.yaml` 與 `00_kuro_bootstrap.ps1` 已偏離目前 Launcher 模型**：前者仍使用 `9881/8001`，後者建立的環境路徑也不同。完成對齊前，兩者不能當 canonical 啟動文件。
 6. **Fork 與產品程式放在同一 repo**：`Open-LLM-VTuber/` 與 Cubism vendor code 的上游同步、Kuro patch boundary 和 upgrade 流程仍需明文化。
 7. **Local state 分散**：conversation/memory、launcher logs、Briefing/Electron state 分屬不同 runtime owner；未來需要統一的資料盤點、備份與清除策略，但不能把 private state 搬進 git。
+8. **Kuro Core 仍在 shadow 階段**：`kuro_core/` 已建立 observation、freshness、SQLite 與 decision trace 基礎，但尚未接入 live runtime；目前 Today 與 Briefing 仍以 Electron legacy path 為 primary，不能把 shadow package 描述為已完成 cutover。
 
 ## 重構時必須守住的原則
 
@@ -478,8 +514,9 @@ Runtime 或 UI 變更不能只看 build；至少要確認實際 listener、`/sta
 ## 文件與決策位置
 
 - `README.md`：目前 repo 的入口、現況架構與操作方式。
+- `VERSION`：Kuro 產品版本的單一來源。
 - `AGENTS.md`：長期工程規則、trust boundary 與 agent 工作準則。
 - `docs/product/`：使用者確認後的產品願景、運作模型、品質門檻與 roadmap。
 - `docs/agent-runs/`：單次大型任務的規格、計畫、進度與驗證證據。
 
-目前 `docs/product/` 仍是待填寫模板；在使用者確認前，不能把模板內容當成已定案的產品事實。
+`ProductVision.md`、`OperatingModel.md`、`QualityBar.md` 與 `Roadmap.md` 已包含使用者確認的長期方向；單次實作狀態仍以 `docs/agent-runs/` 與實際 runtime 證據為準，不能用目標文件假裝 cutover 已完成。

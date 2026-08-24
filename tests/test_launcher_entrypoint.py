@@ -27,22 +27,22 @@ class LauncherEntrypointTests(unittest.TestCase):
         self.assertTrue(work_panel_mode)
         self.assertEqual(qt_argv, ["launcher_qt.py", "--style", "Fusion"])
 
-    def test_existing_work_panel_uses_pet_control_when_available(self) -> None:
+    def test_existing_work_panel_signals_primary_launcher(self) -> None:
         cfg = object()
         with (
-            patch.object(launcher_qt, "_reveal_existing_work_panel", return_value=True) as reveal,
+            patch.object(launcher_qt, "_signal_existing_work_panel", return_value=True) as signal_panel,
             patch.object(launcher_qt, "_signal_existing_launcher_console") as signal,
         ):
             activated = launcher_qt._activate_existing_launcher(cfg, work_panel_mode=True)
 
         self.assertTrue(activated)
-        reveal.assert_called_once_with(cfg)
+        signal_panel.assert_called_once_with()
         signal.assert_not_called()
 
-    def test_existing_work_panel_does_not_fall_back_to_launcher_console(self) -> None:
+    def test_existing_work_panel_activation_failure_does_not_fall_back_to_console(self) -> None:
         cfg = object()
         with (
-            patch.object(launcher_qt, "_reveal_existing_work_panel", return_value=False) as reveal,
+            patch.object(launcher_qt, "_signal_existing_work_panel", return_value=False) as signal_panel,
             patch.object(
                 launcher_qt,
                 "_signal_existing_launcher_console",
@@ -52,13 +52,13 @@ class LauncherEntrypointTests(unittest.TestCase):
             activated = launcher_qt._activate_existing_launcher(cfg, work_panel_mode=True)
 
         self.assertFalse(activated)
-        reveal.assert_called_once_with(cfg)
+        signal_panel.assert_called_once_with()
         signal.assert_not_called()
 
     def test_existing_console_launch_signals_launcher_directly(self) -> None:
         cfg = object()
         with (
-            patch.object(launcher_qt, "_reveal_existing_work_panel") as reveal,
+            patch.object(launcher_qt, "_signal_existing_work_panel") as signal_panel,
             patch.object(
                 launcher_qt,
                 "_signal_existing_launcher_console",
@@ -68,7 +68,7 @@ class LauncherEntrypointTests(unittest.TestCase):
             activated = launcher_qt._activate_existing_launcher(cfg, work_panel_mode=False)
 
         self.assertTrue(activated)
-        reveal.assert_not_called()
+        signal_panel.assert_not_called()
         signal.assert_called_once_with()
 
 
