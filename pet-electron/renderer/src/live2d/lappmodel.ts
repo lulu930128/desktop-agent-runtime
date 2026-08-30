@@ -65,6 +65,28 @@ function isAbsoluteAssetUrl(value: string): boolean {
   return /^(https?:|file:|blob:|data:)/i.test(String(value || '').trim());
 }
 
+function pointInTriangle(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  cx: number,
+  cy: number
+): boolean {
+  const denominator = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+  if (!Number.isFinite(denominator) || Math.abs(denominator) < 1e-8) {
+    return false;
+  }
+
+  const u = ((by - cy) * (px - cx) + (cx - bx) * (py - cy)) / denominator;
+  const v = ((cy - ay) * (px - cx) + (ax - cx) * (py - cy)) / denominator;
+  const w = 1 - u - v;
+  const epsilon = 1e-6;
+  return u >= -epsilon && v >= -epsilon && w >= -epsilon;
+}
+
 function resolveAssetUrl(baseUrl: string, value: string): string {
   const normalized = String(value || '').trim();
   if (!normalized) {
@@ -1538,6 +1560,10 @@ export class LAppModel extends CubismUserModel {
     return false;
   }
 
+  public hasConfiguredHitAreas(): boolean {
+    return Boolean(this._modelSetting && this._modelSetting.getHitAreasCount() > 0);
+  }
+
   private isTouchableDrawable(drawableId: CubismIdHandle): boolean {
     if (!this._model) {
       return false;
@@ -1554,7 +1580,7 @@ export class LAppModel extends CubismUserModel {
     );
   }
 
-  public hitTestDrawableBounds(x: number, y: number): boolean {
+  public hitTestDrawableMeshes(x: number, y: number): boolean {
     if (this._opacity < 1 || !this._model || !this._modelMatrix) {
       return false;
     }
@@ -1573,7 +1599,9 @@ export class LAppModel extends CubismUserModel {
 
       const vertexCount = this._model.getDrawableVertexCount(drawableIndex);
       const vertices = this._model.getDrawableVertices(drawableIndex);
-      if (vertexCount <= 0 || !vertices) {
+      const indexCount = this._model.getDrawableVertexIndexCount(drawableIndex);
+      const indices = this._model.getDrawableVertexIndices(drawableIndex);
+      if (vertexCount <= 0 || !vertices || indexCount < 3 || !indices) {
         continue;
       }
 
@@ -1595,8 +1623,35 @@ export class LAppModel extends CubismUserModel {
         bottom = Math.max(bottom, vy);
       }
 
-      if (left <= tx && tx <= right && top <= ty && ty <= bottom) {
-        return true;
+      if (tx < left || tx > right || ty < top || ty > bottom) {
+        continue;
+      }
+
+      for (let indexOffset = 0; indexOffset + 2 < indexCount; indexOffset += 3) {
+        const a = indices[indexOffset];
+        const b = indices[indexOffset + 1];
+        const c = indices[indexOffset + 2];
+        if (a >= vertexCount || b >= vertexCount || c >= vertexCount) {
+          continue;
+        }
+
+        const ax = vertices[a * 2];
+        const ay = vertices[a * 2 + 1];
+        const bx = vertices[b * 2];
+        const by = vertices[b * 2 + 1];
+        const cx = vertices[c * 2];
+        const cy = vertices[c * 2 + 1];
+        if (
+          Number.isFinite(ax) &&
+          Number.isFinite(ay) &&
+          Number.isFinite(bx) &&
+          Number.isFinite(by) &&
+          Number.isFinite(cx) &&
+          Number.isFinite(cy) &&
+          pointInTriangle(tx, ty, ax, ay, bx, by, cx, cy)
+        ) {
+          return true;
+        }
       }
     }
 

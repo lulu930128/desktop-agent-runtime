@@ -1,22 +1,45 @@
 import { BackendClient } from "../backend/backend-client";
 import type { RendererState } from "../backend/types";
 import { PetLive2DRenderer } from "../live2d/pet-live2d-renderer";
+import { storeModelZoomScale } from "../model-zoom";
+import { applyPetGeometryCommand } from "./pet-command-geometry";
 
 type BindPetCommandsOptions = {
   client: BackendClient;
   renderer: PetLive2DRenderer;
   reportState: (patch: Partial<RendererState>) => void;
   defaultOutfitParameterId: string;
+  onTransformAccepted?: () => void;
+  onHostAccepted?: (bounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }) => void;
 };
 
 export function bindPetCommands({
   client,
   renderer,
   reportState,
-  defaultOutfitParameterId
+  defaultOutfitParameterId,
+  onTransformAccepted,
+  onHostAccepted
 }: BindPetCommandsOptions): () => void {
   return window.kuroPetElectron.onCommand((payload) => {
     if (!payload || typeof payload.type !== "string") {
+      return;
+    }
+
+    const geometryResult = applyPetGeometryCommand(renderer, payload);
+    if (geometryResult.handled) {
+      if (geometryResult.transformAccepted) {
+        storeModelZoomScale(renderer.getZoomScale());
+        onTransformAccepted?.();
+      }
+      if (geometryResult.hostAccepted && payload.petHostBounds) {
+        onHostAccepted?.(payload.petHostBounds);
+      }
       return;
     }
 
@@ -70,13 +93,6 @@ export function bindPetCommands({
         Boolean(payload.enabled)
       );
       reportState({ live2dInspectorOverlayEnabled });
-    } else if (payload.type === "pet-zoom-set") {
-      renderer.setZoomScale(Number(payload.zoomScale));
-    } else if (payload.type === "pet-host-set" || payload.type === "pet-anchor-set") {
-      renderer.setHostBounds(payload.petHostBounds);
-      if (payload.petAnchor) {
-        renderer.setAnchorScreenPoint(payload.petAnchor.x, payload.petAnchor.y);
-      }
     }
   });
 }

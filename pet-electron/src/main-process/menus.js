@@ -26,6 +26,10 @@ function buildCommonMenuItems(state, actions) {
       click: actions.moveNextDisplay
     },
     {
+      label: "重置桌寵位置",
+      click: actions.resetPosition
+    },
+    {
       label: "重新載入前端",
       click: actions.reloadFrontend
     },

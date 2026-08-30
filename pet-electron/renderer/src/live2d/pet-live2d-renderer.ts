@@ -10,6 +10,24 @@ import {
   type Live2DInspectorSnapshot
 } from "./live2d-inspector";
 import { Live2DHitTester } from "./live2d-hit-tester";
+import {
+  modelPointToNormalized,
+  resolveModelInteractionProfile
+} from "./model-interaction-profile";
+import {
+  resolveModelScreenBounds,
+  resolveStablePlacementTranslation,
+  resolveViewportInvariantTargetHeight,
+  type ModelScreenBounds
+} from "./model-screen-geometry";
+import { resolveAuthoritativePetTransform } from "../interaction/pet-transform-revision";
+import {
+  containsScreenPoint,
+  getActualCanvasViewportBounds,
+  screenPointToViewportPoint,
+  type CanvasViewportBounds,
+  type ScreenPoint
+} from "../geometry/pet-viewport-geometry";
 
 type ModelDescriptor = {
   modelUrl: string;
@@ -23,29 +41,46 @@ type DrawableBounds = {
   bottom: number;
 };
 
-type ScreenBounds = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
+type ScreenBounds = CanvasViewportBounds;
 
-type ScreenPoint = {
-  x: number;
-  y: number;
+export type PetModelEnvelopeUpdate = {
+  transformRevision: number;
+  modelScreenBounds: ModelScreenBounds;
 };
 
 type AnchorDragState = {
-  startClientX: number;
-  startClientY: number;
+  startScreenX: number;
+  startScreenY: number;
   startAnchorX: number;
   startAnchorY: number;
 };
 
-const FORCE_MAX_RENDER_FPS = true;
+export type DragFinishReason =
+  | "pointerup"
+  | "pointercancel"
+  | "lostpointercapture"
+  | "blur"
+  | "dispose";
+
+type DragTelemetry = {
+  sessionId: number;
+  startedAt: number | null;
+  startTransformRevision: number | null;
+  lastFinishReason: DragFinishReason | null;
+  lostPointerCaptureCount: number;
+  pointerCancelCount: number;
+};
+
+const ACTIVE_RENDER_FPS = 60;
+const IDLE_RENDER_FPS = 30;
+const HIDDEN_RENDER_FPS = 2;
+const FRAME_INTERVAL_TOLERANCE_MS = 0.5;
 const MIN_MODEL_ZOOM_SCALE = 0.2;
 const MAX_MODEL_ZOOM_SCALE = 8;
-const MODEL_ZOOM_WHEEL_FACTOR = 1.06;
+const MODEL_ENVELOPE_REPORT_THRESHOLD_DIP = 0.75;
+const MODEL_ENVELOPE_REPORT_INTERVAL_MS = 16;
+const MODEL_ENVELOPE_HEARTBEAT_MS = 1000;
+const DYNAMIC_VISUAL_BOUNDS_INTERVAL_MS = 50;
 
 export type OutfitParameterState = {
   parameterId: string | null;
@@ -93,14 +128,18 @@ function clampDragPoint(value: number): number {
 
 export class PetLive2DRenderer {
   private readonly canvas: HTMLCanvasElement;
+  private readonly rendererBuild: string;
   private readonly subdelegate: LAppSubdelegate;
   private readonly hitTester: Live2DHitTester;
   private readonly debugOverlay: Live2DDebugOverlay;
   private model: LAppModel | null;
   private modelDescriptor: ModelDescriptor | null;
   private rafId: number | null;
-  private renderTimerId: number | null;
   private disposed: boolean;
+  private lastRenderedAtMs: number;
+  private renderSampleStartedAtMs: number;
+  private renderedFramesInSample: number;
+  private measuredRenderFps: number;
   private zoomScale: number;
   private outfitParameterId: string | null;
   private outfitParameterIndex: number | null;
@@ -110,19 +149,30 @@ export class PetLive2DRenderer {
   private aiState: string;
   private pointerActive: boolean;
   private forceActiveUntilMs: number;
-  private cachedDrawableBounds: DrawableBounds | null;
-  private cachedDrawableBoundsAtMs: number;
-  private dynamicDrawableBoundsUntilMs: number;
+  private stablePlacementBounds: DrawableBounds | null;
+  private dynamicVisualBounds: DrawableBounds | null;
+  private dynamicVisualBoundsMeasuredAtMs: number;
   private lastResizeWidth: number;
   private lastResizeHeight: number;
   private lastResizeDpr: number;
-  private hostBounds: ScreenBounds;
+  private expectedHostBounds: ScreenBounds;
   private anchorScreenPoint: ScreenPoint;
+  private transformRevision: number;
   private anchorDrag: AnchorDragState | null;
+  private dragTelemetry: DragTelemetry;
+  private latestProjectionMatrix: CubismMatrix44 | null;
+  private latestModelMatrix: CubismMatrix44 | null;
+  private latestModelBounds: DrawableBounds | null;
+  private latestModelScreenBounds: ModelScreenBounds | null;
+  private lastReportedModelScreenBounds: ModelScreenBounds | null;
+  private lastModelEnvelopeReportedAtMs: number;
+  private modelEnvelopeListener: ((update: PetModelEnvelopeUpdate) => void) | null;
+  private beforeFrameListener: (() => void) | null;
 
-  public constructor(canvas: HTMLCanvasElement) {
+  public constructor(canvas: HTMLCanvasElement, rendererBuild = "unknown") {
     ensureCubismReady();
     this.canvas = canvas;
+    this.rendererBuild = String(rendererBuild || "unknown");
     this.subdelegate = new LAppSubdelegate(canvas);
     if (!this.subdelegate.initialize()) {
       throw new Error("Unable to initialize Live2D WebGL context.");
@@ -133,8 +183,11 @@ export class PetLive2DRenderer {
     this.model = null;
     this.modelDescriptor = null;
     this.rafId = null;
-    this.renderTimerId = null;
     this.disposed = false;
+    this.lastRenderedAtMs = 0;
+    this.renderSampleStartedAtMs = 0;
+    this.renderedFramesInSample = 0;
+    this.measuredRenderFps = 0;
     this.zoomScale = 1.0;
     this.outfitParameterId = null;
     this.outfitParameterIndex = null;
@@ -144,23 +197,40 @@ export class PetLive2DRenderer {
     this.aiState = "idle";
     this.pointerActive = false;
     this.forceActiveUntilMs = 0;
-    this.cachedDrawableBounds = null;
-    this.cachedDrawableBoundsAtMs = 0;
-    this.dynamicDrawableBoundsUntilMs = 0;
+    this.stablePlacementBounds = null;
+    this.dynamicVisualBounds = null;
+    this.dynamicVisualBoundsMeasuredAtMs = 0;
     this.lastResizeWidth = -1;
     this.lastResizeHeight = -1;
     this.lastResizeDpr = -1;
-    this.hostBounds = {
+    this.expectedHostBounds = {
       x: 0,
       y: 0,
       width: Math.max(1, window.innerWidth || canvas.clientWidth || 1),
       height: Math.max(1, window.innerHeight || canvas.clientHeight || 1)
     };
     this.anchorScreenPoint = {
-      x: this.hostBounds.x + this.hostBounds.width / 2,
-      y: this.hostBounds.y + this.hostBounds.height / 2
+      x: this.expectedHostBounds.x + this.expectedHostBounds.width / 2,
+      y: this.expectedHostBounds.y + this.expectedHostBounds.height / 2
     };
+    this.transformRevision = 0;
     this.anchorDrag = null;
+    this.dragTelemetry = {
+      sessionId: 0,
+      startedAt: null,
+      startTransformRevision: null,
+      lastFinishReason: null,
+      lostPointerCaptureCount: 0,
+      pointerCancelCount: 0
+    };
+    this.latestProjectionMatrix = null;
+    this.latestModelMatrix = null;
+    this.latestModelBounds = null;
+    this.latestModelScreenBounds = null;
+    this.lastReportedModelScreenBounds = null;
+    this.lastModelEnvelopeReportedAtMs = 0;
+    this.modelEnvelopeListener = null;
+    this.beforeFrameListener = null;
     this.renderFrame = this.renderFrame.bind(this);
     this.start();
   }
@@ -178,7 +248,9 @@ export class PetLive2DRenderer {
       sizeHint: normalizedScale
     };
     this.modelDescriptor = descriptor;
-    this.invalidateDrawableBounds();
+    this.stablePlacementBounds = null;
+    this.dynamicVisualBounds = null;
+    this.dynamicVisualBoundsMeasuredAtMs = 0;
     this.bumpActivity(1800);
 
     const { modelDir, fileName } = splitModelUrl(modelUrl);
@@ -212,23 +284,27 @@ export class PetLive2DRenderer {
     this.bumpActivity(600);
   }
 
-  public setHostBounds(bounds?: Partial<ScreenBounds> | null): void {
+  public setExpectedHostBounds(bounds?: Partial<ScreenBounds> | null): void {
     if (!bounds || typeof bounds !== "object") {
       return;
     }
 
     const nextBounds = {
-      x: Number.isFinite(Number(bounds.x)) ? Number(bounds.x) : this.hostBounds.x,
-      y: Number.isFinite(Number(bounds.y)) ? Number(bounds.y) : this.hostBounds.y,
+      x: Number.isFinite(Number(bounds.x))
+        ? Number(bounds.x)
+        : this.expectedHostBounds.x,
+      y: Number.isFinite(Number(bounds.y))
+        ? Number(bounds.y)
+        : this.expectedHostBounds.y,
       width: Number.isFinite(Number(bounds.width))
         ? Math.max(1, Number(bounds.width))
-        : this.hostBounds.width,
+        : this.expectedHostBounds.width,
       height: Number.isFinite(Number(bounds.height))
         ? Math.max(1, Number(bounds.height))
-        : this.hostBounds.height
+        : this.expectedHostBounds.height
     };
 
-    this.hostBounds = nextBounds;
+    this.expectedHostBounds = nextBounds;
     this.bumpActivity(500);
   }
 
@@ -251,19 +327,22 @@ export class PetLive2DRenderer {
     };
   }
 
-  public beginAnchorDrag(clientX: number, clientY: number): void {
+  public beginAnchorDrag(screenX: number, screenY: number): void {
+    this.dragTelemetry.sessionId += 1;
+    this.dragTelemetry.startedAt = Date.now();
+    this.dragTelemetry.startTransformRevision = this.transformRevision;
     this.anchorDrag = {
-      startClientX: clientX,
-      startClientY: clientY,
+      startScreenX: screenX,
+      startScreenY: screenY,
       startAnchorX: this.anchorScreenPoint.x,
       startAnchorY: this.anchorScreenPoint.y
     };
     this.bumpActivity(700);
   }
 
-  public updateAnchorDrag(clientX: number, clientY: number): ScreenPoint {
+  public updateAnchorDrag(screenX: number, screenY: number): ScreenPoint {
     if (!this.anchorDrag) {
-      this.beginAnchorDrag(clientX, clientY);
+      this.beginAnchorDrag(screenX, screenY);
     }
 
     const drag = this.anchorDrag;
@@ -271,14 +350,23 @@ export class PetLive2DRenderer {
       return this.getAnchorScreenPoint();
     }
 
-    this.setAnchorScreenPoint(
-      drag.startAnchorX + (clientX - drag.startClientX),
-      drag.startAnchorY + (clientY - drag.startClientY)
-    );
-    return this.getAnchorScreenPoint();
+    this.bumpActivity(500);
+    return {
+      x: drag.startAnchorX + (screenX - drag.startScreenX),
+      y: drag.startAnchorY + (screenY - drag.startScreenY)
+    };
   }
 
-  public endAnchorDrag(): void {
+  public endAnchorDrag(reason: DragFinishReason = "pointerup"): void {
+    if (!this.anchorDrag) {
+      return;
+    }
+    this.dragTelemetry.lastFinishReason = reason;
+    if (reason === "lostpointercapture") {
+      this.dragTelemetry.lostPointerCaptureCount += 1;
+    } else if (reason === "pointercancel") {
+      this.dragTelemetry.pointerCancelCount += 1;
+    }
     this.anchorDrag = null;
     this.bumpActivity(300);
   }
@@ -300,6 +388,49 @@ export class PetLive2DRenderer {
     return this.zoomScale;
   }
 
+  public getTransformRevision(): number {
+    return this.transformRevision;
+  }
+
+  public applyAuthoritativeTransform(transform: {
+    revision: number;
+    anchor: ScreenPoint;
+    zoomScale: number;
+  }): boolean {
+    const resolution = resolveAuthoritativePetTransform(
+      {
+        revision: this.transformRevision,
+        anchor: this.getAnchorScreenPoint(),
+        zoomScale: this.zoomScale
+      },
+      transform
+    );
+    if (!resolution.accepted) {
+      return false;
+    }
+
+    this.transformRevision = resolution.state.revision;
+    this.setAnchorScreenPoint(
+      resolution.state.anchor.x,
+      resolution.state.anchor.y
+    );
+    this.setZoomScale(resolution.state.zoomScale);
+    this.lastReportedModelScreenBounds = null;
+    return true;
+  }
+
+  public setModelEnvelopeListener(
+    listener: ((update: PetModelEnvelopeUpdate) => void) | null
+  ): void {
+    this.modelEnvelopeListener = typeof listener === "function" ? listener : null;
+    this.lastReportedModelScreenBounds = null;
+    this.lastModelEnvelopeReportedAtMs = 0;
+  }
+
+  public setBeforeFrameListener(listener: (() => void) | null): void {
+    this.beforeFrameListener = typeof listener === "function" ? listener : null;
+  }
+
   public setInspectorOverlayEnabled(enabled: boolean): boolean {
     this.debugOverlay.setEnabled(Boolean(enabled));
     this.bumpActivity(this.debugOverlay.isEnabled() ? 1200 : 200);
@@ -312,18 +443,46 @@ export class PetLive2DRenderer {
 
   public getInspectorSnapshot(
     readyModel: LAppModel | null = this.getReadyModel(),
-    modelBounds: DrawableBounds | null | undefined = undefined
+    modelBounds: DrawableBounds | null | undefined = undefined,
+    frameViewportBounds: CanvasViewportBounds | null | undefined = undefined
   ): Live2DInspectorSnapshot {
     const rect = this.canvas.getBoundingClientRect();
+    const actualViewportBounds =
+      frameViewportBounds === undefined
+        ? getActualCanvasViewportBounds(this.canvas)
+        : frameViewportBounds;
     const resolvedBounds =
-      modelBounds === undefined && readyModel ? this.getDrawableBounds(readyModel) : modelBounds;
+      modelBounds === undefined && readyModel
+        ? this.dynamicVisualBounds || this.measureDrawableBounds(readyModel)
+        : modelBounds;
+    const interactionProfile = resolvedBounds
+      ? resolveModelInteractionProfile(this.modelDescriptor?.modelUrl || "")
+      : null;
 
     return {
       ready: Boolean(readyModel),
+      rendererBuild: this.rendererBuild,
+      transformRevision: this.transformRevision,
       overlayEnabled: this.debugOverlay.isEnabled(),
       modelUrl: this.modelDescriptor?.modelUrl || "",
       zoomScale: this.zoomScale,
-      hostBounds: { ...this.hostBounds },
+      // Compatibility alias for older inspector consumers. Rendering geometry
+      // never reads this expected value.
+      hostBounds: { ...this.expectedHostBounds },
+      expectedHostBounds: { ...this.expectedHostBounds },
+      actualViewportBounds: actualViewportBounds
+        ? { ...actualViewportBounds }
+        : null,
+      viewportOriginError: actualViewportBounds
+        ? {
+            x:
+              actualViewportBounds.x -
+              (this.expectedHostBounds.x + rect.left),
+            y:
+              actualViewportBounds.y -
+              (this.expectedHostBounds.y + rect.top)
+          }
+        : null,
       anchorScreenPoint: { ...this.anchorScreenPoint },
       canvas: {
         width: this.canvas.width,
@@ -332,7 +491,39 @@ export class PetLive2DRenderer {
         clientHeight: Math.max(0, rect.height || this.canvas.clientHeight || 0),
         devicePixelRatio: window.devicePixelRatio || 1
       },
+      renderPerformance: {
+        targetFps: this.getTargetFps(),
+        measuredFps: Number(this.measuredRenderFps.toFixed(1))
+      },
       modelBounds: resolvedBounds || null,
+      stablePlacementBounds: this.stablePlacementBounds
+        ? { ...this.stablePlacementBounds }
+        : null,
+      dynamicVisualBounds: resolvedBounds ? { ...resolvedBounds } : null,
+      modelScreenBounds: this.latestModelScreenBounds
+        ? { ...this.latestModelScreenBounds }
+        : null,
+      hitTestMode: readyModel
+        ? readyModel.hasConfiguredHitAreas()
+          ? "configured-hit-areas"
+          : "drawable-mesh"
+        : "none",
+      interactionProfile: interactionProfile
+        ? {
+            id: interactionProfile.id,
+            active: false,
+            ellipses: []
+          }
+        : null,
+      drag: {
+        active: Boolean(this.anchorDrag),
+        sessionId: this.dragTelemetry.sessionId,
+        startedAt: this.dragTelemetry.startedAt,
+        startTransformRevision: this.dragTelemetry.startTransformRevision,
+        lastFinishReason: this.dragTelemetry.lastFinishReason,
+        lostPointerCaptureCount: this.dragTelemetry.lostPointerCaptureCount,
+        pointerCancelCount: this.dragTelemetry.pointerCancelCount
+      },
       model: readyModel?.getInspectorModelSnapshot() || null
     };
   }
@@ -386,7 +577,6 @@ export class PetLive2DRenderer {
       durationSeconds,
       this.outfitParameterIndex
     );
-    this.refreshDrawableBoundsDuringTransition(1100);
     this.bumpActivity(900);
   }
 
@@ -539,7 +729,6 @@ export class PetLive2DRenderer {
     for (const [parameterId, value] of Object.entries(nextParameters)) {
       this.model?.setExternalParameterTarget(parameterId, value, 0.35);
     }
-    this.refreshDrawableBoundsDuringTransition(600);
     this.bumpActivity(900);
   }
 
@@ -572,37 +761,56 @@ export class PetLive2DRenderer {
     this.bumpActivity(1200);
   }
 
-  public setDragPointFromCanvas(clientX: number, clientY: number): void {
-    if (!this.model || this.disposed) {
+  public setPointerScreenPoint(screenX: number, screenY: number): void {
+    if (
+      !this.model ||
+      this.disposed ||
+      !Number.isFinite(screenX) ||
+      !Number.isFinite(screenY) ||
+      !this.latestProjectionMatrix ||
+      !this.latestModelMatrix ||
+      !this.latestModelBounds
+    ) {
       return;
     }
 
-    const rect = this.canvas.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) {
-      this.model.setDragging(0, 0);
+    const actualViewport = getActualCanvasViewportBounds(this.canvas);
+    const canvasPoint = actualViewport
+      ? screenPointToViewportPoint({ x: screenX, y: screenY }, actualViewport)
+      : null;
+    if (!actualViewport || !canvasPoint) {
       return;
     }
 
-    const dragX = ((clientX - rect.left) / rect.width) * 2 - 1;
-    const dragY = 1 - ((clientY - rect.top) / rect.height) * 2;
-    const clampedX = clampDragPoint(dragX);
-    const clampedY = clampDragPoint(dragY);
-    this.model.setDragging(clampedX, clampedY);
-    this.model.setExternalLookTarget(clampedX, clampedY);
-    this.bumpActivity(700);
+    const deviceX = (canvasPoint.x / actualViewport.width) * 2 - 1;
+    const deviceY = 1 - (canvasPoint.y / actualViewport.height) * 2;
+    const viewPoint = {
+      x: this.latestProjectionMatrix.invertTransformX(deviceX),
+      y: this.latestProjectionMatrix.invertTransformY(deviceY)
+    };
+    const modelPoint = {
+      x: this.latestModelMatrix.invertTransformX(viewPoint.x),
+      y: this.latestModelMatrix.invertTransformY(viewPoint.y)
+    };
+    const normalized = modelPointToNormalized(modelPoint, this.latestModelBounds);
+    if (!normalized) {
+      return;
+    }
+
+    const profile = resolveModelInteractionProfile(this.modelDescriptor?.modelUrl || "");
+    const lookX = clampDragPoint(
+      (normalized.x - profile.faceOrigin.x) / profile.lookRange.x
+    );
+    const lookY = clampDragPoint(
+      (normalized.y - profile.faceOrigin.y) / profile.lookRange.y
+    );
+    this.model.setDragging(lookX, lookY);
+    this.bumpActivity(120);
   }
 
   public resetDragPoint(): void {
     this.model?.setDragging(0, 0);
-    this.model?.setExternalLookTarget(0, 0);
     this.bumpActivity(300);
-  }
-
-  public adjustZoomByWheel(deltaY: number): number {
-    const direction = deltaY < 0 ? 1 : -1;
-    const nextScale =
-      this.zoomScale * (direction > 0 ? MODEL_ZOOM_WHEEL_FACTOR : 1 / MODEL_ZOOM_WHEEL_FACTOR);
-    return this.setZoomScale(nextScale);
   }
 
   public hitTestCanvasPoint(clientX: number, clientY: number): boolean {
@@ -623,15 +831,33 @@ export class PetLive2DRenderer {
     ).hit;
   }
 
+  public hitTestScreenPoint(screenX: number, screenY: number): boolean {
+    if (!Number.isFinite(screenX) || !Number.isFinite(screenY)) {
+      return false;
+    }
+    const actualViewport = getActualCanvasViewportBounds(this.canvas);
+    const screenPoint = { x: screenX, y: screenY };
+    if (!actualViewport || !containsScreenPoint(actualViewport, screenPoint)) {
+      return false;
+    }
+    const viewportPoint = screenPointToViewportPoint(screenPoint, actualViewport);
+    if (!viewportPoint) {
+      return false;
+    }
+    return this.hitTester.hitTestViewportPoint(
+      this.canvas,
+      this.getReadyModel(),
+      viewportPoint.x,
+      viewportPoint.y
+    ).hit;
+  }
+
   public dispose(): void {
     this.disposed = true;
+    this.beforeFrameListener = null;
     if (this.rafId !== null) {
       window.cancelAnimationFrame(this.rafId);
       this.rafId = null;
-    }
-    if (this.renderTimerId !== null) {
-      window.clearTimeout(this.renderTimerId);
-      this.renderTimerId = null;
     }
     this.releaseCurrentModel();
     this.subdelegate.release();
@@ -641,10 +867,6 @@ export class PetLive2DRenderer {
   private start(): void {
     if (this.rafId !== null) {
       window.cancelAnimationFrame(this.rafId);
-    }
-    if (this.renderTimerId !== null) {
-      window.clearTimeout(this.renderTimerId);
-      this.renderTimerId = null;
     }
     this.rafId = window.requestAnimationFrame(this.renderFrame);
   }
@@ -661,8 +883,15 @@ export class PetLive2DRenderer {
     }
 
     this.model = null;
-    this.invalidateDrawableBounds();
+    this.stablePlacementBounds = null;
+    this.dynamicVisualBounds = null;
+    this.dynamicVisualBoundsMeasuredAtMs = 0;
     this.hitTester.clear();
+    this.latestProjectionMatrix = null;
+    this.latestModelMatrix = null;
+    this.latestModelBounds = null;
+    this.latestModelScreenBounds = null;
+    this.lastReportedModelScreenBounds = null;
   }
 
   private getReadyModel(): LAppModel | null {
@@ -676,19 +905,6 @@ export class PetLive2DRenderer {
   private bumpActivity(durationMs: number): void {
     this.forceActiveUntilMs = Math.max(
       this.forceActiveUntilMs,
-      performance.now() + Math.max(0, durationMs)
-    );
-  }
-
-  private invalidateDrawableBounds(): void {
-    this.cachedDrawableBounds = null;
-    this.cachedDrawableBoundsAtMs = 0;
-  }
-
-  private refreshDrawableBoundsDuringTransition(durationMs: number): void {
-    this.invalidateDrawableBounds();
-    this.dynamicDrawableBoundsUntilMs = Math.max(
-      this.dynamicDrawableBoundsUntilMs,
       performance.now() + Math.max(0, durationMs)
     );
   }
@@ -723,56 +939,72 @@ export class PetLive2DRenderer {
   }
 
   private getTargetFps(): number {
-    if (FORCE_MAX_RENDER_FPS) {
-      return Number.POSITIVE_INFINITY;
-    }
-
     if (this.debugOverlay.isEnabled()) {
-      return 30;
+      return ACTIVE_RENDER_FPS;
     }
 
     if (document.hidden) {
-      return 2;
+      return HIDDEN_RENDER_FPS;
     }
 
     const now = performance.now();
     if (this.pointerActive || now < this.forceActiveUntilMs) {
-      return 30;
+      return ACTIVE_RENDER_FPS;
     }
 
-    if (this.aiState === "speaking") {
-      return 30;
-    }
-    if (this.aiState === "listening") {
-      return 24;
-    }
     if (
+      this.aiState === "speaking" ||
+      this.aiState === "listening" ||
       this.aiState === "thinking" ||
       this.aiState === "connecting" ||
       this.aiState === "interrupted"
     ) {
-      return 18;
+      return ACTIVE_RENDER_FPS;
     }
-    return 12;
+    return IDLE_RENDER_FPS;
   }
 
   private scheduleNextFrame(): void {
-    if (this.disposed || this.rafId !== null || this.renderTimerId !== null) {
+    if (this.disposed || this.rafId !== null) {
+      return;
+    }
+    this.rafId = window.requestAnimationFrame(this.renderFrame);
+  }
+
+  private shouldRenderFrame(frameTimeMs: number): boolean {
+    const targetFps = this.getTargetFps();
+    const targetIntervalMs = 1000 / targetFps;
+    if (this.lastRenderedAtMs <= 0) {
+      this.lastRenderedAtMs = frameTimeMs;
+      return true;
+    }
+
+    const elapsedMs = frameTimeMs - this.lastRenderedAtMs;
+    if (elapsedMs + FRAME_INTERVAL_TOLERANCE_MS < targetIntervalMs) {
+      return false;
+    }
+
+    this.lastRenderedAtMs = frameTimeMs - (elapsedMs % targetIntervalMs);
+    return true;
+  }
+
+  private recordRenderedFrame(frameTimeMs: number): void {
+    if (this.renderSampleStartedAtMs <= 0) {
+      this.renderSampleStartedAtMs = frameTimeMs;
+      this.renderedFramesInSample = 1;
       return;
     }
 
-    if (FORCE_MAX_RENDER_FPS) {
-      this.rafId = window.requestAnimationFrame(this.renderFrame);
+    this.renderedFramesInSample += 1;
+    const sampleDurationMs = frameTimeMs - this.renderSampleStartedAtMs;
+    if (sampleDurationMs < 1000) {
       return;
     }
 
-    const delayMs = Math.max(16, Math.round(1000 / this.getTargetFps()));
-    this.renderTimerId = window.setTimeout(() => {
-      this.renderTimerId = null;
-      if (!this.disposed) {
-        this.rafId = window.requestAnimationFrame(this.renderFrame);
-      }
-    }, delayMs);
+    this.measuredRenderFps =
+      ((this.renderedFramesInSample - 1) * 1000) / sampleDurationMs;
+    this.renderSampleStartedAtMs = frameTimeMs;
+    this.renderedFramesInSample = 1;
   }
 
   private resizeIfNeeded(): void {
@@ -795,15 +1027,25 @@ export class PetLive2DRenderer {
     this.subdelegate.resize();
   }
 
-  private getDrawableBounds(readyModel: LAppModel): DrawableBounds | null {
-    const now = performance.now();
-    if (this.cachedDrawableBounds && now >= this.dynamicDrawableBoundsUntilMs) {
-      return this.cachedDrawableBounds;
+  private getDynamicVisualBounds(
+    readyModel: LAppModel,
+    frameTimeMs: number
+  ): DrawableBounds | null {
+    if (
+      this.dynamicVisualBounds &&
+      frameTimeMs - this.dynamicVisualBoundsMeasuredAtMs <
+        DYNAMIC_VISUAL_BOUNDS_INTERVAL_MS
+    ) {
+      return this.dynamicVisualBounds;
     }
 
-    this.cachedDrawableBounds = this.measureDrawableBounds(readyModel);
-    this.cachedDrawableBoundsAtMs = now;
-    return this.cachedDrawableBounds;
+    const measuredBounds = this.measureDrawableBounds(readyModel);
+    this.dynamicVisualBounds = measuredBounds ? { ...measuredBounds } : null;
+    this.dynamicVisualBoundsMeasuredAtMs = frameTimeMs;
+    if (!this.stablePlacementBounds && measuredBounds) {
+      this.stablePlacementBounds = { ...measuredBounds };
+    }
+    return this.dynamicVisualBounds;
   }
 
   private measureDrawableBounds(readyModel: LAppModel): DrawableBounds | null {
@@ -851,31 +1093,92 @@ export class PetLive2DRenderer {
     return { left, right, top, bottom };
   }
 
-  private getAnchorViewPoint(projection: CubismMatrix44): ScreenPoint | null {
-    const rect = this.canvas.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) {
+  private getAnchorViewPoint(
+    projection: CubismMatrix44,
+    actualViewport: CanvasViewportBounds
+  ): ScreenPoint | null {
+    const anchorViewportPoint = screenPointToViewportPoint(
+      this.anchorScreenPoint,
+      actualViewport
+    );
+    if (!anchorViewportPoint) {
       return null;
     }
 
-    const anchorCanvasX = this.anchorScreenPoint.x - this.hostBounds.x;
-    const anchorCanvasY = this.anchorScreenPoint.y - this.hostBounds.y;
-    if (!Number.isFinite(anchorCanvasX) || !Number.isFinite(anchorCanvasY)) {
-      return null;
-    }
-
-    const deviceX = (anchorCanvasX / rect.width) * 2 - 1;
-    const deviceY = 1 - (anchorCanvasY / rect.height) * 2;
+    const deviceX = (anchorViewportPoint.x / actualViewport.width) * 2 - 1;
+    const deviceY = 1 - (anchorViewportPoint.y / actualViewport.height) * 2;
     return {
       x: projection.invertTransformX(deviceX),
       y: projection.invertTransformY(deviceY)
     };
   }
 
-  private renderFrame(): void {
+  private resolveCurrentModelScreenBounds(
+    projection: CubismMatrix44,
+    matrix: CubismMatrix44,
+    modelBounds: DrawableBounds,
+    actualViewport: CanvasViewportBounds
+  ): ModelScreenBounds | null {
+    return resolveModelScreenBounds(
+      modelBounds,
+      {
+        scaleX: matrix.getScaleX(),
+        scaleY: matrix.getScaleY(),
+        translateX: matrix.getTranslateX(),
+        translateY: matrix.getTranslateY()
+      },
+      {
+        scaleX: projection.getScaleX(),
+        scaleY: projection.getScaleY(),
+        translateX: projection.getTranslateX(),
+        translateY: projection.getTranslateY()
+      },
+      actualViewport
+    );
+  }
+
+  private maybeReportModelEnvelope(
+    modelScreenBounds: ModelScreenBounds,
+    frameTimeMs: number
+  ): void {
+    if (!this.modelEnvelopeListener) {
+      return;
+    }
+
+    const previous = this.lastReportedModelScreenBounds;
+    const materiallyChanged =
+      !previous ||
+      Math.abs(previous.left - modelScreenBounds.left) >= MODEL_ENVELOPE_REPORT_THRESHOLD_DIP ||
+      Math.abs(previous.top - modelScreenBounds.top) >= MODEL_ENVELOPE_REPORT_THRESHOLD_DIP ||
+      Math.abs(previous.right - modelScreenBounds.right) >= MODEL_ENVELOPE_REPORT_THRESHOLD_DIP ||
+      Math.abs(previous.bottom - modelScreenBounds.bottom) >= MODEL_ENVELOPE_REPORT_THRESHOLD_DIP;
+    const elapsedMs = frameTimeMs - this.lastModelEnvelopeReportedAtMs;
+    if (
+      (!materiallyChanged && elapsedMs < MODEL_ENVELOPE_HEARTBEAT_MS) ||
+      (materiallyChanged && elapsedMs < MODEL_ENVELOPE_REPORT_INTERVAL_MS)
+    ) {
+      return;
+    }
+
+    this.lastReportedModelScreenBounds = { ...modelScreenBounds };
+    this.lastModelEnvelopeReportedAtMs = frameTimeMs;
+    this.modelEnvelopeListener({
+      transformRevision: this.transformRevision,
+      modelScreenBounds: { ...modelScreenBounds }
+    });
+  }
+
+  private renderFrame(frameTimeMs: number): void {
     this.rafId = null;
     if (this.disposed) {
       return;
     }
+    if (!this.shouldRenderFrame(frameTimeMs)) {
+      this.scheduleNextFrame();
+      return;
+    }
+    this.beforeFrameListener?.();
+    this.recordRenderedFrame(frameTimeMs);
 
     LAppPal.updateTime();
     this.resizeIfNeeded();
@@ -899,12 +1202,20 @@ export class PetLive2DRenderer {
       CubismWebGLOffscreenManager.getInstance().beginFrameProcess(gl);
       const projection = new CubismMatrix44();
       const { width, height } = this.canvas;
+      const actualViewportBounds = getActualCanvasViewportBounds(this.canvas);
 
       if (width > 0 && height > 0) {
         if (width < height) {
           projection.scale(1.0, width / height);
         } else {
           projection.scale(height / width, 1.0);
+        }
+      }
+
+      if (!this.stablePlacementBounds) {
+        const initialBounds = this.measureDrawableBounds(readyModel);
+        if (initialBounds) {
+          this.stablePlacementBounds = { ...initialBounds };
         }
       }
 
@@ -915,37 +1226,83 @@ export class PetLive2DRenderer {
       if (matrix && this.modelDescriptor) {
         matrix.loadIdentity();
 
-        const anchorViewPoint = this.getAnchorViewPoint(projection) || { x: 0, y: 0 };
+        const anchorViewPoint = actualViewportBounds
+          ? this.getAnchorViewPoint(projection, actualViewportBounds) || { x: 0, y: 0 }
+          : { x: 0, y: 0 };
         const baseTargetHeight = Math.min(
           2.8,
           Math.max(0.85, this.modelDescriptor.sizeHint * 1.9)
         );
-        const targetHeight = baseTargetHeight * this.zoomScale;
+        // Model visual size is owned only by zoom. The viewport contributes
+        // the view-unit-to-DIP conversion, so resizing the BrowserWindow does
+        // not feed back into the character's on-screen scale.
+        const targetHeight = actualViewportBounds
+          ? resolveViewportInvariantTargetHeight(
+              baseTargetHeight,
+              this.zoomScale,
+              actualViewportBounds.width,
+              actualViewportBounds.height
+            )
+          : null;
 
-        matrix.setHeight(targetHeight);
+        if (targetHeight) {
+          matrix.setHeight(targetHeight);
+        }
 
-        modelBounds = this.getDrawableBounds(readyModel);
-        if (modelBounds) {
-          const centerX = (modelBounds.left + modelBounds.right) / 2;
-          const centerY = (modelBounds.top + modelBounds.bottom) / 2;
-          matrix.translate(
-            anchorViewPoint.x - centerX * matrix.getScaleX(),
-            anchorViewPoint.y - centerY * matrix.getScaleY()
-          );
+        modelBounds = this.getDynamicVisualBounds(readyModel, frameTimeMs);
+        const placementBounds = this.stablePlacementBounds || modelBounds;
+        const placementTranslation = placementBounds
+          ? resolveStablePlacementTranslation(
+              placementBounds,
+              anchorViewPoint,
+              matrix.getScaleX(),
+              matrix.getScaleY()
+            )
+          : null;
+        if (placementTranslation) {
+          // Placement is permanently based on the model's first stable visible
+          // pose. Motion/expression/outfit bounds may resize the transparent
+          // host, but cannot redefine the character's feet or horizontal centre.
+          matrix.translate(placementTranslation.x, placementTranslation.y);
         } else {
           matrix.centerX(anchorViewPoint.x);
-          matrix.centerY(anchorViewPoint.y);
+          matrix.bottom(anchorViewPoint.y);
         }
       }
 
-      this.hitTester.updateProjection(projection);
+      if (matrix) {
+        this.latestProjectionMatrix = projection.clone();
+        this.latestModelMatrix = matrix.clone();
+        this.latestModelBounds = modelBounds ? { ...modelBounds } : null;
+        this.latestModelScreenBounds = modelBounds && actualViewportBounds
+          ? this.resolveCurrentModelScreenBounds(
+              projection,
+              matrix,
+              modelBounds,
+              actualViewportBounds
+            )
+          : null;
+        if (this.latestModelScreenBounds) {
+          this.maybeReportModelEnvelope(this.latestModelScreenBounds, frameTimeMs);
+        }
+        this.hitTester.updateFrame(
+          projection,
+          readyModel.hasConfiguredHitAreas()
+        );
+      } else {
+        this.hitTester.clear();
+      }
       const overlayEnabled = this.debugOverlay.isEnabled();
       const overlayProjection = overlayEnabled ? new CubismMatrix44() : null;
       if (overlayProjection) {
         overlayProjection.setMatrix(projection.getArray());
       }
       const overlaySnapshot = overlayEnabled
-        ? this.getInspectorSnapshot(readyModel, modelBounds)
+        ? this.getInspectorSnapshot(
+            readyModel,
+            modelBounds,
+            actualViewportBounds
+          )
         : null;
       readyModel.draw(projection);
 
@@ -962,6 +1319,10 @@ export class PetLive2DRenderer {
       }
     } else {
       this.hitTester.clear();
+      this.latestProjectionMatrix = null;
+      this.latestModelMatrix = null;
+      this.latestModelBounds = null;
+      this.latestModelScreenBounds = null;
       if (this.debugOverlay.isEnabled()) {
         this.debugOverlay.render(this.getInspectorSnapshot(null, null), null);
       }

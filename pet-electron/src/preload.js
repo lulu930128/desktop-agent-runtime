@@ -38,6 +38,12 @@ const bridge = {
   reportFrontendState(payload) {
     ipcRenderer.send("pet-frontend-state", payload);
   },
+  reportPetModelEnvelope(payload) {
+    ipcRenderer.send("pet-model-envelope", payload);
+  },
+  requestPetTransform(payload) {
+    ipcRenderer.send("pet-transform-request", payload);
+  },
   updateComponentHover(componentName, hovered) {
     ipcRenderer.send("update-component-hover", componentName, Boolean(hovered));
   },
@@ -61,9 +67,15 @@ const bridge = {
       zoomScale: Number(zoomScale)
     });
   },
-  setPetModelZoom(zoomScale) {
+  setPetModelZoom(zoomScale, pivotScreenPoint = null) {
     ipcRenderer.send("set-pet-model-zoom", {
-      zoomScale: Number(zoomScale)
+      zoomScale: Number(zoomScale),
+      pivotScreenPoint:
+        pivotScreenPoint &&
+        Number.isFinite(Number(pivotScreenPoint.x)) &&
+        Number.isFinite(Number(pivotScreenPoint.y))
+          ? { x: Number(pivotScreenPoint.x), y: Number(pivotScreenPoint.y) }
+          : null
     });
   },
   setPetAnchor(x, y) {
@@ -96,6 +108,7 @@ contextBridge.exposeInMainWorld("api", {
   setPetWindowZoom: bridge.setPetWindowZoom,
   setPetModelZoom: bridge.setPetModelZoom,
   setPetAnchor: bridge.setPetAnchor,
+  requestPetTransform: bridge.requestPetTransform,
   adjustPetWindowScale: bridge.adjustPetWindowScale,
   getScreenCaptureSourceId: bridge.getScreenCaptureSourceId,
   endWindowDrag: bridge.endWindowDrag,

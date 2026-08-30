@@ -1,5 +1,8 @@
-import { PetLive2DRenderer } from "../live2d/pet-live2d-renderer";
-import { storeModelZoomScale } from "../model-zoom";
+import {
+  PetLive2DRenderer,
+  type DragFinishReason
+} from "../live2d/pet-live2d-renderer";
+import { resolveWheelZoomFactor } from "./pet-zoom-geometry";
 
 export function bindModelPointerControls(
   canvas: HTMLCanvasElement,
@@ -7,29 +10,35 @@ export function bindModelPointerControls(
 ): () => void {
   let hoverOnModel = false;
   let draggingModel = false;
+  let activePointerId: number | null = null;
   let hoverRefreshRafId: number | null = null;
   let pendingHoverPoint: { clientX: number; clientY: number } | null = null;
-  let zoomUpdateRafId: number | null = null;
-  let pendingModelZoomScale: number | null = null;
+  let anchorUpdateRafId: number | null = null;
+  let pendingAnchor: { x: number; y: number } | null = null;
+  let transformRequestId = 0;
 
   const setModelHoverState = (nextHover: boolean): void => {
     if (hoverOnModel === nextHover) {
+      if (nextHover) {
+        window.kuroPetElectron.updateComponentHover("live2d-model", true);
+      }
       return;
     }
     hoverOnModel = nextHover;
     canvas.style.cursor = draggingModel ? "grabbing" : hoverOnModel ? "grab" : "default";
-    renderer.setPointerActive(hoverOnModel || draggingModel);
+    renderer.setPointerActive(draggingModel);
     window.kuroPetElectron.updateComponentHover("live2d-model", hoverOnModel);
   };
 
   const refreshModelHover = (clientX: number, clientY: number): boolean => {
     const nextHover = renderer.hitTestCanvasPoint(clientX, clientY);
     setModelHoverState(nextHover);
-    if (nextHover) {
-      renderer.setDragPointFromCanvas(clientX, clientY);
-    } else if (!draggingModel) {
-      renderer.resetDragPoint();
-    }
+    return nextHover;
+  };
+
+  const refreshModelHoverFromScreen = (screenX: number, screenY: number): boolean => {
+    const nextHover = renderer.hitTestScreenPoint(screenX, screenY);
+    setModelHoverState(nextHover);
     return nextHover;
   };
 
@@ -59,28 +68,41 @@ export function bindModelPointerControls(
     }
   };
 
-  const schedulePetModelZoom = (zoomScale: number): void => {
-    pendingModelZoomScale = zoomScale;
-    if (zoomUpdateRafId !== null) {
-      return;
+  const flushPetAnchorUpdate = (): void => {
+    if (anchorUpdateRafId !== null) {
+      window.cancelAnimationFrame(anchorUpdateRafId);
+      anchorUpdateRafId = null;
     }
-
-    zoomUpdateRafId = window.requestAnimationFrame(() => {
-      zoomUpdateRafId = null;
-      const nextZoomScale = pendingModelZoomScale;
-      pendingModelZoomScale = null;
-      if (nextZoomScale !== null) {
-        window.kuroPetElectron.setPetModelZoom(nextZoomScale);
-      }
-    });
+    const nextAnchor = pendingAnchor;
+    pendingAnchor = null;
+    if (nextAnchor) {
+      transformRequestId += 1;
+      window.kuroPetElectron.requestPetTransform({
+        kind: "anchor",
+        requestId: transformRequestId,
+        requestedAnchor: nextAnchor
+      });
+    }
   };
 
-  const cancelPetModelZoom = (): void => {
-    pendingModelZoomScale = null;
-    if (zoomUpdateRafId !== null) {
-      window.cancelAnimationFrame(zoomUpdateRafId);
-      zoomUpdateRafId = null;
+  const schedulePetAnchorUpdate = (x: number, y: number): void => {
+    pendingAnchor = { x, y };
+    if (anchorUpdateRafId !== null) {
+      return;
     }
+    anchorUpdateRafId = window.requestAnimationFrame(() => {
+      anchorUpdateRafId = null;
+      const nextAnchor = pendingAnchor;
+      pendingAnchor = null;
+      if (nextAnchor) {
+        transformRequestId += 1;
+        window.kuroPetElectron.requestPetTransform({
+          kind: "anchor",
+          requestId: transformRequestId,
+          requestedAnchor: nextAnchor
+        });
+      }
+    });
   };
 
   const handlePointerDown = (event: PointerEvent): void => {
@@ -94,10 +116,18 @@ export function bindModelPointerControls(
     }
 
     draggingModel = true;
+    activePointerId = event.pointerId;
     canvas.style.cursor = "grabbing";
     renderer.setPointerActive(true);
-    renderer.setDragPointFromCanvas(event.clientX, event.clientY);
-    renderer.beginAnchorDrag(event.clientX, event.clientY);
+    renderer.setPointerScreenPoint(event.screenX, event.screenY);
+    renderer.beginAnchorDrag(event.screenX, event.screenY);
+    window.kuroPetElectron.startWindowDrag(event.screenX, event.screenY);
+    try {
+      canvas.setPointerCapture(event.pointerId);
+    } catch {
+      // Electron may move the native window before capture is established.
+      // Window-level listeners below remain the recovery path.
+    }
     event.preventDefault();
   };
 
@@ -108,28 +138,63 @@ export function bindModelPointerControls(
     }
 
     event.preventDefault();
-    const zoomScale = renderer.adjustZoomByWheel(event.deltaY);
-    storeModelZoomScale(zoomScale);
-    schedulePetModelZoom(zoomScale);
+    const scaleFactor = resolveWheelZoomFactor(event.deltaY);
+    if (!scaleFactor) {
+      return;
+    }
+    transformRequestId += 1;
+    window.kuroPetElectron.requestPetTransform({
+      kind: "zoom",
+      requestId: transformRequestId,
+      scaleFactor,
+      pivotScreenPoint: { x: event.screenX, y: event.screenY }
+    });
   };
 
   const handlePointerMove = (event: PointerEvent): void => {
     if (draggingModel) {
-      renderer.setDragPointFromCanvas(event.clientX, event.clientY);
-      const anchor = renderer.updateAnchorDrag(event.clientX, event.clientY);
-      window.kuroPetElectron.setPetAnchor(anchor.x, anchor.y);
+      renderer.setPointerScreenPoint(event.screenX, event.screenY);
+      const anchor = renderer.updateAnchorDrag(event.screenX, event.screenY);
+      schedulePetAnchorUpdate(anchor.x, anchor.y);
       return;
     }
 
     scheduleModelHoverRefresh(event.clientX, event.clientY);
   };
 
-  const handlePointerUp = (): void => {
+  const finishPointerDrag = (reason: DragFinishReason): void => {
+    if (!draggingModel && activePointerId === null) {
+      return;
+    }
     draggingModel = false;
-    renderer.endAnchorDrag();
+    const pointerId = activePointerId;
+    activePointerId = null;
+    flushPetAnchorUpdate();
+    renderer.endAnchorDrag(reason);
     renderer.resetDragPoint();
-    renderer.setPointerActive(hoverOnModel);
-    canvas.style.cursor = hoverOnModel ? "grab" : "default";
+    window.kuroPetElectron.endWindowDrag();
+    if (pointerId !== null && canvas.hasPointerCapture(pointerId)) {
+      try {
+        canvas.releasePointerCapture(pointerId);
+      } catch {
+        // Capture may already have been released by the native window move.
+      }
+    }
+    setModelHoverState(false);
+    renderer.setPointerActive(false);
+    canvas.style.cursor = "default";
+  };
+
+  const handlePointerUp = (_event: PointerEvent): void => {
+    finishPointerDrag("pointerup");
+  };
+
+  const handlePointerCancel = (): void => {
+    finishPointerDrag("pointercancel");
+  };
+
+  const handleLostPointerCapture = (): void => {
+    finishPointerDrag("lostpointercapture");
   };
 
   const handlePointerLeave = (): void => {
@@ -139,38 +204,49 @@ export function bindModelPointerControls(
     cancelModelHoverRefresh();
     setModelHoverState(false);
     renderer.setPointerActive(false);
-    renderer.resetDragPoint();
   };
 
   const handleBlur = (): void => {
-    draggingModel = false;
-    renderer.endAnchorDrag();
+    finishPointerDrag("blur");
     cancelModelHoverRefresh();
-    cancelPetModelZoom();
+    flushPetAnchorUpdate();
     setModelHoverState(false);
     renderer.setPointerActive(false);
-    renderer.resetDragPoint();
   };
 
   canvas.addEventListener("pointerdown", handlePointerDown);
   canvas.addEventListener("wheel", handleWheel, { passive: false });
   window.addEventListener("pointermove", handlePointerMove);
   window.addEventListener("pointerup", handlePointerUp);
+  window.addEventListener("pointercancel", handlePointerCancel);
+  canvas.addEventListener("lostpointercapture", handleLostPointerCapture);
   canvas.addEventListener("pointerleave", handlePointerLeave);
   window.addEventListener("blur", handleBlur);
+  const unbindGlobalPointer = window.kuroPetElectron.onCommand((payload) => {
+    if (payload.type !== "pet-pointer-set" || !payload.screenPoint) {
+      return;
+    }
+    if (draggingModel) {
+      window.kuroPetElectron.updateComponentHover("live2d-model", true);
+      renderer.setPointerScreenPoint(payload.screenPoint.x, payload.screenPoint.y);
+      return;
+    }
+    refreshModelHoverFromScreen(payload.screenPoint.x, payload.screenPoint.y);
+  });
 
   return () => {
     canvas.removeEventListener("pointerdown", handlePointerDown);
     canvas.removeEventListener("wheel", handleWheel);
     window.removeEventListener("pointermove", handlePointerMove);
     window.removeEventListener("pointerup", handlePointerUp);
+    window.removeEventListener("pointercancel", handlePointerCancel);
+    canvas.removeEventListener("lostpointercapture", handleLostPointerCapture);
     canvas.removeEventListener("pointerleave", handlePointerLeave);
     window.removeEventListener("blur", handleBlur);
+    unbindGlobalPointer();
 
-    draggingModel = false;
-    renderer.endAnchorDrag();
+    finishPointerDrag("dispose");
     cancelModelHoverRefresh();
-    cancelPetModelZoom();
     setModelHoverState(false);
     renderer.setPointerActive(false);
     renderer.resetDragPoint();

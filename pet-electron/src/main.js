@@ -25,8 +25,31 @@ const { createMailBriefingService } = require("./main-process/mail-briefing-serv
 const { startControlServer: createControlServer } = require("./main-process/control-server");
 const { createPetContextMenu, createTrayMenu } = require("./main-process/menus");
 const { createPetLogger } = require("./main-process/pet-logger");
+const {
+  resolvePetDisplayContext,
+  resolvePetLayout,
+  resolveZoomAwarePetHostSize
+} = require("./main-process/pet-layout");
+const {
+  hostContainsBounds,
+  normalizeHostBounds,
+  normalizeScreenBounds,
+  resolveHostResizeAction,
+  resolvePetHostBounds,
+  shouldFreezePetHostRelocation
+} = require("./main-process/pet-host-envelope");
+const {
+  advancePetTransformState,
+  applyPetTransformRequest,
+  createPetTransformState,
+  isCurrentTransformRevision
+} = require("./main-process/pet-transform-state");
 const { resolvePetMousePolicy } = require("./main-process/pet-mouse-policy");
 const { resolvePetWindowPolicy } = require("./main-process/pet-window-policy");
+const {
+  canMutateFixedPetShell,
+  resolveFixedDesktopShellBounds
+} = require("./main-process/pet-fixed-shell");
 
 const APP_NAME = "Kuro Pet Electron";
 const APP_USER_MODEL_ID = "kuro.desktop-agent";
@@ -34,12 +57,26 @@ const CONTROL_SERVICE = "kuro-pet-control";
 const CONTROL_PROTOCOL_VERSION = 1;
 const APP_STARTED_AT = new Date().toISOString();
 const APP_INSTANCE_ID = `${process.pid}-${Date.now().toString(36)}`;
-const TEMP_MAX_RENDER_PERFORMANCE = true;
+const TEMP_MAX_RENDER_PERFORMANCE = false;
 const CONTROL_HOST = process.env.KURO_PET_CONTROL_HOST || "127.0.0.1";
 const CONTROL_PORT = Number(process.env.KURO_PET_CONTROL_PORT || "23567");
 const LAUNCHER_CONTROL_URL = process.env.KURO_LAUNCHER_CONTROL_URL || "http://127.0.0.1:23568";
 const LAUNCHER_CONTROL_TOKEN = process.env.KURO_LAUNCHER_CONTROL_TOKEN || "";
 const MAX_LAUNCHER_RESPONSE_BYTES = 2 * 1024 * 1024;
+const PET_CURSOR_POLL_MS = 50;
+const PET_CURSOR_HEARTBEAT_MS = 750;
+const PET_INTERACTION_LEASE_TIMEOUT_MS = 1800;
+const PET_INTERACTION_LEASE_WATCHDOG_MS = 250;
+const PET_ANCHOR_SAVE_DELAY_MS = 240;
+const PET_HOST_SHRINK_DELAY_MS = 360;
+const PET_FIXED_DESKTOP_SHELL = process.env.KURO_PET_FIXED_DESKTOP_SHELL !== "0";
+const PET_HOST_MODE = PET_FIXED_DESKTOP_SHELL
+  ? "fixed-desktop-shell-v1"
+  : "model-bounds-follow-v6";
+const PET_INTERACTION_ZOOM_IDLE_MS = 180;
+const PET_INTERACTION_FREEZE_HOST =
+  !PET_FIXED_DESKTOP_SHELL &&
+  process.env.KURO_PET_INTERACTION_FREEZE_HOST === "1";
 
 if (TEMP_MAX_RENDER_PERFORMANCE) {
   app.commandLine.appendSwitch("disable-frame-rate-limit");
@@ -75,6 +112,7 @@ let statePath = "";
 let briefingStore = null;
 let briefingStorePath = "";
 let hoveredComponents = new Map();
+let componentHoverLeaseAt = new Map();
 let activeWindowDrag = null;
 let lastPetMousePolicy = null;
 let lastPetWindowPolicy = null;
@@ -84,6 +122,32 @@ let controlServer = null;
 let mailBriefingService = null;
 let studySnapshotWatcher = null;
 let studySnapshotBroadcastTimer = null;
+let petCursorBroadcastTimer = null;
+let petInteractionLeaseTimer = null;
+let lastPetCursorPoint = null;
+let petAnchorSaveTimer = null;
+let petHostShrinkTimer = null;
+let pendingPetHostShrinkBounds = null;
+let currentPetHostBounds = null;
+let currentFixedPetShellBounds = null;
+let fixedPetShellBoundsWriteCount = 0;
+let fixedPetShellBoundsRejectedCount = 0;
+let lastFixedPetShellBoundsWriteReason = null;
+let lastFixedPetShellBoundsRejectedReason = null;
+let latestPetModelScreenBounds = null;
+let latestPetEnvelopeRevision = 0;
+let petTransformState = null;
+let petInteractionZoomTimer = null;
+let pendingInteractionHostBounds = null;
+let petHostRelocationSuppressedCount = 0;
+let petHostRelocationAppliedCount = 0;
+let lastPetHostRelocationSuppressedReason = null;
+let lastPetHostRelocationAppliedReason = null;
+let petInteractionState = {
+  dragActive: false,
+  zoomActive: false,
+  lastZoomRequestAt: null
+};
 let live2dPreviewCaptureInFlight = null;
 const taskbarHiddenNativeHandles = new Set();
 let latestFrontendState = {
@@ -132,6 +196,25 @@ function saveCurrentState() {
     return;
   }
   saveState(statePath, appState);
+}
+
+function schedulePetAnchorSave() {
+  if (petAnchorSaveTimer) {
+    clearTimeout(petAnchorSaveTimer);
+  }
+  petAnchorSaveTimer = setTimeout(() => {
+    petAnchorSaveTimer = null;
+    saveCurrentState();
+  }, PET_ANCHOR_SAVE_DELAY_MS);
+  petAnchorSaveTimer.unref?.();
+}
+
+function flushPetAnchorSave() {
+  if (petAnchorSaveTimer) {
+    clearTimeout(petAnchorSaveTimer);
+    petAnchorSaveTimer = null;
+  }
+  saveCurrentState();
 }
 
 function setBoundsForCurrentMode(bounds) {
@@ -210,11 +293,34 @@ function resetPetBoundsToDefault() {
     width: defaults.width,
     height: defaults.height
   };
-  appState.petAnchor = getDefaultPetAnchor();
+  const defaultAnchor = getDefaultPetAnchor();
+  resetPetHostEnvelope(defaultAnchor);
+  setPetAnchor(defaultAnchor.x, defaultAnchor.y);
+  showPetWindow();
+  return { ...ensurePetTransformState().anchor };
 }
 
 function getAllDisplays() {
   return screen.getAllDisplays().sort((a, b) => a.bounds.x - b.bounds.x || a.bounds.y - b.bounds.y);
+}
+
+function rebuildFixedPetShellBounds() {
+  currentFixedPetShellBounds = resolveFixedDesktopShellBounds(getAllDisplays());
+  return { ...currentFixedPetShellBounds };
+}
+
+function getFixedPetShellBounds() {
+  if (!currentFixedPetShellBounds) {
+    return rebuildFixedPetShellBounds();
+  }
+  return { ...currentFixedPetShellBounds };
+}
+
+function getPetHostSizingMode() {
+  if (PET_FIXED_DESKTOP_SHELL) {
+    return "compact-render-surface";
+  }
+  return latestPetModelScreenBounds ? "model-bounds" : "bootstrap-fallback";
 }
 
 function getVirtualWorkAreaBounds() {
@@ -238,44 +344,193 @@ function getVirtualWorkAreaBounds() {
 }
 
 function getPetHostBounds() {
-  return getVirtualWorkAreaBounds();
+  if (PET_FIXED_DESKTOP_SHELL) {
+    return getFixedPetShellBounds();
+  }
+  if (!currentPetHostBounds) {
+    currentPetHostBounds = { ...getFallbackPetLayout().hostBounds };
+  }
+  return { ...currentPetHostBounds };
 }
 
-function clampPointToVirtualDesktop(point) {
-  const area = getVirtualWorkAreaBounds();
-  const fallback = {
-    x: area.x + area.width / 2,
-    y: area.y + area.height / 2
-  };
-  const x = Number.isFinite(Number(point?.x)) ? Number(point.x) : fallback.x;
-  const y = Number.isFinite(Number(point?.y)) ? Number(point.y) : fallback.y;
+function applyMainWindowBounds(bounds, reason) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return false;
+  }
+  const normalized = normalizeHostBounds(bounds);
+  if (!normalized) {
+    return false;
+  }
+  if (
+    PET_FIXED_DESKTOP_SHELL &&
+    appState.mode === "pet" &&
+    !canMutateFixedPetShell(reason)
+  ) {
+    fixedPetShellBoundsRejectedCount += 1;
+    lastFixedPetShellBoundsRejectedReason = String(reason || "unspecified");
+    petLog("fixed-pet-shell-bounds-rejected", {
+      reason: lastFixedPetShellBoundsRejectedReason,
+      requestedBounds: normalized
+    });
+    return false;
+  }
 
+  const current = mainWindow.getBounds();
+  const unchanged =
+    current.x === normalized.x &&
+    current.y === normalized.y &&
+    current.width === normalized.width &&
+    current.height === normalized.height;
+  if (!unchanged) {
+    mainWindow.setBounds(normalized, false);
+  }
+  if (PET_FIXED_DESKTOP_SHELL && appState.mode === "pet") {
+    fixedPetShellBoundsWriteCount += unchanged ? 0 : 1;
+    lastFixedPetShellBoundsWriteReason = String(reason || "unspecified");
+  }
+  return !unchanged;
+}
+
+function getDefaultPetAnchorRequest() {
+  const defaults = cloneDefaultState().boundsByMode.pet;
+  const primaryArea = screen.getPrimaryDisplay().workArea;
   return {
-    x: Math.round(Math.min(Math.max(x, area.x), area.x + area.width)),
-    y: Math.round(Math.min(Math.max(y, area.y), area.y + area.height))
+    x: primaryArea.x + defaults.x + defaults.width / 2,
+    y: primaryArea.y + primaryArea.height - 24
   };
+}
+
+function getFallbackPetLayout(point = null) {
+  return resolvePetLayout(
+    point || appState.petAnchor || getDefaultPetAnchorRequest(),
+    getAllDisplays(),
+    resolveZoomAwarePetHostSize(appState.petZoomScale)
+  );
 }
 
 function getDefaultPetAnchor() {
-  const defaults = cloneDefaultState().boundsByMode.pet;
-  const primaryArea = screen.getPrimaryDisplay().workArea;
-  return clampPointToVirtualDesktop({
-    x: primaryArea.x + defaults.x + defaults.width / 2,
-    y: primaryArea.y + defaults.y + defaults.height / 2
-  });
+  return getFallbackPetLayout(getDefaultPetAnchorRequest()).anchor;
 }
 
 function ensurePetAnchor() {
-  const anchor = clampPointToVirtualDesktop(appState.petAnchor || getDefaultPetAnchor());
+  if (petTransformState) {
+    return { ...petTransformState.anchor };
+  }
+  const fallback = getDefaultPetAnchorRequest();
+  const anchor = {
+    x: Number.isFinite(Number(appState.petAnchor?.x))
+      ? Number(appState.petAnchor.x)
+      : fallback.x,
+    y: Number.isFinite(Number(appState.petAnchor?.y))
+      ? Number(appState.petAnchor.y)
+      : fallback.y
+  };
   appState.petAnchor = anchor;
-  return anchor;
+  return { ...anchor };
+}
+
+function ensurePetTransformState() {
+  if (!petTransformState) {
+    petTransformState = createPetTransformState(
+      {
+        revision: 1,
+        anchor: ensurePetAnchor(),
+        zoomScale: appState.petZoomScale
+      },
+      {
+        minZoomScale: MIN_PET_ZOOM_SCALE,
+        maxZoomScale: MAX_PET_ZOOM_SCALE
+      }
+    );
+  }
+  appState.petAnchor = { ...petTransformState.anchor };
+  appState.petZoomScale = petTransformState.zoomScale;
+  return {
+    revision: petTransformState.revision,
+    anchor: { ...petTransformState.anchor },
+    zoomScale: petTransformState.zoomScale
+  };
+}
+
+function buildPetTransformStatePayload(sourceRequestId = null) {
+  const transform = ensurePetTransformState();
+  return {
+    type: "pet-transform-set",
+    transformRevision: transform.revision,
+    petAnchor: { ...transform.anchor },
+    zoomScale: transform.zoomScale,
+    sourceRequestId:
+      Number.isSafeInteger(Number(sourceRequestId)) && Number(sourceRequestId) >= 0
+        ? Number(sourceRequestId)
+        : null
+  };
+}
+
+function broadcastPetTransformState(sourceRequestId = null) {
+  broadcast("pet-command", buildPetTransformStatePayload(sourceRequestId));
+}
+
+function acceptPetTransformState(nextState, options = {}) {
+  petTransformState = createPetTransformState(
+    nextState,
+    {
+      minZoomScale: MIN_PET_ZOOM_SCALE,
+      maxZoomScale: MAX_PET_ZOOM_SCALE
+    }
+  );
+  appState.petAnchor = { ...petTransformState.anchor };
+  appState.petZoomScale = petTransformState.zoomScale;
+  clearPetHostShrinkTimer();
+  latestPetModelScreenBounds = null;
+  latestPetEnvelopeRevision = 0;
+
+  if (options.deferSave === true) {
+    schedulePetAnchorSave();
+  } else {
+    flushPetAnchorSave();
+  }
+  if (options.broadcast !== false) {
+    broadcastPetTransformState(options.sourceRequestId);
+  }
+  return ensurePetTransformState();
+}
+
+function commitPetTransformValues(nextValues, options = {}) {
+  const result = advancePetTransformState(
+    ensurePetTransformState(),
+    nextValues,
+    {
+      minZoomScale: MIN_PET_ZOOM_SCALE,
+      maxZoomScale: MAX_PET_ZOOM_SCALE
+    }
+  );
+  if (!result.changed) {
+    if (options.broadcast === true) {
+      broadcastPetTransformState(options.sourceRequestId);
+    }
+    return ensurePetTransformState();
+  }
+  return acceptPetTransformState(result.state, options);
 }
 
 function buildPetHostStatePayload(type = "pet-host-set") {
+  const transform = ensurePetTransformState();
+  const anchor = transform.anchor;
+  const displayContext = resolvePetDisplayContext(anchor, getAllDisplays());
   return {
     type,
+    transformRevision: transform.revision,
+    petHostMode: PET_HOST_MODE,
+    petHostSizing: getPetHostSizingMode(),
+    petFixedDesktopShell: PET_FIXED_DESKTOP_SHELL,
+    petShellBounds: PET_FIXED_DESKTOP_SHELL ? getFixedPetShellBounds() : null,
     petHostBounds: getPetHostBounds(),
-    petAnchor: ensurePetAnchor()
+    petModelScreenBounds: latestPetModelScreenBounds
+      ? { ...latestPetModelScreenBounds }
+      : null,
+    petDisplayId: displayContext.displayId,
+    petDisplayScaleFactor: displayContext.scaleFactor,
+    petWorkArea: displayContext.workArea
   };
 }
 
@@ -284,14 +539,184 @@ function broadcastPetHostState(type = "pet-host-set") {
 }
 
 function setPetAnchor(x, y, options = {}) {
-  appState.petAnchor = clampPointToVirtualDesktop({ x, y });
-  saveCurrentState();
+  const currentAnchor = ensurePetTransformState().anchor;
+  const requestedAnchor = {
+    x: Number.isFinite(Number(x)) ? Number(x) : currentAnchor.x,
+    y: Number.isFinite(Number(y)) ? Number(y) : currentAnchor.y
+  };
+  return commitPetTransformValues(
+    { anchor: requestedAnchor },
+    {
+      deferSave: options.deferSave === true,
+      broadcast: options.broadcast !== false,
+      sourceRequestId: options.sourceRequestId
+    }
+  ).anchor;
+}
 
-  if (options.broadcast !== false) {
-    broadcastPetHostState("pet-anchor-set");
+function clearPetHostShrinkTimer() {
+  if (petHostShrinkTimer) {
+    clearTimeout(petHostShrinkTimer);
+    petHostShrinkTimer = null;
+  }
+  pendingPetHostShrinkBounds = null;
+}
+
+function isPetInteractionActive() {
+  return petInteractionState.dragActive || petInteractionState.zoomActive;
+}
+
+function shouldFreezeCurrentPetHostRelocation() {
+  return shouldFreezePetHostRelocation({
+    enabled: PET_INTERACTION_FREEZE_HOST,
+    mode: appState.mode,
+    dragActive: petInteractionState.dragActive,
+    zoomActive: petInteractionState.zoomActive
+  });
+}
+
+function setPetDragInteractionActive(active) {
+  petInteractionState.dragActive = Boolean(active);
+}
+
+function markPetZoomInteractionActive() {
+  petInteractionState.zoomActive = true;
+  petInteractionState.lastZoomRequestAt = Date.now();
+  if (petInteractionZoomTimer) {
+    clearTimeout(petInteractionZoomTimer);
+  }
+  petInteractionZoomTimer = setTimeout(() => {
+    petInteractionZoomTimer = null;
+    petInteractionState.zoomActive = false;
+  }, PET_INTERACTION_ZOOM_IDLE_MS);
+  petInteractionZoomTimer.unref?.();
+}
+
+function clearPetInteractionTimer() {
+  if (petInteractionZoomTimer) {
+    clearTimeout(petInteractionZoomTimer);
+    petInteractionZoomTimer = null;
+  }
+  petInteractionState.zoomActive = false;
+}
+
+function suppressPetHostRelocation(bounds, reason) {
+  pendingInteractionHostBounds = { ...bounds };
+  petHostRelocationSuppressedCount += 1;
+  lastPetHostRelocationSuppressedReason = String(reason || "model-envelope");
+}
+
+function applyPetHostBounds(bounds, reason = "model-envelope") {
+  const normalized = normalizeHostBounds(bounds);
+  if (!normalized) {
+    return false;
   }
 
-  return appState.petAnchor;
+  if (PET_FIXED_DESKTOP_SHELL) {
+    fixedPetShellBoundsRejectedCount += 1;
+    lastFixedPetShellBoundsRejectedReason = String(reason || "model-envelope");
+    return false;
+  }
+
+  if (shouldFreezeCurrentPetHostRelocation()) {
+    suppressPetHostRelocation(normalized, reason);
+    return false;
+  }
+
+  const current = currentPetHostBounds;
+  const unchanged =
+    current &&
+    current.x === normalized.x &&
+    current.y === normalized.y &&
+    current.width === normalized.width &&
+    current.height === normalized.height;
+  currentPetHostBounds = normalized;
+  if (unchanged) {
+    pendingInteractionHostBounds = null;
+    return false;
+  }
+
+  if (mainWindow && !mainWindow.isDestroyed() && appState.mode === "pet") {
+    applyMainWindowBounds(normalized, reason);
+    petHostRelocationAppliedCount += 1;
+    lastPetHostRelocationAppliedReason = String(reason || "model-envelope");
+  }
+  pendingInteractionHostBounds = null;
+  broadcastPetHostState("pet-host-set");
+  return true;
+}
+
+function resetPetHostEnvelope(anchor = null) {
+  clearPetHostShrinkTimer();
+  latestPetModelScreenBounds = null;
+  latestPetEnvelopeRevision = 0;
+  pendingInteractionHostBounds = null;
+  if (PET_FIXED_DESKTOP_SHELL) {
+    currentPetHostBounds = getFixedPetShellBounds();
+    broadcastPetHostState("pet-host-set");
+    return;
+  }
+  const fallbackBounds = getFallbackPetLayout(anchor || ensurePetAnchor()).hostBounds;
+  currentPetHostBounds = null;
+  applyPetHostBounds(fallbackBounds, "envelope-reset");
+}
+
+function handlePetModelEnvelope(payload) {
+  const transform = ensurePetTransformState();
+  if (!isCurrentTransformRevision(transform, Number(payload?.transformRevision))) {
+    return false;
+  }
+
+  const modelScreenBounds = normalizeScreenBounds(payload?.modelScreenBounds);
+  const desiredHostBounds = resolvePetHostBounds(modelScreenBounds, {
+    minWidth: MIN_PET_WINDOW_WIDTH,
+    minHeight: MIN_PET_WINDOW_HEIGHT
+  });
+  if (!modelScreenBounds || !desiredHostBounds) {
+    return false;
+  }
+
+  latestPetModelScreenBounds = modelScreenBounds;
+  latestPetEnvelopeRevision = transform.revision;
+  if (PET_FIXED_DESKTOP_SHELL) {
+    clearPetHostShrinkTimer();
+    pendingInteractionHostBounds = null;
+    return true;
+  }
+  const action = resolveHostResizeAction(currentPetHostBounds, desiredHostBounds);
+
+  if (
+    shouldFreezeCurrentPetHostRelocation() &&
+    (action === "apply" || action === "shrink")
+  ) {
+    clearPetHostShrinkTimer();
+    suppressPetHostRelocation(desiredHostBounds, `interaction-${action}`);
+    return true;
+  }
+
+  if (action === "apply") {
+    clearPetHostShrinkTimer();
+    return applyPetHostBounds(desiredHostBounds, "envelope-expanded");
+  }
+
+  if (action === "shrink") {
+    pendingPetHostShrinkBounds = desiredHostBounds;
+    if (!petHostShrinkTimer) {
+      petHostShrinkTimer = setTimeout(() => {
+        petHostShrinkTimer = null;
+        const pendingBounds = pendingPetHostShrinkBounds;
+        pendingPetHostShrinkBounds = null;
+        if (pendingBounds) {
+          applyPetHostBounds(pendingBounds, "envelope-shrunk");
+        }
+      }, PET_HOST_SHRINK_DELAY_MS);
+      petHostShrinkTimer.unref?.();
+    }
+    return true;
+  }
+
+  clearPetHostShrinkTimer();
+  return true;
 }
 
 function findDisplayForBounds(bounds) {
@@ -368,6 +793,9 @@ function resolveTargetBoundsForMode(mode) {
   const requestedBounds = getWindowBoundsForMode(mode);
   if (mode === "pet") {
     ensurePetAnchor();
+    if (PET_FIXED_DESKTOP_SHELL) {
+      return getFixedPetShellBounds();
+    }
     return getPetHostBounds();
   }
 
@@ -379,20 +807,79 @@ function applyIgnoreMouseState() {
     return;
   }
 
+  const now = Date.now();
+  const interactiveHover = Array.from(hoveredComponents.entries()).some(
+    ([componentName, hovered]) => {
+      if (!hovered) return false;
+      if (!PET_FIXED_DESKTOP_SHELL || appState.mode !== "pet") return true;
+      const leaseAt = componentHoverLeaseAt.get(componentName) || 0;
+      return now - leaseAt <= PET_INTERACTION_LEASE_TIMEOUT_MS;
+    }
+  );
   lastPetMousePolicy = resolvePetMousePolicy({
     mode: appState.mode,
     petGameMode: appState.petGameMode,
     forceIgnoreMouse: appState.forceIgnoreMouse,
-    interactiveHover: Array.from(hoveredComponents.values()).some(Boolean)
+    interactiveHover
   });
   mainWindow.setIgnoreMouseEvents(lastPetMousePolicy.ignoreMouseEvents, {
     forward: lastPetMousePolicy.forwardMouseMoves
   });
 }
 
+function updateComponentHoverLease(componentName, hovered) {
+  const normalizedName = String(componentName || "").trim();
+  if (!normalizedName) return;
+  hoveredComponents.set(normalizedName, Boolean(hovered));
+  if (hovered) {
+    componentHoverLeaseAt.set(normalizedName, Date.now());
+  } else {
+    componentHoverLeaseAt.delete(normalizedName);
+  }
+}
+
+function failClosedPetInteraction(reason) {
+  const hadInteractiveState = Array.from(hoveredComponents.values()).some(Boolean);
+  activeWindowDrag = null;
+  hoveredComponents.clear();
+  componentHoverLeaseAt.clear();
+  petInteractionState.dragActive = false;
+  if (hadInteractiveState) {
+    petLog("pet-interaction-fail-closed", { reason });
+  }
+  applyIgnoreMouseState();
+}
+
+function startPetInteractionLeaseWatchdog() {
+  if (petInteractionLeaseTimer) return;
+  petInteractionLeaseTimer = setInterval(() => {
+    if (!PET_FIXED_DESKTOP_SHELL || appState.mode !== "pet") return;
+    const now = Date.now();
+    const staleInteractive = Array.from(hoveredComponents.entries()).some(
+      ([componentName, hovered]) =>
+        hovered &&
+        now - (componentHoverLeaseAt.get(componentName) || 0) >
+          PET_INTERACTION_LEASE_TIMEOUT_MS
+    );
+    if (staleInteractive) {
+      failClosedPetInteraction("interaction-lease-expired");
+    }
+  }, PET_INTERACTION_LEASE_WATCHDOG_MS);
+  petInteractionLeaseTimer.unref?.();
+}
+
+function stopPetInteractionLeaseWatchdog() {
+  if (petInteractionLeaseTimer) {
+    clearInterval(petInteractionLeaseTimer);
+    petInteractionLeaseTimer = null;
+  }
+}
+
 function clearPetInteractionState() {
   activeWindowDrag = null;
   hoveredComponents.clear();
+  componentHoverLeaseAt.clear();
+  petInteractionState.dragActive = false;
 }
 
 function setForceIgnoreMouse(enabled) {
@@ -635,16 +1122,72 @@ function setPetWindowZoom(zoomScale) {
 }
 
 function setPetModelZoom(zoomScale, options = {}) {
-  appState.petZoomScale = normalizePetZoomScale(zoomScale);
-  saveCurrentState();
-
-  if (options.broadcast !== false) {
-    broadcast("pet-command", {
-      type: "pet-zoom-set",
-      zoomScale: appState.petZoomScale
+  const current = ensurePetTransformState();
+  const nextZoomScale = normalizePetZoomScale(zoomScale);
+  const pivotScreenPoint =
+    Number.isFinite(Number(options.pivotScreenPoint?.x)) &&
+    Number.isFinite(Number(options.pivotScreenPoint?.y))
+      ? {
+          x: Number(options.pivotScreenPoint.x),
+          y: Number(options.pivotScreenPoint.y)
+        }
+      : screen.getCursorScreenPoint();
+  const scaleFactor = nextZoomScale / current.zoomScale;
+  const result = applyPetTransformRequest(
+    current,
+    { kind: "zoom", scaleFactor, pivotScreenPoint },
+    {
+      minZoomScale: MIN_PET_ZOOM_SCALE,
+      maxZoomScale: MAX_PET_ZOOM_SCALE
+    }
+  );
+  if (result.changed) {
+    acceptPetTransformState(result.state, {
+      deferSave: options.deferSave === true,
+      broadcast: options.broadcast !== false,
+      sourceRequestId: options.sourceRequestId
     });
+  } else if (options.broadcast === true) {
+    broadcastPetTransformState(options.sourceRequestId);
+  }
+  return result.accepted;
+}
+
+function handlePetTransformRequest(payload) {
+  const current = ensurePetTransformState();
+  const kind = String(payload?.kind || "").trim().toLowerCase();
+  const request = { kind };
+  if (kind === "zoom") {
+    markPetZoomInteractionActive();
+    request.scaleFactor = Number(payload?.scaleFactor);
+    request.pivotScreenPoint =
+      Number.isFinite(Number(payload?.pivotScreenPoint?.x)) &&
+      Number.isFinite(Number(payload?.pivotScreenPoint?.y))
+        ? {
+            x: Number(payload.pivotScreenPoint.x),
+            y: Number(payload.pivotScreenPoint.y)
+          }
+        : screen.getCursorScreenPoint();
+  } else if (kind === "anchor") {
+    request.requestedAnchor = payload?.requestedAnchor;
   }
 
+  const result = applyPetTransformRequest(current, request, {
+    minZoomScale: MIN_PET_ZOOM_SCALE,
+    maxZoomScale: MAX_PET_ZOOM_SCALE
+  });
+  if (!result.accepted) {
+    return false;
+  }
+  if (result.changed) {
+    acceptPetTransformState(result.state, {
+      deferSave: true,
+      broadcast: true,
+      sourceRequestId: payload?.requestId
+    });
+  } else {
+    broadcastPetTransformState(payload?.requestId);
+  }
   return true;
 }
 
@@ -1043,6 +1586,40 @@ function broadcast(channel, payload) {
     return;
   }
   mainWindow.webContents.send(channel, payload);
+}
+
+function broadcastPetCursorPoint(force = false) {
+  if (!mainWindow || mainWindow.isDestroyed() || appState.mode !== "pet") {
+    return;
+  }
+
+  const point = screen.getCursorScreenPoint();
+  const now = Date.now();
+  const unchanged =
+    lastPetCursorPoint &&
+    lastPetCursorPoint.x === point.x &&
+    lastPetCursorPoint.y === point.y;
+  if (!force && unchanged && now - lastPetCursorPoint.sentAt < PET_CURSOR_HEARTBEAT_MS) {
+    return;
+  }
+
+  lastPetCursorPoint = { x: point.x, y: point.y, sentAt: now };
+  broadcast("pet-command", {
+    type: "pet-pointer-set",
+    screenPoint: { x: point.x, y: point.y }
+  });
+}
+
+function startPetCursorTracking() {
+  if (petCursorBroadcastTimer) {
+    return;
+  }
+  broadcastPetCursorPoint(true);
+  petCursorBroadcastTimer = setInterval(
+    () => broadcastPetCursorPoint(false),
+    PET_CURSOR_POLL_MS
+  );
+  petCursorBroadcastTimer.unref?.();
 }
 
 async function executeRenderer(code) {
@@ -1591,6 +2168,8 @@ async function handleControlAction(action, payload = {}) {
     case "move-next-display":
       moveWindowToNextDisplay();
       return { ok: true, action };
+    case "reset-pet-position":
+      return { ok: true, action, petAnchor: resetPetBoundsToDefault() };
     case "set-game-mode":
       return {
         ok: true,
@@ -1637,11 +2216,12 @@ function applyWindowMode(mode, { force = false } = {}) {
     mainWindow.setMinimumSize(960, 640);
   }
 
-  mainWindow.setBounds(targetBounds, false);
+  applyMainWindowBounds(targetBounds, "mode-switch");
   applyPetWindowLayerPolicy({ reason: "apply-window-mode" });
   applyTaskbarPolicy();
   if (nextMode === "pet") {
     broadcastPetHostState("pet-host-set");
+    broadcastPetTransformState();
   }
   saveCurrentState();
   applyIgnoreMouseState();
@@ -1653,8 +2233,14 @@ function refreshLayoutForDisplayTopology(reason = "display-metrics-changed") {
     return;
   }
 
+  if (PET_FIXED_DESKTOP_SHELL && appState.mode === "pet") {
+    rebuildFixedPetShellBounds();
+  }
   const targetBounds = resolveTargetBoundsForMode(appState.mode);
-  mainWindow.setBounds(targetBounds, false);
+  applyMainWindowBounds(
+    targetBounds,
+    appState.mode === "pet" ? "display-topology" : "window-topology"
+  );
 
   if (appState.mode === "pet") {
     ensurePetAnchor();
@@ -1706,7 +2292,6 @@ function moveWindowToNextDisplay() {
       nextArea.x + nextArea.width * Math.min(Math.max(ratioX, 0), 1),
       nextArea.y + nextArea.height * Math.min(Math.max(ratioY, 0), 1)
     );
-    mainWindow.setBounds(getPetHostBounds(), false);
     return;
   }
 
@@ -1727,7 +2312,7 @@ function moveWindowToNextDisplay() {
     nextDisplay
   );
 
-  mainWindow.setBounds(nextBounds, false);
+  applyMainWindowBounds(nextBounds, "window-next-display");
   setBoundsForCurrentMode(nextBounds);
 }
 
@@ -1789,6 +2374,7 @@ function getMenuActions() {
       handleControlAction("interrupt").catch((error) => petLog("menu-interrupt-failed", error));
     },
     moveNextDisplay: moveWindowToNextDisplay,
+    resetPosition: resetPetBoundsToDefault,
     reloadFrontend: reloadMainWindow,
     quit: () => app.quit()
   };
@@ -1842,9 +2428,65 @@ function startControlServer() {
             }
           : null,
       petSpanAllDisplays: appState.petSpanAllDisplays,
+      petHostMode: PET_HOST_MODE,
+      petHostSizing: getPetHostSizingMode(),
+      petFixedDesktopShell: PET_FIXED_DESKTOP_SHELL,
+      petFixedShellBounds: PET_FIXED_DESKTOP_SHELL ? getFixedPetShellBounds() : null,
+      petFixedShellBoundsWriteCount: fixedPetShellBoundsWriteCount,
+      petFixedShellBoundsRejectedCount: fixedPetShellBoundsRejectedCount,
+      petLastFixedShellBoundsWriteReason: lastFixedPetShellBoundsWriteReason,
+      petLastFixedShellBoundsRejectedReason: lastFixedPetShellBoundsRejectedReason,
+      petInteractionFreezeHost: PET_INTERACTION_FREEZE_HOST,
+      petInteractionFreezeMode: "hold-pending",
+      petInteractionActive: isPetInteractionActive(),
+      petDragActive: petInteractionState.dragActive,
+      petZoomActive: petInteractionState.zoomActive,
+      petLastZoomRequestAt: petInteractionState.lastZoomRequestAt,
+      petPendingInteractionHostBounds: pendingInteractionHostBounds
+        ? { ...pendingInteractionHostBounds }
+        : null,
+      petHostRelocationSuppressedCount,
+      petHostRelocationAppliedCount,
+      petLastHostRelocationSuppressedReason: lastPetHostRelocationSuppressedReason,
+      petLastHostRelocationAppliedReason: lastPetHostRelocationAppliedReason,
+      petTransformRevision: ensurePetTransformState().revision,
+      petEnvelopeTransformRevision: latestPetEnvelopeRevision || null,
+      petZoomScale: ensurePetTransformState().zoomScale,
       petHostBounds: getPetHostBounds(),
-      petAnchor: ensurePetAnchor(),
+      petModelScreenBounds: latestPetModelScreenBounds
+        ? { ...latestPetModelScreenBounds }
+        : null,
+      petModelEnvelopeContained: !PET_FIXED_DESKTOP_SHELL && latestPetModelScreenBounds
+        ? hostContainsBounds(
+            getPetHostBounds(),
+            {
+              x: latestPetModelScreenBounds.left,
+              y: latestPetModelScreenBounds.top,
+              width: latestPetModelScreenBounds.width,
+              height: latestPetModelScreenBounds.height
+            }
+          )
+        : null,
+      petModelEnvelopeContainedByNativeShell:
+        PET_FIXED_DESKTOP_SHELL && latestPetModelScreenBounds
+          ? hostContainsBounds(
+              getFixedPetShellBounds(),
+              {
+                x: latestPetModelScreenBounds.left,
+                y: latestPetModelScreenBounds.top,
+                width: latestPetModelScreenBounds.width,
+                height: latestPetModelScreenBounds.height
+              }
+            )
+          : null,
+      petAnchor: ensurePetTransformState().anchor,
       bounds: mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : null,
+      nativeWindowBounds:
+        mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : null,
+      nativeContentBounds:
+        mainWindow && !mainWindow.isDestroyed()
+          ? mainWindow.getContentBounds()
+          : null,
       briefingVisible: isBriefingWindowVisible(),
       briefingFocused: Boolean(
         briefingWindow && !briefingWindow.isDestroyed() && briefingWindow.isFocused()
@@ -2140,6 +2782,7 @@ function createWindow() {
     mode: appState.mode,
     bounds,
     petSpanAllDisplays: appState.petSpanAllDisplays,
+    petHostMode: PET_HOST_MODE,
     petAnchor: ensurePetAnchor(),
     backendBaseUrl: process.env.KURO_BACKEND_BASE_URL || null,
     backendWsUrl: process.env.KURO_BACKEND_WS_URL || null
@@ -2170,13 +2813,21 @@ function createWindow() {
   });
 
   mainWindow.on("move", () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    if (
+      mainWindow &&
+      !mainWindow.isDestroyed() &&
+      !(PET_FIXED_DESKTOP_SHELL && appState.mode === "pet")
+    ) {
       setBoundsForCurrentMode(mainWindow.getBounds());
     }
   });
 
   mainWindow.on("resize", () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    if (
+      mainWindow &&
+      !mainWindow.isDestroyed() &&
+      !(PET_FIXED_DESKTOP_SHELL && appState.mode === "pet")
+    ) {
       setBoundsForCurrentMode(mainWindow.getBounds());
     }
   });
@@ -2206,6 +2857,7 @@ function createWindow() {
 
   mainWindow.webContents.on("did-finish-load", () => {
     petLog("did-finish-load");
+    broadcastPetCursorPoint(true);
     mainWindow.webContents
       .executeJavaScript(
         `JSON.stringify({
@@ -2232,6 +2884,7 @@ function createWindow() {
 
   mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
     petLog("did-fail-load", { errorCode, errorDescription, validatedURL });
+    failClosedPetInteraction("renderer-load-failed");
     if (!rendererBuildAvailable) {
       mainWindow.loadURL(
         `data:text/html;charset=utf-8,${encodeURIComponent(
@@ -2259,10 +2912,12 @@ function createWindow() {
 
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
     petLog("render-process-gone", details);
+    failClosedPetInteraction("renderer-process-gone");
   });
 
   mainWindow.webContents.on("unresponsive", () => {
     petLog("renderer-unresponsive");
+    failClosedPetInteraction("renderer-unresponsive");
   });
 
   mainWindow.webContents.on("before-input-event", (_event, input) => {
@@ -2286,12 +2941,18 @@ function createWindow() {
 
 function registerIpc() {
   ipcMain.on("get-bootstrap-config", (event) => {
+    const transform = ensurePetTransformState();
     event.returnValue = {
       baseUrl: process.env.KURO_BACKEND_BASE_URL || "http://127.0.0.1:23456",
       wsUrl: process.env.KURO_BACKEND_WS_URL || "ws://127.0.0.1:23456/client-ws",
-      zoomScale: normalizePetZoomScale(appState.petZoomScale),
+      zoomScale: transform.zoomScale,
+      petTransformRevision: transform.revision,
+      petHostMode: PET_HOST_MODE,
+      petFixedDesktopShell: PET_FIXED_DESKTOP_SHELL,
+      petShellBounds: PET_FIXED_DESKTOP_SHELL ? getFixedPetShellBounds() : null,
       petHostBounds: getPetHostBounds(),
-      petAnchor: ensurePetAnchor(),
+      petAnchor: transform.anchor,
+      cursorScreenPoint: screen.getCursorScreenPoint(),
       outfit: appState.outfit,
       expression: appState.expression
     };
@@ -2302,6 +2963,14 @@ function registerIpc() {
       return;
     }
     updateFrontendState(payload);
+  });
+
+  ipcMain.on("pet-model-envelope", (_event, payload) => {
+    handlePetModelEnvelope(payload);
+  });
+
+  ipcMain.on("pet-transform-request", (_event, payload) => {
+    handlePetTransformRequest(payload);
   });
 
   ipcMain.on("set-mode", (_event, mode) => {
@@ -2315,7 +2984,7 @@ function registerIpc() {
   });
 
   ipcMain.on("set-ignore-mouse-event", (_event, ignore) => {
-    hoveredComponents.set("live2d-hit-test", !ignore);
+    updateComponentHoverLease("live2d-hit-test", !ignore);
     applyIgnoreMouseState();
   });
 
@@ -2428,6 +3097,7 @@ function registerIpc() {
       "interrupt",
       "show-pet",
       "move-next-display",
+      "reset-pet-position",
       "set-game-mode",
       "set-force-ignore-mouse",
       "mic-toggle",
@@ -2492,7 +3162,7 @@ function registerIpc() {
     if (typeof componentName !== "string" || !componentName) {
       return;
     }
-    hoveredComponents.set(componentName, Boolean(hovered));
+    updateComponentHoverLease(componentName, Boolean(hovered));
     applyIgnoreMouseState();
   });
 
@@ -2502,6 +3172,9 @@ function registerIpc() {
     }
 
     if (appState.mode === "pet") {
+      if (hoveredComponents.get("live2d-model")) {
+        setPetDragInteractionActive(true);
+      }
       return;
     }
 
@@ -2520,7 +3193,7 @@ function registerIpc() {
       startBounds: mainWindow.getBounds()
     };
 
-    hoveredComponents.set("pet-window-drag", true);
+    updateComponentHoverLease("pet-window-drag", true);
     applyIgnoreMouseState();
   });
 
@@ -2550,7 +3223,7 @@ function registerIpc() {
       height: startBounds.height
     });
 
-    mainWindow.setBounds(nextBounds, false);
+    applyMainWindowBounds(nextBounds, "window-drag");
     setBoundsForCurrentMode(nextBounds);
   });
 
@@ -2563,16 +3236,25 @@ function registerIpc() {
   });
 
   ipcMain.on("set-pet-model-zoom", (_event, payload) => {
-    setPetModelZoom(Number(payload?.zoomScale));
+    setPetModelZoom(Number(payload?.zoomScale), {
+      pivotScreenPoint: payload?.pivotScreenPoint,
+      deferSave: true
+    });
   });
 
   ipcMain.on("set-pet-anchor", (_event, payload) => {
-    setPetAnchor(Number(payload?.x), Number(payload?.y), { broadcast: false });
+    handlePetTransformRequest({
+      kind: "anchor",
+      requestedAnchor: { x: Number(payload?.x), y: Number(payload?.y) },
+      requestId: payload?.requestId
+    });
   });
 
   ipcMain.on("end-window-drag", () => {
     activeWindowDrag = null;
-    hoveredComponents.set("pet-window-drag", false);
+    setPetDragInteractionActive(false);
+    flushPetAnchorSave();
+    updateComponentHoverLease("pet-window-drag", false);
     applyIgnoreMouseState();
   });
 
@@ -2636,11 +3318,22 @@ if (!singleInstanceLock) {
     latestFrontendState.currentExpressionLabel = appState.expression.expressionLabel;
     appState.mode = "pet";
     appState.forceIgnoreMouse = true;
-    appState.petSpanAllDisplays = true;
+    appState.petSpanAllDisplays = false;
     appState.readerVisible = false;
     appState.briefingVisible = false;
     appState.petZoomScale = normalizePetZoomScale(appState.petZoomScale);
     ensurePetAnchor();
+    petTransformState = createPetTransformState(
+      {
+        revision: 1,
+        anchor: appState.petAnchor,
+        zoomScale: appState.petZoomScale
+      },
+      {
+        minZoomScale: MIN_PET_ZOOM_SCALE,
+        maxZoomScale: MAX_PET_ZOOM_SCALE
+      }
+    );
     saveCurrentState();
     petLog("app-ready", { statePath, briefingStorePath, appState });
 
@@ -2656,6 +3349,8 @@ if (!singleInstanceLock) {
     mailBriefingService.start();
     createTray();
     createWindow();
+    startPetCursorTracking();
+    startPetInteractionLeaseWatchdog();
     if (appState.readerVisible) {
       createReaderWindow();
     }
@@ -2693,6 +3388,9 @@ if (!singleInstanceLock) {
 
   app.on("before-quit", () => {
     appIsQuitting = true;
+    flushPetAnchorSave();
+    clearPetHostShrinkTimer();
+    clearPetInteractionTimer();
     if (mailBriefingService) {
       try {
         mailBriefingService.stop();
@@ -2721,6 +3419,11 @@ if (!singleInstanceLock) {
       }
       studySnapshotWatcher = null;
     }
+    if (petCursorBroadcastTimer) {
+      clearInterval(petCursorBroadcastTimer);
+      petCursorBroadcastTimer = null;
+    }
+    stopPetInteractionLeaseWatchdog();
   });
 }
 

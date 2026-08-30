@@ -1799,6 +1799,7 @@ class KuroWorkPanel {
     const actions = createElement("div", "settings-actions");
     actions.appendChild(button("quiet-button", "顯示桌寵", () => this.runControl("show-pet", "已顯示桌寵。")));
     actions.appendChild(button("quiet-button", "移到下一個螢幕", () => this.runControl("move-next-display", "已移動桌寵。")));
+    actions.appendChild(button("quiet-button", "重置桌寵位置", () => this.runControl("reset-pet-position", "已重置桌寵位置。")));
     group.appendChild(actions);
     return group;
   }

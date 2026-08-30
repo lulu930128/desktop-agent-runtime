@@ -4,7 +4,7 @@ const path = require("path");
 const DEFAULT_STATE = {
   mode: "pet",
   forceIgnoreMouse: true,
-  petSpanAllDisplays: true,
+  petSpanAllDisplays: false,
   petZoomScale: 1,
   petAnchor: null,
   petGameMode: false,
@@ -80,8 +80,8 @@ function mergeState(candidate) {
     const y = Number(candidate.petAnchor.y);
     if (Number.isFinite(x) && Number.isFinite(y)) {
       next.petAnchor = {
-        x: Math.round(x),
-        y: Math.round(y)
+        x,
+        y
       };
     }
   }

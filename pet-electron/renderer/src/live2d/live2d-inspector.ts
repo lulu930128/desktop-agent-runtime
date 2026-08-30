@@ -81,6 +81,8 @@ export type Live2DInspectorModelSnapshot = {
 
 export type Live2DInspectorSnapshot = {
   ready: boolean;
+  rendererBuild: string;
+  transformRevision: number;
   overlayEnabled: boolean;
   modelUrl: string;
   zoomScale: number;
@@ -90,6 +92,22 @@ export type Live2DInspectorSnapshot = {
     width: number;
     height: number;
   };
+  expectedHostBounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  actualViewportBounds: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null;
+  viewportOriginError: {
+    x: number;
+    y: number;
+  } | null;
   anchorScreenPoint: {
     x: number;
     y: number;
@@ -101,7 +119,48 @@ export type Live2DInspectorSnapshot = {
     clientHeight: number;
     devicePixelRatio: number;
   };
+  renderPerformance: {
+    targetFps: number;
+    measuredFps: number;
+  };
   modelBounds: Live2DInspectorBounds | null;
+  stablePlacementBounds: Live2DInspectorBounds | null;
+  dynamicVisualBounds: Live2DInspectorBounds | null;
+  modelScreenBounds: {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+    width: number;
+    height: number;
+  } | null;
+  hitTestMode: "configured-hit-areas" | "drawable-mesh" | "none";
+  interactionProfile: {
+    id: string;
+    active: boolean;
+    ellipses: Array<{
+      id: string;
+      centerX: number;
+      centerY: number;
+      radiusX: number;
+      radiusY: number;
+    }>;
+  } | null;
+  drag: {
+    active: boolean;
+    sessionId: number;
+    startedAt: number | null;
+    startTransformRevision: number | null;
+    lastFinishReason:
+      | "pointerup"
+      | "pointercancel"
+      | "lostpointercapture"
+      | "blur"
+      | "dispose"
+      | null;
+    lostPointerCaptureCount: number;
+    pointerCancelCount: number;
+  };
   model: Live2DInspectorModelSnapshot | null;
 };
 
@@ -217,6 +276,7 @@ export class Live2DDebugOverlay {
         2
       );
       this.drawHitAreas(ctx, metrics, frame, snapshot.model.hitAreas);
+      this.drawInteractionProfile(ctx, metrics, frame, snapshot);
     }
 
     this.drawAnchor(ctx, snapshot);
@@ -358,9 +418,61 @@ export class Live2DDebugOverlay {
     }
   }
 
+  private drawInteractionProfile(
+    ctx: CanvasRenderingContext2D,
+    metrics: OverlayMetrics,
+    frame: Live2DOverlayFrame,
+    snapshot: Live2DInspectorSnapshot
+  ): void {
+    const profile = snapshot.interactionProfile;
+    const bounds = snapshot.modelBounds;
+    if (!profile?.active || !bounds) {
+      return;
+    }
+
+    const width = bounds.right - bounds.left;
+    const height = bounds.bottom - bounds.top;
+    for (const ellipse of profile.ellipses) {
+      const modelX = bounds.left + width * ellipse.centerX;
+      const modelY = bounds.top + height * ellipse.centerY;
+      const center = this.modelPointToCanvas(metrics, frame, modelX, modelY);
+      const edgeX = this.modelPointToCanvas(
+        metrics,
+        frame,
+        modelX + width * ellipse.radiusX,
+        modelY
+      );
+      const edgeY = this.modelPointToCanvas(
+        metrics,
+        frame,
+        modelX,
+        modelY + height * ellipse.radiusY
+      );
+      const radiusX = Math.abs(edgeX.x - center.x);
+      const radiusY = Math.abs(edgeY.y - center.y);
+      if (!(radiusX > 0) || !(radiusY > 0)) {
+        continue;
+      }
+
+      ctx.strokeStyle = "rgba(255, 205, 72, 0.98)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(center.x, center.y, radiusX, radiusY, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      this.drawLabel(ctx, `${profile.id}:${ellipse.id}`, center.x + 6, center.y - radiusY);
+    }
+  }
+
   private drawAnchor(ctx: CanvasRenderingContext2D, snapshot: Live2DInspectorSnapshot): void {
-    const x = finiteOrZero(snapshot.anchorScreenPoint.x - snapshot.hostBounds.x);
-    const y = finiteOrZero(snapshot.anchorScreenPoint.y - snapshot.hostBounds.y);
+    if (!snapshot.actualViewportBounds) {
+      return;
+    }
+    const x = finiteOrZero(
+      snapshot.anchorScreenPoint.x - snapshot.actualViewportBounds.x
+    );
+    const y = finiteOrZero(
+      snapshot.anchorScreenPoint.y - snapshot.actualViewportBounds.y
+    );
     ctx.strokeStyle = "rgba(255, 90, 160, 0.95)";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -392,13 +504,17 @@ export class Live2DDebugOverlay {
       model?.motionGroups.reduce((count, group) => count + group.motions.length, 0) || 0;
     const lines = [
       `Live2D Inspector: ${snapshot.ready ? "ready" : "loading"}`,
+      `build: ${compactText(snapshot.rendererBuild, 42)}`,
       `model: ${compactText(snapshot.modelUrl || "-", 42)}`,
       `zoom: ${formatNumber(snapshot.zoomScale)} anchor: ${formatNumber(snapshot.anchorScreenPoint.x, 0)},${formatNumber(snapshot.anchorScreenPoint.y, 0)}`,
+      snapshot.actualViewportBounds
+        ? `viewport ${formatNumber(snapshot.actualViewportBounds.x, 0)},${formatNumber(snapshot.actualViewportBounds.y, 0)} err ${formatNumber(snapshot.viewportOriginError?.x || 0)},${formatNumber(snapshot.viewportOriginError?.y || 0)}`
+        : "viewport unavailable",
       model
         ? `params ${model.parameters.length} parts ${model.parts.length} drawables ${model.drawables.length}`
         : "params 0 parts 0 drawables 0",
       model
-        ? `hit ${model.hitAreas.length} expressions ${model.expressions.length} motions ${motionCount}`
+        ? `hit ${model.hitAreas.length} mode ${snapshot.hitTestMode} exp ${model.expressions.length} motion ${motionCount}`
         : "hit 0 expressions 0 motions 0"
     ];
 

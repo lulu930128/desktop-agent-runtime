@@ -21,7 +21,21 @@ body {
   background: transparent;
 }
 
-.pet-renderer canvas {
+.pet-surface {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.pet-renderer.fixed-shell-enabled .pet-surface {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.pet-surface canvas {
   width: 100%;
   height: 100%;
   display: block;
@@ -35,6 +49,6 @@ body {
   pointer-events: none;
 }
 
-.pet-renderer canvas:active {
+.pet-surface canvas:active {
   cursor: grabbing;
 }

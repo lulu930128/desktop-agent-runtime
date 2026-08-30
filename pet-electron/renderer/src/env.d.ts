@@ -9,6 +9,15 @@ declare global {
         baseUrl: string;
         wsUrl: string;
         zoomScale: number;
+        petTransformRevision?: number;
+        petFixedDesktopShell?: boolean;
+        petHostMode?: string;
+        petShellBounds?: {
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+        };
         petHostBounds?: {
           x: number;
           y: number;
@@ -16,6 +25,10 @@ declare global {
           height: number;
         };
         petAnchor?: {
+          x: number;
+          y: number;
+        };
+        cursorScreenPoint?: {
           x: number;
           y: number;
         };
@@ -32,12 +45,33 @@ declare global {
         };
       };
       reportFrontendState: (payload: Record<string, unknown>) => void;
+      reportPetModelEnvelope: (payload: {
+        transformRevision: number;
+        modelScreenBounds: {
+          left: number;
+          top: number;
+          right: number;
+          bottom: number;
+          width: number;
+          height: number;
+        };
+      }) => void;
+      requestPetTransform: (payload: {
+        kind: "zoom" | "anchor";
+        requestId: number;
+        scaleFactor?: number;
+        pivotScreenPoint?: { x: number; y: number };
+        requestedAnchor?: { x: number; y: number };
+      }) => void;
       updateComponentHover: (componentName: string, hovered: boolean) => void;
       setIgnoreMouseEvent: (ignore: boolean) => void;
       startWindowDrag: (screenX: number, screenY: number) => void;
       updateWindowDrag: (screenX: number, screenY: number) => void;
       setPetWindowZoom: (zoomScale: number) => void;
-      setPetModelZoom: (zoomScale: number) => void;
+      setPetModelZoom: (
+        zoomScale: number,
+        pivotScreenPoint?: { x: number; y: number }
+      ) => void;
       setPetAnchor: (x: number, y: number) => void;
       getScreenCaptureSourceId: () => Promise<string>;
       endWindowDrag: () => void;
@@ -56,6 +90,8 @@ declare global {
           motionIndex?: number | null;
           priority?: number;
           live2dInspectorOverlayEnabled?: boolean;
+          transformRevision?: number;
+          sourceRequestId?: number | null;
           zoomScale?: number;
           petHostBounds?: {
             x: number;
@@ -64,6 +100,11 @@ declare global {
             height: number;
           };
           petAnchor?: {
+            x: number;
+            y: number;
+          };
+          petHostMode?: string;
+          screenPoint?: {
             x: number;
             y: number;
           };

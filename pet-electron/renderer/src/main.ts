@@ -4,9 +4,10 @@ import { BackendClient } from "./backend/backend-client";
 import type { RendererState, UserAttachmentPayload } from "./backend/types";
 import { bindPetCommands } from "./commands/pet-command-router";
 import { bindModelPointerControls } from "./interaction/model-pointer-controls";
+import { PetRenderSurfaceController } from "./live2d/pet-render-surface-controller";
 import { resolveInitialZoomScale, storeModelZoomScale } from "./model-zoom";
 
-const RENDERER_BUILD_TAG = "custom-renderer-2026-05-20-max-fps";
+const RENDERER_BUILD_TAG = "fixed-desktop-shell-v1";
 const DEFAULT_OUTFIT_PARAMETER_ID = "Param10";
 console.info("[pet-renderer] boot", { build: RENDERER_BUILD_TAG });
 
@@ -43,12 +44,15 @@ if (!root) {
 
 root.innerHTML = `
   <div class="pet-renderer">
-    <canvas id="live2d-canvas"></canvas>
+    <div class="pet-surface" id="pet-render-surface">
+      <canvas id="live2d-canvas"></canvas>
+    </div>
   </div>
 `;
 
+const surfaceElement = document.getElementById("pet-render-surface");
 const canvas = document.getElementById("live2d-canvas");
-if (!(canvas instanceof HTMLCanvasElement)) {
+if (!(surfaceElement instanceof HTMLElement) || !(canvas instanceof HTMLCanvasElement)) {
   throw new Error("Renderer DOM bootstrap failed.");
 }
 
@@ -88,30 +92,55 @@ const reportState = (patch: Partial<RendererState>) => {
 };
 
 const initialConfig = window.kuroPetElectron.getInitialConfig();
-const renderer = new PetLive2DRenderer(canvas);
+const renderSurface = new PetRenderSurfaceController(surfaceElement, {
+  enabled: initialConfig.petFixedDesktopShell === true,
+  shellBounds: initialConfig.petShellBounds || initialConfig.petHostBounds || null,
+  anchorScreenPoint: initialConfig.petAnchor || null,
+  transformRevision: Number(initialConfig.petTransformRevision) || 1
+});
+const renderer = new PetLive2DRenderer(canvas, RENDERER_BUILD_TAG);
 live2dRenderer = renderer;
+renderer.setBeforeFrameListener(() => {
+  renderSurface.flushPending();
+});
+renderer.setModelEnvelopeListener((update) => {
+  renderSurface.scheduleModelEnvelope(
+    update.modelScreenBounds,
+    update.transformRevision
+  );
+  window.kuroPetElectron.reportPetModelEnvelope(update);
+});
+const getInspectorSnapshot = () => ({
+  ...renderer.getInspectorSnapshot(),
+  renderSurface: renderSurface.getSnapshot()
+});
 window.__kuroLive2DInspector = {
-  getSnapshot: () => renderer.getInspectorSnapshot(),
+  getSnapshot: getInspectorSnapshot,
   setOverlayEnabled: (enabled: boolean) => {
     const live2dInspectorOverlayEnabled = renderer.setInspectorOverlayEnabled(enabled);
     reportState({ live2dInspectorOverlayEnabled });
-    return renderer.getInspectorSnapshot();
+    return getInspectorSnapshot();
   },
   toggleOverlay: () => {
     const live2dInspectorOverlayEnabled = renderer.setInspectorOverlayEnabled(
       !renderer.isInspectorOverlayEnabled()
     );
     reportState({ live2dInspectorOverlayEnabled });
-    return renderer.getInspectorSnapshot();
+    return getInspectorSnapshot();
   }
 };
-renderer.setHostBounds(initialConfig.petHostBounds);
-if (initialConfig.petAnchor) {
-  renderer.setAnchorScreenPoint(initialConfig.petAnchor.x, initialConfig.petAnchor.y);
-}
-renderer.setZoomScale(resolveInitialZoomScale(initialConfig.zoomScale));
+renderer.setExpectedHostBounds(initialConfig.petHostBounds);
+renderer.applyAuthoritativeTransform({
+  revision: Number(initialConfig.petTransformRevision) || 1,
+  anchor: initialConfig.petAnchor || renderer.getAnchorScreenPoint(),
+  zoomScale: resolveInitialZoomScale(initialConfig.zoomScale)
+});
+renderSurface.scheduleTransform(
+  renderer.getAnchorScreenPoint(),
+  renderer.getTransformRevision()
+);
+renderSurface.flushPending();
 storeModelZoomScale(renderer.getZoomScale());
-window.kuroPetElectron.setPetModelZoom(renderer.getZoomScale());
 const initialOutfit = initialConfig.outfit || {};
 const initialOutfitId = String(initialOutfit.outfitId || "normal");
 const initialOutfitParameterId = String(
@@ -207,7 +236,16 @@ const unsubscribe = bindPetCommands({
   client,
   renderer,
   reportState,
-  defaultOutfitParameterId: DEFAULT_OUTFIT_PARAMETER_ID
+  defaultOutfitParameterId: DEFAULT_OUTFIT_PARAMETER_ID,
+  onTransformAccepted: () => {
+    renderSurface.scheduleTransform(
+      renderer.getAnchorScreenPoint(),
+      renderer.getTransformRevision()
+    );
+  },
+  onHostAccepted: (bounds) => {
+    renderSurface.scheduleShellBounds(bounds);
+  }
 });
 
 window.addEventListener(
@@ -216,6 +254,7 @@ window.addEventListener(
     unsubscribe();
     unbindModelPointerControls();
     client.disconnect();
+    renderSurface.dispose();
     renderer.dispose();
   },
   { passive: true }
