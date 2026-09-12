@@ -66,6 +66,6 @@ Runtime 或 UI 變更不能只看 build；至少要確認實際 listener、`/sta
 - 上游／vendor 升級須記錄來源、Kuro patches 與回歸範圍，目前沒有已驗證的自動同步流程。
 - 不提交 secrets、生成設定、history、memory、logs、模型、私人音訊或 dependency/build output。
 - Source／測試、runtime 採用、provider 回應、桌面體驗與 Git 發布分開驗收。
-- 公開截圖先移除私人內容。頂層授權待釐清，不能由子目錄 license 推定整套產品或模型可再散布。
+- 公開截圖先移除私人內容。Kuro 自有內容採 Apache-2.0，第三方元件與素材另依[授權範圍](../../THIRD_PARTY_NOTICES.md)，不能推定整套產品或模型可再散布。
 
 詳見[現況架構](../architecture/RuntimeArchitecture.md)與[品質門檻](../product/QualityBar.md)。

@@ -23,10 +23,14 @@
 | 架構 | 缺乏統一索引 | 建立索引，保留原責任地圖 |
 | 產品方向 | 四份文件已有內容 | 保留既有決策 |
 | Electron | README 停留在第一版 | 對齊工作面板與 Launcher 協作 |
-| 發布資訊 | 未見頂層 license／整體 CI／完整新機流程 | 列為缺口，不補造授權、發布歷史或驗證結果 |
+| 發布資訊 | 當時缺少頂層政策與授權 | 已補公開政策與授權範圍；整體 CI、完整新機流程與資產分發稽核仍待完成 |
 
 本次核對的是本機 Git 追蹤文件與 source，未讀取遠端 GitHub 或驗證 live runtime。新增文件在另行 commit／push 前不會出現在 GitHub。
 
 ## 維護
 
 功能異動同步更新指南與 owner 文件，只有已驗證能力寫成現況。版本以 `VERSION` 為準，截圖保留日期；一次性測試數字、agent 過程與 private payload 不放進使用指南。
+
+## 公開協作文件
+
+[貢獻指南](../CONTRIBUTING.md)、[行為準則](../CODE_OF_CONDUCT.md)、[安全政策](../SECURITY.md)、[Apache-2.0](../LICENSE) 與 [第三方聲明](../THIRD_PARTY_NOTICES.md)。政策文件不代表 GitHub 私人回報功能已啟用；可用管道以安全政策及實際 Security 頁面為準。

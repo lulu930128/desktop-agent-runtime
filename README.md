@@ -53,7 +53,7 @@ Launcher 管啟動與診斷，conversation runtime 管對話與工具，Electron
 - 寫入、刪除、發送、發布、長期記憶修改與高成本操作遵守工具政策，不能因 persona 或 prompt 繞過。
 - 中央語音仍有人工聽感與桌面互動待驗收，見[語音文件](docs/central-voice-runtime.md)。
 - 尚無已驗證的完整新機安裝、跨元件一鍵備份或 Kuro 整體 CI；source checks 不等於產品驗收。
-- 頂層尚無統一授權宣告；上游程式、Cubism 與模型的個別授權不能推定為整套產品再散布授權。
+- 第三方素材與 bundled dependencies 尚未完成整包分發授權稽核，不能把根目錄授權套用到所有資產。
 
 ## 文件
 
@@ -61,3 +61,9 @@ Launcher 管啟動與診斷，conversation runtime 管對話與工具，Electron
 - [開始使用](docs/guides/getting-started.md) · [功能導覽](docs/guides/feature-tour.md) · [故障排查](docs/guides/troubleshooting.md)。
 - [開發指南](docs/guides/development.md) · [架構索引](docs/architecture/index.md)。
 - [產品願景](docs/product/ProductVision.md) · [運作模型](docs/product/OperatingModel.md) · [品質門檻](docs/product/QualityBar.md) · [Roadmap](docs/product/Roadmap.md)。
+
+## 公開政策與授權
+
+[貢獻指南](CONTRIBUTING.md) · [行為準則](CODE_OF_CONDUCT.md) · [安全政策](SECURITY.md)
+
+Kuro 自有程式與文字文件採 [Apache License 2.0](LICENSE)。上游 Open-LLM-VTuber、Cubism、角色、字型與其他素材保留各自條款，見 [第三方聲明](THIRD_PARTY_NOTICES.md) 與 [NOTICE](NOTICE)。
