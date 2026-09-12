@@ -15,7 +15,7 @@
 
 ## 安裝
 
-在 [`C:\kuro\pet-electron`](C:\kuro\pet-electron) 執行：
+在 [`C:\project\desktop-agent-runtime\pet-electron`](C:\project\desktop-agent-runtime\pet-electron) 執行：
 
 ```powershell
 npm install

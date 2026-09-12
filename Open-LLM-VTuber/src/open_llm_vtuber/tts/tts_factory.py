@@ -78,6 +78,8 @@ class TTSFactory:
             from .gpt_sovits_tts import TTSEngine as GSVEngine
 
             return GSVEngine(
+                voice_id=kwargs.get("voice_id", ""),
+                speed_factor=kwargs.get("speed_factor", 1.0),
                 api_url=kwargs.get("api_url"),
                 text_lang=kwargs.get("text_lang"),
                 ref_audio_path=kwargs.get("ref_audio_path"),

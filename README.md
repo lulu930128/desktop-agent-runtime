@@ -12,9 +12,9 @@ Kuro 把工作面板、Live2D 桌寵、Reader、Briefing、角色語音、受控
 
 <p align="center"><sub>2026-08-24 實際運行畫面。為避免把對話、郵件或行事曆等私人內容放進 repo，主圖使用無私人資料的設定頁。</sub></p>
 
-> **目前大版本：`1.0.0`**
+> **目前版本：`1.1.0`**
 >
-> 這個版本定義 Kuro 的第一個產品基線：工作面板是主要入口，Qt Launcher 回到背景 orchestration 與診斷角色，對話、Reader、Briefing、桌寵、語音與受控工具由同一套本機 runtime 協作。`kuro_core/` 目前仍是 shadow-only；`1.0.0` 不代表新版 Core 或整份 Roadmap 已完成 cutover。
+> `1.0.0` 定義 Kuro 的第一個產品基線：工作面板是主要入口，Qt Launcher 回到背景 orchestration 與診斷角色，對話、Reader、Briefing、桌寵、語音與受控工具由同一套本機 runtime 協作。`kuro_core/` 目前仍是 shadow-only；`1.0.0` 不代表新版 Core 或整份 Roadmap 已完成 cutover。
 
 這份 README 記錄目前程式的 **現況架構（as-is）**、啟動方式與責任邊界。長期產品方向放在 [`docs/product/`](docs/product/)，單次實作與驗證證據放在 [`docs/agent-runs/`](docs/agent-runs/)。
 
@@ -75,7 +75,7 @@ flowchart LR
     RuntimeBuilder --> Generated["conf.launcher_runtime.yaml<br/>產生檔，不進 git"]
 
     Console --> Bridge["Bridge :1188<br/>翻譯與 spoken rendering"]
-    Console --> TTS["GPT-SoVITS :9981<br/>語音合成"]
+    Console --> TTS["Central Voice :18890<br/>語音合成"]
     Console --> Runtime["Open-LLM-VTuber :23456<br/>conversation runtime"]
     Console --> PetMain["Electron main process<br/>pet control :23567"]
     Console --> LauncherControl["Launcher control :23568<br/>session token + confirmed writes"]
@@ -102,12 +102,12 @@ flowchart LR
 3. `kuro_launcher/runtime_conf.py` 合併基礎設定、角色設定與 project prompt，產生
    `Open-LLM-VTuber/conf.launcher_runtime.yaml`。
 4. Launcher 先啟動或沿用具備正確 service identity 的 Electron 桌寵殼，讓工作面板不必等待 LLM／TTS readiness 就能顯示。
-5. Launcher 啟動或沿用 Bridge，啟動 GPT-SoVITS，並用一小段真實音訊請求確認 TTS 可用；接著啟動 Open-LLM-VTuber。
+5. Launcher 啟動或沿用 Bridge，連接獨立中央語音服務，並用一小段真實音訊請求確認 TTS 可用；接著啟動 Open-LLM-VTuber。
 6. Qt chat client 與 Electron frontend 在 LLM runtime ready 後各自連到 `/client-ws`；服務尚未 ready 時，工作面板保留可見並呈現各自狀態。
 7. Pet control server 提供帶有 service、protocol、PID 與 instance identity 的本機狀態與操作 API；Launcher 只會沿用或停止可驗證身分的 Pet shell。
 8. Launcher 以每次啟動產生的臨時 token，讓 Electron main process 透過 `:23568` 讀取 profile、history、memory 與 tool policy；renderer 不會取得 token，寫入前仍須經 Electron 原生確認視窗。
 
-`QtLauncherController` 也支援在條件允許時 hot switch profile；若 TTS 資產不同，仍需重啟 TTS。
+`QtLauncherController` 也支援在條件允許時 hot switch profile；中央模式會驗證 voice，模型切換由中央服務處理，不重啟共用 TTS。
 
 ## 元件責任地圖
 
@@ -189,8 +189,9 @@ Bridge 只負責 **輸出轉換**。它不能改寫工具結果的事實、補�
 
 ### GPT-SoVITS
 
-`gpt_sovits/` 放置 GPT-SoVITS runtime source。Launcher 會依角色選擇 infer config，
-用 `envs/kuro-tts310` 啟動 `api_v2.py`，並在 LLM runtime 啟動前做實際 TTS smoke request。
+舊 `gpt_sovits/` 已完成 SHA-256 比對並清除；音檔、模型與訓練資料保存在中央語音工作區。正式設定使用獨立中央 Voice Runtime，
+由中央 package 擁有模型與 reference；Launcher 在 LLM runtime 啟動前執行實際 TTS smoke request。
+啟動方式、角色映射與舊資料保存紀錄見 [中央語音服務](docs/central-voice-runtime.md)。
 
 模型權重、pretrained models、角色 reference audio 與產生音訊都屬於 local/private state，不能進 git。
 
@@ -311,18 +312,24 @@ Briefing 是短期狀態；長期記憶只保存穩定偏好、背景與持續�
 | Service | 位址 | 用途 |
 | --- | --- | --- |
 | Bridge | `127.0.0.1:1188` | `/translate`、`/translate_debug`、`/render_spoken`。 |
-| GPT-SoVITS | `127.0.0.1:9981` | `/tts` 音訊合成。 |
+| Central Voice Runtime | `127.0.0.1:18890` | `/health`、`/voices`、`POST /tts`。 |
 | Open-LLM-VTuber | `127.0.0.1:23456` | HTTP、launcher API 與 `/client-ws`。 |
 | Pet control | `127.0.0.1:23567` | `/status`、`/briefing`、`/command` 等本機控制 API。 |
 | Launcher control | `127.0.0.1:23568` | 工作面板的 profile、history、memory 與 tool policy 窄 contract；只接受本次啟動的 Electron session token。 |
 
 所有預設服務都只綁定 loopback。不要把這些 API 直接暴露到 LAN 或 Internet。
 
-> `9981` 是目前 canonical TTS port。不要恢復舊的 `9881`；它可能落在 Windows reserved TCP range。
+> 中央 TTS 使用 `18890`；`9981` 僅供 legacy 回退。不要恢復舊的 `9881`。`18790` 已由 japanese-study-mcp 使用。
+
+## 1.1.0 更新
+
+- 改用獨立中央 Voice Runtime，以 voice ID 選擇聲音；Launcher 不啟停共用服務。
+- 移除已保存比對的舊 GPT-SoVITS 原始碼，更新專案路徑與中央服務文件。
+- Core 維持 shadow-only；人工聽感及桌面互動仍待驗收。
 
 ## 版本來源
 
-Kuro 的產品版本以 repo root 的 [`VERSION`](VERSION) 為準，目前是 `1.0.0`。
+Kuro 的產品版本以 repo root 的 [`VERSION`](VERSION) 為準，目前是 `1.1.0`。
 
 下列版本屬於子元件，不和 Kuro 產品版本綁在一起：
 
@@ -336,7 +343,7 @@ Kuro 的產品版本以 repo root 的 [`VERSION`](VERSION) 為準，目前是 `1
 
 ```text
 kuro/
-├─ VERSION                        # Kuro 產品版本；目前為 1.0.0
+├─ VERSION                        # Kuro 產品版本；目前為 1.1.0
 ├─ launcher_qt.py                 # Qt 應用入口
 ├─ kuro_launcher/                 # Launcher UI、controller、config 與 process helpers
 ├─ kuro_core/                     # Shadow-only Kuro Core contract、SQLite 與研究 trace
@@ -344,7 +351,6 @@ kuro/
 ├─ Open-LLM-VTuber/               # Conversation、agent、tools、memory、WebSocket
 ├─ projects/                      # Project prompt packs
 ├─ bridges/                       # 翻譯與 spoken rendering bridge
-├─ gpt_sovits/                    # GPT-SoVITS source/runtime
 ├─ pet-electron/                  # Live2D、Reader、Briefing、tray 與 control server
 ├─ local_translator/              # 獨立 Ollama 翻譯 helper
 ├─ voices/                        # Local voice references；git 只保留 .gitkeep
@@ -372,9 +378,9 @@ kuro/
 
 - Windows 與 PowerShell。
 - `envs/kuro-llm310`：Launcher、Bridge 與 Open-LLM-VTuber 使用的 Python 3.10 環境。
-- `envs/kuro-tts310`：GPT-SoVITS 使用的 Python 3.10 環境。
+- `envs/kuro-tts310`：歷史 legacy 環境，中央模式不使用。
 - `pet-electron/node_modules` 與已安裝的 Electron/Vite dependencies。
-- 對應角色的 Live2D model、TTS infer config、model weights 與 voice reference。
+- 對應角色的 Live2D model，以及已啟動且提供對應 voice ID 的中央 Voice Runtime。
 
 建立本機 env 檔：
 
@@ -400,7 +406,7 @@ Set-Location ..
 從 repo root 啟動：
 
 ```powershell
-Set-Location "C:\project\kuro"
+Set-Location "C:\project\desktop-agent-runtime"
 .\envs\kuro-llm310\python.exe .\launcher_qt.py
 ```
 

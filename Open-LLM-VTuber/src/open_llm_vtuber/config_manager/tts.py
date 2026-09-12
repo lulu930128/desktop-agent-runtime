@@ -172,6 +172,8 @@ class XTTSConfig(I18nMixin):
 class GPTSoVITSConfig(I18nMixin):
     """Configuration for GPT-SoVITS."""
 
+    voice_id: str = Field("", alias="voice_id")
+
     api_url: str = Field(..., alias="api_url")
     text_lang: str = Field(..., alias="text_lang")
     ref_audio_path: str = Field(..., alias="ref_audio_path")

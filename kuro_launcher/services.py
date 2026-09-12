@@ -179,6 +179,11 @@ def validate_profile_assets(cfg: AppConfig, character_yaml: Path) -> Tuple[list[
         warnings.append(f"找不到 model_dict.json：{model_dict_path}")
 
     tts_cfg = char_cfg.get("tts_config") or {}
+    if getattr(cfg, "tts_mode", "legacy") == "central":
+        voice = dict(cfg.voice_ids).get(character_yaml.stem)
+        if not voice:
+            errors.append(f"中央語音尚未設定角色映射：{character_yaml.stem}")
+        return errors, warnings
     tts_model = str(tts_cfg.get("tts_model") or "").strip()
     if tts_model != "gpt_sovits_tts":
         errors.append(f"目前 launcher profile 只支援 gpt_sovits_tts，角色設定為：{tts_model or '(missing)'}")
@@ -231,6 +236,17 @@ def probe_tts(
 ) -> Tuple[bool, str]:
     """Make a tiny real GPT-SoVITS request so the launcher does not trust port-open only."""
     gsv = _character_tts_cfg(char_cfg)
+    if getattr(cfg, "tts_mode", "legacy") == "central":
+        from .voice_client import synthesize
+        try:
+            body = synthesize(cfg.voice_url, gsv.get("voice_id", ""), "こんにちは。",
+                              gsv.get("text_lang", "ja"), gsv.get("speed_factor", 1.2), request_timeout_s)
+            out = Path(logs_root) / "tts_smoke" / (run_id or "manual") / "smoke.wav"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(body)
+            return True, f"中央語音推論成功：{out}"
+        except Exception as exc:
+            return False, f"中央語音不可用：{exc}"
     if not gsv:
         return False, "找不到 character_config.tts_config.gpt_sovits_tts"
 
@@ -288,7 +304,13 @@ def start_tts(
     character_name: str = "",
     logs_root: Path,
     run_id: str,
-) -> ManagedProc:
+) -> Optional[ManagedProc]:
+    if getattr(cfg, "tts_mode", "legacy") == "central":
+        from .voice_client import require_voice
+        voice = dict(cfg.voice_ids).get(character_name, "")
+        require_voice(cfg.voice_url, voice)
+        logger_cb(f"[{log_ts()}] 使用中央語音服務：{cfg.voice_url} / {voice}")
+        return None
     env = os.environ.copy()
     env["PYTHONUTF8"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"

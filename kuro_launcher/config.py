@@ -101,6 +101,13 @@ class AppConfig:
     bridge_translate_path: str
     bridge_debug_path: str
 
+    tts_mode: str = "legacy"
+    voice_ids: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def voice_url(self) -> str:
+        return f"http://{self.tts_host}:{self.tts_port}"
+
     @property
     def bridge_url(self) -> str:
         return f"http://{self.bridge_host}:{self.bridge_port}"
@@ -191,6 +198,11 @@ def load_config(config_path: Path) -> AppConfig:
     net = cfg.get("network") or {}
     bridge_net = net.get("bridge") or {}
     tts_net = net.get("tts") or {}
+    tts_mode = str(tts_net.get("mode", "legacy"))
+    if tts_mode not in {"legacy", "central"}:
+        raise ValueError("network.tts.mode must be legacy or central")
+    if tts_mode == "central" and tts_net.get("host", "127.0.0.1") != "127.0.0.1":
+        raise ValueError("Central voice runtime must use loopback")
     llm_net = net.get("llm") or {}
     pet_control_net = net.get("pet_control") or {}
     launcher_control_net = net.get("launcher_control") or {}
@@ -228,6 +240,8 @@ def load_config(config_path: Path) -> AppConfig:
         bridge_port=int(bridge_net.get("port", 1188)),
         tts_host=str(tts_net.get("host", "127.0.0.1")),
         tts_port=int(tts_net.get("port", 9981)),
+        tts_mode=tts_mode,
+        voice_ids=tuple((str(k), str(v)) for k, v in (tts_net.get("voices") or {}).items()),
         llm_host=str(llm_net.get("host", "127.0.0.1")),
         llm_port=int(llm_net.get("port", 23456)),
         pet_control_host=str(pet_control_net.get("host", "127.0.0.1")),

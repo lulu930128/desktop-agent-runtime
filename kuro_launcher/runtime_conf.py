@@ -65,6 +65,7 @@ def build_runtime_conf(
     openai_fallback_key_env: str,
     thinking_power: str = "normal",
     openai_model_override: str = "",
+    voice_id: str = "",
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     base_conf_path = find_base_conf(open_llm_dir)
     base = read_yaml_file(base_conf_path)
@@ -100,6 +101,20 @@ def build_runtime_conf(
                 str(gsv_cfg.get("ref_audio_path") or ""),
             )
             gsv_cfg.setdefault("speed_factor", 1.2)
+            if voice_id:
+                tts_cfg["gpt_sovits_tts"] = {
+                    "api_url": f"http://{tts_host}:{int(tts_port)}/tts",
+                    "voice_id": voice_id,
+                    "text_lang": gsv_cfg.get("text_lang", "ja"),
+                    "speed_factor": gsv_cfg.get("speed_factor", 1.2),
+                    "ref_audio_path": "",
+                    "prompt_lang": "ja",
+                    "prompt_text": "",
+                    "text_split_method": "cut5",
+                    "batch_size": "1",
+                    "media_type": "wav",
+                    "streaming_mode": "false",
+                }
 
     tts_preprocessor = character_cfg.get("tts_preprocessor_config")
     if isinstance(tts_preprocessor, dict):

@@ -1762,6 +1762,8 @@ class QtLauncherController:
             ("TTS", self.cfg.tts_host, self.cfg.tts_port),
             ("LLM", self.cfg.llm_host, self.cfg.llm_port),
         ]:
+            if name == "TTS" and getattr(self.cfg, "tts_mode", "legacy") == "central":
+                continue
             closed, message = self._wait_for_port_closed(name, host, port, timeout_s=15.0)
             if not closed:
                 raise RuntimeError(message)
@@ -1851,6 +1853,8 @@ class QtLauncherController:
             self.proc_tts = None
 
         for port, name in [(self.cfg.llm_port, "LLM"), (self.cfg.tts_port, "TTS")]:
+            if name == "TTS" and getattr(self.cfg, "tts_mode", "legacy") == "central":
+                continue
             pid = get_listening_pid_windows(port)
             if pid:
                 try:
@@ -1907,6 +1911,8 @@ class QtLauncherController:
                 openai_fallback_key_env=self.cfg.openai_fallback_key_env,
                 thinking_power=self.thinking_power,
                 openai_model_override=self.llm_model,
+                voice_id=(dict(self.cfg.voice_ids).get(character.yaml_path.stem, "")
+                          if self.cfg.tts_mode == "central" else ""),
             )
             write_runtime_conf(self.cfg.runtime_conf_path, runtime_conf)
             conf_uid = str(char_cfg.get("conf_uid") or "").strip()
@@ -1964,6 +1970,8 @@ class QtLauncherController:
         return True
 
     def _should_restart_tts_for_switch(self, status: dict, char_cfg: Dict[str, object]) -> bool:
+        if getattr(self.cfg, "tts_mode", "legacy") == "central":
+            return True
         if not port_is_open(self.cfg.tts_host, self.cfg.tts_port, 0.2):
             return True
         desired_conf_uid = str(char_cfg.get("conf_uid") or "").strip()
@@ -1977,6 +1985,11 @@ class QtLauncherController:
         return True
 
     def _restart_tts_runtime(self, character: CharacterRecord, char_cfg: Dict[str, object]) -> bool:
+        if getattr(self.cfg, "tts_mode", "legacy") == "central":
+            ok, message = probe_tts(self.cfg, char_cfg, logs_root=self.cfg.logs_dir,
+                                    run_id=self.current_run_id or "manual")
+            self.log(message)
+            return ok
         self.log(f"[{log_ts()}] 重新載入 TTS：{character.yaml_path.stem}")
         self._stop_tts_impl(kill_external=True)
         closed, message = self._wait_for_port_closed(
@@ -2079,6 +2092,9 @@ class QtLauncherController:
     ) -> tuple[bool, str]:
         deadline = time.time() + timeout_s
         last_probe_message = ""
+        if getattr(self.cfg, "tts_mode", "legacy") == "central":
+            return probe_tts(self.cfg, char_cfg, logs_root=self.cfg.logs_dir,
+                             run_id=self.current_run_id or "manual", request_timeout_s=180)
         saw_port = False
         while time.time() < deadline:
             if proc and proc.popen and proc.popen.poll() is not None:
@@ -2504,6 +2520,8 @@ class QtLauncherController:
                     pass
 
     def _stop_tts_impl(self, *, kill_external: bool = False) -> None:
+        if getattr(self.cfg, "tts_mode", "legacy") == "central":
+            return
         if self.proc_tts:
             try:
                 self.proc_tts.stop()

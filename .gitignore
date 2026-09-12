@@ -1,4 +1,5 @@
 # Local-only workspace data
+.tmp/
 暫存區/
 launcher_logs/
 backup/

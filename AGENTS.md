@@ -1,4 +1,4 @@
-﻿# Kuro AGENTS.md
+# Kuro AGENTS.md
 
 本檔是 Kuro repo-level agent instructions。它放在 repo root，並繼承全域 `~\.codex\AGENTS.md` 與 `C:\project\AGENTS.md` 的基本工作準則。
 使用者可見的 Codex 回覆、交付摘要與固定欄位標題預設使用繁體中文。日文只用於角色語音、spoken rendering、i18n、原始文案或使用者明確要求；不要因為 Kuro 有日文語音/角色內容，就把專案問答改成日文或英文。
@@ -41,7 +41,7 @@ Kuro 是 local-first desktop AI companion runtime，但長期目標不是單純�
 - `Open-LLM-VTuber/` 負責 conversation runtime、prompt composition、tool integration、WebSocket protocol 與 memory system。
 - `pet-electron/` 負責 Live2D desktop shell、Reader、Briefing、tray、local control server 與 Electron window behavior。
 - `bridges/` 負責 bridge service、translation 與 spoken rendering integration。
-- `gpt_sovits/` 是 TTS runtime，不要在沒有必要時改模型或大型依賴。
+- 舊 `gpt_sovits/` 已比對並移除；保存對照位於中央語音工作區的 `inventory/legacy-gpt-sovits-20260912/manifest.json`。中央語音服務擁有模型與推論；consumer 不得停止共用服務。
 - `projects/` 放 project prompt packs 與 assistant context definitions。
 
 展示層可以呈現、提醒、收集操作與播報；domain tool 與外部資料專案才是資料/分析真相來源。
@@ -103,7 +103,7 @@ Kuro 可以具備工具操作能力，但必須分級。
 預設 local ports 來自 `kuro_launcher.settings.yaml`：
 
 - Bridge: `127.0.0.1:1188`
-- TTS: `127.0.0.1:9981`
+- Central TTS: `127.0.0.1:18890`（`9981` 僅供 legacy 回退；`18790` 已由 japanese-study-mcp 使用）
 - LLM runtime: `127.0.0.1:23456`
 - Pet control: `127.0.0.1:23567`
 - Launcher control: `127.0.0.1:23568`（工作面板 IPC proxy 專用；session token 不得進 renderer 或 git）
@@ -168,14 +168,14 @@ Kuro 可以具備工具操作能力，但必須分級。
 Python syntax checks：
 
 ```powershell
-cd "C:\project\kuro"
+cd "C:\project\desktop-agent-runtime"
 .\envs\kuro-llm310\python.exe -m py_compile .\launcher_qt.py .\kuro_launcher\qt_app.py .\kuro_launcher\qt_controller.py .\kuro_launcher\qt_chat_client.py
 ```
 
 Electron main-process checks：
 
 ```powershell
-cd "C:\project\kuro"
+cd "C:\project\desktop-agent-runtime"
 node --check .\pet-electron\src\main.js
 node --check .\pet-electron\src\state.js
 node --check .\pet-electron\src\main-process\control-server.js
@@ -186,7 +186,7 @@ node --check .\pet-electron\src\briefing-preload.js
 Renderer checks：
 
 ```powershell
-cd "C:\project\kuro\pet-electron"
+cd "C:\project\desktop-agent-runtime\pet-electron"
 npm run check:renderer
 npm run build:renderer
 ```

@@ -4,11 +4,6 @@ paths:
   characters_dir: "${open_llm_vtuber_dir}\\characters"
   projects_dir: "${ROOT}\\projects"
   bridge_dir: "${ROOT}\\bridges"
-  tts_dir: "${ROOT}\\gpt_sovits"
-  tts_infer_dir: "${tts_dir}\\GPT_SoVITS\\configs"
-  tts_infer_default: "tts_infer.yaml"
-  tts_infer_template: "tts_infer_{character}.yaml"
-  env_tts: "${ROOT}\\envs\\kuro-tts310"
   env_llm: "${ROOT}\\envs\\kuro-llm310"
   runtime_conf_path: "${open_llm_vtuber_dir}\\conf.launcher_runtime.yaml"
   logs_dir: "${ROOT}\\launcher_logs"
@@ -27,7 +22,11 @@ network:
     port: 1188
   tts:
     host: "127.0.0.1"
-    port: 9981
+    port: 18890
+    mode: central
+    voices:
+      kuro: kuro
+      yumi: yuki
   llm:
     host: "127.0.0.1"
     port: 23456

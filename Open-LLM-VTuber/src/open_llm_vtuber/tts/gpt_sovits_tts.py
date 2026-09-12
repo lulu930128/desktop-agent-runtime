@@ -2,6 +2,8 @@ import json
 import os
 import re
 import time
+import io
+import wave
 from pathlib import Path
 
 import requests
@@ -60,8 +62,10 @@ class TTSEngine(TTSInterface):
         media_type: str = "wav",
         streaming_mode: str = "false",
         speed_factor: float = 1.0,
+        voice_id: str = "",
     ):
         self.api_url = api_url
+        self.voice_id = voice_id
         self.text_lang = text_lang
         self.ref_audio_path = ref_audio_path
         self.prompt_lang = prompt_lang
@@ -77,6 +81,25 @@ class TTSEngine(TTSInterface):
 
         cleaned_text = re.sub(r"\[.*?\]", "", text)
         cleaned_text = (cleaned_text or "").strip()
+        if self.voice_id:
+            if not cleaned_text:
+                return None
+            payload = dict(voice=self.voice_id, text=cleaned_text, language=self.text_lang,
+                           speed_factor=self.speed_factor)
+            try:
+                response = requests.post(self.api_url, json=payload, timeout=180)
+                response.raise_for_status()
+                if response.headers.get('Content-Type', '').split(';')[0] != 'audio/wav':
+                    raise ValueError('Expected WAV audio')
+                with wave.open(io.BytesIO(response.content), 'rb') as audio:
+                    count = audio.getnframes()
+                    if count <= 0 or len(audio.readframes(count)) != count * audio.getnchannels() * audio.getsampwidth():
+                        raise ValueError('Empty or truncated WAV')
+                Path(file_name).write_bytes(response.content)
+                return file_name
+            except (requests.RequestException, ValueError, wave.Error, EOFError, OSError) as exc:
+                logger.error('Central voice request failed: {}', type(exc).__name__)
+                return None
 
         data = {
             "text": cleaned_text,
