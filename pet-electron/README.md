@@ -1,52 +1,35 @@
-# Kuro Pet Electron
+# Kuro Electron 桌面介面
 
-這個資料夾是我們自己可控的 Kuro 桌寵殼。Electron shell、custom renderer、Live2D runtime 與 Cubism framework 會放在這個專案內維護。
+本目錄負責工作面板、Live2D 桌寵、Reader／Briefing 相容介面、tray、視窗與本機 control server。日常透過根目錄 VBS 與 Launcher 協同啟動，不再只是第一版 pet mode shell。
 
-目前第一版做的事情：
+## 開發
 
-- 用我們自己的 Electron `main/preload` 載入 `renderer-dist/index.html`
-- 提供 renderer 目前需要的 `window.kuroPetElectron` / `window.api` 基礎接口
-- 支援 `pet` mode
-- 提供滑鼠穿透切換
-- 提供系統匣控制
-- 保留視窗位置與大小
-- 可把桌寵移到下一個螢幕
-- 透過 backend adapter 相容既有訊息協議
-
-## 安裝
-
-在 [`C:\project\desktop-agent-runtime\pet-electron`](C:\project\desktop-agent-runtime\pet-electron) 執行：
+在本目錄執行，先確認既有 Node.js／npm：
 
 ```powershell
-npm install
+npm ci
+npm run check:renderer
+npm run build:renderer
 ```
 
-## 啟動
+單獨啟動 shell：
 
 ```powershell
 npm start
 ```
 
-## 目前支援的控制
+此命令先 build 再啟動 Electron，不會準備 Launcher、LLM、Bridge 或中央語音。日常操作見[入門指南](../docs/guides/getting-started.md)。
 
-- 系統匣選單
-  - 顯示桌寵
-  - 切換滑鼠穿透
-  - 移到下一個螢幕
-  - 重新載入前端
-  - 結束
+## 責任與資料
 
-## 第一版範圍
+- `src/main.js`：視窗、tray、IPC、backend wiring 與生命週期。
+- `src/main-process/control-server.js`：Pet control API。
+- `src/main-process/briefing-store.js`：snapshot 與 memory candidates。
+- `renderer/`：TypeScript／Vite renderer。
+- Electron `userData` 保存 local state，`renderer-dist/` 是生成檔。
 
-這一版先專注在：
+展示層不擁有市場、記憶政策或工具授權。Mail／study integration 仍有架構債，不能宣稱 Core 已接管。Launcher session token 只留在 main process，不交給 renderer。
 
-- 自己控制 Electron shell
-- 使用專案內的 custom renderer 進 `pet` mode
-- 解掉原本主螢幕鎖定的架構問題
+不提交 `node_modules/`、`renderer-dist/`、`.tmp/`、userData、模型或私人內容。產品版本以根目錄 `VERSION` 為準，本目錄 package 版本另有用途。
 
-後續再往下接：
-
-- launcher 直接啟動這個新 shell
-- 更完整的桌寵拖曳/停靠體驗
-- 更精細的多螢幕行為
-- 專屬 pet UI 與自家 backend protocol
+更多見[現況架構](../docs/architecture/RuntimeArchitecture.md)、[開發指南](../docs/guides/development.md)與[故障排查](../docs/guides/troubleshooting.md)。
