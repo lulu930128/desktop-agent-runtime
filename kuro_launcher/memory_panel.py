@@ -20,6 +20,7 @@ from .memory_support import (
     memory_status_from_entry,
 )
 from .records import CharacterRecord, MemoryRecord
+from open_llm_vtuber.character_memory_lifecycle import review_digest
 from .text_helpers import compact_history_text
 from .ui_theme import PALETTE, ui_font
 from .utils import log_ts
@@ -92,6 +93,7 @@ class MemoryPanelMixin:
                 scope_level=str(entry.get("scope_level") or entry.get("scope") or "character"),
                 source=str(entry.get("source") or "unknown"),
                 updated_at=str(entry.get("updated_at") or ""),
+                content_digest=review_digest(entry),
             )
             self.memory_records[entry_id] = record
 
@@ -209,6 +211,7 @@ class MemoryPanelMixin:
             character.conf_uid,
             record.entry_id,
             next_status,
+            expected_digest=record.content_digest,
         )
         self._refresh_memory_list()
         self._schedule_panel_update()
@@ -226,6 +229,7 @@ class MemoryPanelMixin:
             character.conf_uid,
             record.entry_id,
             "active",
+            expected_digest=record.content_digest,
         )
         self._refresh_memory_list()
         self._schedule_panel_update()

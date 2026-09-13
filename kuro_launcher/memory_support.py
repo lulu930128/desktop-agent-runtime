@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 from open_llm_vtuber.character_memory_manager import format_character_memories_for_preview
+from open_llm_vtuber.character_memory_lifecycle import entry_status
 
 from .records import MemoryRecord
 
@@ -20,10 +21,7 @@ def ensure_character_memory_root(open_llm_dir: Path) -> None:
 
 
 def memory_status_from_entry(entry: dict) -> str:
-    status = str(entry.get("status") or "").strip()
-    if status in MEMORY_STATUS_LABELS:
-        return status
-    return "active" if entry.get("enabled", True) else "disabled"
+    return entry_status(entry)
 
 
 def memory_record_is_active(record: MemoryRecord) -> bool:

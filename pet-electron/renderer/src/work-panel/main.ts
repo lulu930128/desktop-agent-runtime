@@ -1,11 +1,11 @@
 import "./styles.css";
+import { SchedulePanel } from "./schedule";
 import {
   SOURCE_ORDER,
   formatDateLabel,
   formatFullDate,
   levelLabel,
   priorityItems,
-  scheduleItems,
   sourceCount,
   sourceItems,
   sourceLabel,
@@ -63,6 +63,7 @@ const EMPTY_DATA: BriefingData = {
 };
 
 const fallbackBridge: WorkPanelBridge = {
+  async schedule() { return { ok: false, error: "desktop-bridge-unavailable" }; },
   async getState() { return { ok: false, wsConnected: false }; },
   async getData() { return EMPTY_DATA; },
   async getChatState() { return { ok: false, wsConnected: false }; },
@@ -188,8 +189,9 @@ function formatFileSize(bytes: number): string {
 }
 
 class KuroWorkPanel {
+  private schedules = new SchedulePanel(bridge);
   private mode: WorkMode = normalizeMode(window.localStorage.getItem("kuro.work-panel.mode"));
-  private selectedSource = window.localStorage.getItem("kuro.work-panel.source") || "all";
+  private selectedSource = window.localStorage.getItem("kuro.work-panel.source") === "calendar" ? "all" : window.localStorage.getItem("kuro.work-panel.source") || "all";
   private runtime: RuntimeState = { wsConnected: false, aiState: "idle" };
   private chat: ChatState = { wsConnected: false, aiState: "idle" };
   private history: ChatHistoryPayload = { ok: true, messages: [] };
@@ -261,6 +263,7 @@ class KuroWorkPanel {
               </div>
             </div>
           </header>
+          <div class="runtime-status" data-runtime-status role="status"></div>
           <div class="stage" data-stage>
             <button class="history-scrim" type="button" data-history-scrim aria-label="關閉對話紀錄"></button>
             <aside class="history-drawer" data-history-drawer aria-label="對話紀錄"></aside>
@@ -572,7 +575,14 @@ class KuroWorkPanel {
     }
     const online = Boolean(this.runtime.wsConnected ?? this.chat.wsConnected);
     presenceDot?.classList.toggle("is-online", online);
-    if (presenceLabel) presenceLabel.textContent = online ? "Kuro 已連線" : "Kuro 離線";
+    if (presenceLabel) presenceLabel.textContent = online ? '對話已連線' : '對話未連線';
+    const capabilityStatus = appRoot.querySelector<HTMLElement>('[data-runtime-status]');
+    if (capabilityStatus) {
+      const state = this.runtime.capabilities;
+      capabilityStatus.hidden = Boolean(online && state?.pet.state === 'ready' && state?.launcher?.voice.state === 'available' && !state?.launcher.restartRequired && this.runtime.speechStatus !== 'unavailable');
+      capabilityStatus.replaceChildren(createElement('span', '', this.capabilitySummary()));
+      capabilityStatus.appendChild(button('quiet-button', '查看狀態', () => { this.settingsSection = 'diagnostics'; this.setMode('settings'); }));
+    }
     const aiState = text(this.runtime.aiState ?? this.chat.aiState, "idle").toLowerCase();
     if (statePulse) statePulse.dataset.state = online ? aiState : "offline";
     if (privacy) {
@@ -1177,8 +1187,8 @@ class KuroWorkPanel {
 
     const primary = createElement("div", "today-primary");
     primary.appendChild(this.renderPriorityBlock());
-    primary.appendChild(this.renderScheduleBlock());
     frame.appendChild(primary);
+    frame.appendChild(this.schedules.root);
     frame.appendChild(this.renderSourcesBlock());
     root.appendChild(frame);
     this.renderDetail();
@@ -1212,37 +1222,13 @@ class KuroWorkPanel {
     return block;
   }
 
-  private renderScheduleBlock(): HTMLElement {
-    const block = createElement("section");
-    const items = scheduleItems(this.data);
-    const heading = createElement("div", "block-heading");
-    heading.innerHTML = `<h2>今日行程</h2><span>${items.length} EVENTS</span>`;
-    block.appendChild(heading);
-    const schedule = createElement("div", "schedule");
-    if (!items.length) {
-      const empty = createElement("div", "schedule-empty");
-      empty.textContent = "目前 snapshot 沒有可顯示的行事曆項目。Kuro 不會用其他來源的內容假裝成行程。";
-      schedule.appendChild(empty);
-    } else {
-      items.slice(0, 7).forEach((item) => {
-        const row = button("schedule-item", "", () => this.openDetail(item));
-        row.appendChild(createElement("div", "schedule-time", formatDateLabel(item.date, true) || item.meta || "未指定時間"));
-        row.appendChild(createElement("div", "schedule-title", item.title));
-        row.appendChild(createElement("div", "schedule-meta", item.evidence || sourceLabel(item.source)));
-        schedule.appendChild(row);
-      });
-    }
-    block.appendChild(schedule);
-    return block;
-  }
-
   private renderSourcesBlock(): HTMLElement {
     const block = createElement("section", "sources-block");
     const heading = createElement("div", "block-heading");
     heading.innerHTML = `<h2>來源預覽</h2><span>FILTER, NOT NAVIGATION</span>`;
     block.appendChild(heading);
     const filters = createElement("div", "source-filters");
-    SOURCE_ORDER.forEach((source) => {
+    SOURCE_ORDER.filter((source) => source !== "calendar").forEach((source) => {
       const filter = button("source-filter", sourceLabel(source), () => {
         this.selectedSource = source;
         window.localStorage.setItem("kuro.work-panel.source", source);
@@ -1597,11 +1583,12 @@ class KuroWorkPanel {
     row.append(top, createElement("div", "memory-content", record.content));
     const actions = createElement("div", "memory-actions");
     if (record.status === "pending_confirmation") {
-      actions.appendChild(button("text-button", "核准", () => this.runMemoryAction("status", { entry_id: record.id, status: "active" })));
+      actions.appendChild(button("text-button", "核准", () => this.runMemoryAction("status", { entry_id: record.id, status: "active", content_digest: record.content_digest })));
       actions.appendChild(button("text-button", "拒絕", () => this.runMemoryAction("status", { entry_id: record.id, status: "disabled" })));
     } else {
       actions.appendChild(button("text-button", record.status === "active" ? "停用" : "啟用", () => this.runMemoryAction("status", {
         entry_id: record.id,
+        content_digest: record.content_digest,
         status: record.status === "active" ? "disabled" : "active"
       })));
     }
@@ -1693,6 +1680,7 @@ class KuroWorkPanel {
     }
     const summary = createElement("div", "tool-policy-summary");
     summary.appendChild(createElement("strong", "", `預設模式：${text(this.tools.default_mode, "blocked")}`));
+    summary.appendChild(createElement("span", "", "此處顯示儲存的政策設定；尚未驗證目前 runtime 是否採用。"));
     summary.appendChild(createElement("span", "", this.tools.confirmation_available
       ? "逐次確認流程可用。"
       : "逐次工具確認流程尚未完成；需要確認的工具目前會保持封鎖。"));
@@ -1841,10 +1829,23 @@ class KuroWorkPanel {
     this.renderSettings();
   }
 
+  private capabilitySummary(): string {
+    const state = this.runtime.capabilities;
+    if (state?.launcher?.restartRequired) return '程式已更新，請重新啟動 Kuro';
+    const online = Boolean(this.runtime.wsConnected ?? this.chat.wsConnected);
+    const voice = this.runtime.speechStatus === 'unavailable' ? '本次語音失敗' : state?.launcher?.voice.state === 'available' ? '語音可用' : '語音未就緒';
+    const pet = state?.pet.state === 'ready' ? '角色可見' : state?.pet.state === 'offscreen' ? '角色位置待恢復' : state?.pet.state === 'loading' ? '角色載入中' : '角色未就緒';
+    return `${online ? '對話已連線' : state?.launcher?.phase === 'starting' ? '對話啟動中' : '對話未連線'} · ${voice} · ${pet}`;
+  }
+
   private settingsRuntimeGroup(): HTMLElement {
     const group = this.settingsGroup("目前 Runtime", "READ ONLY");
     const list = createElement("dl", "diagnostic-list");
     const rows: Array<[string, string]> = [
+      ['功能狀態', this.capabilitySummary()],
+      ['啟動狀態', this.runtime.capabilities?.launcher?.phase || '尚未取得'],
+      ['失敗原因', this.runtime.capabilities?.launcher?.reason || '—'],
+      ['執行版本', this.runtime.capabilities?.launcher?.sourceRevision || '未知'],
       ["Connection", this.runtime.wsConnected ? "connected" : "offline"],
       ["AI state", text(this.runtime.aiState, "unknown")],
       ["Character", text(this.runtime.confName, "unknown")],
@@ -1861,6 +1862,11 @@ class KuroWorkPanel {
     group.appendChild(list);
     const actions = createElement("div", "settings-actions");
     actions.appendChild(button("quiet-button is-danger", "停止目前輸出", () => this.stopOutput()));
+    actions.appendChild(button('quiet-button', '重試啟動對話', () => this.runControl('retry-runtime', '已送出對話啟動請求，請查看功能狀態。')));
+    actions.appendChild(button('quiet-button', '停止對話服務', () => this.runControl('stop-runtime', '對話服務已停止，桌寵與工作面板仍可使用。')));
+    actions.appendChild(button('quiet-button', '找回桌寵位置', () => this.runControl('reset-pet-position', '桌寵位置已恢復。')));
+    actions.appendChild(button('quiet-button', '重新載入角色', () => this.runControl('retry-pet-model', '角色正在重新載入。')));
+    actions.appendChild(button('quiet-button', '重新啟動 Kuro', () => this.runControl('restart-launcher', 'Kuro 正在重新載入。')));
     group.appendChild(actions);
     return group;
   }
@@ -1932,3 +1938,5 @@ class KuroWorkPanel {
 }
 
 new KuroWorkPanel();
+// Set only after the shell and handlers are installed; external sources may be offline.
+Object.defineProperty(window, "__kuroWorkPanelReady", { value: true });

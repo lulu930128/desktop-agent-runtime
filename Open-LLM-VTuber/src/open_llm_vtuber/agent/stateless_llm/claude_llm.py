@@ -37,8 +37,8 @@ class AsyncLLM(StatelessLLMInterface):
             api_key=llm_api_key, base_url=base_url if base_url else None
         )
 
-        logger.info(f"Initialized Claude AsyncLLM with model: {self.model}")
-        logger.debug(f"Base URL: {base_url}")
+        logger.info('Initialized Claude AsyncLLM with model; payload details omitted.')
+        logger.debug('Base URL; payload details omitted.')
 
     def _convert_message_format(self, message: Dict[str, Any]) -> Dict[str, Any]:
         """Convert message format to Claude's expected format."""
@@ -116,8 +116,8 @@ class AsyncLLM(StatelessLLMInterface):
                 if msg["role"] != "system"
             ]
 
-            logger.debug(f"Sending messages to Claude API: {converted_messages}")
-            logger.debug(f"Tools provided: {tools}")
+            logger.debug('Sending messages to Claude API; payload details omitted.')
+            logger.debug('Tools provided; payload details omitted.')
 
             async with self.client.messages.stream(
                 messages=converted_messages,
@@ -137,9 +137,7 @@ class AsyncLLM(StatelessLLMInterface):
                             "data": event.message.model_dump(exclude_none=True),
                         }
                     elif event.type == "content_block_start":
-                        logger.debug(
-                            f"Stream: content_block_start - Index: {event.index}, Type: {event.content_block.type}"
-                        )
+                        logger.debug('Stream: content_block_start - Index; payload details omitted.')
                         if event.content_block.type == "text":
                             pass  # Handled by text_delta
                         elif event.content_block.type == "tool_use":
@@ -150,17 +148,13 @@ class AsyncLLM(StatelessLLMInterface):
                                 "index": event.index,  # Store index
                             }
                             partial_json_accumulator = ""
-                            logger.debug(
-                                f"Stream: tool_use started - ID: {current_tool_call_info['id']}, Name: {current_tool_call_info['name']}"
-                            )
+                            logger.debug('Stream: tool_use started - ID; payload details omitted.')
                             yield {
                                 "type": "tool_use_start",
                                 "data": current_tool_call_info.copy(),
                             }
                     elif event.type == "content_block_delta":
-                        logger.debug(
-                            f"Stream: content_block_delta - Index: {event.index}, Delta Type: {event.delta.type}"
-                        )
+                        logger.debug('Stream: content_block_delta - Index; payload details omitted.')
                         if event.delta.type == "text_delta":
                             yield {"type": "text_delta", "text": event.delta.text}
                         elif event.delta.type == "input_json_delta":
@@ -169,17 +163,11 @@ class AsyncLLM(StatelessLLMInterface):
                                 and event.index == current_tool_call_info["index"]
                             ):
                                 partial_json_accumulator += event.delta.partial_json
-                                logger.trace(
-                                    f"Stream: input_json_delta - Tool ID: {current_tool_call_info['id']}, Partial: {event.delta.partial_json}"
-                                )
+                                logger.trace('Stream: input_json_delta - Tool ID; payload details omitted.')
                             else:
-                                logger.warning(
-                                    f"Received input_json_delta but no active tool call matching index {event.index}"
-                                )
+                                logger.warning('Received input_json_delta but no active tool call matching index; payload details omitted.')
                     elif event.type == "content_block_stop":
-                        logger.debug(
-                            f"Stream: content_block_stop - Index: {event.index}"
-                        )
+                        logger.debug('Stream: content_block_stop - Index; payload details omitted.')
                         # Check if this stop corresponds to the active tool call
                         if (
                             current_tool_call_info
@@ -187,25 +175,19 @@ class AsyncLLM(StatelessLLMInterface):
                         ):
                             try:
                                 if not partial_json_accumulator.strip():
-                                    logger.warning(
-                                        f"Empty JSON input received for tool ID: {current_tool_call_info['id']}. Using empty object."
-                                    )
+                                    logger.warning('Empty JSON input received for tool ID; payload details omitted.')
                                     tool_input = {}
                                 else:
                                     tool_input = json.loads(partial_json_accumulator)
                                 current_tool_call_info["input"] = tool_input
-                                logger.debug(
-                                    f"Stream: tool_use completed - ID: {current_tool_call_info['id']}, Input: {tool_input}"
-                                )
+                                logger.debug('Stream: tool_use completed - ID; payload details omitted.')
                                 # Yield the complete tool call info
                                 yield {
                                     "type": "tool_use_complete",
                                     "data": current_tool_call_info.copy(),
                                 }
                             except json.JSONDecodeError as e:
-                                logger.error(
-                                    f"Failed to decode tool input JSON: {partial_json_accumulator}. Error: {e}"
-                                )
+                                logger.error('Failed to decode tool input JSON; payload details omitted.')
                                 yield {
                                     "type": "error",
                                     "message": f"Failed to parse tool input JSON for tool ID {current_tool_call_info['id']}",
@@ -215,9 +197,7 @@ class AsyncLLM(StatelessLLMInterface):
                                 current_tool_call_info = None
                                 partial_json_accumulator = ""
                     elif event.type == "message_delta":
-                        logger.debug(
-                            f"Stream: message_delta - Delta: {event.delta.model_dump(exclude_none=True)}, Usage: {event.usage}"
-                        )
+                        logger.debug('Stream: message_delta - Delta; payload details omitted.')
                         yield {
                             "type": "message_delta",
                             "data": {
@@ -236,11 +216,11 @@ class AsyncLLM(StatelessLLMInterface):
                     # The outer try/except handles SDK-level errors.
 
         except Exception as e:
-            logger.error(f"Claude API error occurred: {str(e)}")
-            logger.info(f"Model: {self.model}")
+            logger.error('Claude API error occurred; payload details omitted.')
+            logger.info('Model; payload details omitted.')
             # Yield an error event before raising
-            yield {"type": "error", "message": f"Claude API error: {str(e)}"}
-            raise
+            yield {"type": "error", "message": "Claude API failed; private error details omitted."}
+            raise RuntimeError("Claude API failed; private error details omitted.") from None
 
         # No finally block needed for stream.close() due to async with
         logger.debug("Chat completion stream processing finished.")

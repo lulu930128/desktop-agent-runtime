@@ -20,7 +20,7 @@ from .contracts import (
 )
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
 
 
 class IdempotencyConflictError(RuntimeError):
@@ -53,6 +53,7 @@ class KuroCoreStore:
 
     def initialize(self) -> None:
         with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             version = int(conn.execute("PRAGMA user_version").fetchone()[0])
             if version > SCHEMA_VERSION:
                 raise RuntimeError(
@@ -60,7 +61,7 @@ class KuroCoreStore:
                 )
             if version == 0:
                 with conn:
-                    conn.executescript(
+                    self._execute_schema(conn,
                         """
                         CREATE TABLE observations (
                             observation_id TEXT PRIMARY KEY,
@@ -112,9 +113,21 @@ class KuroCoreStore:
                             ON decision_traces (decision_kind, created_at DESC);
                         """
                     )
-                    conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
-            elif version != SCHEMA_VERSION:
+                    conn.execute("PRAGMA user_version=1")
+            elif version not in {1, 2, SCHEMA_VERSION}:
                 raise RuntimeError(f"Unsupported Kuro Core database schema: {version}")
+            conn.commit()
+        from .schedule_store import migrate_schedule
+        migrate_schedule(self.db_path)
+        from .schedule_notifications import migrate_notifications
+        migrate_notifications(self.db_path)
+
+    @staticmethod
+    def _execute_schema(conn, script):
+        # executescript implicitly commits first; individual DDL keeps creation atomic.
+        for statement in script.split(";"):
+            if statement.strip():
+                conn.execute(statement)
 
     def schema_version(self) -> int:
         with self._connect() as conn:

@@ -43,7 +43,9 @@ export function bindPetCommands({
       return;
     }
 
-    if (payload.type === "interrupt") {
+    if (payload.type === 'local-model-set') {
+      client.setPresentationModel(payload.presentation || null);
+    } else if (payload.type === "interrupt") {
       client.sendInterrupt();
     } else if (payload.type === "mic-toggle") {
       void client.setMicrophoneEnabled(Boolean(payload.enabled));

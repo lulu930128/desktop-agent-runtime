@@ -1,4 +1,6 @@
 from loguru import logger
+from copy import deepcopy
+from .tool_identity import legacy_canonical
 from typing import Dict, Any, List, Literal
 
 from .types import FormattedTool
@@ -18,14 +20,14 @@ class ToolManager:
     ) -> None:
         """Initialize the Tool Manager with pre-formatted tool lists."""
         # Store the raw tool data (optional, for get_tool)
-        self.tools: Dict[str, FormattedTool] = initial_tools_dict or {}
+        self.tools: Dict[str, FormattedTool] = deepcopy(initial_tools_dict or {})
 
         # Store the pre-formatted lists
         self._formatted_tools_openai: List[Dict[str, Any]] = (
-            formatted_tools_openai or []
+            deepcopy(formatted_tools_openai or [])
         )
         self._formatted_tools_claude: List[Dict[str, Any]] = (
-            formatted_tools_claude or []
+            deepcopy(formatted_tools_claude or [])
         )
         openai_tools_by_api_name = {
             tool.get("function", {}).get("name"): tool
@@ -42,14 +44,10 @@ class ToolManager:
                     api_name
                 ]
 
-        for api_name, tool in openai_tools_by_api_name.items():
-            self._openai_api_to_tool_name.setdefault(api_name, api_name)
-            self._tools_by_name_openai.setdefault(api_name, tool)
-
+        claude_by_alias = {tool.get("name"): tool for tool in self._formatted_tools_claude}
         self._tools_by_name_claude = {
-            tool.get("name"): tool
-            for tool in self._formatted_tools_claude
-            if tool.get("name")
+            canonical: claude_by_alias[info.api_name or canonical]
+            for canonical, info in self.tools.items() if (info.api_name or canonical) in claude_by_alias
         }
         self._tool_catalog = tool_catalog or ToolCatalog.load_default()
         self._thinking_power = normalize_thinking_power(thinking_power)
@@ -65,16 +63,16 @@ class ToolManager:
         tool = self.tools.get(canonical_name)
         if isinstance(tool, FormattedTool):
             return tool
-        logger.warning(
-            f"TM: Raw tool info for '{tool_name}' not found (was initial_tools_dict provided?)."
-        )
+        logger.warning("TM: Tool unavailable in this snapshot.")
         return None
 
     def resolve_tool_name(self, tool_name: str) -> str:
         """Resolve provider-safe API names back to canonical MCP tool names."""
+        if not isinstance(tool_name, str):
+            return ""
         if tool_name in self.tools:
             return tool_name
-        return self._openai_api_to_tool_name.get(tool_name, tool_name)
+        return self._openai_api_to_tool_name.get(tool_name, legacy_canonical(tool_name))
 
     def get_formatted_tools(
         self, mode: Literal["OpenAI", "Claude"], request_text: str | None = None

@@ -55,6 +55,9 @@ contextBridge.exposeInMainWorld("kuroBriefing", briefingBridge);
 
 contextBridge.exposeInMainWorld("kuroWorkPanel", {
   ...briefingBridge,
+  schedule(action, payload) {
+    return ipcRenderer.invoke("work-panel-schedule", action, payload || {});
+  },
   getChatState() {
     return ipcRenderer.invoke("reader-get-state");
   },

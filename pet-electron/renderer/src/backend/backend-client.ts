@@ -19,6 +19,21 @@ import type {
 } from "./types";
 
 export class BackendClient {
+  private presentation: { modelUrl: string; confUid: string; confName: string; scaleWidth: number } | null = null;
+  private loadedModelUrl = '';
+
+  public setPresentationModel(value: { modelUrl: string; confUid: string; confName: string; scaleWidth: number } | null): void {
+    if (!value || !value.modelUrl.startsWith('kuro-model://local/')) return;
+    this.presentation = value;
+    this.loadPresentationModel(value.modelUrl, value.scaleWidth);
+  }
+
+  private loadPresentationModel(url: string, scale: number): void {
+    if (url === this.loadedModelUrl) return;
+    this.renderer.loadModel(url, scale);
+    this.loadedModelUrl = url;
+    this.updateState({ currentModelUrl: url });
+  }
   private config: BackendConfig;
   private socket: WebSocket | null;
   private renderer: PetLive2DRenderer;
@@ -1022,9 +1037,11 @@ export class BackendClient {
         modelUrl: event.modelUrl,
         scaleWidth: event.scaleWidth
       });
-      this.renderer.loadModel(event.modelUrl, event.scaleWidth);
+      const local = this.presentation?.confUid === event.confUid ? this.presentation : null;
+      // The Launcher catalog owns presentation assets. A conversation handshake
+      // cannot switch the shell back to assets hosted by the LLM service.
+      if (local) this.loadPresentationModel(local.modelUrl, local.scaleWidth);
       this.updateState({
-        currentModelUrl: event.modelUrl,
         confName: event.confName,
         confUid: event.confUid
       });
@@ -1034,6 +1051,7 @@ export class BackendClient {
         currentHistoryTitle: event.historyTitle
       });
     } else if (event.type === "assistant-audio") {
+      if (event.speechStatus) this.updateState({ speechStatus: event.speechStatus });
       if (event.displayText) {
         const assistantText = this.appendAssistantTextFragment(event.displayText);
         this.updateState({

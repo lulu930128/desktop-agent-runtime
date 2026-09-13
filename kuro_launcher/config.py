@@ -103,6 +103,10 @@ class AppConfig:
 
     tts_mode: str = "legacy"
     voice_ids: tuple[tuple[str, str], ...] = ()
+    core_enabled: bool = False
+    core_port: int = 0
+    core_db_path: Optional[Path] = None
+    core_timezone: str = "UTC"
 
     @property
     def voice_url(self) -> str:
@@ -206,6 +210,13 @@ def load_config(config_path: Path) -> AppConfig:
     llm_net = net.get("llm") or {}
     pet_control_net = net.get("pet_control") or {}
     launcher_control_net = net.get("launcher_control") or {}
+    core_cfg = cfg.get("core") or {}
+    core_enabled = _coerce_bool(core_cfg.get("enabled"), False)
+    core_port = int(core_cfg.get("port", 0))
+    if core_enabled and not 1 <= core_port <= 65535:
+        raise ValueError("core.port must be configured before enabling Core")
+    if core_port and core_port in {int(x.get("port", 0)) for x in (bridge_net, tts_net, llm_net, pet_control_net, launcher_control_net)}:
+        raise ValueError("core.port conflicts with another configured service")
 
     llm = cfg.get("llm") or {}
     openai = llm.get("openai") or {}
@@ -216,6 +227,10 @@ def load_config(config_path: Path) -> AppConfig:
 
     return AppConfig(
         config_path=config_path.resolve(),
+        core_enabled=core_enabled,
+        core_timezone=str(core_cfg.get("timezone", "UTC")),
+        core_port=core_port,
+        core_db_path=_resolve_path(str(core_cfg.get("db_path") or "${ROOT}/local_state/core/work.sqlite3"), mapping).resolve(),
         root=root,
         open_llm_dir=open_llm_dir,
         characters_dir=characters_dir,

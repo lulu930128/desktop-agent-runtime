@@ -17,10 +17,10 @@
         "what time",
         "timezone"
       ],
-      "default_tools": ["get_current_time"],
+      "default_tools": ["kuro-web::get_current_time"],
       "tools": [
         {
-          "name": "get_current_time",
+          "name": "kuro-web::get_current_time",
           "level": "light",
           "capabilities": ["time"],
           "risk": "read_only",
@@ -55,31 +55,31 @@
         "documentation",
         "docs"
       ],
-      "default_tools": ["advanced_search_web"],
+      "default_tools": ["kuro-web::advanced_search_web"],
       "tools": [
         {
-          "name": "search_web",
+          "name": "kuro-web::search_web",
           "level": "light",
           "capabilities": ["web_research", "current_info"],
           "risk": "read_only",
           "when": "Use for a quick first pass when titles, snippets, and URLs are enough."
         },
         {
-          "name": "advanced_search_web",
+          "name": "kuro-web::advanced_search_web",
           "level": "deep",
           "capabilities": ["web_research", "current_info", "source_verification"],
           "risk": "read_only",
           "when": "Use for source-sensitive research, latest/current questions, official documentation, comparison, or any answer that should cite evidence."
         },
         {
-          "name": "smart_search_web",
+          "name": "kuro-web::smart_search_web",
           "level": "search",
           "capabilities": ["web_research", "current_info"],
           "risk": "read_only",
           "when": "Compatibility search tool for practical, time-sensitive, multi-source, or comparison questions."
         },
         {
-          "name": "fetch_content",
+          "name": "kuro-web::fetch_content",
           "level": "read",
           "capabilities": ["url", "source_verification"],
           "risk": "read_only",
@@ -112,31 +112,31 @@
         "list directory",
         "search files"
       ],
-      "default_tools": ["search_files", "read_text_file"],
+      "default_tools": ["kuro-filesystem::search_files", "kuro-filesystem::read_text_file"],
       "tools": [
         {
-          "name": "list_allowed_roots",
+          "name": "kuro-filesystem::list_allowed_roots",
           "level": "light",
           "capabilities": ["local_files"],
           "risk": "read_only",
           "when": "Use when the assistant needs to know which local roots are readable."
         },
         {
-          "name": "list_directory",
+          "name": "kuro-filesystem::list_directory",
           "level": "light",
           "capabilities": ["local_files"],
           "risk": "read_only",
           "when": "Use to inspect folder structure before reading specific files."
         },
         {
-          "name": "search_files",
+          "name": "kuro-filesystem::search_files",
           "level": "search",
           "capabilities": ["local_files"],
           "risk": "read_only",
           "when": "Use to find names, settings, functions, errors, or prompt fragments."
         },
         {
-          "name": "read_text_file",
+          "name": "kuro-filesystem::read_text_file",
           "level": "read",
           "capabilities": ["local_files"],
           "risk": "read_only",
@@ -220,17 +220,17 @@
         "vtuber",
         "audio"
       ],
-      "default_tools": ["advanced_search_web"],
+      "default_tools": ["kuro-web::advanced_search_web"],
       "tools": [
         {
-          "name": "advanced_search_web",
+          "name": "kuro-web::advanced_search_web",
           "level": "deep",
           "capabilities": ["media_lookup", "web_research", "source_verification"],
           "risk": "read_only",
           "when": "Use after visually inspecting an attached image and deriving textual search terms for objects, products, locations, visible text, sources, facts, or fictional/illustrated/anime/game/VTuber characters that need external verification. Do not use it to identify a private real person by face."
         },
         {
-          "name": "search_web",
+          "name": "kuro-web::search_web",
           "level": "light",
           "capabilities": ["media_lookup", "web_research"],
           "risk": "read_only",
@@ -255,10 +255,10 @@
         "chat history",
         "history"
       ],
-      "default_tools": ["search_past_conversations"],
+      "default_tools": ["kuro-filesystem::search_past_conversations"],
       "tools": [
         {
-          "name": "search_past_conversations",
+          "name": "kuro-filesystem::search_past_conversations",
           "level": "search",
           "capabilities": ["memory", "chat_history", "source_verification"],
           "risk": "read_only",
@@ -287,66 +287,66 @@
         "\u672a\u8b80\u4fe1",
         "\u4eca\u5929\u7684\u4fe1"
       ],
-      "default_tools": ["mail.daily_brief"],
+      "default_tools": ["kuro-mail::mail.daily_brief"],
       "tools": [
         {
-          "name": "mail.auth_status",
+          "name": "kuro-mail::mail.auth_status",
           "level": "light",
           "capabilities": ["mail", "gmail", "auth_status"],
           "risk": "read_only",
           "when": "Use to check whether Gmail OAuth is configured and authorized."
         },
         {
-          "name": "mail.auth_start",
+          "name": "kuro-mail::mail.auth_start",
           "level": "setup",
           "capabilities": ["mail", "gmail", "authorization"],
           "risk": "local_auth",
           "when": "Use only when the user asks to connect or re-authorize Gmail."
         },
         {
-          "name": "mail.auth_finish",
+          "name": "kuro-mail::mail.auth_finish",
           "level": "setup",
           "capabilities": ["mail", "gmail", "authorization"],
           "risk": "local_auth",
           "when": "Use only after the user provides the Google OAuth redirected URL."
         },
         {
-          "name": "mail.list_unread",
+          "name": "kuro-mail::mail.list_unread",
           "level": "read",
           "capabilities": ["mail", "gmail", "unread"],
           "risk": "read_only",
           "when": "Use for unread Gmail summaries. It does not mark mail as read."
         },
         {
-          "name": "mail.search_recent",
+          "name": "kuro-mail::mail.search_recent",
           "level": "search",
           "capabilities": ["mail", "gmail", "search"],
           "risk": "read_only",
           "when": "Use for recent Gmail searches by sender, subject, keyword, or Gmail query syntax."
         },
         {
-          "name": "mail.get_message_summary",
+          "name": "kuro-mail::mail.get_message_summary",
           "level": "read",
           "capabilities": ["mail", "gmail", "message_summary"],
           "risk": "read_only",
           "when": "Use when a specific Gmail message id needs a metadata/snippet summary."
         },
         {
-          "name": "mail.get_message_detail",
+          "name": "kuro-mail::mail.get_message_detail",
           "level": "read",
           "capabilities": ["mail", "gmail", "message_detail", "message_body", "attachment_metadata"],
           "risk": "read_only",
           "when": "Use only when the user asks to open or read a specific Gmail message body. It does not download attachments or modify the mailbox."
         },
         {
-          "name": "mail.daily_brief",
+          "name": "kuro-mail::mail.daily_brief",
           "level": "read",
           "capabilities": ["mail", "gmail", "brief", "dashboard_snapshot"],
           "risk": "read_only",
           "when": "Use for a daily Gmail brief and Kuro Briefing-compatible snapshot. It returns JSON and does not modify the mailbox."
         },
         {
-          "name": "mail.update_briefing",
+          "name": "kuro-mail::mail.update_briefing",
           "level": "read",
           "capabilities": ["mail", "gmail", "brief", "dashboard_snapshot", "dashboard_update"],
           "risk": "read_only_local_update",
@@ -392,10 +392,10 @@
         "stock",
         "portfolio"
       ],
-      "default_tools": ["omi.ask"],
+      "default_tools": ["omi-market::omi.ask"],
       "tools": [
         {
-          "name": "omi.ask",
+          "name": "omi-market::omi.ask",
           "level": "read",
           "capabilities": [
             "market_data",
@@ -408,7 +408,7 @@
           "when": "Use for Taiwan market, US/ADR stock context, stock, watchlist, data freshness, and prompt-ready brief or trusted OMI LLM analysis backed by Open Market Intelligence data. Send contract_version=omi.decision.v4 and target={type:auto} unless OMI already returned a concrete target in the previous turn. Use selection fields, limits, and max_response_bytes when only bounded evidence is needed. Consume answer, decision, evidence, limitations, status, and continuation directly; do not reconstruct OMI market semantics in Kuro. Do not send legacy scope_type or scope_id to omi.ask. Kuro may set allow_external_fetch=true with a small tool_budget so OMI can refresh stale evidence by its default stale-first policy or choose from backend allowlisted market APIs; Kuro must not call those APIs directly. Prefer mode=data_only or mode=brief for evidence, and mode=analysis with allow_llm=true when OMI should do its own non-persistent LLM synthesis. Do not request report generation or allow_write unless the runtime policy is explicitly changed."
         },
         {
-          "name": "omi.ask_stream",
+          "name": "omi-market::omi.ask_stream",
           "level": "read",
           "capabilities": [
             "market_data",

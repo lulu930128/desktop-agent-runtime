@@ -1,6 +1,7 @@
 import os
 import re
 import json
+from .mcpp.privacy import safe_text
 import uuid
 from datetime import datetime
 from typing import Literal, List, TypedDict, Optional
@@ -136,7 +137,7 @@ def create_new_history(conf_uid: str) -> str:
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(initial_data, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        logger.error(f"Failed to create new history file: {e}")
+        logger.error('Failed to create new history file; payload details omitted.')
         return ""
 
     logger.debug(f"Created new history file with empty metadata: {filepath}")
@@ -180,6 +181,7 @@ def store_message(
             logger.error(f"Failed to load history file: {filepath}")
             pass
 
+    content = safe_text(content)
     metadata = _ensure_metadata_entry(history_data)
 
     now_str = _now_iso()
@@ -243,7 +245,7 @@ def get_metadata(conf_uid: str, history_uid: str) -> dict:
         if history_data and history_data[0]["role"] == "metadata":
             return history_data[0]
     except Exception as e:
-        logger.error(f"Failed to get metadata: {e}")
+        logger.error('Failed to get metadata; payload details omitted.')
     return {}
 
 
@@ -282,7 +284,7 @@ def update_metadate(conf_uid: str, history_uid: str, metadata: dict) -> bool:
         logger.debug(f"Updated metadata for history {history_uid}")
         return True
     except Exception as e:
-        logger.error(f"Failed to set metadata: {e}")
+        logger.error('Failed to set metadata; payload details omitted.')
     return False
 
 
@@ -333,7 +335,7 @@ def delete_history(conf_uid: str, history_uid: str) -> bool:
             logger.debug(f"Successfully deleted history file: {filepath}")
             return True
     except Exception as e:
-        logger.error(f"Failed to delete history file: {e}")
+        logger.error('Failed to delete history file; payload details omitted.')
     return False
 
 
@@ -419,7 +421,7 @@ def get_history_list(conf_uid: str) -> List[dict]:
                     }
                     histories.append(history_info)
             except Exception as e:
-                logger.error(f"Error reading history file {filename}: {e}")
+                logger.error('Error reading history file; payload details omitted.')
                 continue
 
         histories.sort(
@@ -428,7 +430,7 @@ def get_history_list(conf_uid: str) -> List[dict]:
         return histories
 
     except Exception as e:
-        logger.error(f"Error listing histories: {e}")
+        logger.error('Error listing histories; payload details omitted.')
         return []
 
 
@@ -463,7 +465,7 @@ def modify_latest_message(
             )
             return False
 
-        latest_message["content"] = new_content
+        latest_message["content"] = safe_text(new_content)
         with open(filepath, "w", encoding="utf-8") as f:
             json.dump(history_data, f, ensure_ascii=False, indent=2)
 
@@ -471,7 +473,7 @@ def modify_latest_message(
         return True
 
     except Exception as e:
-        logger.error(f"Failed to modify latest message: {e}")
+        logger.error('Failed to modify latest message; payload details omitted.')
         return False
 
 
@@ -494,7 +496,7 @@ def rename_history_file(
             )
             return True
     except Exception as e:
-        logger.error(f"Failed to rename history file: {e}")
+        logger.error('Failed to rename history file; payload details omitted.')
     return False
 
 

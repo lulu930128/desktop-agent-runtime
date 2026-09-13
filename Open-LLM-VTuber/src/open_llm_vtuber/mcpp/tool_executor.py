@@ -1,5 +1,10 @@
 import json
 import datetime
+import asyncio
+from .privacy import argument_summary, project, safe_text, secret_values
+from .tool_identity import canonical_id, legacy_name
+from .tool_schema import validate_arguments, SchemaError, schema_digest
+from .tool_result import ToolResult
 from loguru import logger
 from typing import (
     Dict,
@@ -13,7 +18,7 @@ from typing import (
 from .types import ToolCallObject
 from .mcp_client import MCPClient
 from .tool_manager import ToolManager
-from .tool_policy_manager import ToolPolicy
+from .tool_policy_manager import ToolPolicy, ToolPolicyDecision
 from .tool_catalog_manager import normalize_thinking_power
 
 
@@ -43,17 +48,13 @@ class ToolExecutor:
         parse_error: bool = False
 
         if isinstance(call, ToolCallObject):
-            tool_name = call.function.name
+            tool_name = getattr(call.function, "name", "")
             tool_id = call.id
             try:
-                tool_input = json.loads(call.function.arguments)
-            except json.JSONDecodeError:
-                logger.error(
-                    f"Failed to decode OpenAI tool arguments for '{tool_name}'"
-                )
-                result_content = (
-                    f"Error: Invalid arguments format for tool '{tool_name}'."
-                )
+                tool_input = json.loads(getattr(call.function, "arguments", None))
+            except (json.JSONDecodeError, TypeError):
+                logger.error("Failed to decode tool arguments; payload omitted.")
+                result_content = "Error: Invalid tool arguments format."
                 is_error = True
                 parse_error = True
         elif isinstance(call, dict):
@@ -62,22 +63,23 @@ class ToolExecutor:
             tool_input = call.get("input", call.get("args"))
 
             if tool_input is None:
-                logger.warning(
-                    f"Empty input for tool '{tool_name}' (ID: {tool_id}). Using empty object."
-                )
                 tool_input = {}
 
             if not tool_id or not tool_name:
-                logger.error(f"Invalid Dict tool call structure: {call}")
+                logger.error("Invalid tool call structure; payload omitted.")
                 result_content = "Error: Invalid tool call structure from LLM."
                 is_error = True
                 parse_error = True
         else:
-            logger.error(f"Unsupported tool call type: {type(call)}")
+            logger.error('Unsupported tool call type; payload details omitted.')
             result_content = "Error: Unsupported tool call type."
             is_error = True
             parse_error = True
 
+        if not isinstance(tool_name, str) or not isinstance(tool_id, str):
+            tool_name, tool_id = "", ""
+            is_error = parse_error = True
+            result_content = "Error: Invalid tool call identity."
         return tool_name, tool_id, tool_input, is_error, result_content, parse_error
 
     def format_tool_result(
@@ -132,6 +134,8 @@ class ToolExecutor:
         """Process tool data from JSON in prompt mode."""
         parsed_tools = []
         for item in data:
+            if not isinstance(item, dict):
+                continue
             server = item.get("mcp_server")
             tool_name = item.get("tool")
             arguments_str = item.get("arguments")
@@ -140,19 +144,19 @@ class ToolExecutor:
                     args_dict = json.loads(arguments_str)
                     parsed_tools.append(
                         {
-                            "name": tool_name,
+                            "name": tool_name if tool_name.startswith(canonical_id(server, "_")[:-1]) else canonical_id(server, tool_name),
                             "server": server,
                             "args": args_dict,
                             "id": f"prompt_tool_{len(parsed_tools)}",
                         }
                     )
-                    logger.info(f"Parsed tool call from prompt JSON: {tool_name}")
+                    logger.info("Parsed tool call from prompt JSON.")
                 except json.JSONDecodeError:
                     logger.error(
                         "Failed to decode arguments JSON in prompt mode tool call"
                     )
                 except Exception as e:
-                    logger.error(f"Error processing prompt mode tool dict: {e}")
+                    logger.error('Error processing prompt mode tool dict; payload details omitted.')
             else:
                 logger.warning("Skipping invalid tool structure in prompt mode JSON")
         return parsed_tools
@@ -176,12 +180,10 @@ class ToolExecutor:
                 parse_error,
             ) = self.parse_tool_call(call)
 
-            logger.info(f"Executing tool: {call}")
+            logger.info("Executing tool call; payload omitted.")
 
             if parse_error:
-                logger.warning(
-                    f"Skipping tool call due to parsing error: {result_content}"
-                )
+                logger.warning('Skipping tool call due to parsing error; payload details omitted.')
                 status_update = {
                     "type": "tool_call_status",
                     "tool_id": tool_id
@@ -191,8 +193,7 @@ class ToolExecutor:
                     "content": result_content,
                     "timestamp": datetime.datetime.now(
                         datetime.timezone.utc
-                    ).isoformat()
-                    + "Z",
+                    ).isoformat(),
                 }
                 yield status_update
                 # Even on parse error, we might need to format a result for the LLM
@@ -217,21 +218,19 @@ class ToolExecutor:
 
             tool_input = self._apply_thinking_power(tool_name, tool_input)
 
-            policy_decision = self._tool_policy.check(tool_name, tool_input)
+            policy_decision = self.check_call(tool_name, tool_input)
             if not policy_decision.allowed:
-                logger.warning(
-                    f"Tool call blocked by runtime policy: {tool_name}: {policy_decision.reason}"
-                )
+                logger.warning("Tool call blocked by runtime policy: {}", policy_decision.reason_code)
                 status_update = {
                     "type": "tool_call_status",
                     "tool_id": tool_id,
-                    "tool_name": tool_name or "Unknown Tool",
+                    "tool_name": tool_name if self._tool_manager.get_tool(tool_name) else "Unavailable tool",
                     "status": policy_decision.status,
+                    "reason_code": policy_decision.reason_code,
                     "content": policy_decision.reason,
                     "timestamp": datetime.datetime.now(
                         datetime.timezone.utc
-                    ).isoformat()
-                    + "Z",
+                    ).isoformat(),
                 }
                 yield status_update
 
@@ -251,60 +250,31 @@ class ToolExecutor:
                 "tool_id": tool_id,
                 "tool_name": tool_name,
                 "status": "running",
-                "content": f"Input: {json.dumps(tool_input)}",
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
-                + "Z",
+                "content": argument_summary(tool_input),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             }
 
             # Execute the tool
-            (
-                is_error,
-                text_content,
-                metadata,
-                content_items,
-            ) = await self.run_single_tool(tool_name, tool_id, tool_input)
+            try:
+                (
+                    is_error,
+                    text_content,
+                    metadata,
+                    content_items,
+                ) = await self.run_single_tool(tool_name, tool_id, tool_input)
+            except asyncio.CancelledError:
+                yield {"type": "tool_call_status", "tool_id": tool_id, "tool_name": tool_name,
+                       "status": "error", "execution_status": "cancelled", "reason_code": "cancelled",
+                       "content": "Tool call cancelled; execution outcome may be unknown.",
+                       "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+                raise
 
             # Determine content for status update and LLM result format
-            status_content = text_content  # Default to text content
+            status_content = safe_text(text_content, limit=2048)
             llm_formatted_content = text_content  # Default to text content for LLM
 
-            if content_items:
-                image_items = [
-                    item for item in content_items if item.get("type") == "image"
-                ]
-                if image_items:
-                    num_images = len(image_items)
-                    status_content = (
-                        f"{text_content}\n[Tool returned {num_images} image(s)]".strip()
-                    )
-
-                    if caller_mode == "Claude":
-                        # Format for Claude: list of blocks
-                        claude_blocks = []
-                        if text_content:
-                            claude_blocks.append({"type": "text", "text": text_content})
-                        for item in content_items:
-                            if (
-                                item.get("type") == "image"
-                                and "data" in item
-                                and "mimeType" in item
-                            ):
-                                claude_blocks.append(
-                                    {
-                                        "type": "image",
-                                        "source": {
-                                            "type": "base64",
-                                            "media_type": item["mimeType"],
-                                            "data": item["data"],
-                                        },
-                                    }
-                                )
-                            # Add other non-text types here
-                        llm_formatted_content = (
-                            claude_blocks if claude_blocks else ""
-                        )  # Use blocks or empty string
-                    elif caller_mode in ["OpenAI", "Prompt"]:
-                        llm_formatted_content = status_content
+            if caller_mode == "Claude" and "claude_content" in metadata:
+                llm_formatted_content = metadata["claude_content"]
 
             # Prepare and yield tool call status update
             status_update = {
@@ -312,20 +282,25 @@ class ToolExecutor:
                 "tool_id": tool_id,
                 "tool_name": tool_name,
                 "status": "error" if is_error else "completed",
-                "content": status_content
+                "execution_status": metadata.get("execution_status", "failed" if is_error else "succeeded"),
+                "reason_code": metadata.get("reason_code", ""),
+                "content": safe_text(status_content, limit=2048)
                 if not is_error
-                else f"Error: {text_content}",  # Use descriptive content or error message
-                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
-                + "Z",
+                else safe_text(f"Error: {text_content}", limit=2048),
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             }
 
-            # For stagehand_navigate tool, include browser view links if available
+            if legacy_name(tool_name) in {"omi.ask", "omi.ask_stream"}:
+                from .market_preflight import build_omi_evidence_snapshot
+                evidence = metadata.get("omi_evidence") or build_omi_evidence_snapshot(text_content)
+                if evidence:
+                    status_update["omi_evidence"] = project(evidence)
+
+            # Only the allowlisted result metadata is exposed; no arbitrary browser URLs.
             if tool_name == "stagehand_navigate" and not is_error:
                 live_view_data = metadata.get("liveViewData", {})
                 if live_view_data:
-                    logger.info(
-                        f"Found live view data for stagehand_navigate: {live_view_data}"
-                    )
+                    logger.info('Found live view data for stagehand_navigate; payload details omitted.')
                     status_update["browser_view"] = live_view_data
 
             yield status_update
@@ -342,6 +317,25 @@ class ToolExecutor:
         )
         yield {"type": "final_tool_results", "results": tool_results_for_llm}
 
+    def check_call(self, tool_name: str, tool_input: Any) -> ToolPolicyDecision:
+        info = self._tool_manager.get_tool(tool_name)
+        if not info:
+            return ToolPolicyDecision(False, "blocked", "Tool is unavailable in this tool snapshot.", "tool_unavailable")
+        identity = info.canonical_id or canonical_id(info.related_server, info.wire_name or legacy_name(tool_name))
+        policy = getattr(self, "_tool_policy", None)
+        if policy is None:
+            return ToolPolicyDecision(False, "blocked", "Policy unavailable.", "policy_unavailable")
+        decision = policy.check(identity, tool_input)
+        if not decision.allowed:
+            return decision
+        try:
+            if info.schema_digest and schema_digest(info.input_schema) != info.schema_digest:
+                raise SchemaError("schema_changed")
+            validate_arguments(info.input_schema, tool_input)
+        except SchemaError as exc:
+            return ToolPolicyDecision(False, "blocked", exc.code, exc.code)
+        return decision
+
     async def run_single_tool(
         self, tool_name: str, tool_id: str, tool_input: Any
     ) -> tuple[bool, str, Dict[str, Any], List[Dict[str, Any]]]:
@@ -350,7 +344,7 @@ class ToolExecutor:
         Returns:
             tuple: (is_error, text_content, metadata, content_items)
         """
-        logger.info(f"Executing tool: {tool_name} (ID: {tool_id})")
+        logger.info("Executing validated tool call.")
         tool_info = self._tool_manager.get_tool(tool_name)
 
         is_error = False
@@ -361,9 +355,22 @@ class ToolExecutor:
         if tool_input is None:
             tool_input = {}
 
+        if tool_info:
+            identity = tool_info.canonical_id or canonical_id(tool_info.related_server, tool_info.wire_name or legacy_name(tool_name))
+            decision = self._tool_policy.check(identity, tool_input) if self._tool_policy else None
+            if decision is None or not decision.allowed:
+                text = decision.reason if decision else "Policy unavailable."
+                return True, text, {}, [{"type": "text", "text": text}]
+            try:
+                if tool_info.schema_digest and schema_digest(tool_info.input_schema) != tool_info.schema_digest:
+                    raise SchemaError("schema_changed")
+                validate_arguments(tool_info.input_schema, tool_input)
+            except SchemaError as exc:
+                return True, exc.code, {}, [{"type": "text", "text": exc.code}]
+
         if not tool_info:
-            logger.error(f"Tool '{tool_name}' not found in ToolManager.")
-            text_content = f"Error: Tool '{tool_name}' is not available."
+            logger.error("Tool unavailable in ToolManager.")
+            text_content = "Error: Tool is not available."
             content_items = [{"type": "error", "text": text_content}]
             is_error = True
         elif not tool_info.related_server:
@@ -375,49 +382,45 @@ class ToolExecutor:
             try:
                 result_dict = await self._mcp_client.call_tool(
                     server_name=tool_info.related_server,
-                    tool_name=tool_name,
+                    tool_name=tool_info.wire_name or legacy_name(tool_name),
                     tool_args=tool_input,
+                    expected_schema_digest=schema_digest(tool_info.input_schema),
+                    expected_output_digest=schema_digest(tool_info.output_schema),
                 )
 
-                metadata = result_dict.get("metadata", {})
-                content_items = result_dict.get("content_items", [])
-
-                # Check if the first content item is an error reported by MCPClient
-                if content_items and content_items[0].get("type") == "error":
-                    is_error = True
-                    text_content = content_items[0].get(
-                        "text", "Unknown error from tool execution."
+                if isinstance(result_dict, ToolResult):
+                    result_dict.policy_digest = self._tool_policy.digest
+                    result_dict.execution_id = tool_id
+                    is_error = result_dict.is_error
+                    secrets = secret_values(tool_input)
+                    text_content = result_dict.model_text(
+                        secrets=secrets, limit=65536 if legacy_name(identity).startswith("omi.") else 128*1024,
                     )
-                elif content_items and content_items[0].get("type") == "text":
-                    text_content = content_items[0].get("text", "")
-                # If no text item is first, text_content remains ""
+                    # Raw results remain local to this invocation; legacy consumers get a safe copy.
+                    content_items = project(result_dict.content_items, secrets=secrets)
+                    metadata = {"execution_status": result_dict.status, "reason_code": result_dict.reason_code,
+                                "claude_content": result_dict.claude_content(secrets=secrets, limit=65536 if legacy_name(identity).startswith("omi.") else 128*1024)}
+                    if legacy_name(identity) in {"omi.ask", "omi.ask_stream"}:
+                        from .market_preflight import build_omi_evidence_snapshot
+                        source_text = json.dumps(project(result_dict.structured_content, secrets=secrets), ensure_ascii=False) if result_dict.structured_content is not None else text_content
+                        metadata["omi_evidence"] = build_omi_evidence_snapshot(source_text)
+                    return is_error, text_content, metadata, content_items
+                # Compatibility is limited to the old internal result envelope.
+                metadata = {}
+                content_items = project(result_dict.get("content_items", []), secrets=secret_values(tool_input))
 
-                if not is_error:
-                    logger.info(f"Tool '{tool_name}' executed successfully.")
-                    if content_items:
-                        logger.info(f"Content items from tool '{tool_name}':")
-                        for item in content_items:
-                            item_type = item.get("type", "unknown")
-                            logger.info(f"  Type: {item_type}")
-                            for key, value in item.items():
-                                if (
-                                    key != "type" and key != "data"
-                                ):  # Avoid logging large data
-                                    log_value = (
-                                        f"(length: {len(value)})"
-                                        if isinstance(value, str) and len(value) > 100
-                                        else value
-                                    )
-                                    logger.info(f"    {key}: {log_value}")
+                is_error = bool(result_dict.get("isError")) or any(item.get("type") == "error" for item in content_items)
+                text_content = safe_text("\n".join(item.get("text", "") for item in content_items if "text" in item))
+                logger.info("Legacy tool result received; payload omitted.")
 
-            except (ValueError, RuntimeError, ConnectionError) as e:
-                logger.exception(f"Error executing tool '{tool_name}': {e}")
-                text_content = f"Error executing tool '{tool_name}': {e}"
+            except (ValueError, RuntimeError, ConnectionError):
+                logger.error("Tool execution failed; raw exception omitted.")
+                text_content = "Tool execution failed; outcome is unknown."
                 content_items = [{"type": "error", "text": text_content}]
                 is_error = True
-            except Exception as e:
-                logger.exception(f"Unexpected error executing tool '{tool_name}': {e}")
-                text_content = f"Unexpected error executing tool '{tool_name}': {e}"
+            except Exception:
+                logger.error("Tool execution failed; raw exception omitted.")
+                text_content = "Tool execution failed; outcome is unknown."
                 content_items = [{"type": "error", "text": text_content}]
                 is_error = True
 
@@ -425,6 +428,7 @@ class ToolExecutor:
 
     def _apply_thinking_power(self, tool_name: str, tool_input: Any) -> Any:
         """Clamp web-search tool arguments according to launcher thinking power."""
+        tool_name = legacy_name(tool_name)
         if not isinstance(tool_input, dict):
             return tool_input
 

@@ -11,6 +11,7 @@
 | 元件與權限邊界 | [架構索引](architecture/index.md) |
 | 中央語音 | [語音服務](central-voice-runtime.md) |
 | 產品目標 | [願景](product/ProductVision.md)／[Roadmap](product/Roadmap.md) |
+| MCP 可信度與安全修復計畫 | [M0 規格與施工入口](agent-runs/mcp-trust-security-m0/Prompt.md) |
 
 ## 與 OMI 文件的對照
 

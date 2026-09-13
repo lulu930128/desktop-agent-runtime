@@ -2,6 +2,8 @@
 
 import shutil
 import json
+import os
+import math
 
 from datetime import timedelta
 from pathlib import Path
@@ -37,7 +39,7 @@ def _normalize_timeout(value: Any) -> timedelta:
         )
         return timedelta(seconds=DEFAULT_TIMEOUT_SECONDS)
 
-    if seconds <= 0:
+    if not math.isfinite(seconds) or seconds <= 0:
         logger.warning(
             f"MCPSR: Non-positive timeout value '{value}'. Using default timeout."
         )
@@ -80,11 +82,19 @@ class ServerRegistry:
     def load_servers(self) -> None:
         """Load servers from the config file."""
         servers_config: Dict[str, Dict[str, Any]] = self.config.get("mcp_servers", {})
+        if not isinstance(servers_config, dict):
+            raise ValueError("MCP server configuration must be an object.")
         if servers_config == {}:
             logger.warning("MCPSR: No servers found in the config file.")
             return
 
         for server_name, server_details in servers_config.items():
+            if not isinstance(server_details, dict):
+                continue
+            allowed_tools = server_details.get("allowed_tools")
+            if allowed_tools is not None and (not isinstance(allowed_tools, list) or not all(isinstance(name, str) and name for name in allowed_tools)):
+                logger.warning("MCPSR: Invalid configured tool allowlist; server disabled.")
+                continue
             if "command" not in server_details or "args" not in server_details:
                 logger.warning(
                     f"MCPSR: Invalid server details for '{server_name}'. Ignoring."
@@ -92,6 +102,12 @@ class ServerRegistry:
                 continue
 
             command = server_details["command"]
+            args, env = server_details["args"], server_details.get("env")
+            if (not isinstance(command, str) or not command or
+                not isinstance(args, list) or not all(isinstance(arg, str) for arg in args) or
+                (env is not None and (not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items())))):
+                logger.warning("MCPSR: Invalid command arguments or environment; server disabled.")
+                continue
             if command == "npx":
                 if not self.npx_available:
                     logger.warning(
@@ -116,7 +132,8 @@ class ServerRegistry:
                 name=server_name,
                 command=command,
                 args=server_details["args"],
-                env=server_details.get("env", None),
+                env={key: os.path.expandvars(value) for key, value in server_details.get("env", {}).items()} if server_details.get("env") else None,
+                allowed_tools=allowed_tools,
                 cwd=server_details.get("cwd", None),
                 timeout=_normalize_timeout(server_details.get("timeout", None)),
             )

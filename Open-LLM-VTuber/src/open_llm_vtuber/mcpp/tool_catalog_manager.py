@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from loguru import logger
+from .tool_identity import legacy_canonical, legacy_name
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,14 @@ class ToolRoute:
 
 
 class ToolCatalog:
+    @staticmethod
+    def _available_name(name, available):
+        canonical = legacy_canonical(name)
+        if canonical in available:
+            return canonical
+        raw = legacy_name(name)
+        return raw if raw in available else ""
+
     def __init__(self, catalog: dict[str, Any] | None = None) -> None:
         self.catalog = catalog if isinstance(catalog, dict) else {}
         categories = self.catalog.get("categories")
@@ -126,7 +135,8 @@ class ToolCatalog:
             )
             for order_index, item in enumerate(tool_items):
                 tool_name = str(item.get("name") or "").strip()
-                if not tool_name or tool_name not in available:
+                tool_name = self._available_name(tool_name, available)
+                if not tool_name:
                     continue
                 if any(candidate.name == tool_name for candidate in candidates):
                     continue
@@ -213,7 +223,7 @@ class ToolCatalog:
                     category_id=category_id,
                     thinking_power=normalized_power,
                 )
-                if not available or name in available
+                if self._available_name(name, available)
             ]
             tool_text = ", ".join(tools) if tools else "(no active tools yet)"
             lines.append(f"- {category_id} / {title}: {description}")
@@ -432,7 +442,7 @@ class ToolCatalog:
         order_index: int,
         intent: ToolIntent,
     ) -> tuple[int, str]:
-        tool_name = str(item.get("name") or "").strip()
+        tool_name = legacy_name(str(item.get("name") or "").strip())
         level = str(item.get("level") or "").strip().lower()
         capabilities = [
             str(value).strip().lower() for value in item.get("capabilities") or []

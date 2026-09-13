@@ -2,95 +2,95 @@
   "version": 1,
   "default_mode": "blocked",
   "tools": {
-    "get_current_time": {
+    "kuro-web::get_current_time": {
       "mode": "read_only",
       "category": "web"
     },
-    "search_web": {
+    "kuro-web::search_web": {
       "mode": "read_only",
       "category": "web"
     },
-    "smart_search_web": {
+    "kuro-web::smart_search_web": {
       "mode": "read_only",
       "category": "web"
     },
-    "advanced_search_web": {
+    "kuro-web::advanced_search_web": {
       "mode": "read_only",
       "category": "web"
     },
-    "fetch_content": {
+    "kuro-web::fetch_content": {
       "mode": "read_only",
       "category": "web",
       "url_args": ["url"],
       "block_private_urls": true
     },
-    "list_allowed_roots": {
+    "kuro-filesystem::list_allowed_roots": {
       "mode": "read_only",
       "category": "filesystem"
     },
-    "list_directory": {
+    "kuro-filesystem::list_directory": {
       "mode": "read_only",
       "category": "filesystem",
       "path_args": ["path"],
       "allow_hidden": false
     },
-    "search_files": {
+    "kuro-filesystem::search_files": {
       "mode": "read_only",
       "category": "filesystem",
       "path_args": ["path"],
       "allow_hidden": false
     },
-    "read_text_file": {
+    "kuro-filesystem::read_text_file": {
       "mode": "read_only",
       "category": "filesystem",
       "path_args": ["path"],
       "allow_hidden": false
     },
-    "search_past_conversations": {
+    "kuro-filesystem::search_past_conversations": {
       "mode": "read_only",
       "category": "memory"
     },
-    "mail.auth_status": {
+    "kuro-mail::mail.auth_status": {
       "mode": "read_only",
       "category": "mail"
     },
-    "mail.auth_start": {
-      "mode": "read_only",
+    "kuro-mail::mail.auth_start": {
+      "mode": "confirm",
       "category": "mail"
     },
-    "mail.auth_finish": {
-      "mode": "read_only",
+    "kuro-mail::mail.auth_finish": {
+      "mode": "confirm",
       "category": "mail"
     },
-    "mail.list_unread": {
+    "kuro-mail::mail.list_unread": {
       "mode": "read_only",
       "category": "mail",
       "deny_truthy_args": ["include_spam_trash"]
     },
-    "mail.search_recent": {
+    "kuro-mail::mail.search_recent": {
       "mode": "read_only",
       "category": "mail",
       "deny_truthy_args": ["include_spam_trash"]
     },
-    "mail.get_message_summary": {
+    "kuro-mail::mail.get_message_summary": {
       "mode": "read_only",
       "category": "mail"
     },
-    "mail.get_message_detail": {
+    "kuro-mail::mail.get_message_detail": {
       "mode": "read_only",
       "category": "mail"
     },
-    "mail.daily_brief": {
+    "kuro-mail::mail.daily_brief": {
       "mode": "read_only",
       "category": "mail",
       "deny_truthy_args": ["include_spam_trash"]
     },
-    "mail.update_briefing": {
+    "kuro-mail::mail.update_briefing": {
       "mode": "read_only",
       "category": "mail",
       "deny_truthy_args": ["include_spam_trash"]
     },
-    "omi.ask": {
+    "omi-market::omi.ask": {
       "mode": "read_only",
       "category": "market_intelligence",
       "deny_truthy_args": ["allow_write"],
@@ -103,7 +103,7 @@
         "tool_budget.max_total_seconds": 25
       }
     },
-    "omi.ask_stream": {
+    "omi-market::omi.ask_stream": {
       "mode": "read_only",
       "category": "market_intelligence",
       "deny_truthy_args": ["allow_write"],

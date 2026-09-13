@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import Any, Protocol
+from .character_memory_lifecycle import entry_status, is_active_memory
 
 
 VALID_SCOPE_LEVELS = {
@@ -76,17 +77,6 @@ def entry_scope_level(entry: dict[str, Any]) -> str:
     if str(entry.get("scope") or "") == "character":
         return "character"
     return "character"
-
-
-def entry_status(entry: dict[str, Any]) -> str:
-    status = str(entry.get("status") or "").strip()
-    if status in VALID_STATUSES:
-        return status
-    return "active" if entry.get("enabled", True) else "disabled"
-
-
-def is_active_memory(entry: dict[str, Any]) -> bool:
-    return entry.get("enabled", True) and entry_status(entry) == "active"
 
 
 def format_scope_label(entry: dict[str, Any]) -> str:
@@ -175,6 +165,11 @@ class KeywordMemoryIndex:
 class CharacterMemoryRetriever:
     def __init__(self, index: MemoryIndex | None = None) -> None:
         self._index = index or KeywordMemoryIndex()
+
+    def sync(self, namespace: str, entries: list[dict[str, Any]]) -> None:
+        sync = getattr(self._index, "sync", None)
+        if sync:
+            sync(namespace, entries)
 
     def retrieve(
         self,

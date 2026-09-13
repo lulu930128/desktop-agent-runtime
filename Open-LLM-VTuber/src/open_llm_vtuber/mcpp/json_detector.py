@@ -114,9 +114,7 @@ class StreamJSONDetector:
                 json_data = json.loads(json_str)
                 return json_data, i - 1
             except json.JSONDecodeError:
-                logger.warning(
-                    f"JSON structure found but parsing failed: {json_str[:50]}..."
-                )
+                logger.warning('JSON structure found but parsing failed; payload details omitted.')
 
         return None, -1
 

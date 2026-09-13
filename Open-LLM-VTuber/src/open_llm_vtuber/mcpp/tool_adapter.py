@@ -1,12 +1,17 @@
 """Constructs prompts for servers and tools, formats tool information for OpenAI API."""
 
 import re
+import os
+import json
+from copy import deepcopy
+from .tool_schema import provider_schema, resolved_schema, schema_digest, SchemaError
 from typing import Dict, Optional, List, Tuple, Any
 from loguru import logger
 
 from .types import FormattedTool
 from .mcp_client import MCPClient
 from .server_registry import ServerRegistry
+from .tool_identity import canonical_id, provider_alias
 
 
 OPENAI_TOOL_NAME_MAX_LENGTH = 64
@@ -15,18 +20,9 @@ _OPENAI_TOOL_NAME_INVALID_CHARS = re.compile(r"[^a-zA-Z0-9_-]+")
 
 def _openai_api_tool_name(tool_name: str, used_names: set[str]) -> str:
     """Return a unique OpenAI-compatible function name for a canonical MCP tool."""
-    base_name = _OPENAI_TOOL_NAME_INVALID_CHARS.sub("_", tool_name).strip("_")
-    if not base_name:
-        base_name = "tool"
-    base_name = base_name[:OPENAI_TOOL_NAME_MAX_LENGTH]
-
-    candidate = base_name
-    suffix_index = 2
-    while candidate in used_names:
-        suffix = f"_{suffix_index}"
-        max_base_length = OPENAI_TOOL_NAME_MAX_LENGTH - len(suffix)
-        candidate = f"{base_name[:max_base_length]}{suffix}"
-        suffix_index += 1
+    candidate = provider_alias(tool_name)
+    if candidate in used_names:
+        raise ValueError("Provider alias collision.")
 
     used_names.add(candidate)
     return candidate
@@ -39,6 +35,9 @@ class ToolAdapter:
         """Initialize with an ServerRegistry."""
         self.server_registery = server_registery or ServerRegistry()
         self._last_formatted_tools_dict: Dict[str, FormattedTool] = {}
+        self.schema_profile = os.getenv("KURO_MCP_SCHEMA_PROFILE", "openai_non_strict")
+        self.schema_errors: dict[str, str] = {}
+        self.discovery_results = {}
 
     def get_last_formatted_tools_dict(self) -> Dict[str, FormattedTool]:
         """Return the raw tools from the most recent dynamic fetch."""
@@ -61,7 +60,7 @@ class ToolAdapter:
 
         # Use a single client instance for efficiency
         async with MCPClient(self.server_registery) as client:
-            for server_name in enabled_servers:
+            for server_name in dict.fromkeys(enabled_servers):
                 if server_name not in self.server_registery.servers:
                     logger.warning(
                         f"MC: Enabled server '{server_name}' not found in Server Manager. Skipping."
@@ -70,11 +69,18 @@ class ToolAdapter:
 
                 try:
                     servers_info[server_name] = {}
-                    tools = await client.list_tools(server_name)
+                    discovery = await client.discover_tools(server_name)
+                    self.discovery_results[server_name] = discovery
+                    if not discovery.complete:
+                        continue
+                    tools = discovery.tools
                     logger.debug(
                         f"MC: Found {len(tools)} tools on server '{server_name}'"
                     )
                     for tool in tools:
+                        allowed = self.server_registery.servers[server_name].allowed_tools
+                        if allowed is not None and tool.name not in allowed:
+                            continue
                         servers_info[server_name][tool.name] = {}
                         tool_info = servers_info[server_name][tool.name]
                         tool_info["description"] = tool.description
@@ -82,7 +88,11 @@ class ToolAdapter:
                         tool_info["required"] = tool.inputSchema.get("required", [])
 
                         # Store the tool info in FormattedTool format
-                        formatted_tools[tool.name] = FormattedTool(
+                        identity = canonical_id(server_name, tool.name)
+                        formatted_tools[identity] = FormattedTool(
+                            canonical_id=identity,
+                            wire_name=tool.name,
+                            output_schema=tool.outputSchema,
                             input_schema=tool.inputSchema,
                             related_server=server_name,
                             description=tool.description,
@@ -90,18 +100,14 @@ class ToolAdapter:
                             generic_schema=None,
                         )
                 except (ValueError, RuntimeError, ConnectionError) as e:
-                    logger.error(
-                        f"MC: Failed to get info for server '{server_name}': {e}"
-                    )
+                    logger.error("MC: Failed to get info for server '; payload details omitted.")
                     if (
                         server_name not in servers_info
                     ):  # Ensure entry exists even on error
                         servers_info[server_name] = {}
                     continue  # Continue to next server
                 except Exception as e:
-                    logger.error(
-                        f"MC: Unexpected error for server '{server_name}': {e}"
-                    )
+                    logger.error("MC: Unexpected error for server '; payload details omitted.")
                     if server_name not in servers_info:
                         servers_info[server_name] = {}
                     continue  # Continue to next server
@@ -140,6 +146,8 @@ class ToolAdapter:
                 # Ensure description is handled correctly (might be None)
                 description = tool_info.get("description", "No description available.")
                 prompt_content += f"            Description: {description}\n"
+                if "schema" in tool_info:
+                    prompt_content += "            Input schema: " + json.dumps(tool_info["schema"], ensure_ascii=False, sort_keys=True) + "\n"
                 parameters = tool_info.get("parameters", {})
                 if parameters:
                     prompt_content += "            Parameters:\n"
@@ -179,15 +187,29 @@ class ToolAdapter:
         logger.debug(f"MC: Formatting {len(formatted_tools_dict)} tools for API usage.")
         used_openai_tool_names: set[str] = set()
 
-        for tool_name, data_object in formatted_tools_dict.items():
+        rejected = []
+        self.schema_errors = {}
+        for tool_name, data_object in sorted(formatted_tools_dict.items()):
             if not isinstance(data_object, FormattedTool):
-                logger.warning(f"MC: Skipping invalid tool format for '{tool_name}'")
+                logger.warning("MC: Skipping invalid tool format.")
+                rejected.append(tool_name)
+                self.schema_errors[tool_name] = "schema_invalid"
                 continue
 
             input_schema = data_object.input_schema
-            properties: Dict[str, Dict[str, str]] = input_schema.get("properties", {})
+            try:
+                parameters = provider_schema(input_schema, self.schema_profile)
+                if data_object.output_schema is not None:
+                    resolved_schema(data_object.output_schema, require_object=False)
+            except SchemaError as exc:
+                self.schema_errors[tool_name] = exc.code
+                rejected.append(tool_name)
+                continue
+            data_object.schema_digest = schema_digest(input_schema)
+            data_object.provider_schema_digest = schema_digest(parameters)
+            data_object.schema_profile = self.schema_profile
+            data_object.generic_schema = parameters
             tool_description = data_object.description or "No description provided."
-            required_params = input_schema.get("required", [])
             openai_tool_name = _openai_api_tool_name(tool_name, used_openai_tool_names)
             data_object.api_name = openai_tool_name
             if openai_tool_name != tool_name:
@@ -196,31 +218,7 @@ class ToolAdapter:
                 )
 
             # Format for OpenAI
-            openai_function_params = {
-                "type": "object",
-                "properties": {},
-                "required": required_params,
-                "additionalProperties": False,  # Disallow extra properties
-            }
-            for param_name, param_info in properties.items():
-                param_schema = {
-                    "type": param_info.get("type", "string"),
-                    "description": param_info.get("description")
-                    or param_info.get("title", "No description provided."),
-                }
-                # Add enum if present
-                if "enum" in param_info:
-                    param_schema["enum"] = param_info["enum"]
-                # Handle array type correctly
-                if param_schema["type"] == "array" and "items" in param_info:
-                    param_schema["items"] = param_info["items"]
-                elif param_schema["type"] == "array" and "items" not in param_info:
-                    logger.warning(
-                        f"MC: Array parameter '{param_name}' in tool '{tool_name}' is missing 'items' definition. Assuming items are strings."
-                    )
-                    param_schema["items"] = {"type": "string"}  # Default or log warning
-
-                openai_function_params["properties"][param_name] = param_schema
+            openai_function_params = deepcopy(parameters)
 
             openai_tools.append(
                 {
@@ -229,27 +227,23 @@ class ToolAdapter:
                         "name": openai_tool_name,
                         "description": tool_description,
                         "parameters": openai_function_params,
+                        "strict": self.schema_profile == "openai_strict",
                     },
                 }
             )
 
             # Format for Claude
-            claude_input_schema = {
-                "type": "object",
-                "properties": properties,
-                "required": required_params,
-            }
+            claude_input_schema = deepcopy(parameters)
             claude_tools.append(
                 {
-                    "name": tool_name,
+                    "name": openai_tool_name,
                     "description": tool_description,
                     "input_schema": claude_input_schema,
                 }
             )
 
-        logger.debug(
-            f"MC: Finished formatting tools. OpenAI: {len(openai_tools)}, Claude: {len(claude_tools)}."
-        )
+        for name in rejected:
+            formatted_tools_dict.pop(name, None)
         return openai_tools, claude_tools
 
     async def get_tools(
@@ -262,8 +256,13 @@ class ToolAdapter:
         servers_info, formatted_tools_dict = await self.get_server_and_tool_info(
             enabled_servers
         )
-        mcp_prompt_string = self.construct_mcp_prompt_string(servers_info)
         openai_tools, claude_tools = self.format_tools_for_api(formatted_tools_dict)
+        effective_info = {}
+        for identity, tool in formatted_tools_dict.items():
+            effective_info.setdefault(tool.related_server, {})[identity] = {
+                "description": tool.description, "schema": tool.generic_schema,
+            }
+        mcp_prompt_string = self.construct_mcp_prompt_string(effective_info)
         self._last_formatted_tools_dict = formatted_tools_dict
         logger.info("MC: Dynamic tool construction complete.")
         return mcp_prompt_string, openai_tools, claude_tools

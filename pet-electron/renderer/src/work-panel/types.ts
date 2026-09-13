@@ -89,6 +89,7 @@ export interface MemoryEntry {
   scope?: string;
   source?: string;
   updated_at?: string;
+  content_digest?: string;
 }
 
 export interface MemoryState {
@@ -120,6 +121,13 @@ export interface ToolPolicyState {
 }
 
 export interface RuntimeState {
+  speechStatus?: string;
+  capabilities?: {
+    launcher: { contractVersion: number; phase: string; reason: string; restartRequired: boolean;
+      sourceRevision: string; desiredRunning: boolean; recoveryExhausted: boolean;
+      voice: { state: string; reason: string } } | null;
+    pet: { state: string; modelReady?: boolean; visible?: boolean; responsive?: boolean };
+  };
   ok?: boolean;
   aiState?: string;
   wsConnected?: boolean;
@@ -245,6 +253,7 @@ export interface ViewItem {
 }
 
 export interface WorkPanelBridge {
+  schedule(action: "status" | "view" | "item" | "mutate" | "materialize" | "prepare" | "notifications" | "notification-action", payload?: Record<string, unknown>): Promise<Record<string, unknown> & { ok: boolean; error?: string }>;
   getState(): Promise<RuntimeState>;
   getData(): Promise<BriefingData>;
   getChatState(): Promise<ChatState>;

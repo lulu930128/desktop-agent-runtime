@@ -6,9 +6,12 @@
 | --- | --- |
 | Work panel build missing | 檢查 `pet-electron/renderer-dist/work-panel.html`，於該專案執行 `npm run build:renderer`。 |
 | 找不到 Python | 確認 `envs/kuro-llm310`；clone 不包含環境，勿改指向未知 interpreter。 |
-| 面板可見但不能對話 | 檢查 settings、Launcher log 與 LLM readiness；Shell 可見不代表 backend ready。 |
+| 面板可見但不能對話 | 開啟「設定 → 診斷」查看對話服務原因，再按「重試啟動對話」。Shell 可見不代表 backend ready。 |
+| 桌寵看不到 | 診斷頁按「找回桌寵位置」；模型失敗時按「重新載入角色」。模型由 Launcher catalog 指定並從本機載入，不依賴 LLM 提供模型檔案。 |
+| 桌寵拖曳或滑鼠穿透 | 滑鼠穿透預設關閉並保存選擇；角色本體可拖曳，透明區仍穿透。拖曳／縮放後保留使用者位置；啟動或螢幕配置改變時，只對缺少可操作可見區域的模型做一次恢復。 |
+| 顯示新版待載入 | 儲存未送出的草稿後，於診斷頁按「重新啟動 Kuro」並確認；只重建 Kuro 擁有的服務，共用中央語音保持執行。 |
 | 有文字但無聲音 | 檢查 Bridge、中央服務與 voice mapping；health 不代表推論或播放成功。 |
-| 關閉後程序仍在 | 面板隱藏到 tray 是正常行為；結束時使用既有 tray／控制台操作。 |
+| 關閉後程序仍在 | 面板隱藏到 tray 是正常行為；診斷頁可明確停止對話服務，停止後不會自動恢復。舊控制台入口已移除。 |
 | Port 被占用 | 核對 PID、process 路徑與 service identity，不停止未知或共用服務。 |
 | Today 空白或過期 | 看 source status、最後成功時間與錯誤；無資料不等於零事項。 |
 | 工具 confirmation 被拒絕 | 一般工具尚無完整確認流程；不得用 allow 繞過 policy。 |
@@ -23,6 +26,10 @@ netstat -ano | Select-String ':1188|:18890|:23456|:23567|:23568'
 ```
 
 用 PID 再確認 process；HTTP 200 不能證明 source identity。Launcher `23568` 的 session token 不得貼到 renderer、issue 或截圖。`GET /briefing` 可能包含私人內容，勿公開完整回應。
+
+`/status.capabilities` 分別回報 Launcher 與桌寵狀態，Launcher 另含語音健康、啟動失敗原因及執行／磁碟版本。自動恢復有次數與等待上限，達上限後保留原因，由使用者手動重試。中央語音健康檢查不合成音訊；語音失敗時保留文字，不會因等待不存在的播放回覆而卡住回合。
+
+中央語音的登入啟動與程序恢復由語音工作區的 `scripts/voice_supervisor.py` 負責；可在該工作區執行 `scripts/install-autostart.ps1` 建立目前使用者的啟動捷徑。Kuro 不停止或接管共用語音 gateway。
 
 ## 資料與回復
 

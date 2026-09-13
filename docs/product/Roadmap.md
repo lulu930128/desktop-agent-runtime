@@ -16,6 +16,13 @@ Kuro 的研究主軸不是訓練另一個通用模型，而是驗證：可信的
 
 ## 里程碑
 
+### 本機時間表的局部採用（2026-09-12）
+
+使用者選定本機固定／特殊行程、待辦期限與學習安排作為下一條 Core 流程。
+已完成 schema v3、時間投影、工作面板 CRUD 與 Core 通知排程；本機設定已啟用，正式 Launcher／Electron 已採用。
+M4–M6 的自動化與正式操作證據見[交付紀錄](../agent-runs/kuro-local-schedule-core/Progress.md)。Observation path 仍為 shadow，不代表整體 R2／R5 完成。
+Google Calendar 帳號與同步接入延後，參見[本次 contract](../agent-runs/kuro-local-schedule-core/Contract.md)。
+
 ### R0：Research Core shadow foundation
 
 - 成果：Observation contract、正交的 availability／freshness／connection、SQLite schema、idempotency、bounded context projection、decision trace。

@@ -1,4 +1,5 @@
 export type RendererState = {
+  speechStatus?: string;
   wsConnected: boolean;
   aiState: string;
   latestAssistantText: string;

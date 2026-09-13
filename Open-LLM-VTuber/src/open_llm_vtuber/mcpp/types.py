@@ -23,6 +23,7 @@ class MCPServer:
     cwd: str | None = None
     timeout: Optional[timedelta] = timedelta(seconds=30)
     description: str = "No description available."
+    allowed_tools: list[str] | None = None
 
 
 @dataclass
@@ -42,6 +43,25 @@ class FormattedTool:
     generic_schema: Optional[dict[str, Any]] = None
     description: str = "No description available."
     api_name: str = ""
+    canonical_id: str = ""
+    wire_name: str = ""
+    schema_digest: str = ""
+    provider_schema_digest: str = ""
+    schema_profile: str = "openai_non_strict"
+    output_schema: Optional[dict[str, Any]] = None
+
+
+@dataclass
+class DiscoveryResult:
+    server_id: str
+    tools: list[Any] = field(default_factory=list)
+    complete: bool = False
+    reason: str = ""
+    pages_read: int = 0
+    observed_at: str = ""
+    schema_digest: str = ""
+    source: str = "live"
+    cache_observed_at: str = ""
 
 
 @dataclass

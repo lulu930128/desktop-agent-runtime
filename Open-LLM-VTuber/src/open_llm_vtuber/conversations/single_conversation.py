@@ -20,6 +20,8 @@ from .types import WebSocketSend
 from .tts_manager import TTSTaskManager
 from ..chat_event_manager import store_history_event
 from ..chat_history_manager import store_message
+from ..mcpp.privacy import project, safe_text
+from ..mcpp.tool_identity import legacy_name
 from ..character_memory_manager import process_character_memory_turn
 from ..mcpp.market_preflight import (
     build_omi_evidence_snapshot,
@@ -171,7 +173,7 @@ class BridgeSpeechEngine:
             self.last_speech_repaired = False
             return ""
         except Exception as e:
-            logger.warning(f"BridgeSpeechEngine render failed: {e}")
+            logger.warning('BridgeSpeechEngine render failed; payload details omitted.')
             self.last_emotion = "neutral"
             self.last_provider = ""
             self.last_pronunciation_hits = []
@@ -215,7 +217,7 @@ def _read_json_file(path: Path) -> Any:
         if path.exists():
             return json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:
-        logger.warning(f"Failed to read JSON file {path}: {exc}")
+        logger.warning('Failed to read JSON file; payload details omitted.')
     return None
 
 
@@ -335,8 +337,8 @@ def _store_tool_status_event(
         return
 
     tool_name = str(output_item.get("tool_name") or "tool").strip() or "tool"
-    if status == "completed" and tool_name in {"omi.ask", "omi.ask_stream"}:
-        evidence = build_omi_evidence_snapshot(str(output_item.get("content") or ""))
+    if status == "completed" and legacy_name(tool_name) in {"omi.ask", "omi.ask_stream"}:
+        evidence = output_item.get("omi_evidence") or build_omi_evidence_snapshot(str(output_item.get("content") or ""))
         if evidence:
             store_history_event(
                 conf_uid=context.character_config.conf_uid,
@@ -483,7 +485,7 @@ async def process_single_conversation(
         if skip_history:
             logger.debug("Skipping storing user input to history (proactive speak)")
 
-        logger.info(f"User input: {visible_input_text}")
+        logger.info('User input; payload details omitted.')
         if file_notes:
             logger.debug(
                 f"Uploaded file analysis added to agent input: {len(file_notes)} section(s)"
@@ -502,6 +504,7 @@ async def process_single_conversation(
                     isinstance(output_item, dict)
                     and output_item.get("type") == "tool_call_status"
                 ):
+                    output_item = project(output_item)
                     _store_tool_status_event(
                         context=context,
                         output_item=output_item,
@@ -509,7 +512,8 @@ async def process_single_conversation(
                     )
                     # Handle tool status event: send WebSocket message
                     output_item["name"] = context.character_config.character_name
-                    logger.debug(f"Sending tool status update: {output_item}")
+                    output_item["content"] = safe_text(str(output_item.get("content") or ""), limit=2048)
+                    logger.debug('Sending tool status update; payload details omitted.')
 
                     await websocket_send(json.dumps(output_item))
 
@@ -531,20 +535,16 @@ async def process_single_conversation(
                     )
                     full_response += response_part_str  # Accumulate text response
                 else:
-                    logger.warning(
-                        f"Received unexpected item type from agent chat stream: {type(output_item)}"
-                    )
-                    logger.debug(f"Unexpected item content: {output_item}")
+                    logger.warning('Received unexpected item type from agent chat stream; payload details omitted.')
+                    logger.debug('Unexpected item content; payload details omitted.')
 
         except Exception as e:
-            logger.exception(
-                f"Error processing agent response stream: {e}"
-            )  # Log with stack trace
+            logger.error('Error processing agent response stream; payload details omitted.')  # Log with stack trace
             await websocket_send(
                 json.dumps(
                     {
                         "type": "error",
-                        "message": f"Error processing agent response: {str(e)}",
+                        "message": "Error processing agent response; details omitted.",
                     }
                 )
             )
@@ -579,7 +579,7 @@ async def process_single_conversation(
                 name=context.character_config.character_name,
                 avatar=context.character_config.avatar,
             )
-            logger.info(f"AI response: {full_response}")
+            logger.info('AI response; payload details omitted.')
 
         if context.history_uid and not skip_history and visible_input_text:
             memory_changed, memory_notes = process_character_memory_turn(
@@ -617,9 +617,9 @@ async def process_single_conversation(
         logger.info(f"🤡👍 Conversation {session_emoji} cancelled because interrupted.")
         raise
     except Exception as e:
-        logger.error(f"Error in conversation chain: {e}")
+        logger.error('Error in conversation chain; payload details omitted.')
         await websocket_send(
-            json.dumps({"type": "error", "message": f"Conversation error: {str(e)}"})
+            json.dumps({"type": "error", "message": "Conversation error; details omitted."})
         )
         raise
     finally:

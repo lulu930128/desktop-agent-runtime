@@ -112,7 +112,7 @@ def windows_hidden_subprocess_kwargs(extra_creationflags: int = 0) -> Dict[str, 
     return kwargs
 
 
-def get_listening_pid_windows(port: int) -> Optional[int]:
+def get_listening_pid_windows(port: int, host: Optional[str] = None) -> Optional[int]:
     """Best-effort: find PID listening on tcp:<port> (Windows only)."""
     if os.name != "nt":
         return None
@@ -123,17 +123,19 @@ def get_listening_pid_windows(port: int) -> Optional[int]:
             text=True,
             encoding="utf-8",
             errors="ignore",
+            timeout=2.0,
             **windows_hidden_subprocess_kwargs(),
         )
-        needle = f":{int(port)}"
         for line in out.splitlines():
             if "LISTENING" not in line:
                 continue
-            if needle not in line:
-                continue
             parts = line.split()
             if len(parts) >= 5 and parts[-1].isdigit():
-                return int(parts[-1])
+                address, _, local_port = parts[1].rpartition(":")
+                if local_port == str(int(port)) and (
+                    host is None or address.strip("[]") in {host, "0.0.0.0", "::"}
+                ):
+                    return int(parts[-1])
     except Exception:
         return None
     return None

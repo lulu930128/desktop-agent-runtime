@@ -160,14 +160,14 @@ export function todayItems(data: BriefingData): ViewItem[] {
   return uniqueItems(
     rawItems
       .map((item, index) => normalizeViewItem(item, "today", index))
-      .filter((item): item is ViewItem => Boolean(item))
+      .filter((item): item is ViewItem => Boolean(item) && item?.source !== "calendar")
   );
 }
 
 export function sourceItems(data: BriefingData, source: string): ViewItem[] {
   const normalizedSource = text(source, "all").toLowerCase();
   const sections = Array.isArray(data.snapshot?.sections) ? data.snapshot?.sections || [] : [];
-  const ignoredSections = new Set(["overview", "tasks"]);
+  const ignoredSections = new Set(["overview", "tasks", "calendar"]);
   const collected = sections
     .filter((section) => !ignoredSections.has(text(section.key).toLowerCase()))
     .filter((section) => normalizedSource === "all" || text(section.key).toLowerCase() === normalizedSource)
@@ -180,12 +180,6 @@ export function sourceItems(data: BriefingData, source: string): ViewItem[] {
         .filter((item): item is ViewItem => Boolean(item))
     : [];
   return uniqueItems([...today, ...mailMessages, ...collected]);
-}
-
-export function scheduleItems(data: BriefingData): ViewItem[] {
-  return sourceItems(data, "calendar")
-    .filter((item) => item.date || item.meta)
-    .sort((left, right) => String(left.date).localeCompare(String(right.date)));
 }
 
 export function priorityItems(data: BriefingData): ViewItem[] {

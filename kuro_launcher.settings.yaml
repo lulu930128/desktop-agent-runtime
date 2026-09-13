@@ -37,6 +37,13 @@ network:
     host: "127.0.0.1"
     port: 23568
 
+core:
+  # Local schedule and reminder owner. Launcher manages this private service.
+  enabled: true
+  port: 23569
+  timezone: "Asia/Taipei"
+  db_path: "${ROOT}/local_state/core/work.sqlite3"
+
 bridge:
   translate_path: "/translate"
   debug_path: "/translate_debug"

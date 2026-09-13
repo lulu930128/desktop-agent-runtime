@@ -1,4 +1,5 @@
 const http = require("http");
+const { withTimeout } = require("./work-panel-window");
 
 function writeJson(res, statusCode, payload) {
   res.writeHead(statusCode, {
@@ -39,6 +40,7 @@ function startControlServer({
   host,
   port,
   readRendererStatus,
+  readWorkPanelStatus,
   readLive2DInspectorSnapshot,
   captureLive2DPreview,
   getShellStatus,
@@ -59,19 +61,27 @@ function startControlServer({
   applyRendererBackendConfig,
   log
 }) {
+  async function readControlState() {
+    // Pet renderer failure must not prevent Work Panel diagnostics/recovery.
+    const [rendererValue, workPanel] = await Promise.all([
+      withTimeout(Promise.resolve().then(readRendererStatus), 350, { available: false }),
+      withTimeout(Promise.resolve().then(() => readWorkPanelStatus?.()), 500, null)
+    ]);
+    const renderer = { ...(rendererValue || { available: false }) };
+    renderer.readerVisible = isReaderVisible();
+    renderer.briefingVisible = typeof isBriefingVisible === "function" ? isBriefingVisible() : false;
+    return { renderer, workPanel: workPanel || null };
+  }
   const server = http.createServer(async (req, res) => {
     const requestUrl = new URL(req.url || "/", `http://${host}:${port}`);
 
     try {
       if (req.method === "GET" && requestUrl.pathname === "/status") {
-        const renderer = await readRendererStatus();
-        renderer.readerVisible = isReaderVisible();
-        renderer.briefingVisible =
-          typeof isBriefingVisible === "function" ? isBriefingVisible() : false;
+        const state = await readControlState();
         writeJson(res, 200, {
           ok: true,
           ...getShellStatus(),
-          renderer
+          ...state
         });
         return;
       }
@@ -231,17 +241,19 @@ function startControlServer({
       if (req.method === "POST" && requestUrl.pathname === "/command") {
         const payload = parseRequestJson(await readRequestBody(req));
         const action = String(payload.action || "").trim();
+        if (action === "set-briefing-visible" && payload.expectedInstanceId &&
+            payload.expectedInstanceId !== getShellStatus().instanceId) {
+          writeJson(res, 200, { ok: false, error: "WP_PET_IDENTITY_MISMATCH" });
+          return;
+        }
         const result = await handleControlAction(action, payload);
-        const renderer = await readRendererStatus();
-        renderer.readerVisible = isReaderVisible();
-        renderer.briefingVisible =
-          typeof isBriefingVisible === "function" ? isBriefingVisible() : false;
+        const state = await readControlState();
         writeJson(res, 200, {
           ok: Boolean(result && result.ok),
           message: result && result.ok ? `command ${action} dispatched` : result.error || "command failed",
           action,
           result,
-          renderer
+          ...state
         });
         return;
       }

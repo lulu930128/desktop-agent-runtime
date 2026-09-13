@@ -24,8 +24,8 @@ def health(base_url, timeout=3):
     return data
 
 
-def require_voice(base_url, voice):
-    data = health(base_url)
+def require_voice(base_url, voice, timeout=3):
+    data = health(base_url, timeout=timeout)
     if not any(item.get('voice_id') == voice for item in data.get('voices', [])):
         raise RuntimeError(f'Voice runtime does not provide {voice}')
     return data

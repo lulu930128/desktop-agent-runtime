@@ -32,3 +32,4 @@ class MemoryRecord:
     scope_level: str
     source: str
     updated_at: str
+    content_digest: str = ""

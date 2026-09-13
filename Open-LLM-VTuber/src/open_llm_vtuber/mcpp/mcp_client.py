@@ -1,6 +1,16 @@
 """MCP Client for Open-LLM-Vtuber."""
 
 from contextlib import AsyncExitStack
+import asyncio
+import hashlib
+import json
+import time
+import uuid
+import os
+from mcp.shared.exceptions import McpError
+from .types import DiscoveryResult
+from .tool_result import ToolResult, normalize_result, utc_now
+from .tool_schema import schema_digest, resolved_schema, validate_arguments
 from typing import Dict, Any, List, Callable
 from loguru import logger
 from datetime import timedelta
@@ -12,6 +22,21 @@ from mcp.client.stdio import stdio_client
 from .server_registry import ServerRegistry
 
 DEFAULT_TIMEOUT = timedelta(seconds=30)
+
+
+class OutputValidationFailure(RuntimeError):
+    def __init__(self, result):
+        super().__init__("MCP output schema validation failed.")
+        self.result = result
+
+
+class ValidatedClientSession(ClientSession):
+    async def _validate_tool_result(self, name, result):
+        try:
+            await super()._validate_tool_result(name, result)
+        except Exception:
+            # Keep the received evidence while suppressing SDK exception payloads.
+            raise OutputValidationFailure(result) from None
 
 
 class MCPClient:
@@ -29,6 +54,8 @@ class MCPClient:
         self.exit_stack: AsyncExitStack = AsyncExitStack()
         self.active_sessions: Dict[str, ClientSession] = {}
         self._list_tools_cache: Dict[str, List[Tool]] = {}  # Cache for list_tools
+        self.discovery_results: dict[str, DiscoveryResult] = {}
+        self.last_call_result: ToolResult | None = None
         self._send_text: Callable = send_text
         self._client_uid: str = client_uid
 
@@ -60,98 +87,146 @@ class MCPClient:
             command=server.command, args=server.args, env=server.env, cwd=server.cwd
         )
 
+        connection_stack = AsyncExitStack()
         try:
-            stdio_transport = await self.exit_stack.enter_async_context(
-                stdio_client(server_params)
+            # Server stderr may reflect credentials; keep it out of launcher logs.
+            error_sink = connection_stack.enter_context(open(os.devnull, "w", encoding="utf-8"))
+            stdio_transport = await connection_stack.enter_async_context(
+                stdio_client(server_params, errlog=error_sink)
             )
             read, write = stdio_transport
 
-            session = await self.exit_stack.enter_async_context(
-                ClientSession(read, write, read_timeout_seconds=timeout)
+            session = await connection_stack.enter_async_context(
+                ValidatedClientSession(read, write, read_timeout_seconds=timeout)
             )
-            await session.initialize()
+            await asyncio.wait_for(session.initialize(), timeout.total_seconds())
 
+            self.exit_stack.push_async_callback(connection_stack.aclose)
             self.active_sessions[server_name] = session
             logger.info(f"MCPC: Successfully connected to server '{server_name}'.")
             return session
-        except Exception as e:
-            logger.exception(f"MCPC: Failed to connect to server '{server_name}': {e}")
+        except BaseException as e:
+            await connection_stack.aclose()
+            if not isinstance(e, Exception):
+                raise
+            logger.error("MCPC: Connection failed type={} errno={}; raw transport error omitted.", type(e).__name__, getattr(e, "errno", None))
             raise RuntimeError(
                 f"MCPC: Failed to connect to server '{server_name}'."
             ) from e
 
+    async def discover_tools(self, server_name: str, *, refresh: bool = False) -> DiscoveryResult:
+        previous = self.discovery_results.get(server_name)
+        if not refresh and previous and previous.complete and server_name in self.active_sessions:
+            return previous
+        result = DiscoveryResult(server_id=server_name, observed_at=utc_now())
+        server = self.server_registery.get_server(server_name)
+        timeout = (server.timeout or DEFAULT_TIMEOUT).total_seconds() if server else 30
+        deadline = time.monotonic() + timeout
+        cursor, seen_cursors, names, total_bytes = None, set(), set(), 0
+        try:
+            session = await self._ensure_server_running_and_get_session(server_name)
+            for _ in range(20):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise asyncio.TimeoutError()
+                response = await asyncio.wait_for(session.list_tools(cursor=cursor), remaining)
+                result.pages_read += 1
+                if not isinstance(response.tools, list):
+                    raise ValueError("invalid_page")
+                for tool in response.tools:
+                    if not isinstance(tool, Tool) or not tool.name or tool.name in names:
+                        raise ValueError("duplicate_or_invalid_identity")
+                    names.add(tool.name)
+                    total_bytes += len(tool.model_dump_json().encode())
+                    if len(names) > 1000 or total_bytes > 8 * 1024 * 1024:
+                        raise ValueError("discovery_size_limit")
+                    result.tools.append(tool)
+                cursor = response.nextCursor
+                if cursor is None:
+                    result.complete = True
+                    result.schema_digest = hashlib.sha256(json.dumps(
+                        [t.model_dump(mode="json", by_alias=True) for t in sorted(result.tools,key=lambda x:x.name)],
+                        sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+                    self._list_tools_cache[server_name] = list(result.tools)
+                    break
+                if not isinstance(cursor, str) or not cursor or cursor in seen_cursors:
+                    raise ValueError("invalid_or_repeated_cursor")
+                seen_cursors.add(cursor)
+            if not result.complete:
+                result.reason = "discovery_page_limit"
+        except asyncio.CancelledError:
+            result.reason = "cancelled"
+            self.discovery_results[server_name] = result
+            raise
+        except asyncio.TimeoutError:
+            result.reason = "discovery_timeout"
+        except Exception:
+            # No cursor, server text, paths or exception payload in diagnostics.
+            result.reason = "discovery_invalid_or_failed"
+        if not result.complete and previous and previous.complete:
+            result.cache_observed_at = previous.observed_at
+        self.discovery_results[server_name] = result
+        return result
+
     async def list_tools(self, server_name: str) -> List[Tool]:
-        """List all available tools on the specified server."""
-        # Check cache first
-        if server_name in self._list_tools_cache:
-            logger.debug(f"MCPC: Cache hit for list_tools on server '{server_name}'.")
-            return self._list_tools_cache[server_name]
+        """Compatibility adapter: incomplete discovery is never an empty inventory."""
+        result = await self.discover_tools(server_name)
+        if not result.complete:
+            raise RuntimeError(result.reason)
+        return list(result.tools)
 
-        logger.debug(
-            f"MCPC: Cache miss for list_tools on server '{server_name}'. Fetching..."
-        )
-        session = await self._ensure_server_running_and_get_session(server_name)
-        response = await session.list_tools()
-
-        # Store in cache before returning
-        self._list_tools_cache[server_name] = response.tools
-        logger.debug(f"MCPC: Cached list_tools result for server '{server_name}'.")
-        return response.tools
-
-    async def call_tool(
-        self, server_name: str, tool_name: str, tool_args: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Call a tool on the specified server.
-
-        Returns:
-            Dict containing the metadata and content_items from the tool response.
-        """
-        session = await self._ensure_server_running_and_get_session(server_name)
-        logger.info(f"MCPC: Calling tool '{tool_name}' on server '{server_name}'...")
-        response = await session.call_tool(tool_name, tool_args)
-
-        if response.isError:
-            error_text = (
-                response.content[0].text
-                if response.content and hasattr(response.content[0], "text")
-                else "Unknown server error"
-            )
-            logger.error(f"MCPC: Error calling tool '{tool_name}': {error_text}")
-            # Return error information within the standard structure
-            return {
-                "metadata": getattr(response, "metadata", {}),
-                "content_items": [{"type": "error", "text": error_text}],
-            }
-
-        content_items = []
-        if response.content:
-            for item in response.content:
-                item_dict = {"type": getattr(item, "type", "text")}
-                # Extract available attributes from content item
-                for attr in [
-                    "text",
-                    "data",
-                    "mimeType",
-                    "url",
-                    "altText",
-                ]:  # Added url and altText
-                    if (
-                        hasattr(item, attr) and getattr(item, attr) is not None
-                    ):  # Check for None
-                        item_dict[attr] = getattr(item, attr)
-                content_items.append(item_dict)
-        else:
-            logger.warning(
-                f"MCPC: Tool '{tool_name}' returned no content. Returning empty content_items."
-            )
-            content_items.append(
-                {"type": "text", "text": ""}
-            )  # Ensure content_items is not empty
-
-        result = {
-            "metadata": getattr(response, "metadata", {}),
-            "content_items": content_items,
-        }
+    async def call_tool(self, server_name: str, tool_name: str, tool_args: Dict[str, Any],
+                        *, expected_schema_digest: str = "", expected_output_digest: str = "") -> ToolResult:
+        from .tool_identity import canonical_id
+        started, monotonic = utc_now(), time.monotonic()
+        identity = dict(execution_id=uuid.uuid4().hex, canonical_tool_id=canonical_id(server_name, tool_name),
+                        server_id=server_name, wire_name=tool_name, started_at=started)
+        discovery = self.discovery_results.get(server_name)
+        if discovery is not None and not discovery.complete:
+            return ToolResult(**identity, status="failed", is_error=True, reason_code="discovery_incomplete",
+                              result_received=False, may_have_executed=False)
+        sent = False
+        try:
+            # A fresh session must validate the snapshot from the discovery client.
+            discovery = await self.discover_tools(server_name, refresh=True)
+            current = next((tool for tool in discovery.tools if tool.name == tool_name), None)
+            server = self.server_registery.get_server(server_name)
+            allowed = server.allowed_tools if server else []
+            reason = ("discovery_incomplete" if not discovery.complete else
+                      "tool_unavailable" if current is None or (allowed is not None and tool_name not in allowed) else
+                      "schema_changed" if (expected_schema_digest and schema_digest(current.inputSchema) != expected_schema_digest)
+                      or (expected_output_digest and schema_digest(current.outputSchema) != expected_output_digest) else "")
+            if reason:
+                return ToolResult(**identity, status="failed", is_error=True, reason_code=reason,
+                                  result_received=False, may_have_executed=False, completed_at=utc_now(),
+                                  duration_seconds=time.monotonic()-monotonic)
+            validate_arguments(current.inputSchema, tool_args)
+            if current.outputSchema is not None:
+                resolved_schema(current.outputSchema, require_object=False)
+            session = await self._ensure_server_running_and_get_session(server_name)
+            sent = True
+            response = await session.call_tool(tool_name, tool_args)
+            result = normalize_result(response, **identity)
+        except asyncio.CancelledError:
+            # Preserve caller cancellation; do not issue an automatic retry.
+            self.last_call_result = ToolResult(**identity, status="cancelled", is_error=True,
+                                              reason_code="cancelled", result_received=False, may_have_executed=sent,
+                                              completed_at=utc_now(), duration_seconds=time.monotonic()-monotonic)
+            raise
+        except OutputValidationFailure as exc:
+            result = normalize_result(exc.result, **identity)
+            result.status, result.is_error = "failed", True
+            result.reason_code = "output_schema_invalid"
+        except McpError:
+            result = ToolResult(**identity, status="failed", is_error=True, protocol_error="mcp_protocol_error",
+                                reason_code="mcp_protocol_error", result_received=False, may_have_executed=sent)
+        except Exception:
+            result = ToolResult(**identity, status="unknown" if sent else "failed", is_error=True,
+                                reason_code="transport_or_validation_error", result_received=False, may_have_executed=sent)
+        result.completed_at = utc_now()
+        result.duration_seconds = time.monotonic() - monotonic
+        self.last_call_result = result
+        logger.info("MCPC: Tool finished status={} duration={:.3f}", result.status, result.duration_seconds)
         return result
 
     async def aclose(self) -> None:
@@ -162,6 +237,7 @@ class MCPClient:
         await self.exit_stack.aclose()
         self.active_sessions.clear()
         self._list_tools_cache.clear()  # Clear cache on close
+        self.discovery_results.clear()
         self.exit_stack = AsyncExitStack()
         logger.info("MCPC: Client instance closed.")
 
@@ -173,25 +249,4 @@ class MCPClient:
         """Exit the async context manager."""
         await self.aclose()
         if exc_type:
-            logger.error(f"MCPC: Exception in async context: {exc_value}")
-
-
-# if __name__ == "__main__":
-#     # Test the MCPClient.
-#     async def main():
-#         server_registery = ServerRegistry()
-#         async with MCPClient(server_registery) as client:
-#             # Assuming 'example' server and 'example_tool' exist
-#             # The old call used: await client.call_tool("example_tool", {"arg1": "value1"})
-#             # The new call needs server name:
-#             try:
-#                 result = await client.call_tool("example", "example_tool", {"arg1": "value1"})
-#                 print(f"Tool result: {result}")
-#                 # Test error handling by calling a non-existent tool
-#                 await client.call_tool("example", "non_existent_tool", {})
-#             except ValueError as e:
-#                 print(f"Caught expected error: {e}")
-#             except Exception as e:
-#                 print(f"Caught unexpected error: {e}")
-
-#     asyncio.run(main())
+            logger.error("MCPC: Async context failed; raw error omitted.")

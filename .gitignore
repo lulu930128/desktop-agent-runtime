@@ -28,6 +28,7 @@ Open-LLM-VTuber/.venv/
 gsv-tts/
 
 # Logs, caches, generated state
+local_state/
 *.log
 *.jsonl
 *.bak

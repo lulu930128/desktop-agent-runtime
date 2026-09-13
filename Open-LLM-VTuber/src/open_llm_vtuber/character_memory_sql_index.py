@@ -10,6 +10,7 @@ from typing import Any
 from loguru import logger
 
 from .character_memory_repository import CharacterMemoryRepository
+from .character_memory_lifecycle import is_active_memory
 from .character_memory_retriever import (
     KeywordMemoryIndex,
     MemorySearchHit,
@@ -49,7 +50,6 @@ class SQLiteMemoryIndex:
     ) -> list[MemorySearchHit]:
         if not entries:
             return []
-
         sql_scores: dict[str, float] = {}
         try:
             self._sync_entries(namespace, entries)
@@ -83,6 +83,9 @@ class SQLiteMemoryIndex:
             reverse=True,
         )
         return merged_hits
+
+    def sync(self, namespace: str, entries: list[dict[str, Any]]) -> None:
+        self._sync_entries(namespace, entries)
 
     def db_path(self) -> Path:
         if self._db_path is not None:
@@ -287,7 +290,7 @@ class SQLiteMemoryIndex:
             "scope_id": str(entry.get("scope_id") or ""),
             "memory_type": str(entry.get("memory_type") or "fact"),
             "status": entry_status(entry),
-            "enabled": 1 if entry.get("enabled", True) else 0,
+            "enabled": 1 if is_active_memory(entry) else 0,
             "subject": str(entry.get("subject") or ""),
             "key": str(entry.get("key") or ""),
             "content": content,

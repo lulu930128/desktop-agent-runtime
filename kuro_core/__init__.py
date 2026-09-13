@@ -1,8 +1,7 @@
 """Kuro Core shadow runtime contracts and persistence.
 
-The package is intentionally not wired into the live launcher yet.  It provides
-the backend-owned contract boundary that existing producers and consumers can
-adopt incrementally.
+Observations remain a shadow path. Local schedule infrastructure has an opt-in
+launcher service; production Work Panel adoption is a separate acceptance gate.
 """
 
 from .contracts import (

@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+from .mcpp.privacy import project, safe_text
 from datetime import datetime
 from typing import Any, Literal
 
@@ -22,6 +23,7 @@ def _now_iso() -> str:
 
 
 def _compact_text(value: Any, max_len: int = 360) -> str:
+    value = project(value)
     if value is None:
         return ""
     if not isinstance(value, str):
@@ -68,7 +70,7 @@ def store_history_event(
         if compact_detail:
             event["detail"] = _compact_text(detail, max_len=max(120, detail_max_len))
         else:
-            event["detail"] = detail
+            event["detail"] = project(detail)
 
     try:
         path = _event_path(conf_uid, history_uid)

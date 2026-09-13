@@ -33,6 +33,14 @@ from .memory_support import (
 from .procs import ManagedProc
 from .project_manager import ProjectDefinition, list_project_definitions
 from .records import CharacterRecord, HistoryRecord, MemoryRecord
+from .work_panel_activation import (
+    MAX_WORK_PANEL_RECOVERY_ATTEMPTS,
+    WorkPanelActivationError,
+    record_activation,
+    window_failure_code,
+)
+from open_llm_vtuber.mcpp.tool_policy_manager import ToolPolicy
+from open_llm_vtuber.character_memory_lifecycle import review_digest
 from .runtime_conf import build_runtime_conf, write_runtime_conf
 from .services import probe_tts, start_bridge, start_llm, start_tts, validate_profile_assets
 from .text_helpers import (
@@ -244,7 +252,14 @@ class QtLauncherController:
         self.proc_pet_electron: Optional[subprocess.Popen] = None
         self._pet_lifecycle_lock = threading.RLock()
         self._last_pet_exit_pid: Optional[int] = None
+        self._pet_instance_id = ""
+        self._pet_output = None
+        self.last_work_panel_activation = None
         self.work_panel_control_token = ""
+        from .runtime_lifecycle import RuntimeLifecycle
+        self.lifecycle = RuntimeLifecycle(cfg.root, log_cb)
+        from .core_runtime import CoreRuntime
+        self.core_runtime = CoreRuntime(cfg, log_cb)
         self.current_run_id: Optional[str] = None
         self.character_records: Dict[str, CharacterRecord] = {}
         self.project_records: Dict[str, ProjectDefinition] = {}
@@ -413,6 +428,7 @@ class QtLauncherController:
         ]
         return {
             "ok": True,
+            "runtime": self.lifecycle.snapshot(),
             "characters": characters,
             "projects": projects,
             "models": list(self.cfg.openai_models),
@@ -430,7 +446,16 @@ class QtLauncherController:
             },
         }
 
-    def apply_work_panel_profile(
+    def apply_work_panel_profile(self, *, character_id: str, project_id: str, model: str, thinking_power: str) -> dict:
+        if not self.lifecycle.lock.acquire(blocking=False):
+            raise RuntimeError('啟動作業仍在進行，請稍後切換角色設定')
+        try:
+            return self._apply_work_panel_profile_impl(character_id=character_id, project_id=project_id,
+                                                      model=model, thinking_power=thinking_power)
+        finally:
+            self.lifecycle.lock.release()
+
+    def _apply_work_panel_profile_impl(
         self,
         *,
         character_id: str,
@@ -527,6 +552,7 @@ class QtLauncherController:
                     "scope": item.scope_level,
                     "source": item.source,
                     "updated_at": item.updated_at,
+                    "content_digest": item.content_digest,
                 }
                 for item in records
             ],
@@ -554,23 +580,22 @@ class QtLauncherController:
         category_metadata = category_metadata if isinstance(category_metadata, dict) else {}
         tool_config = policy.get("tools")
         tool_config = tool_config if isinstance(tool_config, dict) else {}
+        configured_policy = ToolPolicy(policy)
         tools = []
         for name, raw in tool_config.items():
             config = raw if isinstance(raw, dict) else {}
             mode = str(config.get("mode") or policy.get("default_mode") or "blocked").strip().lower()
+            decision = configured_policy.check(str(name), {})
             tools.append(
                 {
                     "name": str(name),
                     "category": str(config.get("category") or "other"),
                     "mode": mode,
-                    "allowed": mode not in {"blocked", "deny", "disabled", "confirm", "needs_confirmation"},
-                    "reason": (
-                        "目前 runtime 尚未提供逐次確認流程。"
-                        if mode in {"confirm", "needs_confirmation"}
-                        else "由本機 runtime policy 允許唯讀使用。"
-                        if mode in {"read_only", "allowed", "auto"}
-                        else "由本機 runtime policy 封鎖。"
-                    ),
+                    "allowed": decision.allowed,
+                    "configured_allowed": decision.allowed,
+                    "effective_allowed": None,
+                    "reason_code": decision.reason_code,
+                    "reason": "設定允許有界讀取；runtime 是否採用尚未驗證。" if decision.allowed else decision.reason,
                 }
             )
         categories = [
@@ -586,6 +611,9 @@ class QtLauncherController:
             "version": policy.get("version"),
             "default_mode": str(policy.get("default_mode") or "blocked"),
             "confirmation_available": False,
+            "view": "configured",
+            "configured_digest": configured_policy.digest,
+            "effective_digest": None,
             "categories": categories,
             "tools": tools,
         }
@@ -893,6 +921,7 @@ class QtLauncherController:
                     scope_level=str(entry.get("scope_level") or entry.get("scope") or "character"),
                     source=str(entry.get("source") or "unknown"),
                     updated_at=str(entry.get("updated_at") or ""),
+                    content_digest=review_digest(entry),
                 )
             )
         return tuple(records)
@@ -935,13 +964,13 @@ class QtLauncherController:
             self.log(f"[{log_ts()}] 角色記憶未新增，可能是重複內容或包含敏感資料。")
         return changed
 
-    def set_memory_status(self, entry_id: str, status: str) -> bool:
+    def set_memory_status(self, entry_id: str, status: str, *, expected_digest: str | None = None) -> bool:
         character = self.selected_character()
         if not character or not character.conf_uid:
             raise ValueError("請先選擇角色。")
         record = self._selected_memory_record(entry_id)
         ensure_character_memory_root(self.cfg.open_llm_dir)
-        changed = update_character_memory_status(character.conf_uid, record.entry_id, status)
+        changed = update_character_memory_status(character.conf_uid, record.entry_id, status, expected_digest=expected_digest or record.content_digest)
         if changed:
             label = MEMORY_STATUS_LABELS.get(status, status)
             self.log(f"[{log_ts()}] 已更新角色記憶狀態：{label}")
@@ -1706,7 +1735,54 @@ class QtLauncherController:
             self.log(f"[{log_ts()}] {warning}")
             return {"ok": False, "warning": warning}
 
-    def start_profile(
+    def presentation_state(self) -> dict:
+        from .presentation import presentation_descriptor
+        return {"ok": True, "presentation": presentation_descriptor(self.cfg.open_llm_dir, self.selected_character())}
+
+    def _check_voice_capability(self) -> bool:
+        from .voice_client import require_voice
+        character = self.selected_character()
+        try:
+            voice = dict(self.cfg.voice_ids).get(character.yaml_path.stem if character else '', '')
+            require_voice(self.cfg.voice_url, voice, timeout=1)
+            self.lifecycle.voice = {"state": "available", "reason": ""}
+            return True
+        except Exception as exc:
+            self.lifecycle.voice = {"state": "unavailable", "reason": "中央語音目前不可用，文字對話仍可使用", "errorType": type(exc).__name__}
+            return False
+
+    def reconcile_runtime(self) -> dict:
+        from .runtime_lifecycle import source_revision
+        if not self.lifecycle.lock.acquire(blocking=False):
+            return self.lifecycle.snapshot()
+        try:
+            self.lifecycle.checked_at = time.time()
+            self.lifecycle.disk_revision = source_revision(self.cfg.root)
+            if self.cfg.tts_mode == 'central':
+                self._check_voice_capability()
+            if self.lifecycle.desired_running and not self.lifecycle.snapshot()['restartRequired']:
+                running = port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.2)
+                if not running and self.lifecycle.phase != 'starting':
+                    if self.lifecycle.phase == 'ready':
+                        self.lifecycle.record('failed', '對話服務已退出')
+                    try:
+                        self.start_profile(_automatic=True)
+                    except Exception:
+                        pass  # start_profile records the bounded failure for the UI and log.
+            return self.lifecycle.snapshot()
+        finally:
+            self.lifecycle.lock.release()
+
+    def start_profile(self, *, desired_history_uid: str = '', force_new_history: bool = False, _automatic: bool = False) -> dict:
+        return self.lifecycle.start(lambda: self._start_profile_impl(
+            desired_history_uid=desired_history_uid, force_new_history=force_new_history), automatic=_automatic)
+
+    def retry_runtime(self) -> dict:
+        if self.lifecycle.phase == 'ready' and port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.2):
+            return {'ok': True, 'mode': 'already-running'}
+        return self.start_profile()
+
+    def _start_profile_impl(
         self,
         *,
         desired_history_uid: str = "",
@@ -1756,7 +1832,7 @@ class QtLauncherController:
         # The Work Panel is an independent presentation surface. Keep it alive
         # while TTS/LLM are restarted so backend readiness cannot make the UI
         # disappear during startup or profile changes.
-        self.stop_profile(silent=True, stop_bridge=False, stop_pet=False)
+        self.stop_profile(silent=True, stop_bridge=False, stop_pet=False, _internal=True)
 
         for name, host, port in [
             ("TTS", self.cfg.tts_host, self.cfg.tts_port),
@@ -1768,6 +1844,33 @@ class QtLauncherController:
             if not closed:
                 raise RuntimeError(message)
 
+        if self.cfg.tts_mode == 'central':
+            self._check_voice_capability()
+            self.proc_tts = None
+        else:
+            self._start_legacy_profile_tts(character, char_cfg)
+
+        self.proc_llm = start_llm(
+            self.cfg, self.log, logs_root=self.cfg.logs_dir,
+            run_id=self.current_run_id or "manual",
+        )
+        llm_ready, llm_message = self._wait_for_service_ready(
+            "LLM", self.cfg.llm_host, self.cfg.llm_port, self.proc_llm,
+            timeout_s=35.0, previous_pid=previous_llm_pid,
+        )
+        if not llm_ready:
+            raise RuntimeError(llm_message)
+        self.log(f"[{log_ts()}] {llm_message}：{self.cfg.llm_url}")
+        pet_status = self.launch_pet_electron()
+        self.apply_outfit(wait_for_shell=True)
+        history_result = self._apply_history_choice_after_start(
+            character, desired_history_uid=desired_history_uid, force_new_history=force_new_history,
+        )
+        return {"ok": True, "mode": "fresh-start", "history": history_result,
+                "pet": {"pid": pet_status.get("pid"), "instance_id": pet_status.get("instanceId")},
+                "warning": history_result.get("warning", ""), "voice": dict(self.lifecycle.voice)}
+
+    def _start_legacy_profile_tts(self, character, char_cfg) -> None:
         self.proc_tts = start_tts(
             self.cfg,
             self.log,
@@ -1782,49 +1885,19 @@ class QtLauncherController:
             timeout_s=120.0,
         )
         if not tts_ready:
-            self.stop_profile(silent=True, stop_pet=False)
+            self.stop_profile(silent=True, stop_pet=False, _internal=True)
             raise RuntimeError(tts_message)
         self.log(f"[{log_ts()}] TTS smoke test：{tts_message}")
 
-        self.proc_llm = start_llm(
-            self.cfg,
-            self.log,
-            logs_root=self.cfg.logs_dir,
-            run_id=self.current_run_id or "manual",
-        )
-        llm_ready, llm_message = self._wait_for_service_ready(
-            "LLM",
-            self.cfg.llm_host,
-            self.cfg.llm_port,
-            self.proc_llm,
-            timeout_s=35.0,
-            previous_pid=previous_llm_pid,
-        )
-        if not llm_ready:
-            raise RuntimeError(llm_message)
+    def stop_profile(self, *, silent: bool = False, stop_bridge: bool = True, stop_pet: bool = True, _internal: bool = False) -> None:
+        if not _internal:
+            self.lifecycle.desired_running = False
+        with self.lifecycle.lock:
+            self._stop_profile_impl(silent=silent, stop_bridge=stop_bridge, stop_pet=stop_pet)
+            if not _internal:
+                self.lifecycle.record('stopped')
 
-        self.log(f"[{log_ts()}] {llm_message}：{self.cfg.llm_url}")
-        pet_status = self.launch_pet_electron()
-        self.apply_outfit(wait_for_shell=True)
-        history_result = self._apply_history_choice_after_start(
-            character,
-            desired_history_uid=desired_history_uid,
-            force_new_history=force_new_history,
-        )
-        result = {
-            "ok": True,
-            "mode": "fresh-start",
-            "history": history_result,
-            "pet": {
-                "pid": pet_status.get("pid"),
-                "instance_id": pet_status.get("instanceId"),
-            },
-        }
-        if history_result.get("warning"):
-            result["warning"] = history_result["warning"]
-        return result
-
-    def stop_profile(
+    def _stop_profile_impl(
         self,
         *,
         silent: bool = False,
@@ -1852,17 +1925,8 @@ class QtLauncherController:
                 pass
             self.proc_tts = None
 
-        for port, name in [(self.cfg.llm_port, "LLM"), (self.cfg.tts_port, "TTS")]:
-            if name == "TTS" and getattr(self.cfg, "tts_mode", "legacy") == "central":
-                continue
-            pid = get_listening_pid_windows(port)
-            if pid:
-                try:
-                    taskkill_tree(pid)
-                    if not silent:
-                        self.log(f"[{log_ts()}] 已清理 {name} PID={pid}")
-                except Exception:
-                    pass
+        # A listener is not process ownership. Only held ManagedProc instances
+        # above may be stopped; never clear a newly occupied port by PID.
 
         if stop_bridge:
             bridge_was_running = bool(self.proc_bridge) or port_is_open(
@@ -1986,10 +2050,8 @@ class QtLauncherController:
 
     def _restart_tts_runtime(self, character: CharacterRecord, char_cfg: Dict[str, object]) -> bool:
         if getattr(self.cfg, "tts_mode", "legacy") == "central":
-            ok, message = probe_tts(self.cfg, char_cfg, logs_root=self.cfg.logs_dir,
-                                    run_id=self.current_run_id or "manual")
-            self.log(message)
-            return ok
+            self._check_voice_capability()
+            return True  # Voice is optional; a hot switch must still work without it.
         self.log(f"[{log_ts()}] 重新載入 TTS：{character.yaml_path.stem}")
         self._stop_tts_impl(kill_external=True)
         closed, message = self._wait_for_port_closed(
@@ -2164,7 +2226,18 @@ class QtLauncherController:
 
     def _read_pet_shell_status(self, *, timeout: float = 0.8) -> dict:
         status = http_get_json(self.pet_control_endpoint("/status"), timeout=timeout)
-        return self._validate_pet_shell_status(status)
+        self._validate_pet_shell_status(status)
+        if not status.get("sourceRoot") or Path(str(status["sourceRoot"])).resolve() != self.cfg.root.resolve():
+            raise PetShellIdentityError("Pet shell source root does not match this Launcher.")
+        if os.name == "nt":
+            listener_pid = get_listening_pid_windows(self.cfg.pet_control_port, self.cfg.pet_control_host)
+            if listener_pid != int(status["pid"]):
+                raise PetShellIdentityError("Pet control listener ownership could not be verified.")
+        proc = self.proc_pet_electron
+        if proc is not None and proc.poll() is None:
+            if int(status["pid"]) != proc.pid or status["instanceId"] != self._pet_instance_id:
+                raise PetShellIdentityError("Pet shell instance does not match the tracked child.")
+        return status
 
     def _reconcile_tracked_pet_process(self) -> None:
         proc = self.proc_pet_electron
@@ -2175,6 +2248,10 @@ class QtLauncherController:
             return
         pid = int(proc.pid)
         self.proc_pet_electron = None
+        self._pet_instance_id = ""
+        if getattr(self, "_pet_output", None) is not None:
+            self._pet_output.close()
+            self._pet_output = None
         if self._last_pet_exit_pid != pid:
             self._last_pet_exit_pid = pid
             self.log(f"[{log_ts()}] Kuro Pet shell 已退出：pid={pid}，exit_code={exit_code}")
@@ -2193,19 +2270,44 @@ class QtLauncherController:
         popen_kwargs = windows_hidden_subprocess_kwargs(creationflags)
         env = os.environ.copy()
         env["KURO_BACKEND_BASE_URL"] = self.cfg.llm_url
+        try:
+            env["KURO_PRESENTATION"] = json.dumps(self.presentation_state()['presentation'], ensure_ascii=True)
+        except (ValueError, OSError) as exc:
+            self.log(f"Live2D bootstrap unavailable: {type(exc).__name__}")
         env["KURO_BACKEND_WS_URL"] = f"ws://{self.cfg.llm_host}:{self.cfg.llm_port}/client-ws"
         env["KURO_PET_CONTROL_HOST"] = self.cfg.pet_control_host
         env["KURO_PET_CONTROL_PORT"] = str(self.cfg.pet_control_port)
         env["KURO_LAUNCHER_CONTROL_URL"] = self.cfg.launcher_control_url
+        instance_id = uuid.uuid4().hex
+        env["KURO_PET_INSTANCE_ID"] = instance_id
+        for key in ("KURO_CORE_URL", "KURO_CORE_TOKEN", "KURO_CORE_INSTANCE"):
+            env.pop(key, None)
+        if hasattr(self, "core_runtime"):
+            try:
+                self.core_runtime.start()
+            except Exception as exc:
+                self.log(f"Core unavailable; other services remain available: {exc}")
+            env.update(self.core_runtime.child_environment())
         if self.work_panel_control_token:
             env["KURO_LAUNCHER_CONTROL_TOKEN"] = self.work_panel_control_token
-        proc = subprocess.Popen(
-            [str(runtime_exe), "."],
-            cwd=str(self.cfg.pet_electron_dir),
-            close_fds=True,
-            env=env,
-            **popen_kwargs,
-        )
+        log_path = self.cfg.logs_dir / "pet-electron" / f"{instance_id}.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        output = log_path.open("ab")
+        try:
+            proc = subprocess.Popen(
+                [str(runtime_exe), "."],
+                cwd=str(self.cfg.pet_electron_dir),
+                close_fds=True,
+                env=env,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+                **popen_kwargs,
+            )
+        except Exception:
+            output.close()
+            raise
+        self._pet_output = output
+        self._pet_instance_id = instance_id
         self.proc_pet_electron = proc
         self._last_pet_exit_pid = None
         self.log(
@@ -2272,42 +2374,120 @@ class QtLauncherController:
         )
         return status
 
-    def ensure_work_panel(self, *, timeout_s: float = 15.0) -> dict:
-        request_id = uuid.uuid4().hex[:12]
+    def _reveal_work_panel_locked(self, status: dict, result: dict, *, timeout_s: float) -> None:
+        result.update(pid=status["pid"], instance_id=status["instanceId"], pet_control_identity_ok=True)
+        response = http_post_json(
+            self.pet_control_endpoint("/command"),
+            {"action": "set-briefing-visible", "enabled": True,
+             "expectedInstanceId": status["instanceId"], "requestId": result["request_id"]},
+            timeout=3.0,
+        )
+        if response.get("ok") is not True:
+            if response.get("error") == "WP_PET_IDENTITY_MISMATCH":
+                raise PetShellIdentityError("Pet instance changed before reveal.")
+            raise RuntimeError("Work Panel reveal command was not accepted.")
+        deadline = time.monotonic() + min(5.0, max(0.05, timeout_s))
+        while time.monotonic() < deadline:
+            fresh = self._read_pet_shell_status(timeout=0.8)
+            if (fresh["pid"], fresh["instanceId"]) != (status["pid"], status["instanceId"]):
+                raise PetShellIdentityError("Pet instance changed during Work Panel verification.")
+            window = fresh.get("workPanel")
+            result["window"] = window
+            failure = window_failure_code(window)
+            result["failure_code"] = failure
+            if not failure:
+                return
+            if failure == "WP_WINDOW_CONTRACT_UNSUPPORTED":
+                raise RuntimeError("Pet shell 缺少新版工作面板 contract；請退出舊桌寵後重試。")
+            time.sleep(0.1)
+        raise RuntimeError("工作面板未在驗證期限內就緒。")
+
+    def _recover_work_panel_pet_locked(self) -> None:
+        """Recover only our original Popen handle, never a PID adopted from HTTP."""
+        self._reconcile_tracked_pet_process()
+        proc = self.proc_pet_electron
+        # Fresh identity check also rejects a listener replacement before termination.
+        try:
+            fresh = self._read_pet_shell_status(timeout=0.8)
+            if not window_failure_code(fresh.get("workPanel")):
+                return  # The first reveal completed late; retry without terminating.
+        except PetShellIdentityError:
+            raise
+        except Exception:
+            pass
+        listener = get_listening_pid_windows(self.cfg.pet_control_port, self.cfg.pet_control_host)
+        occupied = port_is_open(self.cfg.pet_control_host, self.cfg.pet_control_port, 0.2)
+        if proc is None:
+            if listener is not None or occupied:
+                raise PetShellIdentityError("Pet shell is not a tracked child; automatic termination refused.")
+            return
+        if listener is not None and listener != proc.pid:
+            raise PetShellIdentityError("Pet port belongs to a different process; recovery refused.")
+        if occupied and listener != proc.pid:
+            raise PetShellIdentityError("Pet listener ownership is unknown; recovery refused.")
+        # Popen retains the Windows process handle, protecting against PID reuse.
+        if proc.poll() is None:
+            proc.terminate()
+            proc.wait(timeout=3.0)
+        self._reconcile_tracked_pet_process()
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            if not port_is_open(self.cfg.pet_control_host, self.cfg.pet_control_port, 0.2):
+                return
+            time.sleep(0.1)
+        raise RuntimeError("Pet control port did not close after owned-child recovery.")
+
+    def ensure_work_panel(self, *, timeout_s: float = 15.0, request_id: str = "", source: str = "launcher") -> dict:
         started_at = time.monotonic()
-        self.log(f"[{log_ts()}] ensure-work-panel start：request_id={request_id}")
-        with self._pet_lifecycle_lock:
-            status = self._ensure_pet_shell_ready_locked(timeout_s=timeout_s)
-            result = http_post_json(
-                self.pet_control_endpoint("/command"),
-                {"action": "set-briefing-visible", "enabled": True},
-                timeout=5.0,
-            )
-            if result.get("ok") is not True:
-                raise RuntimeError(
-                    str(result.get("message") or result.get("error") or "工作面板顯示失敗。")
-                )
-
-            verify_deadline = time.monotonic() + 5.0
-            while time.monotonic() < verify_deadline:
-                status = self._read_pet_shell_status(timeout=0.8)
-                renderer = status.get("renderer") or {}
-                if isinstance(renderer, dict) and renderer.get("briefingVisible") is True:
-                    duration_ms = int((time.monotonic() - started_at) * 1000)
-                    self.log(
-                        f"[{log_ts()}] ensure-work-panel ready：request_id={request_id}，"
-                        f"pid={status.get('pid')}，duration_ms={duration_ms}"
-                    )
-                    return {
-                        "ok": True,
-                        "request_id": request_id,
-                        "pid": status.get("pid"),
-                        "instance_id": status.get("instanceId"),
-                        "duration_ms": duration_ms,
-                    }
-                time.sleep(0.1)
-
-        raise RuntimeError("Kuro Pet shell 已 ready，但工作面板未在 5s 內變成可見。")
+        result = {"ok": False, "request_id": request_id or uuid.uuid4().hex[:12], "source": source,
+                  "launcher_pid": os.getpid(), "pid": None, "instance_id": "", "window": None,
+                  "pet_control_identity_ok": False, "pet_state": "unknown", "recovery_attempt": 0,
+                  "recovery_reason": "", "final_status": "pending", "failure_code": ""}
+        record_activation("activation-recovery-start", result, self.log)
+        acquired = self._pet_lifecycle_lock.acquire(timeout=max(0.05, timeout_s))
+        try:
+            if not acquired:
+                result["failure_code"] = "WP_LIFECYCLE_BUSY"
+                raise RuntimeError("Pet lifecycle is busy; retry after the current operation completes.")
+            for attempt in range(MAX_WORK_PANEL_RECOVERY_ATTEMPTS + 1):
+                result["recovery_attempt"] = attempt
+                result["failure_code"] = "WP_PET_CONTROL_TIMEOUT"
+                try:
+                    before = self.proc_pet_electron
+                    status = self._ensure_pet_shell_ready_locked(timeout_s=timeout_s)
+                    spawned = self.proc_pet_electron is not None and self.proc_pet_electron is not before
+                    result["pet_state"] = "recovered" if attempt else ("spawned" if spawned else "reused")
+                    self._reveal_work_panel_locked(status, result, timeout_s=timeout_s)
+                    result.update(ok=True, final_status="recovered" if attempt else "ready", failure_code="")
+                    break
+                except PetShellIdentityError:
+                    raise
+                except Exception:
+                    if attempt == MAX_WORK_PANEL_RECOVERY_ATTEMPTS or result["failure_code"] == "WP_WINDOW_CONTRACT_UNSUPPORTED":
+                        raise
+                    result["recovery_reason"] = result["failure_code"]
+                    result["previous_pid"] = result["pid"]
+                    result["previous_instance_id"] = result["instance_id"]
+                    result["recovery_attempt"] = attempt + 1
+                    record_activation("activation-recovery-retry", result, self.log)
+                    self._recover_work_panel_pet_locked()
+            result["duration_ms"] = int((time.monotonic() - started_at) * 1000)
+            self.last_work_panel_activation = dict(result)
+            record_activation("activation-recovery-succeeded", result, self.log)
+            return result
+        except Exception as exc:
+            result["final_status"] = "failed"
+            if isinstance(exc, PetShellIdentityError):
+                result["failure_code"] = "WP_PET_IDENTITY_MISMATCH"
+                result["pet_control_identity_ok"] = False
+            result["error"] = str(exc)[:1000]
+            result["duration_ms"] = int((time.monotonic() - started_at) * 1000)
+            self.last_work_panel_activation = dict(result)
+            record_activation("activation-recovery-failed", result, self.log)
+            raise WorkPanelActivationError(result, str(exc)) from exc
+        finally:
+            if acquired:
+                self._pet_lifecycle_lock.release()
 
     def stop_pet_electron(self, *, silent: bool = False) -> None:
         stopped = False
@@ -2349,6 +2529,10 @@ class QtLauncherController:
                         except Exception:
                             pass
             self.proc_pet_electron = None
+            self._pet_instance_id = ""
+            if getattr(self, "_pet_output", None) is not None:
+                self._pet_output.close()
+                self._pet_output = None
         if stopped and not silent:
             self.log(f"[{log_ts()}] 已停止自製桌寵殼。")
 
@@ -2537,4 +2721,8 @@ class QtLauncherController:
                     pass
 
     def close(self) -> None:
-        self.stop_profile(silent=True)
+        try:
+            self.stop_profile(silent=True)
+        finally:
+            if hasattr(self, "core_runtime"):
+                self.core_runtime.stop()

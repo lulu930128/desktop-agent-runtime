@@ -13,7 +13,7 @@ launcherScript = fso.BuildPath(repoRoot, "launcher_qt.py")
 workPanelEntry = fso.BuildPath(repoRoot, "pet-electron\renderer-dist\work-panel.html")
 pythonwExe = fso.BuildPath(repoRoot, "envs\kuro-llm310\pythonw.exe")
 pythonExe = fso.BuildPath(repoRoot, "envs\kuro-llm310\python.exe")
-launcherArgs = """" & launcherScript & """ --work-panel"
+launcherArgs = """" & launcherScript & """"
 
 sh.CurrentDirectory = repoRoot
 

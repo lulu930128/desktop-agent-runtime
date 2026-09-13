@@ -3,7 +3,7 @@ const path = require("path");
 
 const DEFAULT_STATE = {
   mode: "pet",
-  forceIgnoreMouse: true,
+  forceIgnoreMouse: false,
   petSpanAllDisplays: false,
   petZoomScale: 1,
   petAnchor: null,

@@ -11,9 +11,47 @@ const {
   dialog,
   ipcMain,
   nativeImage,
+  Notification,
   screen,
   session
 } = require("electron");
+const { protocol, net } = require('electron');
+const { normalizePresentation, registerModelProtocol } = require('./main-process/local-model');
+const { repairPlacement, modelIsVisible } = require('./main-process/pet-visibility');
+const { withTimeout } = require('./main-process/work-panel-window');
+protocol.registerSchemesAsPrivileged([{ scheme: 'kuro-model', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
+let localPresentation = null;
+let modelRequestedAt = Date.now();
+let runtimeCapabilities = { launcher: null, pet: { state: 'loading' } };
+let capabilityRefreshPending = false;
+let petPlacementRecoveryReason = 'startup';
+
+async function refreshRuntimeCapabilities() {
+  if (capabilityRefreshPending) return;
+  capabilityRefreshPending = true;
+  try {
+    const [runtime, presentation, inspector] = await Promise.all([
+      launcherControlRequest('/v1/runtime', { timeoutMs: 1500 }),
+      launcherControlRequest('/v1/presentation', { timeoutMs: 1500 }),
+      withTimeout(readLive2DInspectorSnapshot(), 600, null)
+    ]);
+    if (presentation?.ok) {
+      const next = normalizePresentation(path.join(repoRoot, 'Open-LLM-VTuber'), presentation.presentation);
+      if (JSON.stringify(next) !== JSON.stringify(localPresentation)) {
+        localPresentation = next;
+        modelRequestedAt = Date.now();
+        broadcast('pet-command', { type: 'local-model-set', presentation: next });
+      }
+    }
+    const visible = inspector?.ready === true && modelIsVisible(inspector.modelScreenBounds, getAllDisplays());
+    runtimeCapabilities = { launcher: runtime?.ok ? runtime.runtime : null,
+      pet: { state: visible ? 'ready' : inspector?.ready ? 'offscreen' : localPresentation ? (Date.now() - modelRequestedAt < 20000 ? 'loading' : 'failed') : 'missing',
+        modelReady: inspector?.ready === true, visible, responsive: Boolean(inspector) } };
+  } catch (error) {
+    runtimeCapabilities = { launcher: null, pet: { state: 'failed', error: String(error.message) } };
+    petLog('runtime-capability-failed', error);
+  } finally { capabilityRefreshPending = false; broadcastBriefingState(); }
+}
 
 const { cloneDefaultState, loadState, mergeState, saveState } = require("./state");
 const {
@@ -21,10 +59,14 @@ const {
   normalizeReaderAttachments
 } = require("./main-process/reader-attachments");
 const { createBriefingStore } = require("./main-process/briefing-store");
+const { createCoreClient, registerCoreIpc } = require("./main-process/core-client");
+const { startScheduleNotifications } = require("./main-process/schedule-notifications");
+let stopScheduleNotifications = () => undefined;
 const { createMailBriefingService } = require("./main-process/mail-briefing-service");
 const { startControlServer: createControlServer } = require("./main-process/control-server");
 const { createPetContextMenu, createTrayMenu } = require("./main-process/menus");
 const { createPetLogger } = require("./main-process/pet-logger");
+const { probeWindow, revealWindow } = require("./main-process/work-panel-window");
 const {
   resolvePetDisplayContext,
   resolvePetLayout,
@@ -56,7 +98,7 @@ const APP_USER_MODEL_ID = "kuro.desktop-agent";
 const CONTROL_SERVICE = "kuro-pet-control";
 const CONTROL_PROTOCOL_VERSION = 1;
 const APP_STARTED_AT = new Date().toISOString();
-const APP_INSTANCE_ID = `${process.pid}-${Date.now().toString(36)}`;
+const APP_INSTANCE_ID = process.env.KURO_PET_INSTANCE_ID || `${process.pid}-${Date.now().toString(36)}`;
 const TEMP_MAX_RENDER_PERFORMANCE = false;
 const CONTROL_HOST = process.env.KURO_PET_CONTROL_HOST || "127.0.0.1";
 const CONTROL_PORT = Number(process.env.KURO_PET_CONTROL_PORT || "23567");
@@ -106,6 +148,7 @@ const MIN_BRIEFING_WINDOW_HEIGHT = 540;
 let mainWindow = null;
 let readerWindow = null;
 let briefingWindow = null;
+let lastWorkPanelReveal = null;
 let tray = null;
 let appState = cloneDefaultState();
 let statePath = "";
@@ -677,6 +720,18 @@ function handlePetModelEnvelope(payload) {
   }
 
   latestPetModelScreenBounds = modelScreenBounds;
+  // Envelope heartbeats are observations, not permission to move the pet.
+  // Recover once after startup/topology changes, before any user positioning.
+  if (petPlacementRecoveryReason && !isPetInteractionActive()) {
+    const reason = petPlacementRecoveryReason;
+    petPlacementRecoveryReason = '';
+    const repaired = repairPlacement(transform.anchor, getAllDisplays(), modelScreenBounds);
+    if (Math.abs(repaired.x - transform.anchor.x) > 2 || Math.abs(repaired.y - transform.anchor.y) > 2) {
+      commitPetTransformValues({ anchor: repaired }, { broadcast: true });
+      petLog('pet-position-recovered', { reason });
+      return true;
+    }
+  }
   latestPetEnvelopeRevision = transform.revision;
   if (PET_FIXED_DESKTOP_SHELL) {
     clearPetHostShrinkTimer();
@@ -773,7 +828,7 @@ function clampReaderBounds(bounds) {
 }
 
 function clampBriefingBounds(bounds) {
-  return clampBoundsToVirtualDesktopWithOverflow(
+  return clampBoundsToDisplay(
     {
       ...bounds,
       width: Math.max(
@@ -785,7 +840,7 @@ function clampBriefingBounds(bounds) {
         Number(bounds.height) || MIN_BRIEFING_WINDOW_HEIGHT
       )
     },
-    220
+    findDisplayForBounds(bounds)
   );
 }
 
@@ -1179,6 +1234,7 @@ function handlePetTransformRequest(payload) {
   if (!result.accepted) {
     return false;
   }
+  petPlacementRecoveryReason = '';
   if (result.changed) {
     acceptPetTransformState(result.state, {
       deferSave: true,
@@ -1203,6 +1259,8 @@ function adjustPetWindowScale(scaleRatio) {
 function getReaderStatePayload() {
   return {
     ok: true,
+    capabilities: runtimeCapabilities,
+    speechStatus: latestFrontendState.speechStatus || 'unknown',
     aiState: latestFrontendState.aiState || "idle",
     wsConnected: Boolean(latestFrontendState.wsConnected),
     latestAssistantText: latestFrontendState.latestAssistantText || "",
@@ -1397,6 +1455,8 @@ function getBriefingStatePayload() {
     : 0;
   return {
     ok: true,
+    capabilities: runtimeCapabilities,
+    speechStatus: latestFrontendState.speechStatus || 'unknown',
     aiState: latestFrontendState.aiState || "idle",
     wsConnected: Boolean(latestFrontendState.wsConnected),
     confName: latestFrontendState.confName || "",
@@ -1899,40 +1959,22 @@ function isBriefingWindowVisible() {
 }
 
 function revealBriefingWindow() {
-  if (!briefingWindow || briefingWindow.isDestroyed()) {
-    return false;
-  }
+  const state = revealWindow(briefingWindow, { app, screen, clampBounds: clampBriefingBounds });
+  lastWorkPanelReveal = { ...state, at: new Date().toISOString() };
+  petLog("work-panel-reveal", lastWorkPanelReveal);
+  return state;
+}
 
-  const wasVisible = briefingWindow.isVisible();
-  const wasMinimized = briefingWindow.isMinimized();
-  if (wasMinimized) {
-    briefingWindow.restore();
-  }
-
-  const currentBounds = briefingWindow.getBounds();
-  const visibleBounds = clampBriefingBounds(currentBounds);
-  if (
-    currentBounds.x !== visibleBounds.x ||
-    currentBounds.y !== visibleBounds.y ||
-    currentBounds.width !== visibleBounds.width ||
-    currentBounds.height !== visibleBounds.height
-  ) {
-    briefingWindow.setBounds(visibleBounds, false);
-  }
-
-  briefingWindow.show();
-  briefingWindow.moveTop();
-  if (process.platform === "win32") {
-    app.focus({ steal: true });
-  }
-  briefingWindow.focus();
-  petLog("work-panel-reveal", {
-    wasVisible,
-    wasMinimized,
-    bounds: briefingWindow.getBounds(),
-    focused: briefingWindow.isFocused()
-  });
-  return true;
+async function readWorkPanelStatus() {
+  const window = briefingWindow;
+  const state = await probeWindow(window, screen);
+  if (window !== briefingWindow) return { contractVersion: 1, exists: false, rendererReady: false };
+  return {
+    ...state,
+    desiredVisible: Boolean(appState.briefingVisible),
+    lastRevealAt: lastWorkPanelReveal?.at || null,
+    lastRevealResult: lastWorkPanelReveal
+  };
 }
 
 function setBriefingVisible(visible) {
@@ -1952,6 +1994,7 @@ function setBriefingVisible(visible) {
     ok: true,
     route: "window",
     action: "set-briefing-visible",
+    accepted: true,
     briefingVisible: isBriefingWindowVisible(),
     briefingPending: Boolean(appState.briefingVisible && !isBriefingWindowVisible())
   };
@@ -2243,7 +2286,7 @@ function refreshLayoutForDisplayTopology(reason = "display-metrics-changed") {
   );
 
   if (appState.mode === "pet") {
-    ensurePetAnchor();
+    petPlacementRecoveryReason = reason;
     broadcastPetHostState("pet-host-set");
     saveCurrentState();
   } else {
@@ -2406,13 +2449,16 @@ function startControlServer() {
     host: CONTROL_HOST,
     port: CONTROL_PORT,
     readRendererStatus,
+    readWorkPanelStatus,
     readLive2DInspectorSnapshot,
     captureLive2DPreview,
     getShellStatus: () => ({
+      capabilities: runtimeCapabilities,
       service: CONTROL_SERVICE,
       protocolVersion: CONTROL_PROTOCOL_VERSION,
       pid: process.pid,
       instanceId: APP_INSTANCE_ID,
+      sourceRoot: repoRoot,
       startedAt: APP_STARTED_AT,
       mode: appState.mode,
       forceIgnoreMouse: appState.forceIgnoreMouse,
@@ -2732,6 +2778,11 @@ function createBriefingWindow() {
     }
   });
 
+  briefingWindow.webContents.on("render-process-gone", (_event, details) => {
+    petLog("work-panel-render-process-gone", details);
+  });
+  briefingWindow.on("unresponsive", () => petLog("work-panel-unresponsive"));
+
   briefingWindow.loadFile(workPanelEntry).catch((error) => {
     petLog("Failed to load work panel", error);
     appState.briefingVisible = false;
@@ -2944,6 +2995,7 @@ function registerIpc() {
     const transform = ensurePetTransformState();
     event.returnValue = {
       baseUrl: process.env.KURO_BACKEND_BASE_URL || "http://127.0.0.1:23456",
+      presentation: localPresentation,
       wsUrl: process.env.KURO_BACKEND_WS_URL || "ws://127.0.0.1:23456/client-ws",
       zoomScale: transform.zoomScale,
       petTransformRevision: transform.revision,
@@ -3016,6 +3068,13 @@ function registerIpc() {
   });
 
   ipcMain.handle("reader-get-state", () => getReaderStatePayload());
+  const scheduleClient = createCoreClient({
+    url: process.env.KURO_CORE_URL,
+    token: process.env.KURO_CORE_TOKEN,
+    instance: process.env.KURO_CORE_INSTANCE
+  });
+  registerCoreIpc(ipcMain, scheduleClient, () => briefingWindow);
+  stopScheduleNotifications = startScheduleNotifications({ client: scheduleClient, Notification, reveal: revealBriefingWindow });
 
   ipcMain.handle("reader-send-text", async (_event, text, attachments) => {
     return sendTextToFrontend(text, attachments);
@@ -3093,6 +3152,21 @@ function registerIpc() {
   ipcMain.handle("work-panel-get-tools", () => launcherControlRequest("/v1/tools"));
 
   ipcMain.handle("work-panel-control", async (_event, action, payload) => {
+    if (action === 'retry-pet-model') {
+      modelRequestedAt = Date.now();
+      if (!mainWindow || mainWindow.isDestroyed()) createWindow();
+      else mainWindow.webContents.reload();
+      return { ok: true, pending: true };
+    }
+    if (action === 'restart-launcher') {
+      const confirmed = await confirmWorkPanelAction({ title: '重新啟動 Kuro', message: '要關閉並重新載入 Kuro 嗎？',
+        detail: '對話服務與工作面板會重新啟動。請先保存尚未送出的草稿；共用語音服務會保持執行。' });
+      if (!confirmed) return { ok: false, cancelled: true };
+      return launcherControlRequest('/v1/runtime/restart-launcher', { method: 'POST', payload: { confirmed: true } });
+    }
+    if (action === 'retry-runtime' || action === 'stop-runtime') {
+      return launcherControlRequest(action === 'retry-runtime' ? '/v1/runtime/retry' : '/v1/runtime/stop', { method: 'POST', payload: { confirmed: true } });
+    }
     const allowedActions = new Set([
       "interrupt",
       "show-pet",
@@ -3317,7 +3391,6 @@ if (!singleInstanceLock) {
     latestFrontendState.currentExpressionId = appState.expression.expressionId;
     latestFrontendState.currentExpressionLabel = appState.expression.expressionLabel;
     appState.mode = "pet";
-    appState.forceIgnoreMouse = true;
     appState.petSpanAllDisplays = false;
     appState.readerVisible = false;
     appState.briefingVisible = false;
@@ -3338,6 +3411,10 @@ if (!singleInstanceLock) {
     petLog("app-ready", { statePath, briefingStorePath, appState });
 
     registerIpc();
+    registerModelProtocol(protocol, net, path.join(repoRoot, 'Open-LLM-VTuber'));
+    try {
+      localPresentation = normalizePresentation(path.join(repoRoot, 'Open-LLM-VTuber'), JSON.parse(process.env.KURO_PRESENTATION || 'null'));
+    } catch (error) { petLog('local-model-bootstrap-failed', error); }
     startControlServer();
     mailBriefingService = createMailBriefingService({
       repoRoot,
@@ -3349,6 +3426,8 @@ if (!singleInstanceLock) {
     mailBriefingService.start();
     createTray();
     createWindow();
+    void refreshRuntimeCapabilities();
+    setInterval(() => { void refreshRuntimeCapabilities(); }, 5000).unref();
     startPetCursorTracking();
     startPetInteractionLeaseWatchdog();
     if (appState.readerVisible) {
@@ -3387,6 +3466,7 @@ if (!singleInstanceLock) {
   });
 
   app.on("before-quit", () => {
+    stopScheduleNotifications();
     appIsQuitting = true;
     flushPetAnchorSave();
     clearPetHostShrinkTimer();

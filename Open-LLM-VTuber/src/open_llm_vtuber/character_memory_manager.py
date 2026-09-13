@@ -12,6 +12,11 @@ from loguru import logger
 from .character_memory_repository import CharacterMemoryRepository
 from .character_memory_retriever import CharacterMemoryRetriever
 from .character_memory_sql_index import SQLiteMemoryIndex
+from .mcpp.privacy import safe_text
+from .character_memory_lifecycle import (
+    authorize, review_digest, entry_status as lifecycle_status,
+    is_active_memory as lifecycle_active,
+)
 
 
 MemoryType = Literal[
@@ -152,6 +157,11 @@ def _load_store(conf_uid: str) -> dict[str, Any]:
 
 def _save_store(conf_uid: str, data: dict[str, Any]) -> None:
     _MEMORY_REPOSITORY.save(conf_uid, data)
+    # The index is derived; synchronize deletes and disables, including the last row.
+    try:
+        _MEMORY_RETRIEVER.sync(conf_uid, data.get("entries", []))
+    except Exception:
+        logger.warning("Memory index refresh deferred; retrieval will retry from canonical data.")
 
 
 def _clean_text(content: str, max_len: int = 260) -> str:
@@ -194,20 +204,11 @@ def _entry_scope_level(entry: dict[str, Any]) -> MemoryScopeLevel:
 
 
 def _entry_status(entry: dict[str, Any]) -> MemoryStatus:
-    status = str(entry.get("status") or "").strip()
-    if status in {
-        "active",
-        "superseded",
-        "disabled",
-        "pending_confirmation",
-        "pending_delete",
-    }:
-        return status  # type: ignore[return-value]
-    return "active" if entry.get("enabled", True) else "disabled"
+    return lifecycle_status(entry)  # type: ignore[return-value]
 
 
 def _is_active_memory(entry: dict[str, Any]) -> bool:
-    return entry.get("enabled", True) and _entry_status(entry) == "active"
+    return lifecycle_active(entry)
 
 
 def _source_priority(source: str) -> int:
@@ -399,7 +400,7 @@ def infer_memory_delete_plan(user_text: str) -> MemoryDeletePlan:
 
 
 def _contains_sensitive_data(content: str) -> bool:
-    return any(pattern.search(content or "") for pattern in SENSITIVE_PATTERNS)
+    return safe_text(content or "") != (content or "") or any(pattern.search(content or "") for pattern in SENSITIVE_PATTERNS)
 
 
 def _looks_like_project_memory_turn(text: str) -> bool:
@@ -637,11 +638,13 @@ def build_memory_write_plan(
 
     for candidate in raw_candidates:
         source = str(candidate.get("source") or "heuristic")
-        if source == "heuristic":
+        if source != "explicit":
             candidate["status"] = "pending_confirmation"
+            candidate["enabled"] = False
+            candidate.setdefault("evidence", {})["verification_status"] = "unverified"
             candidate["confidence"] = min(float(candidate.get("confidence") or 0.62), 0.62)
             candidate["importance"] = min(float(candidate.get("importance") or 0.52), 0.52)
-            reasons.append("heuristic candidate held for confirmation")
+            reasons.append(f"{source} candidate held for confirmation")
         else:
             candidate.setdefault("status", "active")
         candidates.append(candidate)
@@ -705,6 +708,8 @@ def _upsert_memory(
     status: MemoryStatus = "active",
 ) -> bool:
     entries: list[dict[str, Any]] = store["entries"]
+    if source not in {"manual", "explicit"}:
+        status = "pending_confirmation"
     if not subject or not key:
         default_subject, default_key = _default_subject_key(
             memory_type=memory_type,
@@ -718,6 +723,10 @@ def _upsert_memory(
     now = _now_iso()
     enabled = status == "active"
     if existing:
+        # Repeated claims are no authority to edit a prior decision or provenance.
+        # Retain the existing record byte-for-byte; its ID remains the reference.
+        if source not in {"manual", "explicit"}:
+            return False
         changed = False
         existing_source = str(existing.get("source") or "unknown")
         should_reactivate = enabled and _source_priority(source) >= _source_priority(existing_source)
@@ -741,6 +750,9 @@ def _upsert_memory(
                 changed = True
         if changed:
             existing["updated_at"] = now
+            if status == "active":
+                existing["evidence"] = evidence or {}
+                authorize(existing, source, history_uid)
         return changed
 
     supersedes: list[str] = []
@@ -792,6 +804,8 @@ def _upsert_memory(
             "updated_at": now,
         }
     )
+    if status == "active" and source in {"manual", "explicit"}:
+        authorize(entries[-1], source, history_uid)
     return True
 
 
@@ -900,49 +914,6 @@ def _apply_memory_delete_plan(
     return True, [f"{note_prefix}:{len(matches)}"]
 
 
-def _merge_entry(existing: dict[str, Any], incoming: dict[str, Any]) -> bool:
-    changed = False
-    existing_enabled = bool(existing.get("enabled", True))
-    incoming_enabled = bool(incoming.get("enabled", True))
-    existing_importance = float(existing.get("importance") or 0)
-    incoming_importance = float(incoming.get("importance") or 0)
-    existing_updated = str(existing.get("updated_at") or "")
-    incoming_updated = str(incoming.get("updated_at") or "")
-
-    prefer_incoming_content = (
-        incoming_enabled and not existing_enabled
-        or incoming_importance > existing_importance
-        or (
-            incoming_importance == existing_importance
-            and incoming_updated > existing_updated
-            and len(str(incoming.get("content") or ""))
-            >= len(str(existing.get("content") or ""))
-        )
-    )
-
-    if prefer_incoming_content:
-        for key in ("content", "memory_type", "source", "source_history_uid"):
-            value = incoming.get(key)
-            if value and existing.get(key) != value:
-                existing[key] = value
-                changed = True
-
-    merged_values = {
-        "enabled": existing_enabled or incoming_enabled,
-        "confidence": max(
-            float(existing.get("confidence") or 0),
-            float(incoming.get("confidence") or 0),
-        ),
-        "importance": max(existing_importance, incoming_importance),
-        "updated_at": max(existing_updated, incoming_updated) or _now_iso(),
-    }
-    for key, value in merged_values.items():
-        if existing.get(key) != value:
-            existing[key] = value
-            changed = True
-    return changed
-
-
 def _compact_store(store: dict[str, Any]) -> bool:
     raw_entries = store.get("entries", [])
     if not isinstance(raw_entries, list):
@@ -970,7 +941,7 @@ def _compact_store(store: dict[str, Any]) -> bool:
         entry.setdefault("scope_id", str(store.get("conf_uid") or ""))
         entry.setdefault("memory_type", _classify_memory_type(content))
         entry.setdefault("enabled", True)
-        entry.setdefault("status", "active" if entry.get("enabled", True) else "disabled")
+        entry.setdefault("status", _entry_status(entry))
         if not entry.get("subject") or not entry.get("key"):
             subject, key = _default_subject_key(
                 memory_type=entry.get("memory_type", "fact"),
@@ -992,9 +963,7 @@ def _compact_store(store: dict[str, Any]) -> bool:
         entry.setdefault("updated_at", entry.get("created_at") or _now_iso())
 
         existing = _find_existing(merged_entries, content)
-        if existing:
-            if _merge_entry(existing, entry):
-                changed = True
+        if existing and existing == entry:
             changed = True
             continue
         merged_entries.append(entry)
@@ -1087,6 +1056,8 @@ def update_character_memory_status(
     conf_uid: str,
     entry_id: str,
     status: MemoryStatus,
+    *,
+    expected_digest: str | None = None,
 ) -> bool:
     """Update lifecycle status for a memory entry.
 
@@ -1115,14 +1086,19 @@ def update_character_memory_status(
             continue
         if str(entry.get("id") or "") != entry_id:
             continue
+        if expected_digest is not None and expected_digest != review_digest(entry):
+            raise ValueError("Memory changed since review; reload before confirming.")
         enabled = status == "active"
         changed = (
             entry.get("status") != status
             or bool(entry.get("enabled", True)) != enabled
+            or (status == "active" and not lifecycle_active(entry))
         )
         entry["status"] = status
         entry["enabled"] = enabled
         entry["updated_at"] = now
+        if status == "active":
+            authorize(entry, "user_confirmation", entry_id)
         if changed:
             _save_store(conf_uid, store)
         return changed

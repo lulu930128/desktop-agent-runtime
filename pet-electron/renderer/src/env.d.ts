@@ -7,6 +7,7 @@ declare global {
     kuroPetElectron: {
       getInitialConfig: () => {
         baseUrl: string;
+        presentation?: { modelUrl: string; confUid: string; confName: string; scaleWidth: number } | null;
         wsUrl: string;
         zoomScale: number;
         petTransformRevision?: number;
@@ -79,6 +80,7 @@ declare global {
       onCommand: (
         listener: (payload: {
           type: string;
+          presentation?: { modelUrl: string; confUid: string; confName: string; scaleWidth: number };
           enabled?: boolean;
           outfitId?: string;
           parameterId?: string;

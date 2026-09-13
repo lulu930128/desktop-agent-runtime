@@ -15,6 +15,7 @@ export type KuroBackendEvent =
     }
   | {
       type: "assistant-audio";
+      speechStatus?: string;
       displayText: string;
       audioBase64: string | null;
     }

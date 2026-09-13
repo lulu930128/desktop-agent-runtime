@@ -431,7 +431,7 @@ function normalizeSnapshot(candidate, fallbackSnapshot) {
     updatedAt: boundedText(source.updatedAt, 40, fallback.updatedAt || now.toISOString())
   });
   const sections = mergeTodaySections(
-    sectionsSource.map(normalizeSection).filter((section) => section.key),
+    sectionsSource.map(normalizeSection).filter((section) => section.key && section.key !== "calendar"),
     today
   );
   const sourceStatus = Array.isArray(source.sourceStatus)

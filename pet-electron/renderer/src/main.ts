@@ -219,6 +219,7 @@ reportState({
   currentExpressionLabel: initialExpressionLabel,
   live2dInspectorOverlayEnabled: renderer.isInspectorOverlayEnabled()
 });
+client.setPresentationModel(initialConfig.presentation || null);
 client.connect();
 
 const unbindModelPointerControls = bindModelPointerControls(canvas, renderer);

@@ -252,7 +252,7 @@ function buildTodaySnapshot({ mail, sourceToday, fallbackToday, updatedAt } = {}
     ...collectExternalItems(sourceToday),
     ...collectExternalItems(fallbackToday),
     ...mailMessages.map(mailToTodayItem).filter(Boolean)
-  ]).sort(sortTodayItems).slice(0, MAX_TODAY_ITEMS);
+  ]).filter((item) => item.source !== "calendar").sort(sortTodayItems).slice(0, MAX_TODAY_ITEMS);
 
   const levels = bucketItems(items);
   const counts = Object.fromEntries(LEVELS.map((level) => [level, levels[level].length]));

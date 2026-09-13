@@ -36,11 +36,12 @@ class CentralVoiceTests(unittest.TestCase):
             controller.proc_tts.stop.assert_not_called()
 
     def test_shared_profile_switch_only_probes(self):
-        controller = SimpleNamespace(cfg=self.cfg(), current_run_id='test', log=Mock())
+        controller = SimpleNamespace(cfg=self.cfg(), current_run_id='test', log=Mock(), _check_voice_capability=Mock(return_value=False))
         controller.cfg.logs_dir = Path()
         with patch('kuro_launcher.qt_controller.probe_tts', return_value=(True, 'ok')) as probe, patch('kuro_launcher.qt_controller.start_tts') as start:
             self.assertTrue(LauncherController._restart_tts_runtime(controller, Mock(), {}))
-            probe.assert_called_once()
+            probe.assert_not_called()
+            controller._check_voice_capability.assert_called_once()
             start.assert_not_called()
 
     def test_runtime_conf_has_voice_identity_without_reference(self):

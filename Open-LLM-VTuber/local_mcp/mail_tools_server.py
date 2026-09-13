@@ -1665,15 +1665,6 @@ def _build_briefing_snapshot(
                 "modules": [],
             },
             {
-                "key": "calendar",
-                "label": "Calendar",
-                "icon": "C",
-                "count": 0,
-                "subtitle": "\u884c\u7a0b\u8207\u6642\u9593\u7bc0\u9ede",
-                "accent": "accent-yellow",
-                "modules": [],
-            },
-            {
                 "key": "notes",
                 "label": "Notes",
                 "icon": "R",

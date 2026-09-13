@@ -25,6 +25,7 @@ from .types import (
 )
 from ..service_context import ServiceContext
 from ..chat_history_manager import store_message
+from ..mcpp.privacy import project, safe_text
 from .tts_manager import TTSTaskManager
 
 
@@ -149,9 +150,9 @@ async def process_group_conversation(
                     metadata=current_metadata,
                 )
             except Exception as e:
-                logger.error(f"Error in group member turn: {e}")
+                logger.error('Error in group member turn; payload details omitted.')
                 await handle_member_error(
-                    broadcast_func, group_members, f"Error in conversation: {str(e)}"
+                    broadcast_func, group_members, "Error in conversation; details omitted."
                 )
 
     except asyncio.CancelledError:
@@ -160,9 +161,9 @@ async def process_group_conversation(
         )
         raise
     except Exception as e:
-        logger.error(f"Error in group conversation chain: {e}")
+        logger.error('Error in group conversation chain; payload details omitted.')
         await handle_member_error(
-            broadcast_func, group_members, f"Fatal error in conversation: {str(e)}"
+            broadcast_func, group_members, "Fatal error in conversation; details omitted."
         )
         raise
     finally:
@@ -309,7 +310,7 @@ async def handle_group_member_turn(
     if full_response:
         ai_message = f"{context.character_config.character_name}: {full_response}"
         state.conversation_history.append(ai_message)
-        logger.info(f"Appended complete response: {ai_message}")
+        logger.info('Appended complete response; payload details omitted.')
 
         for member_uid in group_members:
             member_context = client_contexts[member_uid]
@@ -380,8 +381,10 @@ async def process_member_response(
                 isinstance(output_item, dict)
                 and output_item.get("type") == "tool_call_status"
             ):
+                output_item = project(output_item)
+                output_item["content"] = safe_text(str(output_item.get("content") or ""), limit=2048)
                 if broadcast_func and group_members:
-                    logger.debug(f"Broadcasting tool status update: {output_item}")
+                    logger.debug('Broadcasting tool status update; payload details omitted.')
                     output_item["name"] = context.character_config.character_name
                     await broadcast_func(group_members, output_item)
                 else:
@@ -401,15 +404,13 @@ async def process_member_response(
                 )
                 full_response += response_part  # Accumulate text response
             else:
-                logger.warning(
-                    f"Received unexpected item type from agent chat stream: {type(output_item)}"
-                )
+                logger.warning('Received unexpected item type from agent chat stream; payload details omitted.')
 
     except Exception as e:
-        logger.exception(f"Error processing group member response stream: {e}")
+        logger.error('Error processing group member response stream; payload details omitted.')
         await current_ws_send(
             json.dumps(
-                {"type": "error", "message": f"Error processing response: {str(e)}"}
+                {"type": "error", "message": "Error processing response; details omitted."}
             )
         )
 

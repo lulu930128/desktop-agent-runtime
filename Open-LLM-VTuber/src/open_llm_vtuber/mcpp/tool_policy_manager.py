@@ -2,12 +2,16 @@ import fnmatch
 import ipaddress
 import json
 import os
+import math
+import hashlib
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 from loguru import logger
+from .tool_identity import legacy_canonical, legacy_name
 
 
 @dataclass(frozen=True)
@@ -15,11 +19,29 @@ class ToolPolicyDecision:
     allowed: bool
     status: str
     reason: str
+    reason_code: str = "argument_policy"
+
+
+def mode_decision(mode: Any) -> ToolPolicyDecision:
+    if not isinstance(mode, str):
+        return ToolPolicyDecision(False, "blocked", "Invalid policy mode.", "invalid_policy_config")
+    mode = mode.strip().lower()
+    if mode == "read_only":
+        return ToolPolicyDecision(True, "allowed", "Configured for bounded read-only use; runtime adoption unverified.", "read_only")
+    code = ("policy_disabled" if mode in {"blocked", "deny", "disabled"} else
+            "confirmation_required" if mode in {"confirm", "needs_confirmation"} else
+            "unsupported_policy_mode" if mode == "scoped_auto" else "unknown_policy_mode")
+    return ToolPolicyDecision(False, "blocked", {
+        "policy_disabled": "Disabled by policy.",
+        "confirmation_required": "Confirmation required; no execution queue is available.",
+        "unsupported_policy_mode": "Policy mode is not implemented.",
+        "unknown_policy_mode": "Unknown policy mode.",
+    }[code], code)
 
 
 class ToolPolicy:
     def __init__(self, policy: dict[str, Any] | None = None) -> None:
-        self.policy = policy if isinstance(policy, dict) else {}
+        self.policy = deepcopy(policy) if isinstance(policy, dict) else {}
         self.tools = self.policy.get("tools") if isinstance(self.policy.get("tools"), dict) else {}
         self.filesystem = (
             self.policy.get("filesystem")
@@ -27,7 +49,23 @@ class ToolPolicy:
             else {}
         )
         self.web = self.policy.get("web") if isinstance(self.policy.get("web"), dict) else {}
-        self.default_mode = str(self.policy.get("default_mode") or "blocked").strip().lower()
+        self.default_mode = self.policy.get("default_mode", "blocked")
+        self.valid = isinstance(self.policy.get("tools", {}), dict)
+        for section, list_keys, bool_keys in (
+            ("filesystem", ("deny_path_patterns", "deny_path_parts"), ()),
+            ("web", ("blocked_hostnames",), ("block_private_networks",)),
+        ):
+            value = self.policy.get(section, {})
+            self.valid = self.valid and isinstance(value, dict)
+            if isinstance(value, dict):
+                self.valid = self.valid and all(_string_list(value[k]) for k in list_keys if k in value)
+                self.valid = self.valid and all(type(value[k]) is bool for k in bool_keys if k in value)
+        try:
+            serialized = json.dumps(self.policy, sort_keys=True, allow_nan=False)
+        except (TypeError, ValueError):
+            self.valid = False
+            serialized = "invalid_policy_config"
+        self.digest = hashlib.sha256(serialized.encode()).hexdigest()
 
     @classmethod
     def load_default(cls) -> "ToolPolicy":
@@ -36,33 +74,35 @@ class ToolPolicy:
             try:
                 return cls(json.loads(path.read_text(encoding="utf-8")))
             except Exception as exc:
-                logger.warning(f"Failed to load tool policy from {path}: {exc}")
+                logger.warning("Failed to load tool policy; using fail-closed defaults.")
         return cls({"default_mode": "blocked", "tools": {}})
 
     def check(self, tool_name: str, tool_args: Any) -> ToolPolicyDecision:
-        tool_name = (tool_name or "").strip()
-        args = tool_args if isinstance(tool_args, dict) else {}
-        tool_cfg = self.tools.get(tool_name)
+        tool_name = tool_name.strip() if isinstance(tool_name, str) else ""
+        args = tool_args
+        if not self.valid or not isinstance(args, dict):
+            return ToolPolicyDecision(False, "blocked", "Invalid policy configuration or arguments.", "invalid_policy_config")
+        canonical = legacy_canonical(tool_name)
+        raw = legacy_name(canonical)
+        tool_cfg = self.tools.get(canonical, self.tools.get(raw))
+        # A legacy deny remains a deny during an incremental configuration migration.
+        if canonical in self.tools and raw != canonical and raw in self.tools:
+            legacy_cfg = self.tools[raw]
+            if not isinstance(legacy_cfg, dict) or not mode_decision(legacy_cfg.get("mode", self.default_mode)).allowed:
+                tool_cfg = legacy_cfg
         if not isinstance(tool_cfg, dict):
             return ToolPolicyDecision(
                 allowed=False,
                 status="blocked",
-                reason=f"Tool '{tool_name or 'unknown'}' is not registered in runtime policy.",
+                reason="Tool is not registered in runtime policy.",
+                reason_code="unregistered_tool",
             )
 
-        mode = str(tool_cfg.get("mode") or self.default_mode).strip().lower()
-        if mode in {"blocked", "deny", "disabled"}:
-            return ToolPolicyDecision(
-                allowed=False,
-                status="blocked",
-                reason=f"Tool '{tool_name}' is disabled by runtime policy.",
-            )
-        if mode in {"confirm", "needs_confirmation"}:
-            return ToolPolicyDecision(
-                allowed=False,
-                status="blocked",
-                reason=f"Tool '{tool_name}' requires confirmation, but this runtime has no confirmation flow yet.",
-            )
+        if not _valid_tool_config(tool_cfg):
+            return ToolPolicyDecision(False, "blocked", "Invalid tool policy rules.", "invalid_policy_config")
+        decision = mode_decision(tool_cfg.get("mode", self.default_mode))
+        if not decision.allowed:
+            return decision
 
         argument_decision = self._check_argument_rules(tool_name, tool_cfg, args)
         if not argument_decision.allowed:
@@ -106,7 +146,7 @@ class ToolPolicy:
                     return ToolPolicyDecision(
                         allowed=False,
                         status="blocked",
-                        reason=f"Tool '{tool_name}' cannot use value '{args.get(arg_key)}' for argument '{arg_key}' under the current policy.",
+                        reason=f"Tool argument '{arg_key}' is blocked by policy.",
                     )
 
         max_numeric_args = tool_cfg.get("max_numeric_args") or {}
@@ -184,7 +224,7 @@ class ToolPolicy:
                 if fnmatch.fnmatch(normalized, pattern_text) or fnmatch.fnmatch(
                     basename, pattern_text
                 ):
-                    return f"Path is blocked by runtime policy: {raw_path}"
+                    return "Path is blocked by runtime policy."
         return ""
 
     def _check_url_args(
@@ -207,11 +247,15 @@ class ToolPolicy:
         return ToolPolicyDecision(True, "allowed", "Allowed by runtime policy.")
 
     def _deny_reason_for_url(self, raw_url: str) -> str:
-        parsed = urlparse(raw_url)
+        try:
+            parsed = urlparse(raw_url)
+            host = (parsed.hostname or "").strip().lower()
+            parsed.port  # Validate malformed ports without reflecting the URL.
+        except ValueError:
+            return "URL is malformed."
         if parsed.scheme.lower() not in {"http", "https"}:
             return "URL is blocked by runtime policy because only HTTP/HTTPS public pages are allowed."
 
-        host = (parsed.hostname or "").strip().lower()
         if not host:
             return "URL is blocked by runtime policy because it has no hostname."
 
@@ -271,7 +315,8 @@ def _numeric_arg_value(value: Any) -> float | None:
     if isinstance(value, bool) or value is None:
         return None
     try:
-        return float(value)
+        numeric = float(value)
+        return numeric if math.isfinite(numeric) else None
     except (TypeError, ValueError):
         return None
 
@@ -284,3 +329,28 @@ def _normalized_blocked_values(values: Any) -> set[str]:
     if isinstance(values, list):
         return {_normalized_arg_value(item) for item in values}
     return {_normalized_arg_value(values)}
+
+
+def _string_list(value: Any) -> bool:
+    return isinstance(value, list) and all(isinstance(x, str) and bool(x.strip()) for x in value)
+
+
+def _valid_tool_config(cfg: dict[str, Any]) -> bool:
+    known = {"mode", "category", "path_args", "url_args", "deny_truthy_args", "deny_values", "max_numeric_args", "allow_hidden", "block_private_urls"}
+    if set(cfg) - known:
+        return False
+    for key in ("path_args", "url_args", "deny_truthy_args"):
+        if key in cfg and not _string_list(cfg[key]):
+            return False
+    for key in ("allow_hidden", "block_private_urls"):
+        if key in cfg and type(cfg[key]) is not bool:
+            return False
+    if "deny_values" in cfg:
+        values = cfg["deny_values"]
+        if not isinstance(values, dict) or not all(isinstance(k, str) and k and isinstance(v, list) and all(type(x) in (str, bool, int, float) for x in v) for k, v in values.items()):
+            return False
+    if "max_numeric_args" in cfg:
+        values = cfg["max_numeric_args"]
+        if not isinstance(values, dict) or not all(isinstance(k, str) and all(k.split('.')) and _numeric_arg_value(v) is not None for k, v in values.items()):
+            return False
+    return True

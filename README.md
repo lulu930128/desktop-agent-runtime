@@ -30,6 +30,8 @@ Kuro 整合工作面板、Live2D 桌寵、Reader、Briefing、角色語音、受
 
 本機環境已備妥時，執行根目錄 `桌寵啟動器.vbs`。工作面板先顯示，Qt Launcher 背景管理服務；再次執行可喚回面板，關閉面板通常只隱藏到 tray。
 
+工作面板是唯一日常入口，直接執行 Launcher 也不再開啟舊控制台。桌寵從本機模型載入；中央語音離線時仍可啟動文字對話。故障原因、重試、找回桌寵與版本重新載入位於「設定 → 診斷」，詳見[故障排查](docs/guides/troubleshooting.md)。
+
 第一次使用請讀[開始使用](docs/guides/getting-started.md)。Git 不包含 Python 環境、模型、私人語音或憑證；中央語音需獨立準備。`00_kuro_bootstrap.ps1` 與 `compose.yaml` 是舊實驗，不是完整安裝入口。
 
 ## 如何協作
@@ -48,7 +50,7 @@ Launcher 管啟動與診斷，conversation runtime 管對話與工具，Electron
 
 ## 目前限制
 
-- `kuro_core/` 仍是 shadow，未取代 Today／Briefing。完整工作管理依 [Roadmap](docs/product/Roadmap.md)逐項驗收。
+- 本機[時間表](docs/agent-runs/kuro-local-schedule-core/Usage.md)已由 Core 保存與排程提醒；Observation／其他 Today、Briefing 來源仍是 shadow 遷移階段。完整工作管理依 [Roadmap](docs/product/Roadmap.md)逐項驗收。
 - 工作面板特定操作已有原生確認；一般工具 `confirm` 模式目前會拒絕執行，不是完整確認佇列。
 - 寫入、刪除、發送、發布、長期記憶修改與高成本操作遵守工具政策，不能因 persona 或 prompt 繞過。
 - 中央語音仍有人工聽感與桌面互動待驗收，見[語音文件](docs/central-voice-runtime.md)。

@@ -3329,8 +3329,10 @@ async def finalize_conversation_turn(
     """Finalize a conversation turn"""
     if tts_manager.task_list:
         await asyncio.gather(*tts_manager.task_list)
+        await tts_manager._payload_queue.join()
         await websocket_send(json.dumps({"type": "backend-synth-complete"}))
 
+    if tts_manager.audio_output_count:
         try:
             response = await asyncio.wait_for(
                 message_handler.wait_for_response(

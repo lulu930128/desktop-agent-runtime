@@ -53,9 +53,7 @@ class AsyncLLM(StatelessLLMInterface):
         )
         self.support_tools = True
 
-        logger.info(
-            f"Initialized AsyncLLM with the parameters: {self.base_url}, {self.model}"
-        )
+        logger.info('Initialized AsyncLLM with the parameters; payload details omitted.')
 
     async def chat_completion(
         self,
@@ -93,7 +91,7 @@ class AsyncLLM(StatelessLLMInterface):
                     {"role": "system", "content": system},
                     *messages,
                 ]
-            logger.debug(f"Messages: {messages_with_system}")
+            logger.debug('Messages; payload details omitted.')
 
             available_tools = tools if self.support_tools else NOT_GIVEN
 
@@ -106,9 +104,7 @@ class AsyncLLM(StatelessLLMInterface):
                 temperature=self.temperature,
                 tools=available_tools,
             )
-            logger.debug(
-                f"Tool Support: {self.support_tools}, Available tools: {available_tools}"
-            )
+            logger.debug('Tool Support; payload details omitted.')
 
             async for chunk in stream:
                 if self.support_tools:
@@ -118,9 +114,7 @@ class AsyncLLM(StatelessLLMInterface):
                     )
 
                     if has_tool_calls:
-                        logger.debug(
-                            f"Tool calls detected in chunk: {chunk.choices[0].delta.tool_calls}"
-                        )
+                        logger.debug('Tool calls detected in chunk; payload details omitted.')
                         in_tool_call = True
                         # Process tool calls in the current chunk
                         for tool_call in chunk.choices[0].delta.tool_calls:
@@ -166,7 +160,7 @@ class AsyncLLM(StatelessLLMInterface):
                     elif in_tool_call and not has_tool_calls:
                         in_tool_call = False
                         # Convert accumulated tool calls to the required format and output
-                        logger.info(f"Complete tool calls: {accumulated_tool_calls}")
+                        logger.info('Complete tool calls; payload details omitted.')
 
                         # Use the from_dict method to create a ToolCallObject instance from a dictionary
                         complete_tool_calls = [
@@ -187,7 +181,7 @@ class AsyncLLM(StatelessLLMInterface):
 
             # If stream ends while still in a tool call, make sure to yield the tool call
             if in_tool_call and accumulated_tool_calls:
-                logger.info(f"Final tool call at stream end: {accumulated_tool_calls}")
+                logger.info('Final tool call at stream end; payload details omitted.')
 
                 # Create a ToolCallObject instance from a dictionary using the from_dict method.
                 complete_tool_calls = [
@@ -198,30 +192,24 @@ class AsyncLLM(StatelessLLMInterface):
                 yield complete_tool_calls
 
         except APIConnectionError as e:
-            logger.error(
-                f"Error calling the chat endpoint: Connection error. Failed to connect to the LLM API. \nCheck the configurations and the reachability of the LLM backend. \nSee the logs for details. \nTroubleshooting with documentation: https://open-llm-vtuber.github.io/docs/faq#%E9%81%87%E5%88%B0-error-calling-the-chat-endpoint-%E9%94%99%E8%AF%AF%E6%80%8E%E4%B9%88%E5%8A%9E \n{e.__cause__}"
-            )
+            logger.error('Error calling the chat endpoint: Connection error. Failed to connect to the LLM API. \nCheck the configurations and the reachability of the LLM backend. \nSee the logs for details. \nTroubleshooting with documentation: https://open-llm-vtuber.github.io/docs/faq#%E9%81%87%E5%88%B0-error-calling-the-chat-endpoint-%E9%94%99%E8%AF%AF%E6%80%8E%E4%B9%88%E5%8A%9E; payload details omitted.')
             yield "Error calling the chat endpoint: Connection error. Failed to connect to the LLM API. Check the configurations and the reachability of the LLM backend. See the logs for details. Troubleshooting with documentation: [https://open-llm-vtuber.github.io/docs/faq#%E9%81%87%E5%88%B0-error-calling-the-chat-endpoint-%E9%94%99%E8%AF%AF%E6%80%8E%E4%B9%88%E5%8A%9E]"
 
         except RateLimitError as e:
-            logger.error(
-                f"Error calling the chat endpoint: Rate limit exceeded: {e.response}"
-            )
+            logger.error('Error calling the chat endpoint: Rate limit exceeded; payload details omitted.')
             yield "Error calling the chat endpoint: Rate limit exceeded. Please try again later. See the logs for details."
 
         except APIError as e:
             if "does not support tools" in str(e):
                 self.support_tools = False
-                logger.warning(
-                    f"{self.model} does not support tools. Disabling tool support."
-                )
+                logger.warning('does not support tools. Disabling tool support.; payload details omitted.')
                 yield "__API_NOT_SUPPORT_TOOLS__"
                 return
-            logger.error(f"LLM API: Error occurred: {e}")
-            logger.info(f"Base URL: {self.base_url}")
-            logger.info(f"Model: {self.model}")
-            logger.info(f"Messages: {messages}")
-            logger.info(f"temperature: {self.temperature}")
+            logger.error('LLM API: Error occurred; payload details omitted.')
+            logger.info('Base URL; payload details omitted.')
+            logger.info('Model; payload details omitted.')
+            logger.info('Messages; payload details omitted.')
+            logger.info('temperature; payload details omitted.')
             yield "Error calling the chat endpoint: Error occurred while generating response. See the logs for details."
 
         finally:

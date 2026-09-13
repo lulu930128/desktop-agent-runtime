@@ -92,6 +92,7 @@ export const llmVtuberAdapter: BackendProtocolAdapter = {
     if (messageType === "audio") {
       events.push({
         type: "assistant-audio",
+        speechStatus: typeof payload.speech_status === 'string' ? payload.speech_status : undefined,
         displayText: normalizeText(payload.display_text?.text || ""),
         audioBase64: payload.audio || null
       });

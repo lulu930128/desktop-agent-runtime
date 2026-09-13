@@ -27,6 +27,7 @@ class TTSTaskManager:
         self._sequence_counter = 0
         self._next_sequence_to_send = 0
         self.voice_task_count = 0
+        self.audio_output_count = 0
         self.speech_fallback_count = 0
         self._deferred_speech_display_parts: List[str] = []
         self._deferred_speech_tts_parts: List[str] = []
@@ -213,6 +214,9 @@ class TTSTaskManager:
                 actions=actions,
             )
             # Queue the payload with its sequence number
+            payload['speech_status'] = 'available' if audio_file_path else 'unavailable'
+            if audio_file_path:
+                self.audio_output_count += 1
             await self._payload_queue.put((payload, sequence_number))
 
         except Exception as e:

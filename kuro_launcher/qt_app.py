@@ -4,6 +4,7 @@ import base64
 import datetime
 import mimetypes
 import threading
+import uuid
 from pathlib import Path
 from typing import Callable
 
@@ -47,6 +48,8 @@ from .qt_controller import (
 )
 from .records import HistoryRecord
 from .utils import log_ts
+from .work_panel_activation import record_activation
+from .work_panel_recovery import WorkPanelRecoveryDialog
 
 
 BRIEFING_NAV = [
@@ -85,6 +88,7 @@ class KuroQtLauncherWindow(QMainWindow):
     task_finished = Signal(str, object)
     task_failed = Signal(str, str)
     log_signal = Signal(str)
+    restart_requested = Signal()
 
     def __init__(self, cfg: AppConfig, *, open_work_panel_on_start: bool = False):
         super().__init__()
@@ -92,9 +96,13 @@ class KuroQtLauncherWindow(QMainWindow):
         self.open_work_panel_on_start = bool(open_work_panel_on_start)
         self.work_panel_activation_inflight = False
         self.work_panel_activation_pending = False
+        self.work_panel_pending_request = None
+        self.work_panel_recovery_dialog = None
         self.work_panel_has_been_revealed = False
         self.work_panel_last_revealed_instance_id = ""
         self.controller = QtLauncherController(cfg, self._append_log_threadsafe)
+        self.controller.request_restart = self.restart_requested.emit
+        self.restart_requested.connect(self._restart_launcher)
         self.nav_buttons: dict[str, QPushButton] = {}
         self.nav_base_labels: dict[str, str] = {}
         self.service_labels: dict[str, QLabel] = {}
@@ -164,6 +172,9 @@ class KuroQtLauncherWindow(QMainWindow):
         self.status_timer = QTimer(self)
         self.status_timer.timeout.connect(self.refresh_status)
         self.status_timer.start(2500)
+        self.runtime_timer = QTimer(self)
+        self.runtime_timer.timeout.connect(lambda: self._run_task('runtime-reconcile', self.controller.reconcile_runtime, quiet=True))
+        self.runtime_timer.start(10000)
         self.refresh_status()
         self.refresh_briefing()
         self._schedule_startup_auto_start()
@@ -1393,7 +1404,7 @@ class KuroQtLauncherWindow(QMainWindow):
     def _run_startup_auto_start(self) -> None:
         if not self.controller.selected_character() or not self.controller.selected_project():
             self._append_log(f"[{log_ts()}] startup_profile 自動啟動略過：角色或專案尚未選定。")
-            self._restore_startup_console("startup profile 缺少角色或專案。")
+            self._show_work_panel_recovery("startup profile 缺少角色或專案。")
             return
         character = self.controller.selected_character()
         project = self.controller.selected_project()
@@ -1406,7 +1417,11 @@ class KuroQtLauncherWindow(QMainWindow):
 
     def request_work_panel_activation(self, source: str = "launcher") -> None:
         self.work_panel_activation_pending = True
-        self._append_log(f"[{log_ts()}] 工作面板 activation requested：{source}")
+        request = {"request_id": uuid.uuid4().hex[:12], "source": source}
+        if self.work_panel_pending_request:
+            record_activation("activation-coalesced", self.work_panel_pending_request, self._append_log)
+        self.work_panel_pending_request = request
+        record_activation("activation-request-received", request, self._append_log)
         if self.work_panel_activation_inflight:
             return
         self._run_pending_work_panel_activation()
@@ -1415,19 +1430,21 @@ class KuroQtLauncherWindow(QMainWindow):
         if self.work_panel_activation_inflight or not self.work_panel_activation_pending:
             return
         self.work_panel_activation_pending = False
+        request = self.work_panel_pending_request
+        self.work_panel_pending_request = None
         self.work_panel_activation_inflight = True
         self._run_task(
             "ensure-work-panel",
-            self.controller.ensure_work_panel,
+            lambda: self.controller.ensure_work_panel(**request),
         )
 
-    def _restore_startup_console(self, reason: str) -> None:
-        if not self.open_work_panel_on_start:
-            return
-        self._append_log(
-            f"[{log_ts()}] 工作面板啟動失敗；依單一面板模式不開啟舊控制台：{reason}"
-        )
-        self.hide()
+    def _show_work_panel_recovery(self, reason: str, *, allow_retry: bool = True) -> None:
+        # A top-level modeless dialog is usable even when the console is hidden.
+        if self.work_panel_recovery_dialog is None:
+            self.work_panel_recovery_dialog = WorkPanelRecoveryDialog(
+                lambda: self.request_work_panel_activation("recovery-dialog")
+            )
+        self.work_panel_recovery_dialog.reveal(reason, allow_retry=allow_retry)
 
     def _start_profile(self) -> None:
         desired_history_uid = self.pending_history_uid
@@ -2316,6 +2333,24 @@ class KuroQtLauncherWindow(QMainWindow):
             return
         self._run_task("compact-memory", self.controller.compact_memory)
 
+    def _restart_launcher(self) -> None:
+        import os
+        import subprocess
+        import sys
+        from .utils import windows_hidden_subprocess_kwargs
+        self.status_timer.stop()
+        self.runtime_timer.stop()
+        self.controller.lifecycle.desired_running = False
+        log_path = self.cfg.logs_dir / 'launcher-relaunch.log'
+        with log_path.open('ab') as output:
+            subprocess.Popen([sys.executable, str(self.cfg.root / 'kuro_launcher' / 'relaunch.py'), str(os.getpid())],
+                             cwd=self.cfg.root, stdout=output, stderr=output, **windows_hidden_subprocess_kwargs())
+        self.close()
+        # The Work Panel mode keeps the Qt application alive without visible
+        # windows, so closing the hidden console alone does not release its lock.
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance().quit()
+
     def refresh_status(self) -> None:
         self._run_task("status", self.controller.read_runtime_status, quiet=True)
 
@@ -2338,10 +2373,19 @@ class KuroQtLauncherWindow(QMainWindow):
         threading.Thread(target=runner, daemon=True).start()
 
     def _on_task_finished(self, name: str, result: object) -> None:
+        if name == 'runtime-reconcile':
+            return
         if name == "ensure-work-panel":
             self.work_panel_activation_inflight = False
-            self.work_panel_activation_pending = False
+            if not isinstance(result, dict) or result.get("ok") is not True:
+                self._on_task_failed(name, "WP_INVALID_RESULT：工作面板未回傳成功結果。")
+                return
             self.work_panel_has_been_revealed = True
+            self._run_task('runtime-reconcile', self.controller.reconcile_runtime, quiet=True)
+            if self.work_panel_recovery_dialog is not None:
+                self.work_panel_recovery_dialog.hide()
+            if self.work_panel_activation_pending:
+                QTimer.singleShot(0, self._run_pending_work_panel_activation)
             if isinstance(result, dict):
                 self.work_panel_last_revealed_instance_id = str(
                     result.get("instance_id") or ""
@@ -2463,10 +2507,11 @@ class KuroQtLauncherWindow(QMainWindow):
         if name == "ensure-work-panel":
             self.work_panel_activation_inflight = False
         if name in {"start-profile", "ensure-work-panel"}:
-            self._restore_startup_console(message)
+            self._show_work_panel_recovery(message, allow_retry=name == "ensure-work-panel")
         self._append_log(f"[{log_ts()}] task failed: {name} / {message}")
         self._set_action_status(f"失敗：{name} / {message}", error=True)
-        QMessageBox.warning(self, "Kuro Desktop Console", message)
+        if name not in {"start-profile", "ensure-work-panel"}:
+            QMessageBox.warning(self, "Kuro Desktop Console", message)
         self.refresh_status()
         if name == "ensure-work-panel" and self.work_panel_activation_pending:
             QTimer.singleShot(250, self._run_pending_work_panel_activation)

@@ -152,6 +152,10 @@ class WorkPanelControlServer:
                     return {"ok": True, "service": "kuro-launcher-control", "version": 1}
                 if path == "/v1/profile":
                     return owner.controller.work_panel_profile_state()
+                if path == '/v1/runtime':
+                    return {'ok': True, 'runtime': owner.controller.lifecycle.snapshot()}
+                if path == '/v1/presentation':
+                    return owner.controller.presentation_state()
                 if path == "/v1/history":
                     history_uid = str((query.get("history_uid") or [""])[0]).strip()
                     if history_uid:
@@ -168,6 +172,19 @@ class WorkPanelControlServer:
                     raise PermissionError("This action requires explicit confirmation.")
 
             def _dispatch_write(self, path: str, payload: dict) -> dict:
+                if path == '/v1/runtime/restart-launcher':
+                    self._confirmed(payload)
+                    if owner.controller.lifecycle.phase == 'starting':
+                        raise RuntimeError('啟動作業仍在進行，請稍後重新載入')
+                    owner.controller.request_restart()
+                    return {'ok': True, 'restarting': True}
+                if path == '/v1/runtime/retry':
+                    self._confirmed(payload)
+                    return owner.controller.retry_runtime()
+                if path == '/v1/runtime/stop':
+                    self._confirmed(payload)
+                    owner.controller.stop_profile(stop_bridge=False, stop_pet=False)
+                    return {'ok': True}
                 if path == "/v1/profile/apply":
                     self._confirmed(payload)
                     thinking_power = str(payload.get("thinking_power") or "normal").strip()
@@ -205,9 +222,13 @@ class WorkPanelControlServer:
                     status = str(payload.get("status") or "").strip()
                     if status not in MEMORY_STATUSES:
                         raise ValueError("Unsupported memory status.")
+                    digest = str(payload.get("content_digest") or "")
+                    if status == "active" and (len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest)):
+                        raise ValueError("Reload the memory before approving its current content.")
                     changed = owner.controller.set_memory_status(
                         str(payload.get("entry_id") or "").strip(),
                         status,
+                        expected_digest=digest or None,
                     )
                     return {"ok": True, "changed": changed, **owner.controller.work_panel_memory_state()}
                 if path == "/v1/memory/delete":

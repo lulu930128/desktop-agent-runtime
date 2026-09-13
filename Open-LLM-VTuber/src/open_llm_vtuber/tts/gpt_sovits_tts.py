@@ -4,6 +4,7 @@ import re
 import time
 import io
 import wave
+import threading
 from pathlib import Path
 
 import requests
@@ -75,6 +76,8 @@ class TTSEngine(TTSInterface):
         self.media_type = media_type
         self.streaming_mode = streaming_mode
         self.speed_factor = _safe_speed_factor(speed_factor)
+        self._voice_lock = threading.Lock()
+        self._voice_retry_at = 0.0
 
     def generate_audio(self, text, file_name_no_ext=None):
         file_name = self.generate_cache_file_name(file_name_no_ext, self.media_type)
@@ -82,25 +85,44 @@ class TTSEngine(TTSInterface):
         cleaned_text = re.sub(r"\[.*?\]", "", text)
         cleaned_text = (cleaned_text or "").strip()
         if self.voice_id:
-            if not cleaned_text:
-                return None
-            payload = dict(voice=self.voice_id, text=cleaned_text, language=self.text_lang,
-                           speed_factor=self.speed_factor)
-            try:
-                response = requests.post(self.api_url, json=payload, timeout=180)
-                response.raise_for_status()
-                if response.headers.get('Content-Type', '').split(';')[0] != 'audio/wav':
-                    raise ValueError('Expected WAV audio')
-                with wave.open(io.BytesIO(response.content), 'rb') as audio:
-                    count = audio.getnframes()
-                    if count <= 0 or len(audio.readframes(count)) != count * audio.getnchannels() * audio.getsampwidth():
-                        raise ValueError('Empty or truncated WAV')
-                Path(file_name).write_bytes(response.content)
-                return file_name
-            except (requests.RequestException, ValueError, wave.Error, EOFError, OSError) as exc:
-                logger.error('Central voice request failed: {}', type(exc).__name__)
-                return None
+            with self._voice_lock:
+                return self._generate_central_audio(cleaned_text, file_name)
 
+        return self._generate_legacy_audio(text, cleaned_text, file_name)
+
+    def _generate_central_audio(self, cleaned_text, file_name):
+        if not cleaned_text:
+            return None
+        if time.monotonic() < self._voice_retry_at:
+            return None
+        payload = dict(voice=self.voice_id, text=cleaned_text, language=self.text_lang,
+                       speed_factor=self.speed_factor)
+        try:
+            # Discovery is cheap and never synthesizes speech. Do not queue a
+            # backlog against an unavailable shared engine or retry an utterance.
+            health = requests.get(self.api_url.rsplit('/tts', 1)[0] + '/health', timeout=(1, 2), allow_redirects=False)
+            health.raise_for_status()
+            identity = health.json()
+            if identity.get('service') != 'voice-runtime' or identity.get('protocol_version') != 1:
+                raise ValueError('Unexpected voice runtime identity')
+            if identity.get('status') != 'available':
+                raise ValueError('Voice runtime unavailable or busy')
+            response = requests.post(self.api_url, json=payload, timeout=(1, 30), allow_redirects=False)
+            response.raise_for_status()
+            if response.headers.get('Content-Type', '').split(';')[0] != 'audio/wav':
+                raise ValueError('Expected WAV audio')
+            with wave.open(io.BytesIO(response.content), 'rb') as audio:
+                count = audio.getnframes()
+                if count <= 0 or len(audio.readframes(count)) != count * audio.getnchannels() * audio.getsampwidth():
+                    raise ValueError('Empty or truncated WAV')
+            Path(file_name).write_bytes(response.content)
+            return file_name
+        except (requests.RequestException, ValueError, wave.Error, EOFError, OSError) as exc:
+            self._voice_retry_at = time.monotonic() + 30
+            logger.error('Central voice request failed: {}', type(exc).__name__)
+            return None
+
+    def _generate_legacy_audio(self, text, cleaned_text, file_name):
         data = {
             "text": cleaned_text,
             "text_lang": (self.text_lang or "").strip(),

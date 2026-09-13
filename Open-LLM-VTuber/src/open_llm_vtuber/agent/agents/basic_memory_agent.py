@@ -32,6 +32,8 @@ from ...mcpp.tool_manager import ToolManager
 from ...mcpp.json_detector import StreamJSONDetector
 from ...mcpp.types import ToolCallObject
 from ...mcpp.tool_executor import ToolExecutor
+from ...mcpp.tool_identity import legacy_canonical
+from ...mcpp.privacy import project, safe_text
 from ...mcpp.market_preflight import (
     OMI_ASK_STREAM_TOOL_NAME,
     build_autonomous_omi_args,
@@ -140,7 +142,7 @@ class BasicMemoryAgent(AgentInterface):
 
     def set_system(self, system: str):
         """Set the system prompt."""
-        logger.debug(f"Memory Agent: Setting system prompt: '''{system}'''")
+        logger.debug("Memory Agent: Setting system prompt: '''; payload details omitted.")
 
         if self.interrupt_method == "user":
             system = f"{system}\n\nIf you received `[interrupted by user]` signal, you were interrupted."
@@ -167,9 +169,7 @@ class BasicMemoryAgent(AgentInterface):
         elif isinstance(message, str):
             text_content = message
         else:
-            logger.warning(
-                f"_add_message received unexpected message type: {type(message)}"
-            )
+            logger.warning('_add_message received unexpected message type; payload details omitted.')
             text_content = str(message)
 
         if not text_content and role == "assistant":
@@ -261,7 +261,7 @@ class BasicMemoryAgent(AgentInterface):
                     }
                 )
             else:
-                logger.warning(f"Skipping invalid message from history: {msg}")
+                logger.warning('Skipping invalid message from history; payload details omitted.')
         omi_memory = format_omi_events_for_memory(
             read_history_events(
                 conf_uid,
@@ -447,7 +447,7 @@ class BasicMemoryAgent(AgentInterface):
             if character_memory_prompt:
                 sections.append(character_memory_prompt)
         except Exception as exc:
-            logger.warning(f"Failed to build relevant memory prompt: {exc}")
+            logger.warning('Failed to build relevant memory prompt; payload details omitted.')
         try:
             history_prompt = format_past_conversations_for_prompt(
                 self._memory_conf_uid,
@@ -459,7 +459,7 @@ class BasicMemoryAgent(AgentInterface):
             if history_prompt:
                 sections.append(history_prompt)
         except Exception as exc:
-            logger.warning(f"Failed to build cross-history memory prompt: {exc}")
+            logger.warning('Failed to build cross-history memory prompt; payload details omitted.')
         return "\n\n".join(sections)
 
     def _compose_tool_system_prompt(
@@ -588,7 +588,7 @@ class BasicMemoryAgent(AgentInterface):
                 elif event["type"] == "message_stop":
                     break
                 elif event["type"] == "error":
-                    logger.error(f"LLM API Error: {event['message']}")
+                    logger.error('LLM API Error; payload details omitted.')
                     yield f"[Error from LLM: {event['message']}]"
                     return
 
@@ -713,10 +713,10 @@ class BasicMemoryAgent(AgentInterface):
                                     if detected_prompt_json:
                                         break
                                 except Exception as e:
-                                    logger.error(f"Error parsing detected JSON: {e}")
+                                    logger.error('Error parsing detected JSON; payload details omitted.')
                                     if self._json_detector:
                                         self._json_detector.reset()
-                                    yield f"[Error parsing tool JSON: {e}]"
+                                    yield "[Error parsing tool JSON; private details omitted.]"
                                     goto_next_while_iteration = True
                                     break
                         yield event
@@ -917,19 +917,15 @@ class BasicMemoryAgent(AgentInterface):
                             route_text=route_request_text,
                             last_resolution=self._last_omi_resolution,
                         )
-                        logger.info(
-                            "Autonomous read-only OMI preflight selected: "
-                            f"target={tool_args.get('target')}, "
-                            f"mode={tool_args.get('mode')}"
-                        )
+                        logger.info('Autonomous read-only OMI preflight selected: target=; payload details omitted.')
 
                         tool_results_for_llm = []
                         stream_preflight_succeeded = False
-                        stream_policy_allowed = True
+                        stream_policy_allowed = False
                         tool_policy = getattr(self._tool_executor, "_tool_policy", None)
                         if tool_policy:
-                            policy_decision = tool_policy.check(
-                                OMI_ASK_STREAM_TOOL_NAME,
+                            policy_decision = self._tool_executor.check_call(
+                                legacy_canonical(OMI_ASK_STREAM_TOOL_NAME),
                                 tool_args,
                             )
                             stream_policy_allowed = policy_decision.allowed
@@ -943,14 +939,7 @@ class BasicMemoryAgent(AgentInterface):
                             stream_events: List[Dict[str, Any]] = []
                             try:
                                 async for event in stream_omi_ask_events(tool_args):
-                                    if event.get("event") == "transport_error":
-                                        logger.warning(
-                                            "Autonomous OMI stream preflight transport failed; "
-                                            "falling back to MCP omi.ask: "
-                                            f"{event.get('data')}"
-                                        )
-                                        break
-
+                                    event = project(event)
                                     stream_events.append(event)
                                     status_update = format_omi_stream_status_update(event)
                                     if status_update:
@@ -968,26 +957,22 @@ class BasicMemoryAgent(AgentInterface):
                                         "a final, error, or delta result."
                                     )
                             except asyncio.CancelledError:
-                                current_task = asyncio.current_task()
-                                cancelling = getattr(current_task, "cancelling", None)
-                                if callable(cancelling) and cancelling():
-                                    raise
-                                logger.warning(
-                                    "Autonomous OMI stream preflight was cancelled; "
-                                    "falling back to MCP omi.ask."
-                                )
+                                raise
                             except Exception as exc:
-                                logger.warning(
-                                    "Autonomous OMI stream preflight failed; "
-                                    f"falling back to MCP omi.ask: {exc}"
-                                )
+                                logger.warning('Autonomous OMI stream failed; outcome unknown, no automatic retry.')
+
+                            if not stream_preflight_succeeded:
+                                tool_results_for_llm = [{"tool_id": "autonomous_omi_preflight", "is_error": True,
+                                                        "content": "OMI stream ended without a final result; execution outcome unknown. No automatic retry."}]
+                            # A dispatched stream consumes this attempt even on failure.
+                            stream_preflight_succeeded = True
 
                         if not stream_preflight_succeeded:
                             tool_executor_iterator = self._tool_executor.execute_tools(
                                 tool_calls=[
                                     {
                                         "id": "autonomous_omi_preflight",
-                                        "name": "omi.ask",
+                                        "name": legacy_canonical("omi.ask"),
                                         "input": tool_args,
                                     }
                                 ],
@@ -1013,10 +998,7 @@ class BasicMemoryAgent(AgentInterface):
                                     "answered without OMI, or use another available data "
                                     "source if the route allows it."
                                 )
-                                logger.warning(
-                                    "Autonomous OMI preflight cancelled by MCP transport: "
-                                    f"{exc}"
-                                )
+                                logger.warning('Autonomous OMI preflight cancelled by MCP transport; payload details omitted.')
                                 yield {
                                     "type": "tool_call_status",
                                     "tool_id": "autonomous_omi_preflight",
@@ -1170,6 +1152,6 @@ class BasicMemoryAgent(AgentInterface):
         except FileNotFoundError:
             logger.error(f"Group conversation prompt file not found: {prompt_name}")
         except KeyError as e:
-            logger.error(f"Missing formatting key in group conversation prompt: {e}")
+            logger.error('Missing formatting key in group conversation prompt; payload details omitted.')
         except Exception as e:
-            logger.error(f"Failed to load group conversation prompt: {e}")
+            logger.error('Failed to load group conversation prompt; payload details omitted.')

@@ -50,7 +50,7 @@ class KuroCoreStoreTests(unittest.TestCase):
         )
 
     def test_initializes_versioned_schema(self) -> None:
-        self.assertEqual(self.store.schema_version(), 1)
+        self.assertEqual(self.store.schema_version(), 3)
         with sqlite3.connect(self.db_path) as conn:
             tables = {
                 row[0]

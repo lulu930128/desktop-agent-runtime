@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+from .tool_identity import legacy_name
+from .privacy import project, safe_text
+from .tool_result import ToolResult
 from collections.abc import AsyncIterator, Iterator
 import datetime
 import json
 import os
 import threading
+from concurrent.futures import TimeoutError as FutureTimeout
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -23,7 +27,7 @@ def should_autorun_omi(route: Any) -> bool:
     if route is None:
         return False
 
-    tool_names = getattr(route, "tool_names", None) or []
+    tool_names = [legacy_name(name) for name in (getattr(route, "tool_names", None) or [])]
     if "omi.ask" not in tool_names and OMI_ASK_STREAM_TOOL_NAME not in tool_names:
         return False
 
@@ -106,12 +110,13 @@ def _omi_ai_trust_token() -> str:
 
 
 def _utc_timestamp() -> str:
-    return datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z"
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
 def iter_omi_sse_events_from_lines(lines: Iterator[str]) -> Iterator[dict[str, Any]]:
     event_name = "message"
     data_lines: list[str] = []
+    total_bytes = 0
 
     def build_event() -> dict[str, Any] | None:
         nonlocal event_name, data_lines
@@ -130,6 +135,9 @@ def iter_omi_sse_events_from_lines(lines: Iterator[str]) -> Iterator[dict[str, A
         return event
 
     for raw_line in lines:
+        total_bytes += len(str(raw_line).encode("utf-8"))
+        if total_bytes > 8 * 1024 * 1024:
+            raise ValueError("OMI stream exceeded its byte limit.")
         line = str(raw_line).rstrip("\r\n")
         if not line:
             event = build_event()
@@ -169,35 +177,51 @@ def _iter_omi_sse_http_events(arguments: dict[str, Any]) -> Iterator[dict[str, A
 
     try:
         with urlopen(request, timeout=_omi_api_timeout_seconds()) as response:
-            lines = (
-                raw_line.decode("utf-8", errors="replace")
-                for raw_line in response
-            )
+            def bounded_lines():
+                while True:
+                    raw_line = response.readline(256 * 1024 + 1)
+                    if not raw_line:
+                        break
+                    if len(raw_line) > 256 * 1024:
+                        raise ValueError("OMI stream line exceeded its byte limit.")
+                    yield raw_line.decode("utf-8", errors="replace")
+            lines = bounded_lines()
             yield from iter_omi_sse_events_from_lines(lines)
     except HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"OMI API HTTP {exc.code}: {body}") from exc
+        raise RuntimeError(f"OMI API HTTP {exc.code}; response body omitted.") from None
     except URLError as exc:
-        raise RuntimeError(f"OMI API unavailable at {_omi_api_base_url()}: {exc}") from exc
+        raise RuntimeError("OMI API unavailable; transport details omitted.") from None
 
 
 async def stream_omi_ask_events(arguments: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
     loop = asyncio.get_running_loop()
-    queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+    queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(maxsize=64)
+    stopped = threading.Event()
 
-    def enqueue(item: dict[str, Any] | None) -> None:
-        loop.call_soon_threadsafe(queue.put_nowait, item)
+    def enqueue(item: dict[str, Any] | None) -> bool:
+        if stopped.is_set():
+            return False
+        pending = asyncio.run_coroutine_threadsafe(queue.put(item), loop)
+        while not stopped.is_set():
+            try:
+                pending.result(timeout=0.2)
+                return True
+            except FutureTimeout:
+                continue
+        pending.cancel()
+        return False
 
     def worker() -> None:
         try:
             for event in _iter_omi_sse_http_events(arguments):
-                enqueue(event)
+                if not enqueue(project(event)):
+                    break
         except Exception as exc:
             enqueue(
                 {
                     "event": "transport_error",
                     "data": {
-                        "error": str(exc),
+                        "error": "OMI transport failed; execution outcome unknown.",
                         "kind": exc.__class__.__name__,
                     },
                 }
@@ -207,11 +231,14 @@ async def stream_omi_ask_events(arguments: dict[str, Any]) -> AsyncIterator[dict
 
     threading.Thread(target=worker, name="kuro-omi-sse", daemon=True).start()
 
-    while True:
-        event = await queue.get()
-        if event is None:
-            break
-        yield event
+    try:
+        while True:
+            event = await queue.get()
+            if event is None:
+                break
+            yield event
+    finally:
+        stopped.set()
 
 
 def _stream_event_data(event: dict[str, Any]) -> dict[str, Any]:
@@ -220,7 +247,7 @@ def _stream_event_data(event: dict[str, Any]) -> dict[str, Any]:
 
 
 def _stream_event_json(data: dict[str, Any]) -> str:
-    return json.dumps(data, ensure_ascii=False, sort_keys=True, default=str)
+    return ToolResult(structured_content=project(data)).model_text(limit=65536)
 
 
 def _compact_stream_summary(data: dict[str, Any], *, max_len: int = 520) -> str:
@@ -232,6 +259,7 @@ def format_omi_stream_status_update(
     *,
     tool_id: str = OMI_AUTONOMOUS_TOOL_ID,
 ) -> dict[str, Any] | None:
+    event = project(event)
     event_type = str(event.get("event") or "message").strip()
     data = _stream_event_data(event)
     base = {
@@ -286,7 +314,8 @@ def format_omi_stream_status_update(
         return {
             **base,
             "status": "completed" if ok else "error",
-            "content": _stream_event_json(data),
+            "content": safe_text(_stream_event_json(data), limit=2048),
+            "omi_evidence": build_omi_evidence_snapshot(json.dumps(data, ensure_ascii=False)),
         }
 
     if event_type in {"error", "transport_error"}:
@@ -315,6 +344,7 @@ def format_omi_stream_final_tool_result(
     error_data: dict[str, Any] | None = None
     delta_parts: list[str] = []
     for event in events:
+        event = project(event)
         event_type = str(event.get("event") or "").strip()
         data = _stream_event_data(event)
         if event_type == "final":
@@ -343,8 +373,8 @@ def format_omi_stream_final_tool_result(
     if delta_parts:
         return {
             "tool_id": tool_id,
-            "content": _compact_text("".join(delta_parts), max_len=1600),
-            "is_error": False,
+            "content": "OMI stream incomplete; no final result. " + _compact_text("".join(delta_parts), max_len=1600),
+            "is_error": True,
         }
 
     return None
@@ -362,6 +392,7 @@ def parse_omi_response_text(text: str) -> dict[str, Any] | None:
 def _compact_text(value: Any, max_len: int = 900) -> str:
     if value is None:
         return ""
+    value = project(value)
     if not isinstance(value, str):
         try:
             value = json.dumps(value, ensure_ascii=False, sort_keys=True)
