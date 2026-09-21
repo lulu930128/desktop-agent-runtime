@@ -1,0 +1,160 @@
+{
+  "record_version": 1,
+  "kind": "source_checkpoint_not_runtime_acceptance",
+  "captured_at": "2026-09-21T09:13:49.343176+00:00",
+  "source_commit": "bde34448520d66f27c3453858d6332deff90c848",
+  "git_object_format": "sha1",
+  "file_hash_scope": "committed Git blob bytes; independent of working-tree CRLF conversion",
+  "source_files": [
+    {
+      "path": "VERSION",
+      "sha256": "1575e1af4a95f12f70b4ee6a6adce8160953d93ea17dc2611b90883ccc3ad3b8"
+    },
+    {
+      "path": "kuro_launcher.settings.yaml",
+      "sha256": "9d26dc9ff14e74e66a361078022162fe46196d1f39f31e5c41b49fbe1f69d6e9"
+    },
+    {
+      "path": "launcher_qt.py",
+      "sha256": "963e91836cdddb4b3a76cba2eea573fa2a1f144713a358007655668a9a58b8fa"
+    },
+    {
+      "path": "kuro_core_service.py",
+      "sha256": "19fcebe695f5bcd1a7cf82fee7b6ebab46b7f20b767805c4bcc6bc027246942e"
+    },
+    {
+      "path": "Open-LLM-VTuber/tool_policy.json",
+      "sha256": "fc4e1d244cc9afc506aa43a9da7dd325c01e4334fa63f5bf4efbd2450e071b39"
+    },
+    {
+      "path": "Open-LLM-VTuber/tool_catalog.json",
+      "sha256": "ce61867258a850d188890e97f83f87da3c76acbb2b22bab644521c0a6dda4cda"
+    },
+    {
+      "path": "Open-LLM-VTuber/pyproject.toml",
+      "sha256": "51aa6f590fe3fc0527dce927e5360603c0020739689e8859b8c8e633d4e48c5d"
+    },
+    {
+      "path": "Open-LLM-VTuber/uv.lock",
+      "sha256": "58e7a420ef4457dcd4ed386bc930568c288124ce89777f0b2ce66443413b8998"
+    },
+    {
+      "path": "pet-electron/package.json",
+      "sha256": "22cff51bdcde0817025d0b74dc53b6491f5313faf0d5e779831a40d7c489439c"
+    },
+    {
+      "path": "pet-electron/package-lock.json",
+      "sha256": "bf588b270af0b34430cd5fd05d9e18d3864127680dfd5e8c7b5b10f7544622c4"
+    },
+    {
+      "path": "docs/agent-runs/mcp-trust-security-m0/Validation.md",
+      "sha256": "cbfac89ae617b16523544a2f9f6a022f897e3eb00e7d8aa28735d37019152dd3"
+    },
+    {
+      "path": "docs/agent-runs/mcp-trust-security-m0/Progress.md",
+      "sha256": "cd068511237cbabe40af0faf3442cf68a446430e63eb30a7136c959f6e79c3cf"
+    },
+    {
+      "path": "docs/agent-runs/kuro-local-schedule-core/Progress.md",
+      "sha256": "17ce8d8efd419c6aa142226b35678e8c0a749d44a80792cff3fb7b8530c872ac"
+    },
+    {
+      "path": "docs/agent-runs/tts-lifecycle-20260913/Progress.md",
+      "sha256": "3f27538d70ec426a9cf23be062e62c08f5aaf9f1c4c168e444965e21c611af12"
+    }
+  ],
+  "source_trees": [
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/conversations",
+      "git_tree_oid": "9f454497f20d54b5f37ea23a2e04c7dcbbcd239e"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/agent",
+      "git_tree_oid": "a5b4a281888d34ac8c3db17597168b12af192c4a"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/mcpp",
+      "git_tree_oid": "aa3c3451aa851e8535071bd1aa6c87c1852e3eb0"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/tts",
+      "git_tree_oid": "3defe56e7316eb867b360597599df31563b2e396"
+    },
+    {
+      "path": "kuro_core",
+      "git_tree_oid": "496244c4c9f500e8bf0d1ac62185e932e9cec1f1"
+    },
+    {
+      "path": "kuro_launcher",
+      "git_tree_oid": "5f110326b9c6dea5b690574d6dd8d3fc50082339"
+    },
+    {
+      "path": "pet-electron/src",
+      "git_tree_oid": "2ba69c5aad79661f6e8fa64cee6443c6c5094383"
+    },
+    {
+      "path": "pet-electron/renderer/src",
+      "git_tree_oid": "8fe551e0a470bca3e130fc43a8cbf039988d8d6c"
+    },
+    {
+      "path": "tests",
+      "git_tree_oid": "0578f9a02170f6155ad1d02438252426f3c6d43a"
+    },
+    {
+      "path": "Open-LLM-VTuber/tests",
+      "git_tree_oid": "62dbd220f8e46e49f94d80bb2b53c961dbdaa885"
+    },
+    {
+      "path": "docs/architecture",
+      "git_tree_oid": "7f9d9e529250c9848e9d2350258a0d53874ddb7a"
+    }
+  ],
+  "configured_policy": {
+    "version": 1,
+    "digest": "a05a6429fac7f1699b6d80063f707cf88e47cea1b8e6fdc11af7909bb51278b5",
+    "digest_algorithm": "ToolPolicy: sha256(json.dumps(policy, sort_keys=True, allow_nan=False).encode())",
+    "tool_rule_count": 21,
+    "runtime_effective_digest": null
+  },
+  "tool_inventory": {
+    "status": "not_observed",
+    "discovery_complete": null,
+    "schema_manifest_digest": null,
+    "note": "Static policy/catalog/source hashes are not live tools/list or raw schema digests."
+  },
+  "security_validation": {
+    "this_run": "not_run_docs_and_comments_only",
+    "evidence_ref": "docs/agent-runs/mcp-trust-security-m0/Progress.md",
+    "matrix_ref": "docs/agent-runs/mcp-trust-security-m0/Validation.md",
+    "runtime_provider_desktop_A8": "not_fully_accepted_per_historical_record"
+  },
+  "this_run_validation": {
+    "central_voice_tests": {
+      "passed": 21,
+      "skipped": 0
+    },
+    "runtime_capability_tests": {
+      "passed": 8,
+      "skipped": 0
+    },
+    "python_compile": "passed_3_changed_sources_and_2_tests",
+    "renderer_typecheck": "passed",
+    "renderer_build": "passed_after_same_command_rerun_outside_sandbox_spawn_EPERM",
+    "core_executable_ast": "unchanged_excluding_docstrings",
+    "production_runtime": "not_probed_or_restarted",
+    "live_provider": "not_called",
+    "desktop_audio": "not_verified"
+  },
+  "research_environment": {
+    "status": "not_created_user_selected_repo_only",
+    "production_db_accessed": false,
+    "isolation_enforcement": "contract_only_future_harness_must_verify",
+    "dataset": null,
+    "results": null
+  },
+  "input_document": {
+    "name": "desktop-agent-runtime_architecture_convergence_20260921.txt",
+    "sha256": "b481ebfb3f5bd898acae17fdd85f8358a0d42a5c825b05b45b49653016b39c4b",
+    "role": "reference_proposal_verified_against_source_not_standalone_authorization"
+  }
+}

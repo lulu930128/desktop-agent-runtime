@@ -34,6 +34,8 @@ Launcher、Electron、Reader／Work Panel、Live2D、Bridge 與 Central Voice �
 
 來源 baseline 應保存已提交 checkpoint 的檔案 hash、policy version／configured digest 與驗證範圍。它不含 private config／資料，不代表 runtime discovery 或 A8 已完成。
 
+本輪 [SourceBaseline.json](../agent-runs/architecture-convergence-20260921/SourceBaseline.json) 固定於架構 checkpoint `bde3444`：14 個 Git blob SHA-256、11 個 source／test／architecture tree OID 與 configured policy v1 digest。它是日期性來源快照；後續實驗需另記當次 runtime／effective config／discovery，不沿用為 live 結果。
+
 每個實驗至少記錄下列欄位；未取得的 evidence 明確標 `not_observed`，不能填成空 inventory 或成功：
 
 | 項目 | 要記錄的內容 |
