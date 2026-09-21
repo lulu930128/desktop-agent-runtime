@@ -17,7 +17,7 @@ def _open(request, timeout):
 def health(base_url, timeout=3):
     with _open(base_url + '/health', timeout) as response:
         data = json.loads(response.read(65536))
-    if data.get('service') != 'voice-runtime' or data.get('protocol_version') != 1:
+    if not isinstance(data, dict) or data.get('service') != 'voice-runtime' or data.get('protocol_version') != 1:
         raise RuntimeError('Unexpected voice runtime identity')
     if data.get('status') not in {'available', 'busy'}:
         raise RuntimeError('Voice runtime unavailable')
@@ -26,9 +26,29 @@ def health(base_url, timeout=3):
 
 def require_voice(base_url, voice, timeout=3):
     data = health(base_url, timeout=timeout)
-    if not any(item.get('voice_id') == voice for item in data.get('voices', [])):
+    voices = data.get('voices')
+    if not isinstance(voices, list) or not any(
+        isinstance(item, dict) and item.get('voice_id') == voice for item in voices
+    ):
         raise RuntimeError(f'Voice runtime does not provide {voice}')
     return data
+
+
+def readiness(base_url, voice, timeout=3):
+    """Observe readiness for the selected voice without loading or switching models."""
+    data = require_voice(base_url, voice, timeout=timeout)
+    selected = next(item for item in data['voices'] if isinstance(item, dict) and item.get('voice_id') == voice)
+    result = dict(voiceId=voice, modelLoaded=data.get('model_loaded'),
+                  lastInference=selected.get('last_inference', 'not_run'))
+    if data['status'] == 'busy':
+        result.update(state='busy', reason='中央語音處理中，稍後可再發聲')
+    elif result['lastInference'] == 'failed':
+        result.update(state='unavailable', reason='上次語音合成失敗，下次發聲會重新嘗試')
+    elif result['modelLoaded'] == voice and result['lastInference'] == 'passed':
+        result.update(state='available', reason='目前角色語音已載入，最近一次合成成功')
+    else:
+        result.update(state='cold', reason='首次發聲需載入角色語音，最多等待 180 秒')
+    return result
 
 
 def synthesize(base_url, voice, text, language='ja', speed=1.2, timeout=120):

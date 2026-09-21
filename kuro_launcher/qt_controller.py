@@ -1740,13 +1740,12 @@ class QtLauncherController:
         return {"ok": True, "presentation": presentation_descriptor(self.cfg.open_llm_dir, self.selected_character())}
 
     def _check_voice_capability(self) -> bool:
-        from .voice_client import require_voice
+        from .voice_client import readiness
         character = self.selected_character()
         try:
             voice = dict(self.cfg.voice_ids).get(character.yaml_path.stem if character else '', '')
-            require_voice(self.cfg.voice_url, voice, timeout=1)
-            self.lifecycle.voice = {"state": "available", "reason": ""}
-            return True
+            self.lifecycle.voice = readiness(self.cfg.voice_url, voice, timeout=1)
+            return self.lifecycle.voice['state'] == 'available'
         except Exception as exc:
             self.lifecycle.voice = {"state": "unavailable", "reason": "中央語音目前不可用，文字對話仍可使用", "errorType": type(exc).__name__}
             return False

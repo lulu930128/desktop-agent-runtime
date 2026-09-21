@@ -13,6 +13,12 @@ from loguru import logger
 from .tts_interface import TTSInterface
 
 
+# Health is an observation, not a reservation of the shared active model.
+# Even a warm request may need to load its voice after another consumer switches.
+CENTRAL_READ_TIMEOUT_SECONDS = 180
+CENTRAL_FAILURE_COOLDOWN_SECONDS = 5
+
+
 def _debug_dump_paths() -> tuple[Path, Path]:
     logs_root = (os.getenv("KURO_LAUNCHER_LOGS_DIR", "") or "").strip()
     if logs_root:
@@ -94,33 +100,77 @@ class TTSEngine(TTSInterface):
         if not cleaned_text:
             return None
         if time.monotonic() < self._voice_retry_at:
+            logger.debug('Central voice skipped: failure cooldown; voice={}', self.voice_id)
             return None
+        started = time.monotonic()
+        phase = 'discovery'
         payload = dict(voice=self.voice_id, text=cleaned_text, language=self.text_lang,
                        speed_factor=self.speed_factor)
         try:
             # Discovery is cheap and never synthesizes speech. Do not queue a
             # backlog against an unavailable shared engine or retry an utterance.
             health = requests.get(self.api_url.rsplit('/tts', 1)[0] + '/health', timeout=(1, 2), allow_redirects=False)
-            health.raise_for_status()
+            if health.status_code != 200:
+                return self._central_http_failure(health.status_code, phase, started)
             identity = health.json()
-            if identity.get('service') != 'voice-runtime' or identity.get('protocol_version') != 1:
+            if not isinstance(identity, dict) or identity.get('service') != 'voice-runtime' or identity.get('protocol_version') != 1:
                 raise ValueError('Unexpected voice runtime identity')
+            voices = identity.get('voices')
+            if not isinstance(voices, list) or not any(
+                isinstance(item, dict) and item.get('voice_id') == self.voice_id for item in voices
+            ):
+                raise ValueError('Voice runtime does not provide the selected voice')
+            if identity.get('status') == 'busy':
+                return self._central_failure('busy', phase, started)
             if identity.get('status') != 'available':
-                raise ValueError('Voice runtime unavailable or busy')
-            response = requests.post(self.api_url, json=payload, timeout=(1, 30), allow_redirects=False)
-            response.raise_for_status()
+                raise ValueError('Voice runtime unavailable')
+            phase = 'synthesis'
+            response = requests.post(self.api_url, json=payload,
+                                     timeout=(1, CENTRAL_READ_TIMEOUT_SECONDS), allow_redirects=False)
+            if response.status_code != 200:
+                return self._central_http_failure(response.status_code, phase, started)
+            phase = 'audio_validation'
             if response.headers.get('Content-Type', '').split(';')[0] != 'audio/wav':
                 raise ValueError('Expected WAV audio')
+            if len(response.content) > 32 * 1024 * 1024:
+                raise ValueError('Oversized WAV audio')
             with wave.open(io.BytesIO(response.content), 'rb') as audio:
                 count = audio.getnframes()
                 if count <= 0 or len(audio.readframes(count)) != count * audio.getnchannels() * audio.getsampwidth():
                     raise ValueError('Empty or truncated WAV')
             Path(file_name).write_bytes(response.content)
+            self._voice_retry_at = 0.0
+            logger.info('Central voice synthesis passed: voice={} elapsed_s={:.3f} bytes={}',
+                        self.voice_id, time.monotonic() - started, len(response.content))
             return file_name
+        except requests.ConnectTimeout:
+            return self._central_failure('offline', phase, started,
+                                         cooldown=CENTRAL_FAILURE_COOLDOWN_SECONDS)
+        except requests.Timeout:
+            # A synthesis timeout is ambiguous: the server may still finish.
+            # Never resend this utterance. The next utterance checks health again.
+            cooldown = CENTRAL_FAILURE_COOLDOWN_SECONDS if phase == 'discovery' else 0
+            return self._central_failure('timeout', phase, started, cooldown=cooldown)
+        except requests.ConnectionError:
+            return self._central_failure('offline', phase, started,
+                                         cooldown=CENTRAL_FAILURE_COOLDOWN_SECONDS)
         except (requests.RequestException, ValueError, wave.Error, EOFError, OSError) as exc:
-            self._voice_retry_at = time.monotonic() + 30
-            logger.error('Central voice request failed: {}', type(exc).__name__)
-            return None
+            return self._central_failure(type(exc).__name__, phase, started,
+                                         cooldown=CENTRAL_FAILURE_COOLDOWN_SECONDS)
+
+    def _central_http_failure(self, status, phase, started):
+        # A race between discovery and POST is expected on a shared service.
+        return self._central_failure('busy' if status == 429 else 'http_error', phase, started,
+                                     cooldown=0 if status == 429 else CENTRAL_FAILURE_COOLDOWN_SECONDS,
+                                     http_status=status)
+
+    def _central_failure(self, reason, phase, started, *, cooldown=0, http_status=None):
+        self._voice_retry_at = time.monotonic() + cooldown if cooldown else 0.0
+        # Do not log utterances, response bodies, or private model/reference paths.
+        logger.warning('Central voice unavailable: reason={} phase={} voice={} elapsed_s={:.3f} '
+                       'http_status={} cooldown_s={}', reason, phase, self.voice_id,
+                       time.monotonic() - started, http_status, cooldown)
+        return None
 
     def _generate_legacy_audio(self, text, cleaned_text, file_name):
         data = {

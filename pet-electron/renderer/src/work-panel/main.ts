@@ -1833,7 +1833,15 @@ class KuroWorkPanel {
     const state = this.runtime.capabilities;
     if (state?.launcher?.restartRequired) return '程式已更新，請重新啟動 Kuro';
     const online = Boolean(this.runtime.wsConnected ?? this.chat.wsConnected);
-    const voice = this.runtime.speechStatus === 'unavailable' ? '本次語音失敗' : state?.launcher?.voice.state === 'available' ? '語音可用' : '語音未就緒';
+    const voiceState = state?.launcher?.voice;
+    const voiceLabels: Record<string, string> = {
+      available: '語音可用',
+      cold: '首次發聲需載入語音',
+      busy: '語音處理中'
+    };
+    const voice = this.runtime.speechStatus === 'unavailable' && voiceState?.state === 'available'
+      ? '上次語音未完成，可再試一句'
+      : voiceLabels[voiceState?.state || ''] || '語音未就緒';
     const pet = state?.pet.state === 'ready' ? '角色可見' : state?.pet.state === 'offscreen' ? '角色位置待恢復' : state?.pet.state === 'loading' ? '角色載入中' : '角色未就緒';
     return `${online ? '對話已連線' : state?.launcher?.phase === 'starting' ? '對話啟動中' : '對話未連線'} · ${voice} · ${pet}`;
   }
@@ -1845,6 +1853,7 @@ class KuroWorkPanel {
       ['功能狀態', this.capabilitySummary()],
       ['啟動狀態', this.runtime.capabilities?.launcher?.phase || '尚未取得'],
       ['失敗原因', this.runtime.capabilities?.launcher?.reason || '—'],
+      ['語音狀態', this.runtime.capabilities?.launcher?.voice.reason || '尚未檢查語音服務'],
       ['執行版本', this.runtime.capabilities?.launcher?.sourceRevision || '未知'],
       ["Connection", this.runtime.wsConnected ? "connected" : "offline"],
       ["AI state", text(this.runtime.aiState, "unknown")],

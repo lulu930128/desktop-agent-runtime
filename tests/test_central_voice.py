@@ -58,6 +58,60 @@ class CentralVoiceTests(unittest.TestCase):
         self.assertEqual(tts['ref_audio_path'], '')
         self.assertEqual(tts['api_url'], 'http://127.0.0.1:18890/tts')
 
+    def test_yumi_resolves_to_yuki_without_local_model_ownership(self):
+        from kuro_launcher.runtime_conf import build_runtime_conf
+        cfg = load_config(Path(__file__).resolve().parents[1] / 'kuro_launcher.settings.yaml')
+        voice = dict(cfg.voice_ids)['yumi']
+        self.assertEqual(voice, 'yuki')
+        _, char = build_runtime_conf(open_llm_dir=cfg.open_llm_dir,
+            character_yaml=cfg.characters_dir / 'yumi.yaml', project_yaml=None,
+            llm_host=cfg.llm_host, llm_port=cfg.llm_port, bridge_translate_url=cfg.bridge_translate_url,
+            tts_host='127.0.0.1', tts_port=18890, voice_id=voice,
+            **{k: getattr(cfg, k) for k in ('llm_provider_env', 'llm_default_provider', 'openai_model_env',
+                'openai_default_model', 'openai_temp_env', 'openai_inject_key_env', 'openai_api_key_env', 'openai_fallback_key_env')})
+        tts = char['tts_config']['gpt_sovits_tts']
+        self.assertEqual(tts['voice_id'], 'yuki')
+        self.assertEqual(tts['ref_audio_path'], '')
+
+    def test_readiness_requires_current_model_and_successful_inference(self):
+        from kuro_launcher.voice_client import readiness
+        for loaded, inference, status, expected in (
+            (None, 'not_run', 'available', 'cold'),
+            ('kuro', 'not_run', 'available', 'cold'),
+            ('yuki', 'passed', 'available', 'cold'),
+            ('kuro', 'passed', 'available', 'available'),
+            ('kuro', 'passed', 'busy', 'busy'),
+            (None, 'failed', 'available', 'unavailable'),
+        ):
+            with self.subTest(loaded=loaded, inference=inference, status=status):
+                data = {'status': status, 'model_loaded': loaded,
+                        'voices': [{'voice_id': 'kuro', 'last_inference': inference}]}
+                with patch('kuro_launcher.voice_client.require_voice', return_value=data), \
+                     patch('kuro_launcher.voice_client.synthesize') as synth:
+                    result = readiness('http://127.0.0.1:18890', 'kuro')
+                    self.assertEqual(result['state'], expected)
+                    self.assertEqual(result['voiceId'], 'kuro')
+                    synth.assert_not_called()
+
+    def test_launcher_does_not_promote_cold_or_busy_voice_to_available(self):
+        controller = SimpleNamespace(cfg=self.cfg(), lifecycle=SimpleNamespace(voice={}),
+                                     selected_character=lambda: SimpleNamespace(yaml_path=Path('kuro.yaml')))
+        for state in ('cold', 'busy', 'unavailable', 'available'):
+            with self.subTest(state=state), patch('kuro_launcher.voice_client.readiness',
+                                                  return_value={'state': state, 'reason': 'fixture'}):
+                ready = LauncherController._check_voice_capability(controller)
+                self.assertEqual(ready, state == 'available')
+                self.assertEqual(controller.lifecycle.voice['state'], state)
+
+    def test_launcher_reports_offline_and_recovers_on_next_probe(self):
+        controller = SimpleNamespace(cfg=self.cfg(), lifecycle=SimpleNamespace(voice={}),
+                                     selected_character=lambda: SimpleNamespace(yaml_path=Path('kuro.yaml')))
+        with patch('kuro_launcher.voice_client.readiness',
+                   side_effect=[OSError('offline'), {'state': 'available', 'reason': 'ready'}]):
+            self.assertFalse(LauncherController._check_voice_capability(controller))
+            self.assertEqual(controller.lifecycle.voice['state'], 'unavailable')
+            self.assertTrue(LauncherController._check_voice_capability(controller))
+
 
 if __name__ == '__main__':
     unittest.main()
