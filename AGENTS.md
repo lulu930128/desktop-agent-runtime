@@ -37,6 +37,8 @@ Kuro 是 local-first desktop AI companion runtime，但長期目標不是單純�
 
 - `launcher_qt.py` 是目前 Qt desktop console，負責啟動 profile、服務 orchestration、chat、Briefing、memory、pet shell 控制。
 - `kuro_launcher/` 負責 config parsing、service helpers、runtime config generation、memory panel 與 records。
+- `kuro_core/schedule_*` 與 `kuro_core_service.py` 是正式本機時間表／通知 owner；Observation／Decision 仍為 shadow，Today／Briefing 仍走 Electron legacy primary。
+- `kuro_core/storage.py` 是共享 schema 初始化與正式 Schedule 啟動依賴，不是純研究 storage。改動前讀 `docs/architecture/CorePersistence.md`；研究隔離依 `docs/architecture/ResearchBoundary.md`，worktree 本身不隔離 DB、IPC 或 userData。
 - `kuro_launcher.settings.yaml` 是本機 runtime source of truth：paths、ports、LLM env names、startup profile。
 - `Open-LLM-VTuber/` 負責 conversation runtime、prompt composition、tool integration、WebSocket protocol 與 memory system。
 - `pet-electron/` 負責 Live2D desktop shell、Reader、Briefing、tray、local control server 與 Electron window behavior。
@@ -107,6 +109,7 @@ Kuro 可以具備工具操作能力，但必須分級。
 - LLM runtime: `127.0.0.1:23456`
 - Pet control: `127.0.0.1:23567`
 - Launcher control: `127.0.0.1:23568`（工作面板 IPC proxy 專用；session token 不得進 renderer 或 git）
+- Kuro Core: `127.0.0.1:23569`（Launcher-owned Schedule API；session token、schema 與 instance identity 驗證）
 
 不要恢復舊的 `9881` TTS port；該 port 可能落入 Windows reserved TCP range。遇到 startup 失敗時，先檢查目前設定、launcher log、stale shortcuts、舊 root path 與 port listener。
 

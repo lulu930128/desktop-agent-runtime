@@ -47,8 +47,10 @@ Runtime 或 UI 變更不能只看 build；至少要確認實際 listener、`/sta
 | --- | --- |
 | Launcher／Pet lifecycle | `tests/test_launcher_entrypoint.py`、`tests/test_pet_lifecycle.py` |
 | 工作面板 API | `tests/test_work_panel_api.py` |
-| 中央語音 consumer | `tests/test_central_voice.py` |
+| 中央語音 consumer／文字降級 | `tests/test_central_voice.py`、`tests/test_central_voice_client.py`、`tests/test_runtime_capabilities.py` |
 | Shadow Core | `tests/test_kuro_core_contracts.py`、`tests/test_kuro_core_store.py`、`tests/test_kuro_core_shadow_probe.py` |
+| Production Schedule／notification／migration | `tests/test_schedule_core.py`、`tests/test_schedule_notifications.py`、`tests/test_schedule_api.py`、`tests/test_schedule_runtime.py` |
+| Electron Core consumer | `tests/core_client.test.cjs`、`tests/schedule_notifications.test.cjs`、`tests/schedule_cutover.test.cjs` |
 | 桌寵幾何 | `tests/pet_*.test.cjs`、`tests/pet_*.test.mjs` |
 | OMI consumer／policy | `Open-LLM-VTuber/tests/test_market_preflight.py`、`Open-LLM-VTuber/tests/test_tool_policy_omi.py` |
 
@@ -69,3 +71,5 @@ Runtime 或 UI 變更不能只看 build；至少要確認實際 listener、`/sta
 - 公開截圖先移除私人內容。Kuro 自有內容採 Apache-2.0，第三方元件與素材另依[授權範圍](../../THIRD_PARTY_NOTICES.md)，不能推定整套產品或模型可再散布。
 
 詳見[現況架構](../architecture/RuntimeArchitecture.md)與[品質門檻](../product/QualityBar.md)。
+
+Core 改動先核對[責任地圖](../architecture/OwnershipMap.md)與[persistence contract](../architecture/CorePersistence.md)。`storage.py` 是正式 Schedule 啟動依賴；shadow 測試或研究不得用正式 `work.sqlite3`。只改文件／註解時維持 Tier 0，不因本表列出測試就啟動整套服務。研究前另讀[研究邊界](../architecture/ResearchBoundary.md)；建立 worktree 本身不保證 runtime 隔離。

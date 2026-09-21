@@ -3,6 +3,11 @@
 本頁是導航，不是即時 health page，也不複製會快速過期的工具 inventory。
 
 - [現況架構](RuntimeArchitecture.md)：元件、設定、資料流、local control 與已知架構債。
+- [責任地圖](OwnershipMap.md)：能力 owner、truth、consumer 與 Electron legacy cutover 條件。
+- [資料流](DataLineage.md)：對話、工具、時間表、Briefing、Observation、記憶與語音。
+- [Runtime services](RuntimeServices.md)：process identity、port、啟停與 shared-service 邊界。
+- [Core persistence](CorePersistence.md)：單庫 schema v3、migration owner、備份／還原與研究限制。
+- [研究邊界](ResearchBoundary.md)：worktree／state／IPC 隔離、security baseline 與 experiment evidence。
 - [中央語音服務](../central-voice-runtime.md)：共用 ownership、mapping 與驗收限制。
 - [Product Vision](../product/ProductVision.md)：長期產品定位。
 - [Operating Model](../product/OperatingModel.md)：目標分層，不代表已完成遷移。
@@ -11,7 +16,7 @@
 
 Source 的 config、policy、schema 與測試提供可執行 contract；正式 runtime 採用仍需核對啟動 root、PID、listener、載入 source 與使用者表面。
 
-`kuro_core/` 仍是 shadow，不是 Today／Briefing 的 authoritative owner。語音可連線、實際推論、播放與聽感也須分開驗證。
+`kuro_core/` 同時包含 Production Schedule／notification 與 Shadow Observation／Decision；Today／Briefing 仍使用 Electron legacy primary。Source 與 2026-09-12 的 Schedule 採用紀錄分開看待，不把歷史程序身分當即時狀態。語音可連線、實際推論、播放與聽感也須分開驗證。
 
 `docs/agent-runs/` 保存歷史任務與日期性證據，不取代持續維護的架構文件。本次保留既有 Git 追蹤項目，不移除或改寫歷史；一般讀者無須先閱讀 agent 任務紀錄。新的長期結論應回寫 guides／architecture。
 

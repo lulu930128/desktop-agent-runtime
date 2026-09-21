@@ -20,6 +20,8 @@ from .contracts import (
 )
 
 
+# Database-wide version: observation v1 -> schedule v2 -> notifications v3.
+# This is a production ScheduleServer dependency, not an observation-only knob.
 SCHEMA_VERSION = 3
 
 
@@ -34,6 +36,12 @@ class IngestResult:
 
 
 class KuroCoreStore:
+    """Shared database bootstrap plus shadow observation/trace persistence.
+
+    initialize() also runs production schedule migrations. Research callers must
+    provide an isolated DB path; this class does not enforce workspace isolation.
+    """
+
     def __init__(self, db_path: Path | str) -> None:
         self.db_path = Path(db_path)
 

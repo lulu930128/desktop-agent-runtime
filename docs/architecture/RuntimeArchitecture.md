@@ -1,6 +1,15 @@
 # Kuro 現況架構
 
-本頁保留原 README 的元件地圖、設定與資料流。描述 source 現況，不代表正式 runtime 已完成驗收；目標架構見 [Operating Model](../product/OperatingModel.md)。
+本頁依 2026-09-21 source 與設定整理現況；目標架構見 [Operating Model](../product/OperatingModel.md)。Schedule 已有 2026-09-12 的[正式採用紀錄](../agent-runs/kuro-local-schedule-core/Progress.md)，本次文件核對不代表重新驗證目前程序。
+
+| 能力 | 現行路徑 | 成熟度 |
+| --- | --- | --- |
+| 本機時間表與通知決策 | Launcher → `kuro_core_service.py` → Schedule API；Electron 透過 Core client 消費 | Production；通知實際配送由 Electron 執行 |
+| Observation／DecisionTrace／context snapshot | `contracts.py`、`service.py`、`legacy_briefing_adapter.py`、`shadow_probe.py` | Shadow；未接管 Today／Briefing |
+| Today／Briefing、mail／study 投影 | Electron main process 與既有 adapters | Legacy primary；仍是正式使用路徑 |
+| MCP／tool security | conversation runtime 的 `mcpp/` | Production source；M0 A8 runtime/provider/desktop gate 尚未全部完成 |
+
+詳細責任見 [OwnershipMap](OwnershipMap.md)、[DataLineage](DataLineage.md)、[RuntimeServices](RuntimeServices.md)、[CorePersistence](CorePersistence.md)。
 
 ## 系統全貌
 
@@ -22,7 +31,10 @@ flowchart LR
     Console --> Runtime["Open-LLM-VTuber :23456<br/>conversation runtime"]
     Console --> PetMain["Electron main process<br/>pet control :23567"]
     Console --> LauncherControl["Launcher control :23568<br/>session token + confirmed writes"]
-    LauncherControl --> PetMain
+    PetMain -->|"main-only session token"| LauncherControl
+    Console --> Core["Kuro Core :23569<br/>Production Schedule / Notification"]
+    PetMain <-->|"core-client + session token"| Core
+    Core --> CoreDB["work.sqlite3<br/>shared schema v3"]
 
     Console <-->|"/client-ws"| Runtime
     PetUI <-->|"WebSocket 對話、音訊與控制事件"| Runtime
@@ -36,6 +48,7 @@ flowchart LR
     Console <-->|"HTTP status / command"| PetMain
     PetMain --> BriefingStore["Briefing store<br/>snapshot + memory candidates"]
     BriefingStore --> PetUI
+    BriefingStore -.->|"explicit read-only probe"| Shadow["Observation / Decision<br/>shadow comparison"]
 ```
 
 ### 一次啟動實際發生的事情
@@ -44,8 +57,8 @@ flowchart LR
 2. 使用者選擇 character、project、outfit 與 thinking power。
 3. `kuro_launcher/runtime_conf.py` 合併基礎設定、角色設定與 project prompt，產生
    `Open-LLM-VTuber/conf.launcher_runtime.yaml`。
-4. Launcher 先啟動或沿用具備正確 service identity 的 Electron 桌寵殼，讓工作面板不必等待 LLM／TTS readiness 就能顯示。
-5. Launcher 啟動或沿用 Bridge，連接獨立中央語音服務，並用一小段真實音訊請求確認 TTS 可用；接著啟動 Open-LLM-VTuber。
+4. Launcher 建立 Electron 子程序環境時，依 `core.enabled` 啟動並驗證 Core，再把 Core session connection 交給 Electron main process。Core 失敗會留下診斷，其他功能仍可啟動。工作面板不必等待 LLM／TTS readiness 就能顯示。
+5. Launcher 管理 Bridge 與 Open-LLM-VTuber；中央語音模式只讀取 readiness，不以合成或 warm-up 阻塞文字對話。實際語音請求由中央服務按需載入模型；legacy TTS 的 smoke 路徑不代表中央模式行為。
 6. Qt chat client 與 Electron frontend 在 LLM runtime ready 後各自連到 `/client-ws`；服務尚未 ready 時，工作面板保留可見並呈現各自狀態。
 7. Pet control server 提供帶有 service、protocol、PID 與 instance identity 的本機狀態與操作 API；Launcher 只會沿用或停止可驗證身分的 Pet shell。
 8. Launcher 以每次啟動產生的臨時 token，讓 Electron main process 透過 `:23568` 讀取 profile、history、memory 與 tool policy；renderer 不會取得 token，寫入前仍須經 Electron 原生確認視窗。
@@ -67,10 +80,24 @@ flowchart LR
 | `kuro_launcher/work_panel_api.py` | Loopback-only 工作面板 contract；提供受 session token 保護的 profile、history、memory 與 tool policy API。 |
 | `kuro_launcher/services.py` | Bridge、TTS、LLM 子程序啟動、資產驗證與 readiness probe。 |
 | `kuro_launcher/procs.py` | 子程序與 stdout/stderr log 管理。 |
+| `kuro_launcher/core_runtime.py` | Core child 啟停、token／instance、PID／sourceRoot／schema／contract 驗證；拒絕沿用未知 listener。 |
+| `kuro_launcher/voice_client.py` | 中央服務 identity、voice discovery、readiness 與顯式合成 client；不持有共用服務生命週期。 |
 | `kuro_launcher/project_manager.py` | 掃描與驗證 `projects/*/project.yaml`。 |
 | `kuro_launcher/memory_*.py` | 控制台記憶列表、分類、核准、停用、刪除與 compact 操作。 |
 
 Launcher 是 **runtime operator**，不是 conversation、market、mail 或 memory database 的資料真相來源。
+
+### Kuro Core：正式工作狀態與 shadow observation
+
+`kuro_core_service.py` 啟動 `schedule_api.ScheduleServer`，不是 `service.KuroCore`。`core.enabled: true`、port `23569`、timezone `Asia/Taipei` 與 `${ROOT}/local_state/core/work.sqlite3` 來自 Launcher settings。
+
+- `schedule_contract.py`、`schedule_store.py`：時間表、recurrence、occurrence、revision、completion／skip 與 idempotency。
+- `schedule_notifications.py`：通知 eligibility、quiet hours、lease／fencing、delivery 狀態與 audit。
+- `schedule_api.py`：loopback／token contract、service DB lease、materialization 與通知 worker。
+- `contracts.py`、`service.py`、`legacy_briefing_adapter.py`、`shadow_probe.py`：Observation 與 DecisionTrace shadow contract；`context_snapshot()` 不是正式 Today API。
+- `storage.py`：共享 DB 初始化與 migration orchestration，另提供 shadow observation／trace persistence。它會建立 v1 tables，再執行 Schedule v2、Notification v3 migration，屬正式啟動依賴。
+
+本輪保留 public import path 與單一 DB，明確區分 table／migration owner；未實體拆庫或建立第二套 Core。詳見 [Core persistence 邊界](CorePersistence.md)。
 
 ### Open-LLM-VTuber conversation runtime
 
@@ -133,7 +160,7 @@ Bridge 只負責 **輸出轉換**。它不能改寫工具結果的事實、補�
 ### GPT-SoVITS
 
 舊 `gpt_sovits/` 已完成 SHA-256 比對並清除；音檔、模型與訓練資料保存在中央語音工作區。正式設定使用獨立中央 Voice Runtime，
-由中央 package 擁有模型與 reference；Launcher 在 LLM runtime 啟動前執行實際 TTS smoke request。
+由中央 package 擁有模型與 reference；Launcher 觀察 readiness，對話發聲才送出實際 TTS request。
 啟動方式、角色映射與舊資料保存紀錄見 [中央語音服務](../central-voice-runtime.md)。
 
 模型權重、pretrained models、角色 reference audio 與產生音訊都屬於 local/private state，不能進 git。
@@ -151,6 +178,9 @@ Bridge 只負責 **輸出轉換**。它不能改寫工具結果的事實、補�
 | `src/main-process/briefing-store.js` | Briefing snapshot、source status 與 memory candidate 的正規化及持久化。 |
 | `src/main-process/mail-briefing-service.js` | 目前的 mail poller、preferences、rules、message read 與 refresh 整合。 |
 | `src/main-process/study-briefing.js` | 讀取並合併 local study snapshot。 |
+| `src/main-process/today-classifier.js` | 既有 Today 分類與優先序投影；仍是 legacy primary，尚未切到 Core Attention。 |
+| `src/main-process/core-client.js` | 驗證 Core identity、受限 schedule IPC 與 HTTP transport；不直接讀寫 DB。 |
+| `src/main-process/schedule-notifications.js` | 向 Core claim／authorize、配送 OS 通知並 ack；不自行決定 eligibility。 |
 | `src/main-process/reader-attachments.js` | Reader 附件分類、大小限制與 payload 正規化。 |
 | `src/reader-window.html` | Reader 視窗。 |
 | `src/briefing-window.html` | Briefing dashboard 視窗。 |
@@ -186,7 +216,9 @@ Kuro 可以呼叫工具，但不應把每個領域的商業邏輯搬進自己。
 同樣的原則也適用於 mail、calendar、news、messages 與未來 adapters：
 Kuro 負責 orchestration 與 presentation，domain service 負責資料真相與寫入規則。
 
-## 三條主要資料流
+## 主要資料流
+
+時間表：`SchedulePanel → restricted IPC → core-client → ScheduleServer → ScheduleStore → work.sqlite3`。通知：`Core scheduler → claim / authorize → Electron OS delivery → ack / audit`。Today／Briefing 尚未改用 Observation context，詳見[完整資料流](DataLineage.md)。
 
 ### 對話、畫面與語音
 
@@ -228,11 +260,12 @@ flowchart LR
     Snapshot --> Dashboard["Briefing UI"]
     Snapshot --> Candidate["可選的 memory candidate"]
     Candidate --> Review["使用者核准／拒絕"]
-    Review --> LongTerm["角色長期記憶"]
+    Review --> CandidateStatus["更新 Briefing candidate status<br/>不等於長期記憶已保存"]
 ```
 
 Briefing 是短期狀態；長期記憶只保存穩定偏好、背景與持續有效的工作資訊。
 工具結果、每日信件、市場變化與暫時任務不能自動污染角色記憶。
+目前 candidate status update 只寫 Briefing store；正式長期記憶另由 runtime memory manager／index 管理。
 
 ## 設定與資料真相來源
 
@@ -247,6 +280,7 @@ Briefing 是短期狀態；長期記憶只保存穩定偏好、背景與持續�
 | Chat history | `Open-LLM-VTuber/chat_history/` | Local-only conversation state。 |
 | Character memory | `Open-LLM-VTuber/memories/` | Local-only、可審核的長期記憶。 |
 | Pet / Briefing state | Electron `userData` | 視窗狀態、Briefing store 與 pet log。 |
+| Schedule／notification | `local_state/core/work.sqlite3` | Core-owned 正式工作狀態；與 shadow tables 共用 schema v3，禁止研究直接存取正式 DB。 |
 | 市場資料與判斷 | OMI | Kuro 不重算或硬編碼。 |
 | Runtime logs | `launcher_logs/` 與 Electron `userData` | 診斷用 local state，不進 git。 |
 
@@ -259,16 +293,17 @@ Briefing 是短期狀態；長期記憶只保存穩定偏好、背景與持續�
 | Open-LLM-VTuber | `127.0.0.1:23456` | HTTP、launcher API 與 `/client-ws`。 |
 | Pet control | `127.0.0.1:23567` | `/status`、`/briefing`、`/command` 等本機控制 API。 |
 | Launcher control | `127.0.0.1:23568` | 工作面板的 profile、history、memory 與 tool policy 窄 contract；只接受本次啟動的 Electron session token。 |
+| Kuro Core | `127.0.0.1:23569` | `kuro.core.schedule.v1`；Schedule／notification；包含 `/status` 在內皆需 session token。 |
 
 所有預設服務都只綁定 loopback。不要把這些 API 直接暴露到 LAN 或 Internet。
 
 > 中央 TTS 使用 `18890`；`9981` 僅供 legacy 回退。不要恢復舊的 `9881`。`18790` 已由 japanese-study-mcp 使用。
 
-## 1.1.0 更新
+## 版本與現況
 
 - 改用獨立中央 Voice Runtime，以 voice ID 選擇聲音；Launcher 不啟停共用服務。
 - 移除已保存比對的舊 GPT-SoVITS 原始碼，更新專案路徑與中央服務文件。
-- Core 維持 shadow-only；人工聽感及桌面互動仍待驗收。
+- Schedule Core 已完成局部正式採用；Observation／Decision 仍是 shadow。語音人工聽感及完整桌面互動仍須另行驗收。
 
 ## 版本來源
 
@@ -285,11 +320,12 @@ Kuro 的產品版本以 repo root 的 [`VERSION`](../../VERSION) 為準，目前
 ## Repo 結構
 
 ```text
-kuro/
+desktop-agent-runtime/
 ├─ VERSION                        # Kuro 產品版本；目前為 1.1.0
 ├─ launcher_qt.py                 # Qt 應用入口
 ├─ kuro_launcher/                 # Launcher UI、controller、config 與 process helpers
-├─ kuro_core/                     # Shadow-only Kuro Core contract、SQLite 與研究 trace
+├─ kuro_core/                     # Production Schedule、shadow Observation 與共享 persistence
+├─ kuro_core_service.py           # Launcher-owned ScheduleServer 入口
 ├─ kuro_launcher.settings.yaml    # Canonical local runtime 設定
 ├─ Open-LLM-VTuber/               # Conversation、agent、tools、memory、WebSocket
 ├─ projects/                      # Project prompt packs
@@ -352,7 +388,8 @@ Profile、記憶與刪除對話等操作，還必須先通過 Electron 原生確
 5. **`compose.yaml` 與 `00_kuro_bootstrap.ps1` 已偏離目前 Launcher 模型**：前者仍使用 `9881/8001`，後者建立的環境路徑也不同。完成對齊前，兩者不能當 canonical 啟動文件。
 6. **Fork 與產品程式放在同一 repo**：`Open-LLM-VTuber/` 與 Cubism vendor code 的上游同步、Kuro patch boundary 和 upgrade 流程仍需明文化。
 7. **Local state 分散**：conversation/memory、launcher logs、Briefing/Electron state 分屬不同 runtime owner；未來需要統一的資料盤點、備份與清除策略，但不能把 private state 搬進 git。
-8. **Kuro Core 仍在 shadow 階段**：`kuro_core/` 已建立 observation、freshness、SQLite 與 decision trace 基礎，但尚未接入 live runtime；目前 Today 與 Briefing 仍以 Electron legacy path 為 primary，不能把 shadow package 描述為已完成 cutover。
+8. **Core 成熟度與 persistence 混合**：Schedule／notification 已有正式路徑；Observation／Decision 仍為 shadow。兩者共用 `storage.py` 初始化及 schema v3，研究必須使用獨立 DB，不能把整個 package 當 sandbox。
+9. **Today／Briefing 尚未 cutover**：Electron legacy path 仍為 primary；未來逐項依 contract → shadow → parity → 單一 owner cutover → 移除 legacy，見 [OwnershipMap](OwnershipMap.md)。
 
 ## 重構時必須守住的原則
 

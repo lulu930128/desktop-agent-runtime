@@ -1,7 +1,9 @@
-"""Kuro Core shadow runtime contracts and persistence.
+"""Kuro Core: production schedule state and shadow observation contracts.
 
-Observations remain a shadow path. Local schedule infrastructure has an opt-in
-launcher service; production Work Panel adoption is a separate acceptance gate.
+The launcher-owned ScheduleServer serves the Work Panel. KuroCore observations
+and decision traces remain shadow-only; they do not own Today or Briefing.
+Storage initialization is shared production infrastructure, not a research DB
+boundary. See docs/architecture/CorePersistence.md before changing migrations.
 """
 
 from .contracts import (

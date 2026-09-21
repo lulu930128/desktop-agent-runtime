@@ -40,17 +40,19 @@ Kuro 整合工作面板、Live2D 桌寵、Reader、Briefing、角色語音、受
 flowchart LR
     Launcher["Qt Launcher<br/>設定與生命週期"] --> Panel["Electron 工作面板／桌寵"]
     Launcher --> Runtime["Open-LLM-VTuber<br/>對話與受控工具"]
+    Launcher --> Core["Kuro Core<br/>本機時間表與通知"]
+    Panel <-->|"受限 IPC / Core API"| Core
     Runtime --> Domain["OMI／外部專案<br/>資料與判斷"]
     Runtime --> Voice["Bridge／獨立中央語音"]
     Runtime --> Panel
     Voice --> Panel
 ```
 
-Launcher 管啟動與診斷，conversation runtime 管對話與工具，Electron 管呈現。Kuro 不停止共用中央語音服務。設定、資料流與 API 見[現況架構](docs/architecture/RuntimeArchitecture.md)。
+Launcher 管啟動與診斷，conversation runtime 管對話與工具，Core 保存本機時間表與通知狀態。Electron 負責呈現，並暫時持有 Today／Briefing 的整合與分類。Kuro 不停止共用中央語音服務。設定、資料流與 API 見[現況架構](docs/architecture/RuntimeArchitecture.md)。
 
 ## 目前限制
 
-- 本機[時間表](docs/agent-runs/kuro-local-schedule-core/Usage.md)已由 Core 保存與排程提醒；Observation／其他 Today、Briefing 來源仍是 shadow 遷移階段。完整工作管理依 [Roadmap](docs/product/Roadmap.md)逐項驗收。
+- 本機[時間表](docs/agent-runs/kuro-local-schedule-core/Usage.md)已由 Core 保存與排程提醒；Observation／Decision 為 shadow，其他 Today／Briefing 來源仍走 Electron legacy primary。完整工作管理依 [Roadmap](docs/product/Roadmap.md)逐項驗收。
 - 工作面板特定操作已有原生確認；一般工具 `confirm` 模式目前會拒絕執行，不是完整確認佇列。
 - 寫入、刪除、發送、發布、長期記憶修改與高成本操作遵守工具政策，不能因 persona 或 prompt 繞過。
 - 中央語音仍有人工聽感與桌面互動待驗收，見[語音文件](docs/central-voice-runtime.md)。
