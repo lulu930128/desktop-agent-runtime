@@ -1,0 +1,3 @@
+# Preserve immutable Git snapshot bytes even in Windows autocrlf checkouts.
+src/work-panel/* -text
+work-panel.html -text

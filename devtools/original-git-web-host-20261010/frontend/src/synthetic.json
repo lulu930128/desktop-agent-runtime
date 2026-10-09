@@ -1,0 +1,46 @@
+{
+  "context": "SYNTHETIC-original-git-preview",
+  "revision": 1,
+  "getState": {
+    "ok": false, "wsConnected": false, "aiState": "idle",
+    "confName": "SYNTHETIC 預覽", "confUid": "synthetic-character",
+    "currentHistoryUid": "synthetic-history", "currentHistoryTitle": "SYNTHETIC 對話",
+    "speechStatus": "unavailable", "micEnabled": false, "cameraEnabled": false, "screenEnabled": false
+  },
+  "getChatState": {
+    "ok": false, "wsConnected": false, "aiState": "idle",
+    "confName": "SYNTHETIC 預覽", "confUid": "synthetic-character",
+    "currentHistoryUid": "synthetic-history", "currentHistoryTitle": "SYNTHETIC 對話"
+  },
+  "getProfile": {
+    "ok": true,
+    "characters": [{"id": "synthetic-character", "name": "SYNTHETIC 助理"}],
+    "projects": [{"id": "synthetic-project", "name": "SYNTHETIC 預覽"}],
+    "models": ["synthetic-model-unavailable"],
+    "thinking_options": ["fast", "normal", "deep"],
+    "selected": {"character_id": "synthetic-character", "project_id": "synthetic-project", "model": "synthetic-model-unavailable", "thinking_power": "normal"}
+  },
+  "getHistories": {
+    "ok": true, "confUid": "synthetic-character", "historyUid": "synthetic-history",
+    "current_history_uid": "synthetic-history", "title": "SYNTHETIC 對話",
+    "histories": [{"uid": "synthetic-history", "title": "SYNTHETIC 對話", "preview": "隔離資料，不連接正式服務", "timestamp": "2026-10-10T00:00:00Z"}],
+    "messages": [
+      {"role": "user", "timestamp": "2026-10-10T00:00:00Z", "content": "SYNTHETIC：檢查原始對話版面。"},
+      {"role": "assistant", "timestamp": "2026-10-10T00:00:01Z", "content": "這是隔離視覺預覽。發送、設定寫入與私人資料讀取均不可用。"}
+    ]
+  },
+  "getMemories": {"ok": false, "error": "SYNTHETIC preview: private memory unavailable", "memories": []},
+  "getTools": {"ok": false, "error": "SYNTHETIC preview: policy owner unavailable", "tools": [], "confirmation_available": false},
+  "getData": {
+    "ok": true,
+    "snapshot": {
+      "date": "2026-10-10", "title": "SYNTHETIC 今日預覽", "updatedAt": "2026-10-10T00:00:00Z",
+      "sections": [], "sourceStatus": [{"id": "mail", "status": "disabled", "message": "SYNTHETIC preview: provider unavailable"}, {"id": "study", "status": "disabled", "message": "SYNTHETIC preview: provider unavailable"}],
+      "today": {"items": [], "levels": {}, "counts": {}}
+    },
+    "memoryCandidates": []
+  },
+  "schedule.status": {"ok": true, "today": "2026-10-10", "timezone": "Asia/Taipei", "notificationScheduler": "failed"},
+  "schedule.view": {"ok": true, "items": [], "coverage": "SYNTHETIC", "hasMore": false, "limitations": ["SYNTHETIC preview: writes and providers unavailable"]},
+  "schedule.notifications": {"ok": false, "error": "SYNTHETIC preview: notifications unavailable"}
+}

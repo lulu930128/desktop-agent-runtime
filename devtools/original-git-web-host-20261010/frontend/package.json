@@ -1,0 +1,10 @@
+{
+  "name": "kuro-original-work-companion-preview",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node ../../../pet-electron/node_modules/typescript/bin/tsc --project tsconfig.json --noEmit",
+    "build": "node ../../../pet-electron/node_modules/vite/bin/vite.js build --config vite.config.mjs",
+    "preview": "node ../../../pet-electron/node_modules/vite/bin/vite.js preview --config vite.config.mjs --host 127.0.0.1 --port 4179 --strictPort"
+  }
+}

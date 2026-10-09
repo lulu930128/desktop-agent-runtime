@@ -1,0 +1,4 @@
+# Install only into this task's .venv, never envs/kuro-llm310.
+PySide6==6.11.1
+Pillow
+playwright
