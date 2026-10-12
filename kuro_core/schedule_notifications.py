@@ -13,6 +13,7 @@ from .schedule_contract import ScheduleConflict, aware, bounds, day, integer, lo
 from .schedule_store import encoded
 
 UTC = timezone.utc
+CONSUMER_COMMAND_CONTRACT = "kuro.core.notification-command.v1"
 
 
 def migrate_notifications(path):
@@ -140,12 +141,66 @@ class ScheduleNotifications:
 
     def read(self):
         with self.store.connect() as conn:
+            conn.execute("BEGIN")
             rows = conn.execute("SELECT * FROM schedule_notification_deliveries WHERE state NOT IN ('cancelled','dismissed','pending') ORDER BY due_at DESC,id LIMIT 101").fetchall()
-            return {"preferences":self._preferences(conn),"hasMore":len(rows)>100,"items":[
-                {"id":r["id"],"scheduleId":r["item_id"],"occurrenceDate":r["original_date"],"title":r["title"],"state":r["state"],"dueAt":r["due_at"],"channel":r["channel"]} for r in rows[:100]]}
+            preferences = self._preferences(conn)
+            return {"consumerWriteContract": CONSUMER_COMMAND_CONTRACT,
+                "preferencesRevision": self._revision(preferences),
+                "preferences":preferences,"hasMore":len(rows)>100,"items":[
+                {"id":r["id"],"scheduleId":r["item_id"],"occurrenceDate":r["original_date"],"title":r["title"],"state":r["state"],"dueAt":r["due_at"],"channel":r["channel"],
+                 "revision":self._delivery_revision(conn,r)} for r in rows[:100]]}
+
+    @staticmethod
+    def _revision(value):
+        return hashlib.sha256(encoded(value).encode()).hexdigest()
+
+    def _delivery_revision(self, conn, row):
+        item = conn.execute("SELECT revision,cancelled FROM schedule_items WHERE id=?", (row["item_id"],)).fetchone()
+        # An opaque content revision; lease tokens are never returned to Web UI.
+        return self._revision({"delivery":dict(row), "item":dict(item) if item else None})
+
+    def command(self, payload, *, now=None):
+        """Versioned consumer writes, atomically fenced with existing Core receipts.
+
+        Delivery claim/authorize/ack remain on action(), owned by QtScheduleDelivery.
+        No new table, schema migration, worker, automatic refresh or notifier.
+        """
+        if not isinstance(payload, dict) or set(payload) != {"command", "expectedRevision", "idempotencyKey"}:
+            raise ValueError("Invalid notification command")
+        command = payload["command"]
+        self._validate_action(command)
+        if command["action"] not in {"dismiss", "snooze", "preferences"}:
+            raise PermissionError("Consumer cannot deliver notifications")
+        revision = text(payload["expectedRevision"], "expectedRevision", 64)
+        if len(revision) != 64 or any(c not in "0123456789abcdef" for c in revision):
+            raise ValueError("Invalid notification revision")
+        key = "notification:" + text(payload["idempotencyKey"], "idempotencyKey", 160)
+        digest = self._revision(payload)
+        now = aware(now).astimezone(UTC) if now else datetime.now(UTC)
+        with self.store.connect(write=True) as conn:
+            replay = conn.execute("SELECT digest,response FROM schedule_mutations WHERE key=?", (key,)).fetchone()
+            if replay:
+                if replay["digest"] != digest: raise ScheduleConflict("Idempotency key reused with different notification command")
+                return json.loads(replay["response"])
+            if command["action"] == "preferences":
+                current = self._revision(self._preferences(conn))
+            else:
+                row = conn.execute("SELECT * FROM schedule_notification_deliveries WHERE id=?", (text(command.get("id"), "id", 100),)).fetchone()
+                if row is None: raise LookupError("Notification not found")
+                current = self._delivery_revision(conn, row)
+            if current != revision: raise ScheduleConflict("Notification or preference revision changed")
+            result = self._action_on_connection(command, now, conn)
+            conn.execute("INSERT INTO schedule_mutations(key,digest,response) VALUES(?,?,?)", (key,digest,encoded(result)))
+            return result
 
     def action(self, payload, *, now=None):
         now = aware(now).astimezone(UTC) if now else datetime.now(UTC)
+        self._validate_action(payload)
+        with self.store.connect(write=True) as conn:
+            return self._action_on_connection(payload, now, conn)
+
+    @staticmethod
+    def _validate_action(payload):
         if not isinstance(payload,dict):
             raise ValueError("Notification action must be an object")
         action = payload.get("action")
@@ -155,58 +210,60 @@ class ScheduleNotifications:
             raise ValueError("Invalid notification action fields")
         if action in {"dismiss","snooze","preferences"} and payload.get("confirmed") is not True:
             raise PermissionError("Confirmation required")
-        with self.store.connect(write=True) as conn:
-            if action == "preferences":
-                p = payload["preferences"]
-                if not isinstance(p,dict) or set(p) != {"timezone","quietEnabled","quietStart","quietEnd"} or type(p["quietEnabled"]) is not bool:
-                    raise ValueError("Invalid preferences")
-                zone(p["timezone"])
-                clock_value(p["quietStart"]); clock_value(p["quietEnd"])
-                if p["quietStart"] == p["quietEnd"]:
-                    raise ValueError("Quiet start and end must differ")
-                conn.execute("INSERT INTO schedule_preferences VALUES(1,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", (encoded(p),))
-                self._audit(conn,"preferences","updated",now)
-                return {"preferences":p}
-            if action == "claim":
-                if self._quiet(now,self._preferences(conn)):
-                    return {"delivery":None}
-                for row in conn.execute("SELECT * FROM schedule_notification_deliveries WHERE state='ready' AND channel='desktop' ORDER BY due_at,id LIMIT 100").fetchall():
-                    if not self._active(conn,row,now) or not row["due_at"] or not timedelta(0) <= now-aware(row["due_at"]) <= timedelta(minutes=30):
-                        continue
-                    token = uuid.uuid4().hex
-                    conn.execute("UPDATE schedule_notification_deliveries SET state='claimed',lease_token=?,lease_until=?,updated_at=? WHERE id=?",(token,(now+timedelta(seconds=20)).isoformat(),now.isoformat(),row["id"]))
-                    self._audit(conn,row["id"],"claimed",now)
-                    return {"delivery":{"id":row["id"],"leaseToken":token}}
+
+    def _action_on_connection(self, payload, now, conn):
+        action = payload["action"]
+        if action == "preferences":
+            p = payload["preferences"]
+            if not isinstance(p,dict) or set(p) != {"timezone","quietEnabled","quietStart","quietEnd"} or type(p["quietEnabled"]) is not bool:
+                raise ValueError("Invalid preferences")
+            zone(p["timezone"])
+            clock_value(p["quietStart"]); clock_value(p["quietEnd"])
+            if p["quietStart"] == p["quietEnd"]:
+                raise ValueError("Quiet start and end must differ")
+            conn.execute("INSERT INTO schedule_preferences VALUES(1,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", (encoded(p),))
+            self._audit(conn,"preferences","updated",now)
+            return {"preferences":p}
+        if action == "claim":
+            if self._quiet(now,self._preferences(conn)):
                 return {"delivery":None}
-            row = conn.execute("SELECT * FROM schedule_notification_deliveries WHERE id=?", (text(payload.get("id"),"id",100),)).fetchone()
-            if not row:
-                raise LookupError("Notification not found")
-            if action in {"authorize","ack"}:
-                if payload["leaseToken"] != row["lease_token"] or not row["lease_until"] or aware(row["lease_until"]) <= now:
-                    raise ScheduleConflict("Delivery lease expired")
-                required = "claimed" if action == "authorize" else "dispatching"
-                if row["state"] != required:
-                    if action == "ack" and row["state"] == payload.get("result"):
-                        return {"state":row["state"]}
-                    raise ScheduleConflict("Delivery state changed")
-                if action == "authorize":
-                    if not self._active(conn,row,now) or self._quiet(now,self._preferences(conn)) or now-aware(row["due_at"]) > timedelta(minutes=30):
-                        raise ScheduleConflict("Reminder no longer eligible")
-                    target = "dispatching"
-                else:
-                    target = payload["result"]
-                    if target not in {"delivered","failed","unknown"}:
-                        raise ValueError("Invalid delivery result")
-            elif action == "dismiss":
-                target = "dismissed"
+            for row in conn.execute("SELECT * FROM schedule_notification_deliveries WHERE state='ready' AND channel='desktop' ORDER BY due_at,id LIMIT 100").fetchall():
+                if not self._active(conn,row,now) or not row["due_at"] or not timedelta(0) <= now-aware(row["due_at"]) <= timedelta(minutes=30):
+                    continue
+                token = uuid.uuid4().hex
+                conn.execute("UPDATE schedule_notification_deliveries SET state='claimed',lease_token=?,lease_until=?,updated_at=? WHERE id=?",(token,(now+timedelta(seconds=20)).isoformat(),now.isoformat(),row["id"]))
+                self._audit(conn,row["id"],"claimed",now)
+                return {"delivery":{"id":row["id"],"leaseToken":token}}
+            return {"delivery":None}
+        row = conn.execute("SELECT * FROM schedule_notification_deliveries WHERE id=?", (text(payload.get("id"),"id",100),)).fetchone()
+        if not row:
+            raise LookupError("Notification not found")
+        if action in {"authorize","ack"}:
+            if payload["leaseToken"] != row["lease_token"] or not row["lease_until"] or aware(row["lease_until"]) <= now:
+                raise ScheduleConflict("Delivery lease expired")
+            required = "claimed" if action == "authorize" else "dispatching"
+            if row["state"] != required:
+                if action == "ack" and row["state"] == payload.get("result"):
+                    return {"state":row["state"]}
+                raise ScheduleConflict("Delivery state changed")
+            if action == "authorize":
+                if not self._active(conn,row,now) or self._quiet(now,self._preferences(conn)) or now-aware(row["due_at"]) > timedelta(minutes=30):
+                    raise ScheduleConflict("Reminder no longer eligible")
+                target = "dispatching"
             else:
-                if not self._active(conn,row,now) or row["state"] in {"dispatching","claimed","cancelled"}:
-                    raise ScheduleConflict("Reminder cannot be snoozed")
-                until = aware(payload["until"]).astimezone(UTC)
-                if not now < until <= now+timedelta(days=7):
-                    raise ValueError("Snooze must be in the next seven days")
-                conn.execute("UPDATE schedule_notification_deliveries SET due_at=?,snooze_until=? WHERE id=?", (until.isoformat(),until.isoformat(),row["id"]))
-                target = "snoozed"
-            conn.execute("UPDATE schedule_notification_deliveries SET state=?,updated_at=? WHERE id=?", (target,now.isoformat(),row["id"]))
-            self._audit(conn,row["id"],target,now)
-            return {"state":target, **({"title":row["title"],"dueAt":row["due_at"]} if action=="authorize" else {})}
+                target = payload["result"]
+                if target not in {"delivered","failed","unknown"}:
+                    raise ValueError("Invalid delivery result")
+        elif action == "dismiss":
+            target = "dismissed"
+        else:
+            if not self._active(conn,row,now) or row["state"] in {"dispatching","claimed","cancelled"}:
+                raise ScheduleConflict("Reminder cannot be snoozed")
+            until = aware(payload["until"]).astimezone(UTC)
+            if not now < until <= now+timedelta(days=7):
+                raise ValueError("Snooze must be in the next seven days")
+            conn.execute("UPDATE schedule_notification_deliveries SET due_at=?,snooze_until=? WHERE id=?", (until.isoformat(),until.isoformat(),row["id"]))
+            target = "snoozed"
+        conn.execute("UPDATE schedule_notification_deliveries SET state=?,updated_at=? WHERE id=?", (target,now.isoformat(),row["id"]))
+        self._audit(conn,row["id"],target,now)
+        return {"state":target, **({"title":row["title"],"dueAt":row["due_at"]} if action=="authorize" else {})}

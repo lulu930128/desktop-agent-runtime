@@ -1,0 +1,22 @@
+test_cleanup_errors_do_not_skip_later_resources (test_g5_desktop.DesktopTests) ... ok
+test_close_hides_without_cleanup_and_reveal_restores (test_g5_desktop.DesktopTests) ... ok
+test_no_tray_keeps_window_reachable_even_after_tray_disappears (test_g5_desktop.DesktopTests) ... ok
+test_pet_spawn_overrides_inherited_desktop_owner (test_g5_desktop.DesktopTests) ... ok
+test_quit_cleanup_once_order_and_explicit_close (test_g5_desktop.DesktopTests) ... ok
+test_restart_native_confirmation_cancel_and_accept (test_g5_desktop.DesktopTests) ... ok
+test_tray_actions_and_message_click_reveal_qt (test_g5_desktop.DesktopTests) ... ok
+test_ack_failure_bounded_no_redisplay (test_g5_desktop.NotificationTests) ... ok
+test_authorize_conflict_never_shows (test_g5_desktop.NotificationTests) ... ok
+test_authorize_false_never_shows_or_acks (test_g5_desktop.NotificationTests) ... ok
+test_claim_authorize_main_thread_show_then_background_ack (test_g5_desktop.NotificationTests) ... ok
+test_claim_failure_releases_inflight_without_local_retry (test_g5_desktop.NotificationTests) ... ok
+test_no_delivery_when_tray_or_messages_unavailable (test_g5_desktop.NotificationTests) ... ok
+test_show_failure_is_acked_failed (test_g5_desktop.NotificationTests) ... ok
+test_single_inflight_including_ack (test_g5_desktop.NotificationTests) ... ok
+test_stop_cancels_pending_show_and_stops_future_claims (test_g5_desktop.NotificationTests) ... ok
+test_ui_timeout_unknown_and_queued_signal_cannot_show_later (test_g5_desktop.NotificationTests) ... ok
+
+----------------------------------------------------------------------
+Ran 17 tests in 0.279s
+
+OK

@@ -85,7 +85,7 @@
       "category": "mail",
       "deny_truthy_args": ["include_spam_trash"]
     },
-    "kuro-mail::mail.update_briefing": {
+    "kuro-mail::mail.refresh": {
       "mode": "read_only",
       "category": "mail",
       "deny_truthy_args": ["include_spam_trash"]

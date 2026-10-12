@@ -5,7 +5,7 @@ const path = require('node:path');
 const { app, BrowserWindow, screen } = require('electron');
 const { modelIsVisible } = require('../pet-electron/src/main-process/pet-visibility');
 const root = path.resolve(__dirname, '..');
-const evidence = path.join(root, 'launcher_logs/work-panel-validation');
+const evidence = path.join(root, 'launcher_logs/pet-validation');
 const profile = fs.mkdtempSync(path.join(evidence, 'pet-placement-'));
 app.setPath('userData', profile);
 Object.assign(process.env, {

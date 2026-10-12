@@ -6,13 +6,13 @@
 
 主要受測區為 `Open-LLM-VTuber/src/open_llm_vtuber/conversations/`、`agent/`、`mcpp/`；Observation／DecisionTrace 可作輔助紀錄。這些 MCP／agent 檔案也是 production source，修改實驗應在獨立 worktree／隔離 harness 中進行。
 
-Launcher、Electron、Reader／Work Panel、Live2D、Bridge 與 Central Voice 是 interaction／harness 邊界，不是第一版防禦算法的 owner。不要新建平行 executor、把 defense 塞入 persona、讓 tool result 批准操作，或把外部 OMI／mail／study truth 複製到展示層。
+Qt Launcher、Electron Pet、Live2D、Bridge 與 Central Voice 是 interaction／harness 邊界，不是第一版防禦算法的 owner。不要新建平行 executor、把 defense 塞入 persona、讓 tool result 批准操作，或把外部 OMI／mail／study truth 複製到展示層。
 
 ## Worktree 不等於 runtime 隔離
 
 正式 checkout 與 research branch 各有 source 目錄，但仍可能共用 env、absolute paths、使用者目錄、ports、帳號與外部服務。Junction 也不提供唯讀保護；透過 junction 編輯仍會改到目標，不能作為隔離方法。
 
-目前 Launcher 還有固定 `Local\KuroDesktopAgentLauncher` mutex 與 `Local\KuroDesktopAgentWorkPanelActivate` event；另一個 worktree 直接啟動可能喚回正式面板。Electron 使用 `app.getPath("userData")`，也不隨 Git worktree 自動分離。本 repo 尚無完整可並行啟動的 research profile。
+目前 Launcher 還有固定 `Local\KuroDesktopAgentLauncher` mutex 與 `Local\KuroDesktopAgentQtActivate` event；另一個 worktree 直接啟動可能喚回正式 Qt。Electron 使用 `app.getPath("userData")`，也不隨 Git worktree 自動分離。本 repo 尚無完整可並行啟動的 research profile。
 
 後續建立 research worktree 時，先記錄 production checkpoint SHA，再建立專用 branch（例如 `codex/research-r001-agent-injection`）；branch／路徑由當次任務決定，不覆用 main 的 dirty diff。預設先使用單元／replay harness＋fake tools，完成下表隔離前不要直接執行 `桌寵啟動器.vbs`、Launcher 或 `npm start`。
 
@@ -28,7 +28,7 @@ Launcher、Electron、Reader／Work Panel、Live2D、Bridge 與 Central Voice �
 | Shared services | 不停止中央 Voice／其他 consumer-owned service；語音研究若需專屬 engine，先由中央 owner 定義隔離方案 |
 | Cleanup | 只釋放實驗 owned handles／ports／DB；保存審查過的結果，不以全機 kill／reset／clean 清場 |
 
-`KuroCoreStore` 接受任意 DB path，沒有內建 production-path deny guard；ScheduleServer lease 也不阻止直接 SQLite writer。此表是必須由研究 harness 落實並驗證的前置 contract，不能宣稱本輪已做自動 enforcement。[CorePersistence](CorePersistence.md)列出共享 migration 風險。
+`KuroCoreStore` 接受任意 DB path，沒有內建 production-path deny guard；`ScheduleCapability` 的 service lease 也不阻止直接 SQLite writer。此表是必須由研究 harness 落實並驗證的前置 contract，不能宣稱本輪已做自動 enforcement。[CorePersistence](CorePersistence.md)列出共享 migration 風險。
 
 ## 可重現的 baseline
 

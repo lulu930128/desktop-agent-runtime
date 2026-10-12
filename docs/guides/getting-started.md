@@ -51,14 +51,11 @@ Set-Location "C:\project\desktop-agent-runtime"
 桌寵啟動器.vbs
 ```
 
-`桌寵啟動器.vbs` 會以工作面板模式啟動 Qt orchestrator。Qt 控制台在背景管理 runtime，
-不建立第二個可見面板；Electron 工作面板會先顯示，不需要等待完整 `startup_profile` ready。
-再次執行同一支 VBS 時，secondary process 只向既有 Launcher 送出 activation intent；由既有 Launcher
-驗證、復用或重建 Pet shell，再把工作面板帶回前景。關閉工作面板只會隱藏視窗並保留 tray runtime。
-若啟動失敗，控制台才會例外恢復到前景顯示診斷資訊。
+`桌寵啟動器.vbs` 與直接執行 `launcher_qt.py` 都顯示 Qt 主 UI。再次執行只送 Qt activation event，由 primary Qt reveal。X 隱藏到 tray；Quit 走 owned child cleanup；沒有 tray 時保留視窗。
 
-需要直接進入完整 Qt 控制台時，仍可執行上方的 `launcher_qt.py` 命令。現在
-`startup_profile.auto_start` 為 `true`，所以控制台會依設定嘗試啟動預設 profile。
+`startup_profile.auto_start` 決定是否自動啟動 profile，不決定 Qt 是否顯示。Electron 只顯示 Pet，不再建立 WorkPanel／Reader／Briefing。
+
+本輪正式 cold boot／tray／notification 尚未驗收，操作前閱讀 [G8 人工 checklist](../agent-runs/qt-ui-convergence-20261007/G8ManualAcceptance.md)。
 
 ## 第一次準備環境
 
@@ -66,11 +63,11 @@ Set-Location "C:\project\desktop-agent-runtime"
 - 檢查 `kuro_launcher.settings.yaml` 的 paths、ports、startup profile 與 voice mapping；不要直接沿用其他機器路徑。
 - `.env`／`.env.local` 保存本機 provider 設定，不放入 Git、截圖或公開 issue。
 - 依[中央語音服務](../central-voice-runtime.md)準備獨立服務；consumer 不停止共用引擎。舊引擎已移除，不能只改回 legacy mode 就回復。
-- VBS 會檢查 `pet-electron/renderer-dist/work-panel.html`，所以安裝 dependencies 後還需要 build。
+- Pet 使用 `pet-electron/renderer-dist/index.html`，安裝 dependencies 後需要 build；不再產生 work-panel.html。
 
 ## 啟動確認
 
-先確認工作面板，再觀察各服務 readiness。面板可見不代表 LLM、語音推論或播放成功；對話、文字、音訊與 lip sync 需分別確認。
+先確認 Qt 主 UI，再觀察各服務 readiness。面板可見不代表 LLM、語音推論或播放成功；對話、文字、音訊與 lip sync 需分別確認。
 
 既有 Pet shell 運行時可唯讀檢查（port 以 settings 為準）：
 

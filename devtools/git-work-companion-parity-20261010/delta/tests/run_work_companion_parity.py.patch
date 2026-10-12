@@ -1,0 +1,78 @@
+--- before/tests/run_work_companion_parity.py
++++ after/tests/run_work_companion_parity.py
+@@ -0,0 +1,75 @@
++"""Bounded isolated tests; imports source only, blocks live services/providers."""
++from pathlib import Path
++import argparse
++import os
++import json
++import re
++import subprocess
++import sys
++import tempfile
++import hashlib
++from datetime import datetime, timezone
++
++ROOT = Path(__file__).resolve().parents[1]
++BOOTSTRAP = """import socket,sys,unittest
++original=socket.socket.connect
++def bounded(self,address):
++ if isinstance(address,tuple):
++  host,port=address[:2]
++  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:
++   raise AssertionError('Live network prohibited in Work Companion validation')
++ return original(self,address)
++socket.socket.connect=bounded
++result=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))
++sys.exit(not result.wasSuccessful())
++"""
++
++def main():
++    sys.stdout.reconfigure(encoding="utf-8")
++    sys.stderr.reconfigure(encoding="utf-8")
++    parser = argparse.ArgumentParser()
++    parser.add_argument("patterns", nargs="+", help="Explicit unittest file patterns")
++    parser.add_argument("--start-dir", choices=("tests", "Open-LLM-VTuber/tests"), default="tests")
++    parser.add_argument("--scale", choices=("1", "1.25", "2"), default="1")
++    args = parser.parse_args()
++    evidence_root = ROOT / "devtools/git-work-companion-parity-20261010"
++    run = evidence_root / "test-runs" / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
++    run.mkdir(parents=True)
++    sources = [*sorted((ROOT / "kuro_launcher").glob("qt_*.py")),
++               *(ROOT / "Open-LLM-VTuber/src/open_llm_vtuber" / name for name in
++                 ("websocket_handler.py", "chat_history_manager.py", "chat_event_manager.py", "character_memory_manager.py"))]
++    report = {"interpreter": sys.executable, "start_dir": args.start_dir, "qt_scale_factor": args.scale,
++              "scope": "ISOLATED_ONLY", "source_sha256": {
++                  p.relative_to(ROOT).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sources},
++              "suites": []}
++    with tempfile.TemporaryDirectory(prefix="parity-test-", dir=ROOT / "devtools") as directory:
++        env = os.environ.copy()
++        env.update(TEMP=directory, TMP=directory, QT_QPA_PLATFORM="offscreen", QT_SCALE_FACTOR=args.scale, PYTHONDONTWRITEBYTECODE="1",
++                   PYTHONIOENCODING="utf-8", PYTHONPATH=os.pathsep.join([str(ROOT / "Open-LLM-VTuber/src"),
++                    str(ROOT / "Open-LLM-VTuber"), str(ROOT)]))
++        for pattern in args.patterns:
++            command = [sys.executable, "-B", "-c", BOOTSTRAP, pattern, args.start_dir]
++            result = subprocess.run(command, cwd=ROOT, env=env,
++                                    capture_output=True, text=True, encoding="utf-8", errors="replace",
++                                    timeout=90, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
++            output = result.stdout + result.stderr
++            (evidence_root / (pattern + ".txt")).write_text(output, encoding="utf-8")
++            (run / (pattern + ".txt")).write_text(output, encoding="utf-8")
++            print(output, flush=True)
++            count = re.search(r"Ran (\d+) tests?", output)
++            report["suites"].append({"suite": pattern, "tests": int(count.group(1)) if count else None,
++                                    "exit": result.returncode, "command": command,
++                                    "output_sha256": hashlib.sha256(output.encode("utf-8")).hexdigest()})
++            (run / "results.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
++            for screenshot in evidence_root.glob("R*-offscreen.png"):
++                (run / screenshot.name).write_bytes(screenshot.read_bytes())
++            print(json.dumps({"suite": pattern, "exit": result.returncode,
++                              "tests": int(count.group(1)) if count else None}), flush=True)
++            if count is None or int(count.group(1)) == 0:
++                return 1  # Empty output is not validation evidence.
++            if result.returncode:
++                return result.returncode
++    return 0
++
++if __name__ == "__main__":
++    raise SystemExit(main())

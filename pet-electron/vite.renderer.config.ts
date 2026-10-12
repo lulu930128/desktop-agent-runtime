@@ -15,8 +15,8 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       input: {
-        pet: path.resolve(__dirname, "renderer", "index.html"),
-        workPanel: path.resolve(__dirname, "renderer", "work-panel.html")
+        pet: path.resolve(__dirname, "renderer", "index.html")
+
       }
     }
   }

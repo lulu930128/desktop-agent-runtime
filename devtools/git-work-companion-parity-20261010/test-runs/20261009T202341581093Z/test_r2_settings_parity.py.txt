@@ -1,0 +1,18 @@
+test_controller_role_fence_precedes_any_memory_write (test_r2_settings_parity.OwnerTests) ... ok
+test_policy_projection_uses_owner_decisions_and_never_relaxes_confirm (test_r2_settings_parity.OwnerTests) ... ok
+test_stale_delete_and_compact_rejected_by_canonical_memory_owner (test_r2_settings_parity.OwnerTests) ... ok
+test_chat_thinking_change_uses_profile_confirmation_and_cancel_restores_selection (test_r2_settings_parity.SettingsTests) ... ok
+test_memory_confirmation_binds_profile_and_digest (test_r2_settings_parity.SettingsTests) ... ok
+test_memory_role_change_during_confirmation_never_runs_task (test_r2_settings_parity.SettingsTests) ... ok
+test_microphone_owner_absent_disabled_and_submit_context_fenced (test_r2_settings_parity.SettingsTests) ... ok
+test_overlong_memory_is_not_silently_truncated (test_r2_settings_parity.SettingsTests) ... ok
+test_pet_controls_and_compact_preference_only_call_existing_owners (test_r2_settings_parity.SettingsTests) ... ok
+test_profile_confirmation_freezes_until_matching_runtime_identity (test_r2_settings_parity.SettingsTests) ... ok
+test_reload_pet_model_uses_same_owner_and_requires_confirmation (test_r2_settings_parity.SettingsTests) ... ok
+test_settings_offscreen_screenshot (test_r2_settings_parity.SettingsTests) ... ok
+test_six_sections_in_single_surface_and_policy_unavailable_reason (test_r2_settings_parity.SettingsTests) ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 1.351s
+
+OK

@@ -1,0 +1,387 @@
+{
+  "scope": "SOURCE_AND_ISOLATED_ONLY",
+  "desktop": "UNVERIFIED",
+  "reviewer": "PENDING_STATIC_REVIEW",
+  "python_unique_tests": 208,
+  "python_suites": 20,
+  "node_tests": 20,
+  "node_output_sha256": "6a07c940cb6585bece656c07b32193ef6e377dacca382bdd25c243f3ea103503",
+  "latest_suites": [
+    {
+      "suite": "test_schedule_core.py",
+      "tests": 19,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_schedule_core.py",
+        "tests"
+      ],
+      "output_sha256": "669b2bcaccf538b6be9a6cde65db148cec72a34e146562f81e2fd54a3afa1916",
+      "evidence": "test-runs/20261009T201917774653Z/results.json",
+      "scale": "1",
+      "start_dir": "tests"
+    },
+    {
+      "suite": "test_schedule_api.py",
+      "tests": 6,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_schedule_api.py",
+        "tests"
+      ],
+      "output_sha256": "3b57ca6ed26a8b111839934d81296d6708a547f952dbae5eb2fa1615cb1ec5b0",
+      "evidence": "test-runs/20261009T201917774653Z/results.json",
+      "scale": "1",
+      "start_dir": "tests"
+    },
+    {
+      "suite": "test_schedule_notifications.py",
+      "tests": 10,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_schedule_notifications.py",
+        "tests"
+      ],
+      "output_sha256": "fcaff8e95b13a0f7b8b62c7abe5cf880a551b0e1cc39f79993220ffde65a9649",
+      "evidence": "test-runs/20261009T201917774653Z/results.json",
+      "scale": "1",
+      "start_dir": "tests"
+    },
+    {
+      "suite": "test_runtime_capabilities.py",
+      "tests": 8,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_runtime_capabilities.py",
+        "tests"
+      ],
+      "output_sha256": "c5d45c6527798fc66d7f252d2ea87c8263645f0c0049dd6630b0cf5406bf22eb",
+      "evidence": "test-runs/20261009T201917774653Z/results.json",
+      "scale": "1",
+      "start_dir": "tests"
+    },
+    {
+      "suite": "test_launcher_entrypoint.py",
+      "tests": 6,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_launcher_entrypoint.py",
+        "tests"
+      ],
+      "output_sha256": "5000c557131a9e3b1c66e9f689c86ce4d33418fd7d5a762645d57b23f9df25aa",
+      "evidence": "test-runs/20261009T201917774653Z/results.json",
+      "scale": "1",
+      "start_dir": "tests"
+    },
+    {
+      "suite": "test_character_memory_manager.py",
+      "tests": 8,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_character_memory_manager.py",
+        "Open-LLM-VTuber/tests"
+      ],
+      "output_sha256": "7411c4d6e7ed2b6fe9732d9c4767ff4e3ad754aff22705066d211240e5a952b9",
+      "evidence": "test-runs/20261009T201955427137Z/results.json",
+      "scale": "1",
+      "start_dir": "Open-LLM-VTuber/tests"
+    },
+    {
+      "suite": "test_mcp_m0_memory.py",
+      "tests": 9,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_mcp_m0_memory.py",
+        "Open-LLM-VTuber/tests"
+      ],
+      "output_sha256": "cb7caab64af580d8077885c0afcc6c3204e7ab129d40df35231eda3f622b9662",
+      "evidence": "test-runs/20261009T201955427137Z/results.json",
+      "scale": "1",
+      "start_dir": "Open-LLM-VTuber/tests"
+    },
+    {
+      "suite": "test_r2_settings_parity.py",
+      "tests": 16,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_r2_settings_parity.py",
+        "tests"
+      ],
+      "output_sha256": "ab59d58b22d1e878d820c7b14e730f3c46138566579f7ad261981d684a1393ba",
+      "evidence": "test-runs/20261009T203313691014Z/results.json",
+      "scale": "1",
+      "start_dir": "tests"
+    },
+    {
+      "suite": "test_work_companion_source_encoding.py",
+      "tests": 3,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_work_companion_source_encoding.py",
+        "tests"
+      ],
+      "output_sha256": "fd2fc042ed735910bf8416652d49dce83409b37f0187feefd55159538b8cddb9",
+      "evidence": "test-runs/20261009T203614884181Z/results.json",
+      "scale": "1",
+      "start_dir": "tests"
+    },
+    {
+      "suite": "test_v1_work_companion_view.py",
+      "tests": 7,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_v1_work_companion_view.py",
+        "tests"
+      ],
+      "output_sha256": "104d7281feddde8af8da78b3a883339a264f25a32c109d7d9928780de46e19f1",
+      "evidence": "test-runs/20261009T203313691014Z/results.json",
+      "scale": "1",
+      "start_dir": "tests"
+    },
+    {
+      "suite": "test_r3_today_schedule_parity.py",
+      "tests": 6,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_r3_today_schedule_parity.py",
+        "tests"
+      ],
+      "output_sha256": "fef9c7d5eb27fac046aa62806cbae01742f7d075a0fd6b4e0254265ddfb3f55e",
+      "evidence": "test-runs/20261009T203313691014Z/results.json",
+      "scale": "1",
+      "start_dir": "tests"
+    },
+    {
+      "suite": "test_r1_ws_dispatch_regression.py",
+      "tests": 6,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_r1_ws_dispatch_regression.py",
+        "tests"
+      ],
+      "output_sha256": "73d07a66c512334bc349c1f8adab909fcaac961d3a7793ba458928728bb889b9",
+      "evidence": "test-runs/20261009T203313691014Z/results.json",
+      "scale": "1",
+      "start_dir": "tests"
+    },
+    {
+      "suite": "test_r1_history_parity.py",
+      "tests": 22,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_r1_history_parity.py",
+        "tests"
+      ],
+      "output_sha256": "f531fd9e335802785753f797349a6850678f279164ed9e20657841db63ab9e45",
+      "evidence": "test-runs/20261009T203313691014Z/results.json",
+      "scale": "1",
+      "start_dir": "tests"
+    },
+    {
+      "suite": "test_r1_production_view.py",
+      "tests": 7,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_r1_production_view.py",
+        "tests"
+      ],
+      "output_sha256": "fa5b496497e4d5b20fa9417d27229f8b31ddd1a2ee5d15424afaa2e9b6953156",
+      "evidence": "test-runs/20261009T203313691014Z/results.json",
+      "scale": "1",
+      "start_dir": "tests"
+    },
+    {
+      "suite": "test_r4_history_transport.py",
+      "tests": 2,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_r4_history_transport.py",
+        "tests"
+      ],
+      "output_sha256": "5b22d3ea1bb369bb9659a536c6ee524cfc245afbc8f0d695e6efa855f1158329",
+      "evidence": "test-runs/20261009T203313691014Z/results.json",
+      "scale": "1",
+      "start_dir": "tests"
+    },
+    {
+      "suite": "test_g3_conversation.py",
+      "tests": 27,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_g3_conversation.py",
+        "tests"
+      ],
+      "output_sha256": "d6a64cb16eb522cea06851f6a9c5a949baf4c52a25a68c7e3329555d957c6f5f",
+      "evidence": "test-runs/20261009T203313691014Z/results.json",
+      "scale": "1",
+      "start_dir": "tests"
+    },
+    {
+      "suite": "test_g4_qt_core.py",
+      "tests": 15,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_g4_qt_core.py",
+        "tests"
+      ],
+      "output_sha256": "abb009a28c3442570af4ea872ecc43b8f1f1075369309ad3b01a18f9b4bae4ff",
+      "evidence": "test-runs/20261009T203313691014Z/results.json",
+      "scale": "1",
+      "start_dir": "tests"
+    },
+    {
+      "suite": "test_g5_desktop.py",
+      "tests": 17,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_g5_desktop.py",
+        "tests"
+      ],
+      "output_sha256": "c87ef1889803ab9d275444fe86968eacac83f747856ef82e2ae025e0df013319",
+      "evidence": "test-runs/20261009T203313691014Z/results.json",
+      "scale": "1",
+      "start_dir": "tests"
+    },
+    {
+      "suite": "test_g6_pet_boundary.py",
+      "tests": 11,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_g6_pet_boundary.py",
+        "tests"
+      ],
+      "output_sha256": "0173224751203414ac3198223bc3818c3fa37372958864a77e291d5f9f84772a",
+      "evidence": "test-runs/20261009T203313691014Z/results.json",
+      "scale": "1",
+      "start_dir": "tests"
+    },
+    {
+      "suite": "test_g8_runtime.py",
+      "tests": 3,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_g8_runtime.py",
+        "tests"
+      ],
+      "output_sha256": "fa4a38dfdf3232fb49cbc02896e71a9566f9acfe7f947e96ff27d5828776f593",
+      "evidence": "test-runs/20261009T203313691014Z/results.json",
+      "scale": "1",
+      "start_dir": "tests"
+    }
+  ],
+  "additional_dpi_runs": [
+    {
+      "suite": "test_v1_work_companion_view.py",
+      "tests": 7,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_v1_work_companion_view.py",
+        "tests"
+      ],
+      "output_sha256": "4cd49eb40b4359497e42fbd622a485ed3b99fe0bd5da7b1f52bb1abdf602ac5c",
+      "evidence": "test-runs/20261009T204119519102Z/results.json",
+      "scale": "2",
+      "start_dir": "tests"
+    },
+    {
+      "suite": "test_v1_work_companion_view.py",
+      "tests": 7,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_v1_work_companion_view.py",
+        "tests"
+      ],
+      "output_sha256": "007a897985a136a9ae33869895f3b54153bcec41b1c989096788761f6a8751f7",
+      "evidence": "test-runs/20261009T202858868055Z/results.json",
+      "scale": "1.25",
+      "start_dir": "tests"
+    }
+  ]
+}

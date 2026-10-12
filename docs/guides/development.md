@@ -26,8 +26,6 @@ Electron main process：
 node --check .\pet-electron\src\main.js
 node --check .\pet-electron\src\state.js
 node --check .\pet-electron\src\main-process\control-server.js
-node --check .\pet-electron\src\main-process\briefing-store.js
-node --check .\pet-electron\src\briefing-preload.js
 ```
 
 Electron renderer：
@@ -38,8 +36,8 @@ npm run check:renderer
 npm run build:renderer
 ```
 
-Runtime 或 UI 變更不能只看 build；至少要確認實際 listener、`/status`、`/briefing`，
-並在有視覺風險時檢查真正顯示中的 Qt、Live2D、Reader 或 Briefing 畫面。
+Runtime 或 UI 變更不能只看 build；至少要確認實際 listener、pet-local `/status`、Core Today／Schedule，
+並在有視覺風險時檢查真正顯示中的 Qt 與 Live2D 畫面。
 
 ## 既有測試入口
 
@@ -73,3 +71,12 @@ Runtime 或 UI 變更不能只看 build；至少要確認實際 listener、`/sta
 詳見[現況架構](../architecture/RuntimeArchitecture.md)與[品質門檻](../product/QualityBar.md)。
 
 Core 改動先核對[責任地圖](../architecture/OwnershipMap.md)與[persistence contract](../architecture/CorePersistence.md)。`storage.py` 是正式 Schedule 啟動依賴；shadow 測試或研究不得用正式 `work.sqlite3`。只改文件／註解時維持 Tier 0，不因本表列出測試就啟動整套服務。研究前另讀[研究邊界](../architecture/ResearchBoundary.md)；建立 worktree 本身不保證 runtime 隔離。
+
+## Qt convergence 隔離回歸
+
+```powershell
+.\envs\kuro-llm310\python.exe -B tests/run_qt_convergence.py --group python
+.\envs\kuro-llm310\python.exe -B tests/run_qt_convergence.py --group node
+```
+
+runner 使用 repo-root disposable TEMP/TMP、offscreen、synthetic fixtures，阻擋 shared/live ports；不啟動正式桌面。模型／裝置／Windows tray acceptance 另依 [G8 人工 checklist](../agent-runs/qt-ui-convergence-20261007/G8ManualAcceptance.md)。

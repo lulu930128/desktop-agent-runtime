@@ -1,0 +1,11 @@
+test_bind_collision_does_not_touch_another_database (test_schedule_api.ScheduleApiTests) ... ok
+test_identity_auth_origin_and_unknown_route (test_schedule_api.ScheduleApiTests) ... ok
+test_mutation_errors_and_read_no_write (test_schedule_api.ScheduleApiTests) ... ok
+test_restart_recovers_saved_state (test_schedule_api.ScheduleApiTests) ... ok
+test_same_database_cannot_run_on_second_port (test_schedule_api.ScheduleApiTests) ... ok
+test_saved_mutation_survives_projection_failure (test_schedule_api.ScheduleApiTests) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 3.790s
+
+OK

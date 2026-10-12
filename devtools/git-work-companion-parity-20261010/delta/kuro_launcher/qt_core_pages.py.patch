@@ -1,0 +1,254 @@
+--- before/kuro_launcher/qt_core_pages.py
++++ after/kuro_launcher/qt_core_pages.py
+@@ -18,9 +18,8 @@
+ 
+ MAIN_NAV_KEYS = ("chat", "today", "schedule")
+ SETTINGS_LABELS = {
+-    "general": "Assistant / Profile", "appearance": "Pet",
+-    "conversation": "Conversation & Memory", "sources": "Notifications / Sources",
+-    "advanced": "Tools / Diagnostics / Runtime",
++    "general": "助理", "conversation": "對話與記憶", "perception": "語音與感知",
++    "tools": "工具與權限", "appearance": "桌寵與外觀", "advanced": "進階診斷",
+ }
+ 
+ 
+@@ -128,13 +127,29 @@
+ 
+ class TodayPage(CorePage):
+     summary_changed = Signal(str)
++    context_requested = Signal(dict)
++    schedule_requested = Signal()
+ 
+     def __init__(self, controller, parent=None):
+         super().__init__(controller, "Today", parent)
+-        button("重新讀取 Today", self.refresh, self.layout)
++        self._payload = None
++        self._fresh = False
++        actions = QHBoxLayout()
++        button("重新讀取 Today", self.refresh, actions)
++        button("查看行程", self.schedule_requested.emit, actions)
++        self.layout.addLayout(actions)
+         self.meta = text_box()
+-        self.meta.setMaximumHeight(200)
++        self.meta.setMaximumHeight(94)
+         self.layout.addWidget(self.meta)
++        self.layout.addWidget(label("今日重點 · Core 排序前五筆"))
++        self.priority = QListWidget()
++        self.priority.setMaximumHeight(140)
++        self.priority.itemClicked.connect(lambda item: self.select_work(item.data(Qt.ItemDataRole.UserRole)))
++        self.layout.addWidget(self.priority)
++        self.source_filter = QComboBox()
++        self.source_filter.addItem("所有來源", "")
++        self.source_filter.currentIndexChanged.connect(self._render_items)
++        self.layout.addWidget(self.source_filter)
+         split = QSplitter()
+         self.items = QListWidget()
+         self.detail = text_box()
+@@ -142,47 +157,134 @@
+         split.addWidget(self.items)
+         split.addWidget(self.detail)
+         self.layout.addWidget(split, 1)
++        self.context_button = button("帶入普通對話草稿", self.use_context, self.layout)
++        self.context_button.setEnabled(False)
+         self.sources = text_box()
+-        self.sources.setMaximumHeight(180)
++        self.sources.setMaximumHeight(84)
+         self.layout.addWidget(label("來源狀態（Mail / Study 與其他 Core 已配置來源）"))
+         self.layout.addWidget(self.sources)
++        self.layout.addWidget(label("Mail／Study 狀態依 Core 顯示。舊的郵件內文、手動 provider 刷新與課程跳轉未恢復：沒有正式 action owner。"))
+ 
+     def refresh(self):
+         self.run(self.controller.read_today, self.apply, self.clear_failed)
+ 
+     def clear_failed(self, _error):
++        self._fresh = False
++        self.context_button.setEnabled(False)
++        self.status.setText(f"Today 讀取失敗：{_error}。以下若有內容是上次投影，尚未更新。")
++        self.summary_changed.emit("Today 無法讀取；完整度未知。")
++
++    def apply(self, payload):
++        meta = today_text(payload)
++        by_id = {item["workId"]: item for item in payload["items"]}
++        if any(item_id not in by_id for section in payload["sections"] for item_id in section["itemIds"]):
++            raise ValueError("Today section references missing work")
++        self._payload = copy.deepcopy(payload)
++        self._fresh = True
++        self.meta.setPlainText(meta)
++        self.sources.setPlainText("\n".join(
++            f"{state.get('integrationId', state.get('source', '未提供'))} · "
++            f"{state.get('availability', '未提供')} · {state.get('freshness', '未提供')} · {state.get('connection', '未提供')}\n"
++            f"觀察：{state.get('observedAt') or '未提供'} · 有效至：{state.get('validUntil') or '未提供'} · 限制：{state.get('limitationCount', '未提供')}"
++            for state in payload["sourceStates"]) or "Core 尚未提供來源狀態；不能解讀為來源正常。")
++        selected_source = self.source_filter.currentData()
++        sources = sorted({str(item.get("source") or "") for item in payload["items"]}
++                         | {str(state.get("integrationId") or state.get("source") or "") for state in payload["sourceStates"]})
++        self.source_filter.blockSignals(True)
++        self.source_filter.clear()
++        self.source_filter.addItem("所有來源", "")
++        for source in sources:
++            if source:
++                self.source_filter.addItem(source, source)
++        self.source_filter.setCurrentIndex(max(0, self.source_filter.findData(selected_source)))
++        self.source_filter.blockSignals(False)
++        self.priority.clear()
++        for item in payload["items"][:5]:
++            row = QListWidgetItem(f"{item['title']} · {item['source']} · {item['level']}")
++            row.setData(Qt.ItemDataRole.UserRole, item["workId"])
++            self.priority.addItem(row)
++        if not payload["items"]:
++            row = QListWidgetItem("目前沒有可呈現重點；來源限制請見上方。")
++            row.setFlags(Qt.ItemFlag.NoItemFlags)
++            self.priority.addItem(row)
++        self.priority.setFixedHeight(min(134, max(40, self.priority.count() * 25 + 8)))
++        self._render_items()
++        self.status.setText("來源證據健康" if payload["complete"] else "來源不完整")
++        self.summary_changed.emit(self.status.text())
++
++    def _render_items(self, *_args):
++        if self._payload is None:
++            return
++        previous = self.items.currentItem()
++        previous_data = previous.data(Qt.ItemDataRole.UserRole) if previous else None
++        selected_id = previous_data.get("workId") if previous_data else None
++        scroll = self.items.verticalScrollBar().value()
++        selected_row = None
++        self.items.blockSignals(True)
+         self.items.clear()
+-        self.detail.clear()
+-        self.meta.clear()
+-        self.sources.clear()
+-        self.summary_changed.emit("Today 無法讀取；完整度未知。")
+-
+-    def apply(self, payload):
+-        self.meta.setPlainText(today_text(payload))
+-        self.sources.setPlainText(pretty(payload["sourceStates"]))
+-        self.items.clear()
+-        self.detail.clear()
+-        by_id = {item["workId"]: item for item in payload["items"]}
+-        for section in payload["sections"]:
+-            header = QListWidgetItem(f"{section['kind']} · {len(section['itemIds'])}")
++        by_id = {item["workId"]: item for item in self._payload["items"]}
++        source = self.source_filter.currentData()
++        titles = {"immediate": "立即處理", "focus": "今日專注", "watch": "持續留意", "normal": "其他工作"}
++        for section in self._payload["sections"]:
++            members = [by_id[uid] for uid in section["itemIds"] if not source or by_id[uid]["source"] == source]
++            if not members:
++                continue
++            header = QListWidgetItem(f"{titles.get(section['kind'], section['kind'])} · {len(members)}")
+             header.setFlags(Qt.ItemFlag.NoItemFlags)
+             self.items.addItem(header)
+-            for item_id in section["itemIds"]:
+-                item = by_id[item_id]
++            for item in members:
+                 row = QListWidgetItem(f"{item['title']}\n{item['source']} · {item['level']} · {item.get('dueAt') or '—'}")
+                 row.setData(Qt.ItemDataRole.UserRole, item)
+                 self.items.addItem(row)
+-        self.status.setText("來源證據健康" if payload["complete"] else "來源不完整")
+-        self.summary_changed.emit(self.status.text())
++                if item["workId"] == selected_id:
++                    selected_row = row
++        if selected_row is not None:
++            self.items.setCurrentItem(selected_row)
++        self.items.blockSignals(False)
++        self.items.verticalScrollBar().setValue(scroll)
++        self.show_detail(selected_row)
+ 
+     def show_detail(self, current, _previous=None):
+         item = current.data(Qt.ItemDataRole.UserRole) if current else None
+-        self.detail.setPlainText(pretty(item) if item else "")
++        self.context_button.setEnabled(bool(item) and self._fresh)
++        detail = self.detail_text(item) if item else "選擇工作項目查看詳情；排序與狀態由 Core 提供。"
++        if detail != self.detail.toPlainText():
++            scroll = self.detail.verticalScrollBar().value()
++            self.detail.setPlainText(detail)
++            self.detail.verticalScrollBar().setValue(scroll)
++
++    def detail_text(self, item):
++        payload = self._payload or {}
++        return "\n".join((str(item.get("title") or "未命名"), str(item.get("summary") or ""), "",
++            f"來源：{item.get('source')} · 項目：{item.get('workId')}",
++            f"優先層級：{item.get('level')} · 截止：{item.get('dueAt') or '未提供'}",
++            f"原因：{', '.join(item.get('reasonCodes') or [])}",
++            f"下一步類型：{item.get('actionKind') or '未提供'}",
++            f"證據：{item.get('evidenceRef') or '未提供'}",
++            f"stale：{item.get('stale', '未提供')} · partial：{item.get('partial', '未提供')}",
++            f"投影時間：{payload.get('asOf') or '未提供'} · 時區：{payload.get('timezone') or '未提供'}",
++            f"限制：{', '.join(payload.get('limitations') or []) or 'Core 未列出限制'}"))
++
++    def select_work(self, uid):
++        self.source_filter.setCurrentIndex(0)
++        for index in range(self.items.count()):
++            row = self.items.item(index)
++            item = row.data(Qt.ItemDataRole.UserRole)
++            if item and item["workId"] == uid:
++                self.items.setCurrentItem(row)
++                return
++
++    def use_context(self):
++        current = self.items.currentItem()
++        item = current.data(Qt.ItemDataRole.UserRole) if current else None
++        if item and self.context_button.isEnabled():
++            self.context_requested.emit({"workId": item["workId"], "title": item.get("title"),
++                                         "source": item.get("source"), "text": self.detail_text(item)})
+ 
+ 
+ class CoreHealthPage(CorePage):
+     def __init__(self, controller, parent=None):
+-        super().__init__(controller, SETTINGS_LABELS["sources"], parent)
++        super().__init__(controller, "Core／來源狀態", parent)
+         self.layout.addWidget(label("查看 Core capabilities 與來源健康。提醒設定在 Schedule 表單；此頁不啟動來源刷新。"))
+         button("重新讀取 Core / Sources", self.refresh, self.layout)
+         self.capabilities = text_box()
+@@ -463,14 +565,29 @@
+         status, query, view, reminders = result
+         if view.get("contract") != "kuro.core.schedule.v1":
+             raise ValueError("Schedule contract")
++        previous = self.selected()
++        selected_key = (previous.get("scheduleId"), previous.get("occurrenceDate")) if previous else None
++        scroll = self.items.verticalScrollBar().value()
+         self.core_timezone = status["timezone"]
+         self.day.blockSignals(True)
+         self.day.setDate(QDate.fromString(query["start"], "yyyy-MM-dd"))
+         self.day.blockSignals(False)
+         self.loaded_query = query
++        self.items.blockSignals(True)
+         self.items.clear()
+         self.rows = []
+         self.append_view(view)
++        selected = None
++        for index in range(self.items.count()):
++            row = self.items.item(index)
++            record = row.data(Qt.ItemDataRole.UserRole)
++            if (record.get("scheduleId"), record.get("occurrenceDate")) == selected_key:
++                selected = row
++                self.items.setCurrentItem(row)
++                break
++        self.items.blockSignals(False)
++        self.items.verticalScrollBar().setValue(scroll)
++        self.show_detail(selected)
+         self.meta.setPlainText(pretty({"status": status, **{key: value for key, value in view.items() if key != "items"}}))
+         self.reminders.clear()
+         for record in reminders.get("items", []):
+@@ -562,7 +679,10 @@
+         if not record:
+             return
+         scope = self.choose_scope(record) if action == "cancel" else "this"
+-        if scope is None or QMessageBox.question(self, "確認 Schedule 操作", f"{action} / {scope}\n{record['item']['title']}") != QMessageBox.StandardButton.Yes:
++        if scope is None or QMessageBox.question(self, "確認 Schedule 操作",
++                f"{action} / {scope}\n{record['item']['title']}\n{record['scheduleId']} · revision {record['revision']}",
++                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
++                QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+             return
+         command = self.command(action, record, scope)
+         self.run(lambda: self.controller.mutate_schedule(command), lambda _result: self.refresh())
+@@ -570,6 +690,10 @@
+     def advance(self):
+         if self.loaded_query:
+             through = self.loaded_query["end"]
++            if QMessageBox.question(self, "補齊行程實例", f"請 Core 補齊至 {through} 的本機行程實例？",
++                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
++                    QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
++                return
+             self.run(lambda: self.controller.materialize_schedule(through), lambda _result: self.refresh())
+ 
+     def reminder_action(self, action):

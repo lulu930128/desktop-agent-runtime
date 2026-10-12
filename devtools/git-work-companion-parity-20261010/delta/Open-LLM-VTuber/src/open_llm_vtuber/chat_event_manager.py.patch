@@ -1,0 +1,41 @@
+--- before/Open-LLM-VTuber/src/open_llm_vtuber/chat_event_manager.py
++++ after/Open-LLM-VTuber/src/open_llm_vtuber/chat_event_manager.py
+@@ -90,6 +90,7 @@
+     *,
+     event_types: set[str] | None = None,
+     limit: int = 80,
++    strict: bool = False,
+ ) -> list[dict[str, Any]]:
+     if not conf_uid or not history_uid:
+         return []
+@@ -97,6 +98,8 @@
+     try:
+         path = _event_path(conf_uid, history_uid)
+     except Exception:
++        if strict:
++            raise
+         return []
+ 
+     if not os.path.exists(path):
+@@ -107,6 +110,8 @@
+             lines = f.read().splitlines()
+     except Exception as e:
+         logger.warning(f"Failed to read history events: {e}")
++        if strict:
++            raise
+         return []
+ 
+     events: list[dict[str, Any]] = []
+@@ -117,8 +122,12 @@
+         try:
+             event = json.loads(line)
+         except Exception:
++            if strict:
++                raise
+             continue
+         if not isinstance(event, dict):
++            if strict:
++                raise ValueError("Invalid history event")
+             continue
+         event_type = str(event.get("type") or "")
+         if event_types and event_type not in event_types:

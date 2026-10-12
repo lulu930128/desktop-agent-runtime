@@ -1,0 +1,90 @@
+"""P1 construction/dispatch regression; mocked IO and no runtime boot."""
+import json
+from pathlib import Path
+import sys
+from types import SimpleNamespace
+import unittest
+from unittest.mock import AsyncMock, patch
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path[:0] = [str(ROOT / "Open-LLM-VTuber/src"), str(ROOT / "Open-LLM-VTuber")]
+from open_llm_vtuber.websocket_handler import WebSocketHandler
+
+
+class DispatchRegressionTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.context = SimpleNamespace(character_config=SimpleNamespace(conf_uid="fixture"), history_uid="")
+        self.handler = WebSocketHandler(self.context)
+        self.ws = SimpleNamespace(send_text=AsyncMock())
+        self.handler.client_connections["fixture"] = self.ws
+        self.handler.client_contexts["fixture"] = self.context
+
+    def test_constructor_has_bound_mapping_before_any_message(self):
+        mapping = self.handler._message_handlers
+        for name, method in {
+            "text-input": "_handle_conversation_trigger", "interrupt-signal": "_handle_interrupt",
+            "mic-audio-data": "_handle_audio_data", "mic-audio-end": "_handle_conversation_trigger",
+            "fetch-configs": "_handle_fetch_configs", "switch-config": "_handle_config_switch",
+            "fetch-history-list": "_handle_history_list_request",
+            "request-init-config": "_handle_init_config_request",
+        }.items():
+            self.assertEqual(mapping[name], getattr(self.handler, method))
+
+    async def test_qt_primary_non_history_routes_before_history(self):
+        self.handler.client_roles["fixture"] = "qt-primary"
+        for kind in ("text-input", "interrupt-signal", "mic-audio-data", "mic-audio-end", "fetch-configs", "request-init-config"):
+            callback = AsyncMock()
+            self.handler._message_handlers[kind] = callback
+            payload = {"type": kind}
+            await self.handler._route_message(self.ws, "fixture", payload)
+            callback.assert_awaited_once_with(self.ws, "fixture", payload)
+
+    async def test_history_does_not_replace_existing_mapping(self):
+        self.handler.client_roles["fixture"] = "qt-primary"
+        mapping = self.handler._message_handlers
+        identity = self.handler._history_identity(self.context)
+        with patch("open_llm_vtuber.websocket_handler.get_history_list", return_value=[]):
+            await self.handler._route_message(self.ws, "fixture", {
+                "type": "fetch-history-list", "request_id": "fixture", "client_uid": "fixture", **identity})
+        self.assertIs(self.handler._message_handlers, mapping)
+        callback = AsyncMock()
+        mapping["text-input"] = callback
+        await self.handler._route_message(self.ws, "fixture", {"type": "text-input"})
+        callback.assert_awaited_once()
+
+    async def test_frontend_keeps_original_history_and_other_routes(self):
+        self.handler.client_roles["fixture"] = "frontend"
+        for kind in ("text-input", "fetch-history-list", "fetch-and-set-history", "create-new-history", "delete-history", "switch-config"):
+            callback = AsyncMock()
+            self.handler._message_handlers[kind] = callback
+            await self.handler._route_message(self.ws, "fixture", {"type": kind})
+            callback.assert_awaited_once()
+
+    async def test_console_restrictions_and_read_routes_survive(self):
+        self.handler.client_roles["fixture"] = "launcher-console"
+        for kind in ("text-input", "mic-audio-end", "interrupt-signal", "add-client-to-group"):
+            callback = AsyncMock()
+            self.handler._message_handlers[kind] = callback
+            await self.handler._route_message(self.ws, "fixture", {"type": kind})
+            callback.assert_not_awaited()
+            self.assertEqual(json.loads(self.ws.send_text.call_args.args[0])["type"], "error")
+        callback = AsyncMock()
+        self.handler._message_handlers["fetch-configs"] = callback
+        await self.handler._route_message(self.ws, "fixture", {"type": "fetch-configs"})
+        callback.assert_awaited_once()
+
+    async def test_pet_allowlist_survives(self):
+        self.handler.client_roles["fixture"] = "pet-presentation"
+        for kind in ("text-input", "fetch-history-list", "create-new-history", "switch-config", "mic-audio-data"):
+            callback = AsyncMock()
+            self.handler._message_handlers[kind] = callback
+            await self.handler._route_message(self.ws, "fixture", {"type": kind})
+            callback.assert_not_awaited()
+        callback = AsyncMock()
+        self.handler._message_handlers["request-init-config"] = callback
+        await self.handler._route_message(self.ws, "fixture", {"type": "request-init-config"})
+        callback.assert_awaited_once()
+
+
+if __name__ == "__main__":
+    unittest.main()

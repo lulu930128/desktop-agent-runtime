@@ -1,0 +1,7 @@
+warning: in the working copy of 'Open-LLM-VTuber/src/open_llm_vtuber/character_memory_manager.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'Open-LLM-VTuber/src/open_llm_vtuber/chat_event_manager.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'Open-LLM-VTuber/src/open_llm_vtuber/chat_history_manager.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'Open-LLM-VTuber/src/open_llm_vtuber/websocket_handler.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'kuro_launcher/qt_app.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'kuro_launcher/qt_chat_client.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'kuro_launcher/qt_controller.py', LF will be replaced by CRLF the next time Git touches it

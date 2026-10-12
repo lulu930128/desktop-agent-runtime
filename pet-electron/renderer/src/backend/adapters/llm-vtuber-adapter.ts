@@ -2,45 +2,9 @@ import type { BackendProtocolAdapter, KuroBackendEvent } from "../kuro-backend-e
 import { buildAbsoluteModelUrl, normalizeText } from "../text-utils";
 
 export const llmVtuberAdapter: BackendProtocolAdapter = {
-  createHistoryStartMessage() {
-    return {
-      type: "create-new-history"
-    };
-  },
-
-  createTextInputMessage({ text, images, files }) {
-    return {
-      type: "text-input",
-      text,
-      ...(images.length ? { images } : {}),
-      ...(files.length ? { files } : {})
-    };
-  },
-
-  createInterruptMessage() {
-    return {
-      type: "interrupt-signal",
-      text: "launcher-interrupt"
-    };
-  },
-
   createPlaybackCompleteMessage() {
     return {
       type: "frontend-playback-complete"
-    };
-  },
-
-  createMicAudioDataMessage(audio) {
-    return {
-      type: "mic-audio-data",
-      audio
-    };
-  },
-
-  createMicAudioEndMessage({ images }) {
-    return {
-      type: "mic-audio-end",
-      ...(images.length ? { images } : {})
     };
   },
 
@@ -58,32 +22,6 @@ export const llmVtuberAdapter: BackendProtocolAdapter = {
           scaleWidth: Math.max(0.8, Number(modelInfo.kScale || 0.45) * 2),
           confName: normalizeText(payload.conf_name || ""),
           confUid: normalizeText(payload.conf_uid || "")
-        });
-      }
-      return events;
-    }
-
-    if (messageType === "history-list") {
-      const histories = Array.isArray(payload.histories) ? payload.histories : [];
-      const selected = histories[0] || {};
-      const historyUid = normalizeText(selected.uid || selected.history_uid || "");
-      if (historyUid) {
-        events.push({
-          type: "history-selected",
-          historyUid,
-          historyTitle: normalizeText(selected.title || "")
-        });
-      }
-      return events;
-    }
-
-    if (messageType === "new-history-created" || messageType === "config-switched") {
-      const historyUid = normalizeText(payload.history_uid || "");
-      if (historyUid) {
-        events.push({
-          type: "history-selected",
-          historyUid,
-          historyTitle: ""
         });
       }
       return events;

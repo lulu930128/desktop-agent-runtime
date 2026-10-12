@@ -1,0 +1,46 @@
+[
+  {
+    "path": "R1-ProductionHistory-offscreen.png",
+    "sha256": "a5df3f03a8f10df35a6008292a792610f38bea52bae85ce2e0795061174a5ebf",
+    "physical_pixels": [
+      1380,
+      860
+    ],
+    "surface": "Production WorkCompanionView",
+    "data": "SYNTHETIC_FIXTURE",
+    "desktop_and_exact_screenshot_fidelity": "UNVERIFIED"
+  },
+  {
+    "path": "R2-Settings-offscreen.png",
+    "sha256": "bb46f1882d8afea67a577b86d580e95269973e61c756f938c022b1b4a92ced75",
+    "physical_pixels": [
+      1380,
+      860
+    ],
+    "surface": "Production WorkCompanionView",
+    "data": "SYNTHETIC_FIXTURE",
+    "desktop_and_exact_screenshot_fidelity": "UNVERIFIED"
+  },
+  {
+    "path": "R3-Today-offscreen.png",
+    "sha256": "02e615bcd63d204072c61b1f2be4c416447e052781cb7b2b885ca99387ba0e86",
+    "physical_pixels": [
+      1380,
+      860
+    ],
+    "surface": "Production WorkCompanionView",
+    "data": "SYNTHETIC_FIXTURE",
+    "desktop_and_exact_screenshot_fidelity": "UNVERIFIED"
+  },
+  {
+    "path": "R4-Chat-offscreen.png",
+    "sha256": "294a771c18c50b4d55bc4e1c7136752e855c1e91f032b23519b0d7b13f155912",
+    "physical_pixels": [
+      2760,
+      1720
+    ],
+    "surface": "Production WorkCompanionView",
+    "data": "SYNTHETIC_FIXTURE",
+    "desktop_and_exact_screenshot_fidelity": "UNVERIFIED"
+  }
+]

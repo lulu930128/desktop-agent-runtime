@@ -1,0 +1,11 @@
+test_schedule_cancellation_and_materialization_need_confirmation (test_r3_today_schedule_parity.CoreViewTests) ... ok
+test_schedule_refresh_preserves_occurrence_and_revision_fenced_command (test_r3_today_schedule_parity.CoreViewTests) ... ok
+test_today_context_is_visible_draft_only_and_retains_limitations (test_r3_today_schedule_parity.CoreViewTests) ... ok
+test_today_failure_keeps_visible_stale_detail_and_prevents_reenable (test_r3_today_schedule_parity.CoreViewTests) ... ok
+test_today_offscreen_screenshot (test_r3_today_schedule_parity.CoreViewTests) ... ok
+test_today_refresh_retains_selected_work_and_detail (test_r3_today_schedule_parity.CoreViewTests) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.937s
+
+OK

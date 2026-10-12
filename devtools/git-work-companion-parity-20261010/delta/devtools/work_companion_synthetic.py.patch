@@ -1,0 +1,217 @@
+--- before/devtools/work_companion_synthetic.py
++++ after/devtools/work_companion_synthetic.py
+@@ -1,214 +0,0 @@
+-"""Anonymous, deterministic fixtures and an in-memory-only preview model.
+-
+-Never imported by a production entrypoint. No settings, history, clocks, files,
+-network, command execution or service discovery are used.
+-"""
+-from __future__ import annotations
+-
+-from PySide6.QtCore import QObject, QTimer
+-
+-from kuro_launcher.qt_work_companion_view import (
+-    HistoryEntry, Message, SettingField, SettingSection, TodayItem, WorkCompanionView,
+-)
+-
+-
+-HISTORY = (
+-    HistoryEntry("start", "整理一個小計畫", "09:10 · 4 則示範訊息"),
+-    HistoryEntry("notes", "把筆記整理成下一步", "08:40 · 2 則示範訊息"),
+-    HistoryEntry("blank", "空白對話", "尚無訊息 · 示範"),
+-)
+-THREADS = {
+-    "start": (
+-        Message("YOU", "09:10", "想把今天的工作整理得簡單一點，先從哪裡開始？"),
+-        Message("KURO", "09:10", "先挑一件最想推進的小事。\n把它拆成可以在二十分鐘內完成的第一步，其餘先留在清單裡。"),
+-        Message("YOU", "09:11", "那就先整理一頁筆記，再留時間回顧。"),
+-        Message("KURO", "09:11", "可以。先寫下重點、待釐清的問題，以及下一個動作。\n今天不必一次完成全部，讓下一次接續時有清楚的起點。"),
+-    ),
+-    "notes": (
+-        Message("YOU", "08:40", "這份示範筆記適合怎麼整理？"),
+-        Message("KURO", "08:40", "可以分成「已知」、「待確認」和「下一步」三段。\n這是固定範例，沒有讀取任何筆記或檔案。"),
+-    ),
+-    "blank": (),
+-}
+-TODAY = (
+-    TodayItem(
+-        "outline", "讓一頁筆記有清楚的起點",
+-        "整理三個重點，留下下一次可以接續的線索。",
+-        "待查看 · DEMO", "示範工作清單", "2026-01-01 09:00 +08:00",
+-        "示範排序理由：範圍小，能先完成一個可回顧的步驟。",
+-        "在這份預覽中閱讀摘要，再關閉詳情。",
+-        "這是一筆匿名合成事項。可以先列出目前已知、待確認的問題與下一個動作；沒有正式待辦被建立或更新。",
+-    ),
+-    TodayItem(
+-        "review", "留十分鐘回顧今天的進度",
+-        "先看完成的部分，再決定明天要接續什麼。",
+-        "稍後 · DEMO", "示範回顧清單", "2026-01-01 09:00 +08:00",
+-        "示範排序理由：安排一個短回顧，避免一次展開太多工作。",
+-        "閱讀回顧示例。此處不建立行程或提醒。",
+-        "回顧範例：一件完成的小事、一個仍待釐清的問題，以及下一次最先處理的步驟。",
+-    ),
+-    TodayItem(
+-        "missing", "有一段資料還需要確認",
+-        "示範來源只提供部分摘要，先保留缺口。",
+-        "PARTIAL · DEMO", "示範來源摘要", "2026-01-01 08:50 +08:00",
+-        "示範排序理由：缺少補充內容，不能把摘要當成完整結論。",
+-        "查看缺口說明；這裡不會刷新或查詢來源。",
+-        "已提供：一段合成摘要。\n尚缺：補充段落與佐證。預覽不補造內容，也不以「沒有事項」代替資料不完整。",
+-    ),
+-)
+-SECTIONS = (
+-    SettingSection("assistant", "助理", "角色、專案、模型與推理", "LAUNCHER OWNED", (
+-        SettingField("character", "角色", "選擇這次預覽的助理名稱", ("Kuro · 示範角色", "Companion · 示範角色")),
+-        SettingField("project", "目前專案", "只切換合成工作情境", ("一般工作 · DEMO", "筆記整理 · DEMO")),
+-        SettingField("model", "LLM 模型", "示範名稱，不連接模型", ("Demo Balanced", "Demo Compact")),
+-        SettingField("reasoning", "推理深度", "只呈現選擇狀態", ("標準 · 示範", "深入 · 示範", "精簡 · 示範")),
+-    )),
+-    SettingSection("conversation", "對話與記憶", "紀錄、保存與長期記憶", "PREVIEW ONLY", (
+-        SettingField("history", "對話紀錄", "所有示範回合只留在記憶體", ("本次預覽", "僅目前回合 · 示範")),
+-        SettingField("memory", "長期記憶", "此預覽不讀取或寫入記憶", ("不提供 · DEMO",), False),
+-        SettingField("density", "訊息密度", "展示設定選項，不改正式偏好", ("舒適 · 示範", "精簡 · 示範")),
+-    )),
+-    SettingSection("perception", "語音與感知", "麥克風、鏡頭與螢幕", "PREVIEW ONLY", (
+-        SettingField("voice", "語音呈現", "僅切換示範選項，不播放音訊", ("文字優先 · 示範", "短摘要 · 示範")),
+-        SettingField("microphone", "麥克風", "預覽不取得裝置權限", ("未提供 · DEMO",), False),
+-        SettingField("screen", "畫面感知", "預覽不擷取螢幕", ("未提供 · DEMO",), False),
+-    )),
+-    SettingSection("tools", "工具與權限", "能力、授權與操作範圍", "PREVIEW ONLY", (
+-        SettingField("read", "讀取能力", "合成選項不授予任何工具權限", ("僅顯示 · 示範", "逐次確認 · 示範")),
+-        SettingField("write", "外部操作", "不提供寫入、發送或指令執行", ("未提供 · DEMO",), False),
+-        SettingField("notice", "操作提示", "示範使用者可選的提示方式", ("展開說明 · 示範", "簡短說明 · 示範")),
+-    )),
+-    SettingSection("appearance", "桌寵與外觀", "角色呈現與介面偏好", "PREVIEW ONLY", (
+-        SettingField("pet", "桌寵呈現", "不啟動或操作 Live2D", ("不提供 · DEMO",), False),
+-        SettingField("theme", "介面主題", "本輪鎖定圖 A / B；只示範選單", ("Work Companion", "Work Companion · 柔和示範")),
+-        SettingField("motion", "動態效果", "預覽不使用持續動畫", ("減少動態 · 示範", "一般 · 示範")),
+-    )),
+-    SettingSection("advanced", "進階診斷", "預覽資訊與狀態情境", "PREVIEW ONLY", (
+-        SettingField("source", "資料來源", "固定匿名 fixtures", ("Synthetic only",), False),
+-        SettingField("detail", "資訊層級", "展示選項，不讀取 log 或私有狀態", ("摘要 · 示範", "詳細 · 示範")),
+-        SettingField("connection", "服務連線", "此預覽沒有服務連線能力", ("未連接 · DEMO",), False),
+-    )),
+-)
+-
+-
+-class SyntheticPreviewModel(QObject):
+-    """Disposable preview state. One cancellable, bounded Qt timer; no IO."""
+-
+-    def __init__(self, view: WorkCompanionView, *, reply_delay_ms: int = 1200):
+-        super().__init__(view)
+-        self.view = view
+-        self.threads = {key: list(messages) for key, messages in THREADS.items()}
+-        self.selected_history = "start"
+-        self.state = "idle"
+-        self.settings = {(section.key, field.key): field.options[0]
+-                         for section in SECTIONS for field in section.fields}
+-        self.pending = False
+-        self.reply_timer = QTimer(self)
+-        self.reply_timer.setSingleShot(True)
+-        self.reply_timer.setInterval(max(1, min(reply_delay_ms, 5000)))
+-        self.reply_timer.timeout.connect(self.finish_reply)
+-        view.send_requested.connect(self.send)
+-        view.stop_requested.connect(self.stop)
+-        view.history_selected.connect(self.select_history)
+-        view.today_selected.connect(self.select_today)
+-        view.setting_changed.connect(self.change_setting)
+-        view.settings_reset_requested.connect(self.reset_settings)
+-        view.attachment_requested.connect(self.attach)
+-        view.demo_state_requested.connect(self.set_state)
+-        self.refresh()
+-
+-    def refresh(self):
+-        self.view.set_messages(() if self.state == "empty" else self.threads[self.selected_history])
+-        self.refresh_history()
+-        self.view.set_today(() if self.state == "empty" else TODAY)
+-        self.view.set_settings(SECTIONS, self.settings)
+-        self.view.set_state(self.state)
+-        self.view.set_busy(self.pending)
+-
+-    def refresh_history(self):
+-        entries = tuple(HistoryEntry(entry.key, entry.title,
+-                        entry.subtitle.split(" · ")[0] + f" · {len(self.threads[entry.key])} 則示範訊息")
+-                        for entry in HISTORY)
+-        self.view.set_history(entries, self.selected_history)
+-
+-    def set_state(self, state: str):
+-        # Validate before mutating or cancelling any preview state.
+-        from kuro_launcher.qt_work_companion_view import STATE_LABELS
+-        if state not in STATE_LABELS:
+-            raise ValueError(f"Unknown preview state: {state}")
+-        if self.pending:
+-            self.stop()
+-        self.state = state
+-        self.view.close_drawer()
+-        self.refresh()
+-
+-    def send(self, text: str):
+-        if self.pending or self.state in ("disabled", "loading") or not text.strip():
+-            return
+-        if self.state == "empty":
+-            self.selected_history = "blank"
+-        self.state = "idle"
+-        self.threads[self.selected_history].append(Message("YOU", "09:12", text.strip()))
+-        self.view.composer_edit.clear()
+-        self.pending = True
+-        self.view.set_state("idle")
+-        self.view.set_messages(self.threads[self.selected_history], follow_tail=True)
+-        self.refresh_history()
+-        self.view.set_busy(True)
+-        self.view.composer_notice.setText("SYNTHETIC · 正在示範回覆，可按「停止」。")
+-        self.reply_timer.start()
+-
+-    def finish_reply(self):
+-        if not self.pending:
+-            return
+-        self.reply_timer.stop()
+-        self.pending = False
+-        self.threads[self.selected_history].append(Message(
+-            "KURO", "09:12", "這是一段固定的預覽回覆。\n已在本次畫面加入一個示範回合，沒有呼叫模型、執行指令或保存內容。"))
+-        self.view.set_messages(self.threads[self.selected_history], follow_tail=True)
+-        self.refresh_history()
+-        self.view.set_busy(False)
+-        self.view.composer_notice.setText("SYNTHETIC · 示範回覆完成，內容僅留在這次預覽。")
+-
+-    def stop(self):
+-        if not self.pending:
+-            return
+-        self.reply_timer.stop()
+-        self.pending = False
+-        self.view.set_busy(False)
+-        self.view.composer_notice.setText("SYNTHETIC · 已停止示範回覆；剛才輸入的文字仍留在本頁。")
+-
+-    def select_history(self, key: str):
+-        if key not in self.threads:
+-            raise ValueError(f"Unknown synthetic thread: {key}")
+-        self.stop()
+-        self.selected_history = key
+-        self.state = "idle"
+-        self.view.composer_edit.clear()
+-        self.refresh()
+-        self.view.composer_notice.setText("SYNTHETIC · 已切換匿名示範對話，不讀取正式紀錄。")
+-
+-    def select_today(self, key: str):
+-        item = next((item for item in TODAY if item.key == key), None)
+-        if item is None:
+-            raise ValueError(f"Unknown synthetic Today item: {key}")
+-        self.view.show_today_detail(item)
+-
+-    def change_setting(self, section: str, field: str, value: str):
+-        definition = next((entry for entry in SECTIONS if entry.key == section), None)
+-        option = next((entry for entry in definition.fields if entry.key == field), None) if definition else None
+-        if option is None or not option.enabled or value not in option.options:
+-            raise ValueError("Unknown or disabled synthetic setting")
+-        self.settings[section, field] = value
+-
+-    def reset_settings(self, section: str):
+-        definition = next((entry for entry in SECTIONS if entry.key == section), None)
+-        if definition is None:
+-            raise ValueError(f"Unknown synthetic section: {section}")
+-        for field in definition.fields:
+-            self.settings[section, field.key] = field.options[0]
+-        self.view.set_settings(SECTIONS, self.settings)
+-        self.view.settings_note.setText("DEMO · 本頁示範值已還原；正式設定不受影響。")
+-
+-    def attach(self):
+-        self.view.composer_notice.setText("SYNTHETIC · 示例附件：sample-note.txt（僅名稱，沒有讀取檔案）。")

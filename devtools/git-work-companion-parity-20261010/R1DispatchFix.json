@@ -1,0 +1,18 @@
+{
+  "finding": "P1 mapping initialization displaced into async history method",
+  "fixed": true,
+  "mapping_assignments": [
+    {
+      "method": "__init__",
+      "line": 152
+    }
+  ],
+  "websocket_handler_sha256": "e529358efc9146f433cfb41185cfc62c86860d1e78b3619b230c720572bf7709",
+  "suites": {
+    "test_r1_ws_dispatch_regression.py": 6,
+    "test_r1_history_parity.py": 17,
+    "test_g3_conversation.py": 27
+  },
+  "runtime_validation": "UNVERIFIED",
+  "reviewer_static_recheck": "PENDING"
+}

@@ -10,7 +10,7 @@ Kuro 是 local-first desktop AI companion runtime，但長期目標不是單純�
 產品方向：
 
 - Kuro 是可展示的桌寵助理，核心是工作助理能力。
-- Live2D、語音、角色人格、Reader、Briefing、任務牆與桌面常駐體驗，是提升展示與使用體驗的互動層。
+- Live2D、語音、角色人格、Qt Chat／Today／Schedule與桌面常駐體驗，是提升展示與使用體驗的互動層。
 - Kuro 應能透過工具告訴使用者「該注意什麼、該做什麼、哪裡有狀況」，而不是只陪聊。
 - 不同角色可以有不同聲音、人格、語氣與展示方式，但不能破壞工具權限、記憶邊界與 runtime 穩定性。
 
@@ -35,13 +35,15 @@ Kuro 是 local-first desktop AI companion runtime，但長期目標不是單純�
 
 ## 架構邊界
 
-- `launcher_qt.py` 是目前 Qt desktop console，負責啟動 profile、服務 orchestration、chat、Briefing、memory、pet shell 控制。
+- `launcher_qt.py` 是目前 Qt desktop console，負責啟動 profile、服務 orchestration、Chat／Today／Schedule／Settings／History／Memory／Diagnostics、Qt tray 與 pet-local 控制。
 - `kuro_launcher/` 負責 config parsing、service helpers、runtime config generation、memory panel 與 records。
-- `kuro_core/schedule_*` 與 `kuro_core_service.py` 是正式本機時間表／通知 owner；Observation／Decision 仍為 shadow，Today／Briefing 仍走 Electron legacy primary。
+- `kuro_core_service.py` 透過 `CoreApplication` 組裝單一 `CoreApiServer`、`ScheduleCapability` 與 read-only `IntegrationRegistry`。`kuro_core/schedule_*` 保持時間表／通知 owner；Study/Mail status adapter 不寫 DB、不 refresh，Observation／Decision persistence 仍為 shadow；Core Work／Attention／Today 經 /v1/today 提供給 Qt，不依賴 Electron legacy。
 - `kuro_core/storage.py` 是共享 schema 初始化與正式 Schedule 啟動依賴，不是純研究 storage。改動前讀 `docs/architecture/CorePersistence.md`；研究隔離依 `docs/architecture/ResearchBoundary.md`，worktree 本身不隔離 DB、IPC 或 userData。
 - `kuro_launcher.settings.yaml` 是本機 runtime source of truth：paths、ports、LLM env names、startup profile。
 - `Open-LLM-VTuber/` 負責 conversation runtime、prompt composition、tool integration、WebSocket protocol 與 memory system。
-- `pet-electron/` 負責 Live2D desktop shell、Reader、Briefing、tray、local control server 與 Electron window behavior。
+- `pet-electron/` 負責 Live2D／audio／presentation／input capture／geometry 與 pet-local :23567；不持有 tray、business、launcher management、history/memory/tool policy ownership。
+- Qt 是唯一 application UI 與 qt-primary WS owner；Pet 只允許 pet-presentation。WorkPanel/Reader/Briefing 已退役，不新增 compatibility dual path。受權限阻擋的待刪 legacy source 不得重新接回 production。
+- Launcher 管 Core 與 Mail poller；Pet spawn 不接收 Core/Launcher token 或 Mail handoff。Core Today 是唯一 projection；不得以 provider query、Pet status 或 source-ready 冒充正式 acceptance。
 - `bridges/` 負責 bridge service、translation 與 spoken rendering integration。
 - 舊 `gpt_sovits/` 已比對並移除；保存對照位於中央語音工作區的 `inventory/legacy-gpt-sovits-20260912/manifest.json`。中央語音服務擁有模型與推論；consumer 不得停止共用服務。
 - `projects/` 放 project prompt packs 與 assistant context definitions。
@@ -54,8 +56,8 @@ Kuro 可以具備工具操作能力，但必須分級。
 
 預設可自動執行：
 
-- 讀取型狀態檢查，例如 local status、Briefing snapshot、OMI read-only result。
-- 本機 dashboard / task wall / Reader / Briefing 的呈現更新。
+- 讀取型狀態檢查，例如 local status、Core Today projection、OMI read-only result。
+- Qt Chat / Today / Schedule 的呈現更新。
 - 安全的摘要、分類、重排與格式轉換。
 
 預設需要確認：
@@ -76,7 +78,7 @@ Kuro 可以具備工具操作能力，但必須分級。
 - Kuro 不直接承擔市場資料與交易決策邏輯。
 - Kuro 可以向 OMI 提出需求，例如「產生今日市場分析」、「整理某檔股票技術決策稿」、「找出需要注意的自選股」。
 - OMI 必須用自己的資料、freshness、tool、AI decision core 產出結構化結果。
-- Kuro 負責把 OMI 結果轉成 Reader、Briefing、任務牆或語音播報，不應在 Kuro 端重新判斷市場。
+- Kuro 負責把 OMI 結果轉成 Qt Chat／Today 或語音播報，不應在 Kuro 端重新判斷市場。
 - 如果 OMI 回傳 stale、partial、missing 或 provider failure，Kuro 要保留這些警告，不得把不完整資料講成確定結論。
 
 ## 記憶策略
@@ -87,18 +89,18 @@ Kuro 可以具備工具操作能力，但必須分級。
 
 - 角色記憶：人格、偏好、長期互動設定。
 - 工作記憶：使用者工作習慣、常用專案、常用工具與流程。
-- Briefing snapshot：每日狀態、任務牆、信件、學習、市場與其他短期摘要。
+- Today projection：Core 提供的短期工作／來源狀態，不是另一份長期記憶。
 - Tool result：外部工具結果、查詢證據、一次性分析輸出。
 
-不要把每日 briefing、工具結果、暫時市場狀態或噪音自動升級成角色長期記憶。若自動寫入，必須能追蹤來源、時間、類型與刪改方式。
+不要把每日摘要、工具結果、暫時市場狀態或噪音自動升級成角色長期記憶。若自動寫入，必須能追蹤來源、時間、類型與刪改方式。
 
 ## 語音、人格與展示品質
 
 - 語音輸出與角色人格是對外展示核心品質，不可視為可隨意破壞的附屬功能。
 - 不同角色可以有不同語音、人格、語氣與情緒呈現。
 - Spoken output 應配合角色與情境：重要狀態要簡潔，長報告要轉成可聽的摘要，不要照讀大段文字。
-- 繁中內容、日文 spoken rendering、情緒、簡報式輸出與 Reader/Briefing 分工都屬於展示 contract。修改時要避免回歸成雜亂口播。
-- 如果改動影響 TTS、bridge、spoken report、字幕或 Reader/Briefing，需要跑對應 smoke test 或至少做 syntax/build check。
+- 繁中內容、日文 spoken rendering、情緒、簡報式輸出與 Qt 文字／Today 分工都屬於展示 contract。修改時要避免回歸成雜亂口播。
+- 如果改動影響 TTS、bridge、spoken report、字幕或 Qt 文字／Today，需要跑對應 smoke test 或至少做 syntax/build check。
 
 ## Runtime 與 Port
 
@@ -108,8 +110,8 @@ Kuro 可以具備工具操作能力，但必須分級。
 - Central TTS: `127.0.0.1:18890`（`9981` 僅供 legacy 回退；`18790` 已由 japanese-study-mcp 使用）
 - LLM runtime: `127.0.0.1:23456`
 - Pet control: `127.0.0.1:23567`
-- Launcher control: `127.0.0.1:23568`（工作面板 IPC proxy 專用；session token 不得進 renderer 或 git）
-- Kuro Core: `127.0.0.1:23569`（Launcher-owned Schedule API；session token、schema 與 instance identity 驗證）
+- 舊 Launcher control `:23568` 已退役，不重新新增 listener 或 IPC proxy。
+- Kuro Core: `127.0.0.1:23569`（Launcher-owned `kuro.core.api.v1` host；另驗 nested Schedule contract/schema、session token 與 instance identity）
 
 不要恢復舊的 `9881` TTS port；該 port 可能落入 Windows reserved TCP range。遇到 startup 失敗時，先檢查目前設定、launcher log、stale shortcuts、舊 root path 與 port listener。
 
@@ -148,7 +150,7 @@ Kuro 可以具備工具操作能力，但必須分級。
 - launcher / Qt UI
 - runtime config generation
 - Open-LLM-VTuber prompt/tool/memory
-- Electron pet shell / Reader / Briefing
+- Electron pet shell
 - bridge / spoken rendering / TTS
 - project prompt pack
 - docs / README / screenshots
@@ -164,8 +166,8 @@ Kuro 可以具備工具操作能力，但必須分級。
 - 只改 docs、prompt、AGENTS、模板：UTF-8 讀回與 `git diff --check` 即可；不要啟動 GUI、LLM runtime、TTS 或 Electron。
 - 只改文案、label、i18n、角色描述或小型 spoken wording：做相關字串搜尋與 diff 檢查；除非改到可編譯檔案，否則不要跑全套。
 - 改 launcher、runtime config 或 Python 局部邏輯：跑對應 py_compile 或 targeted tests。
-- 改 tool policy、memory、OMI integration、Briefing snapshot、Reader 或外部 side effect 邊界：跑相關 policy/unit/smoke 檢查。
-- 改 Electron main/renderer、Live2D、Reader/Briefing UI 或可視體驗：依風險跑 node check、renderer check/build；只有需要驗證實際 UI 時才啟動 runtime 或做 screenshot。
+- 改 tool policy、memory、OMI integration、Today projection、Qt Chat 或外部 side effect 邊界：跑相關 policy/unit/smoke 檢查。
+- 改 Electron main/renderer、Live2D、Qt 文字／Today UI 或可視體驗：依風險跑 node check、renderer check/build；只有需要驗證實際 UI 時才啟動 runtime 或做 screenshot。
 - 發送/發布、刪除資料、寫入長期記憶、修改 repo、消耗大量 quota 或外部 API 寫入：先確認，再驗證。
 
 Python syntax checks：
@@ -182,8 +184,6 @@ cd "C:\project\desktop-agent-runtime"
 node --check .\pet-electron\src\main.js
 node --check .\pet-electron\src\state.js
 node --check .\pet-electron\src\main-process\control-server.js
-node --check .\pet-electron\src\main-process\briefing-store.js
-node --check .\pet-electron\src\briefing-preload.js
 ```
 
 Renderer checks：
@@ -198,7 +198,6 @@ Runtime smoke checks when the pet shell is running：
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:23567/status
-Invoke-RestMethod http://127.0.0.1:23567/briefing
 ```
 
 若無法啟動 GUI 或 runtime，至少執行可行的 syntax/build 檢查，並清楚說明未驗證的互動層風險。
@@ -213,8 +212,8 @@ Invoke-RestMethod http://127.0.0.1:23567/briefing
 
 本 repo 提供 read-only custom subagents，只有在使用者明確要求 subagents、parallel review 或指定 agent 名稱時才使用；不要自動啟動。
 
-- `kuro-runtime-boundary-reviewer`：審查 launcher、Open-LLM-VTuber runtime、Electron pet shell、Reader/Briefing、ports、startup 與 private runtime boundary。
-- `kuro-tool-memory-reviewer`：審查 tool policy、memory strategy、OMI integration、briefing snapshots、spoken output、character/persona contract 與寫入確認邊界。
+- `kuro-runtime-boundary-reviewer`：審查 launcher、Open-LLM-VTuber runtime、Electron pet shell、Qt 文字／Today、ports、startup 與 private runtime boundary。
+- `kuro-tool-memory-reviewer`：審查 tool policy、memory strategy、OMI integration、Today projections、spoken output、character/persona contract 與寫入確認邊界。
 
 這些 subagents 預設用於讀取、探索、審查與回報 findings。除非 parent task 明確要求它們實作局部修正，否則不應修改檔案。
 ## 長任務文件

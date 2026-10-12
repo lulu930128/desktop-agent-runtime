@@ -8,9 +8,6 @@ const DEFAULT_STATE = {
   petZoomScale: 1,
   petAnchor: null,
   petGameMode: false,
-  readerVisible: false,
-  briefingVisible: false,
-  briefingBounds: null,
   outfit: {
     outfitId: "normal",
     parameterId: "Param10",
@@ -28,19 +25,7 @@ const DEFAULT_STATE = {
       y: 96,
       width: 500,
       height: 760
-    },
-    window: {
-      x: 80,
-      y: 80,
-      width: 1280,
-      height: 860
     }
-  },
-  readerBounds: {
-    x: 540,
-    y: 120,
-    width: 440,
-    height: 240
   }
 };
 
@@ -55,9 +40,6 @@ function mergeState(candidate) {
     return next;
   }
 
-  if (candidate.mode === "window" || candidate.mode === "pet") {
-    next.mode = candidate.mode;
-  }
 
   if (typeof candidate.forceIgnoreMouse === "boolean") {
     next.forceIgnoreMouse = candidate.forceIgnoreMouse;
@@ -86,13 +68,7 @@ function mergeState(candidate) {
     }
   }
 
-  if (typeof candidate.readerVisible === "boolean") {
-    next.readerVisible = candidate.readerVisible;
-  }
 
-  if (typeof candidate.briefingVisible === "boolean") {
-    next.briefingVisible = candidate.briefingVisible;
-  }
 
   if (candidate.outfit && typeof candidate.outfit === "object") {
     const outfit = candidate.outfit;
@@ -134,7 +110,7 @@ function mergeState(candidate) {
   }
 
   if (candidate.boundsByMode && typeof candidate.boundsByMode === "object") {
-    for (const mode of ["pet", "window"]) {
+    for (const mode of ["pet"]) {
       const bounds = candidate.boundsByMode[mode];
       if (!bounds || typeof bounds !== "object") {
         continue;
@@ -150,26 +126,7 @@ function mergeState(candidate) {
     }
   }
 
-  if (candidate.readerBounds && typeof candidate.readerBounds === "object") {
-    const bounds = candidate.readerBounds;
-    const current = next.readerBounds;
-    next.readerBounds = {
-      x: Number.isFinite(bounds.x) ? Math.round(bounds.x) : current.x,
-      y: Number.isFinite(bounds.y) ? Math.round(bounds.y) : current.y,
-      width: Number.isFinite(bounds.width) ? Math.round(bounds.width) : current.width,
-      height: Number.isFinite(bounds.height) ? Math.round(bounds.height) : current.height
-    };
-  }
 
-  if (candidate.briefingBounds && typeof candidate.briefingBounds === "object") {
-    const bounds = candidate.briefingBounds;
-    next.briefingBounds = {
-      x: Number.isFinite(bounds.x) ? Math.round(bounds.x) : 0,
-      y: Number.isFinite(bounds.y) ? Math.round(bounds.y) : 0,
-      width: Number.isFinite(bounds.width) ? Math.round(bounds.width) : 940,
-      height: Number.isFinite(bounds.height) ? Math.round(bounds.height) : 520
-    };
-  }
 
   return next;
 }

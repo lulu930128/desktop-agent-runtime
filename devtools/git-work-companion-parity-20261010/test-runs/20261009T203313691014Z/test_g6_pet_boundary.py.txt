@@ -1,0 +1,16 @@
+test_bad_or_oversized_capture_never_sends (test_g6_pet_boundary.CaptureTests) ... ok
+test_camera_result_for_old_history_is_discarded (test_g6_pet_boundary.CaptureTests) ... ok
+test_mic_result_for_old_history_is_discarded (test_g6_pet_boundary.CaptureTests) ... ok
+test_mic_result_is_submitted_via_qt_with_existing_history_binding (test_g6_pet_boundary.CaptureTests) ... ok
+test_offline_capture_does_not_trigger_or_fallback (test_g6_pet_boundary.CaptureTests) ... ok
+test_qt_alone_sends_audio_chunks_then_one_trigger (test_g6_pet_boundary.CaptureTests) ... ok
+test_uncertain_audio_send_closes_without_replay (test_g6_pet_boundary.CaptureTests) ... ok
+test_existing_pet_receives_profile_presentation_from_launcher (test_g6_pet_boundary.OwnershipTests) ... ok
+test_failed_backend_configuration_does_not_report_applied (test_g6_pet_boundary.OwnershipTests) ... ok
+test_launcher_services_start_without_pet (test_g6_pet_boundary.OwnershipTests) ... ok
+test_malformed_or_failed_pet_commands_are_not_success (test_g6_pet_boundary.OwnershipTests) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.009s
+
+OK

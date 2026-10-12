@@ -1,0 +1,11 @@
+test_console_restrictions_and_read_routes_survive (test_r1_ws_dispatch_regression.DispatchRegressionTests) ... ok
+test_constructor_has_bound_mapping_before_any_message (test_r1_ws_dispatch_regression.DispatchRegressionTests) ... ok
+test_frontend_keeps_original_history_and_other_routes (test_r1_ws_dispatch_regression.DispatchRegressionTests) ... ok
+test_history_does_not_replace_existing_mapping (test_r1_ws_dispatch_regression.DispatchRegressionTests) ... ok
+test_pet_allowlist_survives (test_r1_ws_dispatch_regression.DispatchRegressionTests) ... ok
+test_qt_primary_non_history_routes_before_history (test_r1_ws_dispatch_regression.DispatchRegressionTests) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.062s
+
+OK

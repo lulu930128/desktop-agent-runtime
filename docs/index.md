@@ -1,6 +1,6 @@
 # Kuro 文件
 
-先從 [README](../README.md)認識 Kuro，再依需求閱讀。
+先從 [README](../README.md)認識 Kuro，再依需求閱讀。Qt 收斂的當前 release verdict 與限制見 [G8Checkpoint](agent-runs/qt-ui-convergence-20261007/G8Checkpoint.md)。
 
 | 需求 | 文件 |
 | --- | --- |

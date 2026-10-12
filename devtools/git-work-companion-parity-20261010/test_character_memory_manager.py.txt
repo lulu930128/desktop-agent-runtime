@@ -1,0 +1,24 @@
+test_cross_history_prompt_marks_raw_snippets (test_character_memory_manager.CharacterMemoryManagerTest) ... [32m2026-10-10 04:19:55.618[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mcreate_new_history[0m:[36m143[0m - [34m[1mCreated new history file with empty metadata: chat_history\kuro\2026-10-10_04-19-55_bb8de21dede34803bbebbcce3a5b9876.json[0m
+[32m2026-10-10 04:19:55.618[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mcreate_new_history[0m:[36m143[0m - [34m[1mCreated new history file with empty metadata: chat_history\kuro\2026-10-10_04-19-55_6f4246fd726645d69c83c6da4d6f61e2.json[0m
+[32m2026-10-10 04:19:55.619[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mstore_message[0m:[36m173[0m - [34m[1mStoring ai message to chat_history\kuro\2026-10-10_04-19-55_bb8de21dede34803bbebbcce3a5b9876.json[0m
+[32m2026-10-10 04:19:55.626[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mstore_message[0m:[36m229[0m - [34m[1mSuccessfully stored ai message[0m
+ok
+test_cross_history_search_excludes_current_history (test_character_memory_manager.CharacterMemoryManagerTest) ... [32m2026-10-10 04:19:55.650[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mcreate_new_history[0m:[36m143[0m - [34m[1mCreated new history file with empty metadata: chat_history\kuro\2026-10-10_04-19-55_0cdec630bde1404b9e2b9feb38a6dab9.json[0m
+[32m2026-10-10 04:19:55.650[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mcreate_new_history[0m:[36m143[0m - [34m[1mCreated new history file with empty metadata: chat_history\kuro\2026-10-10_04-19-55_631f7e745a6c41d19375a2404caa47df.json[0m
+[32m2026-10-10 04:19:55.650[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mstore_message[0m:[36m173[0m - [34m[1mStoring human message to chat_history\kuro\2026-10-10_04-19-55_0cdec630bde1404b9e2b9feb38a6dab9.json[0m
+[32m2026-10-10 04:19:55.653[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mstore_message[0m:[36m229[0m - [34m[1mSuccessfully stored human message[0m
+[32m2026-10-10 04:19:55.653[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mstore_message[0m:[36m173[0m - [34m[1mStoring human message to chat_history\kuro\2026-10-10_04-19-55_631f7e745a6c41d19375a2404caa47df.json[0m
+[32m2026-10-10 04:19:55.654[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mstore_message[0m:[36m229[0m - [34m[1mSuccessfully stored human message[0m
+ok
+test_manual_memory_lifecycle (test_character_memory_manager.CharacterMemoryManagerTest) ... ok
+test_prompt_excludes_pending_memory (test_character_memory_manager.CharacterMemoryManagerTest) ... ok
+test_repository_uses_safe_canonical_store_path (test_character_memory_manager.CharacterMemoryManagerTest) ... ok
+test_retrieval_prioritizes_query_relevant_memory (test_character_memory_manager.CharacterMemoryManagerTest) ... ok
+test_sensitive_turn_is_not_written (test_character_memory_manager.CharacterMemoryManagerTest) ... [32m2026-10-10 04:19:55.785[0m | [1mINFO    [0m | [36mopen_llm_vtuber.character_memory_manager[0m:[36mprocess_character_memory_turn[0m:[36m1163[0m - [1mSkipped character memory write because the turn looks sensitive.[0m
+ok
+test_sqlite_index_removes_stale_rows_on_next_query (test_character_memory_manager.CharacterMemoryManagerTest) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.218s
+
+OK

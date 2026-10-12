@@ -21,7 +21,7 @@ from .contracts import (
 
 
 # Database-wide version: observation v1 -> schedule v2 -> notifications v3.
-# This is a production ScheduleServer dependency, not an observation-only knob.
+# This is a production ScheduleCapability dependency, not an observation-only knob.
 SCHEMA_VERSION = 3
 
 

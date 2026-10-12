@@ -114,13 +114,7 @@ contextBridge.exposeInMainWorld("api", {
   endWindowDrag: bridge.endWindowDrag,
   updateComponentHover: bridge.updateComponentHover,
   setIgnoreMouseEvent: bridge.setIgnoreMouseEvent,
-  showContextMenu: bridge.showContextMenu,
-  onToggleInputSubtitle() {
-    return () => undefined;
-  },
-  updateConfigFiles() {
-    return undefined;
-  }
+  showContextMenu: bridge.showContextMenu
 });
 contextBridge.exposeInMainWorld("electron", {
   process: {

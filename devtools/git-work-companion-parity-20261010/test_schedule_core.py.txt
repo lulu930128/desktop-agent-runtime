@@ -1,0 +1,24 @@
+test_actual_v1_backup_can_restore_observation_store (test_schedule_core.ScheduleTests) ... ok
+test_completion_invalidates_only_its_own_pending_notification (test_schedule_core.ScheduleTests) ... ok
+test_cross_day_midnight_and_all_day (test_schedule_core.ScheduleTests) ... ok
+test_deadline_date_does_not_expire_at_midnight (test_schedule_core.ScheduleTests) ... ok
+test_dst_fold_uses_earlier_instant_for_generated_occurrences (test_schedule_core.ScheduleTests) ... ok
+test_dst_gap_and_fold (test_schedule_core.ScheduleTests) ... ok
+test_future_split_no_duplicate_and_cancel (test_schedule_core.ScheduleTests) ... ok
+test_idempotency_and_parallel_conflict (test_schedule_core.ScheduleTests) ... ok
+test_migration_failure_rolls_back_and_future_schema_fails (test_schedule_core.ScheduleTests) ... ok
+test_migration_preserves_v1_and_backup (test_schedule_core.ScheduleTests) ... ok
+test_old_uncompleted_and_bounded_catchup (test_schedule_core.ScheduleTests) ... ok
+test_read_does_not_materialize_or_change_db (test_schedule_core.ScheduleTests) ... ok
+test_restart_pagination_and_rollback (test_schedule_core.ScheduleTests) ... ok
+test_schema_number_without_required_tables_is_not_ready (test_schedule_core.ScheduleTests) ... ok
+test_single_exception_identity_and_completion (test_schedule_core.ScheduleTests) ... ok
+test_until_and_cancelled_exception_remain_stable_on_catchup (test_schedule_core.ScheduleTests) ... ok
+test_validation_and_confirmation (test_schedule_core.ScheduleTests) ... ok
+test_view_timezone_differs_from_series_timezone (test_schedule_core.ScheduleTests) ... ok
+test_weekly_monthly_rules (test_schedule_core.ScheduleTests) ... ok
+
+----------------------------------------------------------------------
+Ran 19 tests in 0.879s
+
+OK

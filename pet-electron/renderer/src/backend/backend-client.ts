@@ -2,20 +2,17 @@ import { PetLive2DRenderer } from "../live2d/pet-live2d-renderer";
 import { llmVtuberAdapter } from "./adapters/llm-vtuber-adapter";
 import { buildSpeechLipSyncEnvelope, downsampleFloat32 } from "./audio-utils";
 import {
-  buildVisibleInputText,
   mergeTextFragments,
   normalizeText
 } from "./text-utils";
 import type { BackendProtocolAdapter, KuroBackendEvent } from "./kuro-backend-events";
 import type {
   BackendConfig,
-  BackendFilePayload,
   BackendImagePayload,
   MicrophoneControlAction,
   MicrophoneControlResult,
   RendererState,
-  SpeechLipSyncEnvelope,
-  UserAttachmentPayload
+  SpeechLipSyncEnvelope
 } from "./types";
 
 export class BackendClient {
@@ -48,6 +45,7 @@ export class BackendClient {
   private assistantTurnText: string;
   private backendSynthComplete: boolean;
   private playbackCompleteSent: boolean;
+  private playbackRequestId: string | undefined;
   private micStream: MediaStream | null;
   private micAudioContext: AudioContext | null;
   private micSource: MediaStreamAudioSourceNode | null;
@@ -68,13 +66,25 @@ export class BackendClient {
   private lipSyncLevel: number;
   private speechFallbackStartedAt: number;
 
+  private static presentationWsUrl(wsUrl: string): string {
+    const value = String(wsUrl || "").trim();
+    if (!value) return "";
+    try {
+      const url = new URL(value);
+      url.searchParams.set("client_role", "pet-presentation");
+      return url.toString();
+    } catch {
+      return value; // connect() reports invalid WebSocket URLs through the existing error path.
+    }
+  }
+
   public constructor(
     config: BackendConfig,
     renderer: PetLive2DRenderer,
     updateState: (patch: Partial<RendererState>) => void,
     protocolAdapter: BackendProtocolAdapter = llmVtuberAdapter
   ) {
-    this.config = config;
+    this.config = { ...config, wsUrl: BackendClient.presentationWsUrl(config.wsUrl) };
     this.renderer = renderer;
     this.protocolAdapter = protocolAdapter;
     this.socket = null;
@@ -157,7 +167,7 @@ export class BackendClient {
       this.reconnectAttempt = 0;
       console.info("[pet-renderer] Backend WebSocket connected");
       socket.send(
-        JSON.stringify(this.protocolAdapter.createHistoryStartMessage())
+        JSON.stringify({ type: "request-init-config" })
       );
       this.updateState({
         wsConnected: true,
@@ -227,7 +237,7 @@ export class BackendClient {
   public applyConfig(baseUrl: string, wsUrl: string, reconnect = true): BackendConfig {
     this.config = {
       baseUrl: String(baseUrl || "").trim(),
-      wsUrl: String(wsUrl || "").trim()
+      wsUrl: BackendClient.presentationWsUrl(wsUrl)
     };
     this.shouldReconnect = true;
 
@@ -243,55 +253,11 @@ export class BackendClient {
     return { ...this.config };
   }
 
-  public async sendText(
-    text: string,
-    attachments: UserAttachmentPayload[] = []
-  ): Promise<{ ok: boolean; error?: string; text?: string }> {
-    const normalized = normalizeText(text);
-    const visibleText = buildVisibleInputText(normalized, attachments);
-    const normalizedAttachments = this.normalizeAttachments(attachments);
-    if (!normalized && normalizedAttachments.images.length === 0 && normalizedAttachments.files.length === 0) {
-      return { ok: false, error: "empty-text" };
-    }
 
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      return { ok: false, error: "websocket-not-open" };
-    }
-
-    const images = await this.captureEnabledImages();
-    images.push(...normalizedAttachments.images);
-    this.socket.send(
-      JSON.stringify(
-        this.protocolAdapter.createTextInputMessage({
-          text: normalized || "請分析我附上的檔案。",
-          images,
-          files: normalizedAttachments.files
-        })
-      )
-    );
-    this.resetAssistantTurn();
+  public stopPlayback(): void {
     this.stopAudioPlayback(true);
     this.resetPlaybackTurn();
-    this.updateState({
-      latestUserText: visibleText,
-      latestAssistantText: "",
-      aiState: "thinking"
-    });
-    return { ok: true, text: visibleText };
-  }
-
-  public sendInterrupt(): void {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      return;
-    }
-    this.socket.send(
-      JSON.stringify(this.protocolAdapter.createInterruptMessage())
-    );
-    this.stopAudioPlayback(true);
-    this.resetPlaybackTurn();
-    this.updateState({
-      aiState: "interrupted"
-    });
+    this.updateState({ aiState: "interrupted" });
   }
 
   public async setMicrophoneEnabled(enabled: boolean): Promise<MicrophoneControlResult> {
@@ -371,17 +337,13 @@ export class BackendClient {
     }
   }
 
-  public setBrowserPanelEnabled(enabled: boolean): { ok: boolean } {
-    this.updateState({ browserPanelEnabled: enabled });
-    return { ok: true };
-  }
 
   private sendPlaybackComplete(): void {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       return;
     }
     this.socket.send(
-      JSON.stringify(this.protocolAdapter.createPlaybackCompleteMessage())
+      JSON.stringify({ ...(this.protocolAdapter.createPlaybackCompleteMessage() as Record<string, unknown>), request_id: this.playbackRequestId })
     );
   }
 
@@ -675,47 +637,6 @@ export class BackendClient {
     return images;
   }
 
-  private normalizeAttachments(attachments: UserAttachmentPayload[]): {
-    images: BackendImagePayload[];
-    files: BackendFilePayload[];
-  } {
-    const images: BackendImagePayload[] = [];
-    const files: BackendFilePayload[] = [];
-    const items = Array.isArray(attachments) ? attachments.slice(0, 6) : [];
-
-    for (const item of items) {
-      if (!item || typeof item !== "object") {
-        continue;
-      }
-
-      const data = String(item.data || "");
-      const requestedKind = String(item.kind || "").toLowerCase();
-      const mimeType = String(item.mime_type || item.type || "").toLowerCase() || "application/octet-stream";
-      const name = String(item.name || "uploaded-file").trim() || "uploaded-file";
-      const size = Number(item.size) || 0;
-      if (!data.startsWith("data:")) {
-        continue;
-      }
-
-      if (mimeType.startsWith("image/")) {
-        images.push({
-          source: "upload",
-          data,
-          mime_type: mimeType
-        });
-      } else {
-        files.push({
-          kind: requestedKind || (mimeType.startsWith("audio/") ? "audio" : "file"),
-          name,
-          data,
-          mime_type: mimeType,
-          size
-        });
-      }
-    }
-
-    return { images, files };
-  }
 
   private async startMicrophoneCapture(): Promise<MicrophoneControlResult> {
     if (this.micStream) {
@@ -754,6 +675,11 @@ export class BackendClient {
         }
         const channel = event.inputBuffer.getChannelData(0);
         const samples = downsampleFloat32(channel, audioContext.sampleRate, 16000);
+        if (this.micSamples.length + samples.length > 16000 * 60) {
+          void this.pauseMicrophoneCapture();
+          console.warn("[pet-renderer] Microphone limit reached; submit or cancel the capture.");
+          return;
+        }
         this.micSamples.push(...samples);
       };
 
@@ -831,44 +757,34 @@ export class BackendClient {
   }
 
   private async stopMicrophoneCapture(submit: boolean): Promise<MicrophoneControlResult> {
-    const samples = this.micSamples.slice();
+    const samples = this.micSamples;
     this.micSamples = [];
     this.stopMicrophoneNodes();
     this.updateState({ micEnabled: false, micPaused: false });
-
     if (!submit || samples.length === 0) {
-      this.updateState({ aiState: "idle" });
-      return {
-        ok: true,
-        micEnabled: false,
-        micPaused: false,
-        discarded: !submit,
-        empty: submit && samples.length === 0
-      };
+      return { ok: true, micEnabled: false, micPaused: false,
+        discarded: !submit, empty: submit && samples.length === 0 };
     }
+    // Capture only. Qt decides whether to submit to its primary conversation.
+    const pcm = new Uint8Array(samples.length * 2);
+    const view = new DataView(pcm.buffer);
+    samples.forEach((value, i) => view.setInt16(i * 2,
+      Math.round(Math.max(-1, Math.min(1, value)) * 32767), true));
+    let binary = "";
+    for (let i = 0; i < pcm.length; i += 8192) {
+      binary += String.fromCharCode(...pcm.subarray(i, i + 8192));
+    }
+    return { ok: true, micEnabled: false, micPaused: false,
+      capture: { format: "pcm16le", sampleRate: 16000, data: btoa(binary) },
+      images: await this.captureEnabledImages() };
+  }
 
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      return { ok: false, error: "websocket-not-open" };
-    }
-
-    const chunkSize = 4096;
-    for (let i = 0; i < samples.length; i += chunkSize) {
-      this.socket.send(
-        JSON.stringify(this.protocolAdapter.createMicAudioDataMessage(samples.slice(i, i + chunkSize)))
-      );
-    }
-    this.resetAssistantTurn();
-    this.stopAudioPlayback(true);
-    this.resetPlaybackTurn();
-    const images = await this.captureEnabledImages();
-    this.socket.send(
-      JSON.stringify(this.protocolAdapter.createMicAudioEndMessage({ images }))
-    );
-    this.updateState({ latestAssistantText: "", aiState: "thinking" });
-    return { ok: true, micEnabled: false, micPaused: false, submitted: true };
+  public async captureInput(): Promise<{ ok: boolean; images: BackendImagePayload[] }> {
+    return { ok: true, images: await this.captureEnabledImages() };
   }
 
   private resetPlaybackTurn(): void {
+    this.playbackRequestId = undefined;
     this.audioQueue = [];
     this.backendSynthComplete = false;
     this.playbackCompleteSent = false;
@@ -1013,8 +929,9 @@ export class BackendClient {
     }
 
     this.playbackCompleteSent = true;
+    const requestId = this.playbackRequestId;
     window.setTimeout(() => {
-      if (this.currentAudio || this.audioQueue.length > 0 || !this.backendSynthComplete || !this.playbackCompleteSent) {
+      if (requestId !== this.playbackRequestId || this.currentAudio || this.audioQueue.length > 0 || !this.backendSynthComplete || !this.playbackCompleteSent) {
         return;
       }
       this.sendPlaybackComplete();
@@ -1022,6 +939,9 @@ export class BackendClient {
   }
 
   private handleMessage(payload: Record<string, any>): void {
+    if (payload.type === "backend-synth-complete") {
+      this.playbackRequestId = typeof payload.request_id === "string" ? payload.request_id : undefined;
+    }
     const events = this.protocolAdapter.toKuroEvents(payload, {
       baseUrl: this.config.baseUrl
     });
@@ -1044,11 +964,6 @@ export class BackendClient {
       this.updateState({
         confName: event.confName,
         confUid: event.confUid
-      });
-    } else if (event.type === "history-selected") {
-      this.updateState({
-        currentHistoryUid: event.historyUid,
-        currentHistoryTitle: event.historyTitle
       });
     } else if (event.type === "assistant-audio") {
       if (event.speechStatus) this.updateState({ speechStatus: event.speechStatus });

@@ -1,0 +1,39 @@
+test_attachment_wire_payload (test_g3_conversation.QtTests) ... ok
+test_connected_history_refresh_does_not_read_files (test_g3_conversation.QtTests) ... ok
+test_deleted_current_history_returns_to_blank_draft (test_g3_conversation.QtTests) ... ok
+test_direct_send_existing_history_and_failed_send_preserves_input (test_g3_conversation.QtTests) ... ok
+test_direct_send_no_pet_and_pending_history_exactly_once (test_g3_conversation.QtTests) ... ok
+test_disconnected_cleanup_cannot_fall_back_to_controller (test_g3_conversation.QtTests) ... ok
+test_history_commands_are_direct (test_g3_conversation.QtTests) ... ok
+test_history_listing_does_not_switch_primary (test_g3_conversation.QtTests) ... ok
+test_history_response_updates_client_before_window_receives_it (test_g3_conversation.QtTests) ... ok
+test_interrupt_has_no_electron_fallback (test_g3_conversation.QtTests) ... ok
+test_no_fake_playback_ack_or_early_idle (test_g3_conversation.QtTests) ... ok
+test_primary_url (test_g3_conversation.QtTests) ... ok
+test_ack_correlated_to_primary_and_ignores_qt (test_g3_conversation.RuntimeTests) ... ok
+test_ack_received_during_marker_send_is_not_lost (test_g3_conversation.RuntimeTests) ... ok
+test_all_presentations_finish_before_primary_wait_completes (test_g3_conversation.RuntimeTests) ... ok
+test_busy_primary_rejects_duplicate_turn (test_g3_conversation.RuntimeTests) ... ok
+test_concurrent_primary_admission_is_exclusive (test_g3_conversation.RuntimeTests) ... [32m2026-10-10 04:33:40.318[0m | [31m[1mERROR   [0m | [36mopen_llm_vtuber.websocket_handler[0m:[36mhandle_new_connection[0m:[36m780[0m - [31m[1mFailed to initialize connection for client two: Canonical Qt conversation frontend is exclusive.[0m
+[32m2026-10-10 04:33:40.319[0m | [1mINFO    [0m | [36mopen_llm_vtuber.websocket_handler[0m:[36mhandle_new_connection[0m:[36m774[0m - [1mConnection established for client one role=qt-primary[0m
+ok
+test_disconnect_and_immediate_ack_complete_wait (test_g3_conversation.RuntimeTests) ... [32m2026-10-10 04:33:40.330[0m | [1mINFO    [0m | [36mopen_llm_vtuber.websocket_handler[0m:[36mhandle_disconnect[0m:[36m1015[0m - [1mClient pet disconnected[0m
+ok
+test_no_pet_finalizes_without_legacy_wait (test_g3_conversation.RuntimeTests) ... [32m2026-10-10 04:33:40.345[0m | [1mINFO    [0m | [36mopen_llm_vtuber.conversations.conversation_utils[0m:[36msend_conversation_end_signal[0m:[36m3387[0m - [1m😎👍✅ Conversation Chain 😊 completed![0m
+ok
+test_pet_connection_has_no_context_or_group (test_g3_conversation.RuntimeTests) ... ok
+test_pet_inbound_fail_closed (test_g3_conversation.RuntimeTests) ... ok
+test_pet_send_failure_does_not_fail_primary (test_g3_conversation.RuntimeTests) ... [32m2026-10-10 04:33:40.379[0m | [33m[1mWARNING [0m | [36mopen_llm_vtuber.websocket_handler[0m:[36m__call__[0m:[36m120[0m - [33m[1mPresentation delivery unavailable for pet; primary turn continues.[0m
+ok
+test_primary_cannot_join_group (test_g3_conversation.RuntimeTests) ... ok
+test_primary_fanout_is_allowlisted (test_g3_conversation.RuntimeTests) ... ok
+test_roles_and_hot_switch (test_g3_conversation.RuntimeTests) ... ok
+test_second_controller_rejected (test_g3_conversation.RuntimeTests) ... [32m2026-10-10 04:33:40.418[0m | [31m[1mERROR   [0m | [36mopen_llm_vtuber.websocket_handler[0m:[36mhandle_new_connection[0m:[36m780[0m - [31m[1mFailed to initialize connection for client other: Canonical Qt conversation frontend is exclusive.[0m
+[32m2026-10-10 04:33:40.418[0m | [31m[1mERROR   [0m | [36mopen_llm_vtuber.websocket_handler[0m:[36mhandle_new_connection[0m:[36m780[0m - [31m[1mFailed to initialize connection for client other: Canonical Qt conversation frontend is exclusive.[0m
+ok
+test_text_trigger_one_turn_with_or_without_pet (test_g3_conversation.RuntimeTests) ... ok
+
+----------------------------------------------------------------------
+Ran 27 tests in 0.187s
+
+OK

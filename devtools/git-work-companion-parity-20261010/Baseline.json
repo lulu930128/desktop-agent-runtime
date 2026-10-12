@@ -1,0 +1,950 @@
+{
+  "head": "995c23c7c8d1be62000229d58610d2214f3bb745",
+  "entries": [
+    {
+      "status": " M",
+      "path": "AGENTS.md",
+      "sha256": "cd204e088e6f12657db785b67d91662be6768b4fbc5aae1f8ac7ab25da2fac3c"
+    },
+    {
+      "status": " D",
+      "path": "Open-LLM-VTuber/local_mcp/mail_briefing_poller.py",
+      "sha256": null
+    },
+    {
+      "status": " M",
+      "path": "Open-LLM-VTuber/local_mcp/mail_tools_server.py",
+      "sha256": "f66f82302c47d24de396240567addff704938d2ec9ad9b792d802a2b109eb51f"
+    },
+    {
+      "status": " M",
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/conversations/conversation_handler.py",
+      "sha256": "e15b8693280cbefeedb58ddf897161cd1635bd94b7a94a21a19831b1293dc15c"
+    },
+    {
+      "status": " M",
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/conversations/conversation_utils.py",
+      "sha256": "59b60d33e8abf575c328c2a7a81f1a582d173f45011c7c3f43c15d75ca437599"
+    },
+    {
+      "status": " M",
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_catalog_manager.py",
+      "sha256": "fb49a20c9887c0644bf1edb1ab81e86d9b43c35b03e63f5c5c9c3e9014e99d57"
+    },
+    {
+      "status": " M",
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_identity.py",
+      "sha256": "3062d0d8c9735f79e292b0cff7437a41b43e56849e5627cab4a799561ae6dc97"
+    },
+    {
+      "status": " M",
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/websocket_handler.py",
+      "sha256": "c7aee703136eda11f7836b951c8363d646ef09b0c8a7434e88f93a186a0b7655"
+    },
+    {
+      "status": " M",
+      "path": "Open-LLM-VTuber/tool_catalog.json",
+      "sha256": "3cf8b68d5997e2df1d127fba4edd695a2397623d421e74d4f79815aa1d5847c6"
+    },
+    {
+      "status": " M",
+      "path": "Open-LLM-VTuber/tool_policy.json",
+      "sha256": "56d0b3565c90a152a36f22e817163841b598d074e176c8a776152acb1cec3020"
+    },
+    {
+      "status": " M",
+      "path": "README.md",
+      "sha256": "a2f4d9a9afbad0bdf949e5b9d4c7f23ea8b08d3a76a3edbd61072f799ed5b509"
+    },
+    {
+      "status": " M",
+      "path": "docs/architecture/CorePersistence.md",
+      "sha256": "d0e4709706af0df889a17101722d59d2da081a01eb83fa9c41c935b163139d88"
+    },
+    {
+      "status": " M",
+      "path": "docs/architecture/DataLineage.md",
+      "sha256": "b1d84833e17d4bb3a47b9e21847759073103bd9ae7b5bcb8faff2358d81d5ee3"
+    },
+    {
+      "status": " M",
+      "path": "docs/architecture/OwnershipMap.md",
+      "sha256": "9b2733d1bcccb83634d9b96ece6c485efa4768bd6f218dad155c1b3a3cc213b0"
+    },
+    {
+      "status": " M",
+      "path": "docs/architecture/ResearchBoundary.md",
+      "sha256": "afce8ff0ca447360dcb94d5101e2928aea9a66ed3084d9641a48b2ca7ba75c5f"
+    },
+    {
+      "status": " M",
+      "path": "docs/architecture/RuntimeArchitecture.md",
+      "sha256": "892994dcc0308f71bb064d2d4e5e9d09f77c726b55239986715908cfc563b53b"
+    },
+    {
+      "status": " M",
+      "path": "docs/architecture/RuntimeServices.md",
+      "sha256": "ebd953e7c49103cf0c169f4238e842787f499dd3823192b4bd5e3a6cc0e6c991"
+    },
+    {
+      "status": " M",
+      "path": "docs/architecture/index.md",
+      "sha256": "e1d06a6647d4f7a79ea1fc9beed6fdee07c56537cad7e5ff553762008b901268"
+    },
+    {
+      "status": " M",
+      "path": "docs/guides/development.md",
+      "sha256": "cd3ce006e4f9fb25febedfb6caa2474ea0cebb38b74cb660f5d6e60a21d021b3"
+    },
+    {
+      "status": " M",
+      "path": "docs/guides/feature-tour.md",
+      "sha256": "439aaaf041b6d07b385045a8329f985ec6332706c4f7964c6c70aa5f104a0d43"
+    },
+    {
+      "status": " M",
+      "path": "docs/guides/getting-started.md",
+      "sha256": "ce390b897a2dd5558d84deb69d762031cbf6a155a709eeade0746ac892a5f985"
+    },
+    {
+      "status": " M",
+      "path": "docs/guides/troubleshooting.md",
+      "sha256": "6bb5d4dd31e6400bd62ac69ecc61bca7e17ddf718b8a3b8740f74b0ab33f9ebc"
+    },
+    {
+      "status": " M",
+      "path": "docs/index.md",
+      "sha256": "415407407011b1c8175ceb8df6e00442ccb6b9ffdfeb2476321f408be56e0f81"
+    },
+    {
+      "status": " M",
+      "path": "kuro_core/__init__.py",
+      "sha256": "48e3ddedd1c0bf6e167d157b5f1e143c74f55acd82976029f9c21cf4e86b6bb4"
+    },
+    {
+      "status": " D",
+      "path": "kuro_core/legacy_briefing_adapter.py",
+      "sha256": null
+    },
+    {
+      "status": " M",
+      "path": "kuro_core/schedule_api.py",
+      "sha256": "68561cb9c9cd97f1abb3ff2e9fe04a771f9aacf219c5e57f5868860ae92c4a2c"
+    },
+    {
+      "status": " M",
+      "path": "kuro_core/shadow_probe.py",
+      "sha256": "30efce2986301b5b6da736d364514350195f5a0acab7dfb12073b791ee6b7cd4"
+    },
+    {
+      "status": " M",
+      "path": "kuro_core/storage.py",
+      "sha256": "8ef7404e8e3b8fa066fcfc6ec21d823a1acd4feb30a35ece78b4d235e1971de3"
+    },
+    {
+      "status": " M",
+      "path": "kuro_core_service.py",
+      "sha256": "6de4e8970dac71873efdb0ddd6bf5f80c70383d086353bfaf977ea1385b54a7a"
+    },
+    {
+      "status": " M",
+      "path": "kuro_launcher.settings.yaml",
+      "sha256": "9f21ba552446b3af39a2db00073e932c49478b9f375d2e883a1caa64bc825f79"
+    },
+    {
+      "status": " M",
+      "path": "kuro_launcher/config.py",
+      "sha256": "29875e2cd627cfafaa06a2a992243eea15e9462008ff3b2b11f9c2ecd65e6c0a"
+    },
+    {
+      "status": " M",
+      "path": "kuro_launcher/core_runtime.py",
+      "sha256": "6713634047b4091e2eb3146274e80e4e5c068628668552df3c244d4606502a21"
+    },
+    {
+      "status": " M",
+      "path": "kuro_launcher/qt_app.py",
+      "sha256": "953f2c85aa92e668b90e089d34439110bc1c5c23826cf49d997f7db92d4ad674"
+    },
+    {
+      "status": " M",
+      "path": "kuro_launcher/qt_chat_client.py",
+      "sha256": "8ec4d4f93a77ab0d4888a55007ccbfc3c242a15d0174f970955de1432b795f24"
+    },
+    {
+      "status": " M",
+      "path": "kuro_launcher/qt_controller.py",
+      "sha256": "c649b1c8ca5c9275eca864f29f972f794f623afd29c206b34e202295fad0cd74"
+    },
+    {
+      "status": " D",
+      "path": "kuro_launcher/work_panel_activation.py",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "kuro_launcher/work_panel_api.py",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "kuro_launcher/work_panel_recovery.py",
+      "sha256": null
+    },
+    {
+      "status": " M",
+      "path": "launcher_qt.py",
+      "sha256": "841c01530858e49b68cf6c5c29ee34a4c709501ab810c04be4d11c269443a90e"
+    },
+    {
+      "status": " M",
+      "path": "pet-electron/renderer/src/backend/adapters/llm-vtuber-adapter.ts",
+      "sha256": "561ec6ba6af8d93563badac73d2175903a301cf845b44fce84e2be1bfc5494b1"
+    },
+    {
+      "status": " M",
+      "path": "pet-electron/renderer/src/backend/backend-client.ts",
+      "sha256": "4c76cc9f927c8b4c2b834a0dc0a687c9a989fbfc2f2def37ac783aa1f3acea08"
+    },
+    {
+      "status": " M",
+      "path": "pet-electron/renderer/src/backend/kuro-backend-events.ts",
+      "sha256": "73106ecc428d022622d7e6018e7669d116d41849e046bb4a8a5724c45245474e"
+    },
+    {
+      "status": " M",
+      "path": "pet-electron/renderer/src/backend/text-utils.ts",
+      "sha256": "785ad1963f9e15f4e2587408020556cb7104ff04a24518ba6743f22b15ddbc95"
+    },
+    {
+      "status": " M",
+      "path": "pet-electron/renderer/src/backend/types.ts",
+      "sha256": "7b6c31486983214f848a80699012591795fcb287c2cc1e9067e96a2620badbe9"
+    },
+    {
+      "status": " M",
+      "path": "pet-electron/renderer/src/commands/pet-command-router.ts",
+      "sha256": "6e8c252249ac63c6ca136bf252c1260ac71164f9648e61d63afc5ef151e9bb88"
+    },
+    {
+      "status": " M",
+      "path": "pet-electron/renderer/src/env.d.ts",
+      "sha256": "dc9b4f0a0d3d54bfb402fe294dc56919b06ac4ec4b7468933b640694e3d329f9"
+    },
+    {
+      "status": " M",
+      "path": "pet-electron/renderer/src/main.ts",
+      "sha256": "77d1c3bbf364ac15e10283e4ebcb5fb3416516afda70f1f10b63e2ef259216dc"
+    },
+    {
+      "status": " D",
+      "path": "pet-electron/renderer/src/work-panel/main.ts",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "pet-electron/renderer/src/work-panel/model.ts",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "pet-electron/renderer/src/work-panel/schedule.ts",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "pet-electron/renderer/src/work-panel/styles.css",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "pet-electron/renderer/src/work-panel/types.ts",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "pet-electron/renderer/work-panel.html",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "pet-electron/src/briefing-preload.js",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "pet-electron/src/briefing-window.html",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "pet-electron/src/main-process/briefing-store.js",
+      "sha256": null
+    },
+    {
+      "status": " M",
+      "path": "pet-electron/src/main-process/control-server.js",
+      "sha256": "d62780591e05fd83d82709fb92b109e43f61dd3477b423b509787ebefd4e0566"
+    },
+    {
+      "status": " D",
+      "path": "pet-electron/src/main-process/core-client.js",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "pet-electron/src/main-process/mail-briefing-service.js",
+      "sha256": null
+    },
+    {
+      "status": " M",
+      "path": "pet-electron/src/main-process/menus.js",
+      "sha256": "d223c4d00d2515b7138b1a6d65a8bf8c8137df0c87b3bca1c499ea4a39ca2861"
+    },
+    {
+      "status": " D",
+      "path": "pet-electron/src/main-process/reader-attachments.js",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "pet-electron/src/main-process/schedule-notifications.js",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "pet-electron/src/main-process/study-briefing.js",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "pet-electron/src/main-process/today-classifier.js",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "pet-electron/src/main-process/work-panel-window.js",
+      "sha256": null
+    },
+    {
+      "status": " M",
+      "path": "pet-electron/src/main.js",
+      "sha256": "b0408812b977721641612dc3e0f09cfb92139d352af50b7cd734920f4b351ef3"
+    },
+    {
+      "status": " M",
+      "path": "pet-electron/src/preload.js",
+      "sha256": "4976976eea4e287f4ac356c00d40cd09cffe166341eb44a99e9cea6ea37a48f4"
+    },
+    {
+      "status": " D",
+      "path": "pet-electron/src/reader-preload.js",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "pet-electron/src/reader-window.html",
+      "sha256": null
+    },
+    {
+      "status": " M",
+      "path": "pet-electron/src/state.js",
+      "sha256": "46af56b2a6315446237b600d10fb93257c4131837e6fab7a9d6c86330bc488ac"
+    },
+    {
+      "status": " M",
+      "path": "pet-electron/vite.renderer.config.ts",
+      "sha256": "db8e4cf29bb079a40125fa6251f44a2f93ad4662386ac77f1045ff7ee0a4381c"
+    },
+    {
+      "status": " D",
+      "path": "tests/core_client.test.cjs",
+      "sha256": null
+    },
+    {
+      "status": " M",
+      "path": "tests/pet_offline_smoke.cjs",
+      "sha256": "b613b50833a20f3efefcd96b14baedd437903736a19f3e69d07893e94bd6fe0d"
+    },
+    {
+      "status": " M",
+      "path": "tests/pet_placement_smoke.cjs",
+      "sha256": "06e770b556106181061f540efc1ad001df36a5de28a861997d58fdfdcc03ca6f"
+    },
+    {
+      "status": " D",
+      "path": "tests/schedule_cutover.test.cjs",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "tests/schedule_notifications.test.cjs",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "tests/schedule_renderer_smoke.cjs",
+      "sha256": null
+    },
+    {
+      "status": " M",
+      "path": "tests/test_kuro_core_contracts.py",
+      "sha256": "6e9059c32919ccdd628f8397feae5a92e2f8041a37014a959fec0894a3ff3023"
+    },
+    {
+      "status": " M",
+      "path": "tests/test_kuro_core_shadow_probe.py",
+      "sha256": "fa371c6a223c302f3243597a7e7f3ca02aac4854593e6060f8c109d0d28a2609"
+    },
+    {
+      "status": " M",
+      "path": "tests/test_launcher_entrypoint.py",
+      "sha256": "fcaf29ce4ce32097a21629767f8bdf7024cc939a2d686bb64d4fadd6e3e50bd7"
+    },
+    {
+      "status": " D",
+      "path": "tests/test_mcp_m0_launcher_policy.py",
+      "sha256": null
+    },
+    {
+      "status": " M",
+      "path": "tests/test_pet_lifecycle.py",
+      "sha256": "6701525811beb4e66f6b8d398e687cf73a0cd9b5470e1746a29830b4d281c5d8"
+    },
+    {
+      "status": " M",
+      "path": "tests/test_runtime_capabilities.py",
+      "sha256": "14688fae53460523b0395c74ea76cdd07147f32f026cd1899f485721a2e33c45"
+    },
+    {
+      "status": " M",
+      "path": "tests/test_schedule_api.py",
+      "sha256": "84a92e195a0525feca5faa7adf171012a7a93f13471dbd66727d83fad5e70b1a"
+    },
+    {
+      "status": " M",
+      "path": "tests/test_schedule_runtime.py",
+      "sha256": "939d7f49337f259a08a577a296660382f07bce820a08a680ea9a84868649013c"
+    },
+    {
+      "status": " D",
+      "path": "tests/test_work_panel_activation.py",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "tests/test_work_panel_api.py",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "tests/work_panel_electron_smoke.cjs",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "tests/work_panel_process_fixture.cjs",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "tests/work_panel_process_smoke.py",
+      "sha256": null
+    },
+    {
+      "status": " D",
+      "path": "tests/work_panel_window.test.cjs",
+      "sha256": null
+    },
+    {
+      "status": " M",
+      "path": "桌寵啟動器.vbs",
+      "sha256": "b246a5d379e28c349c08b4b5eed207474d221a20c7eb48b41f7e03ccadc54797"
+    },
+    {
+      "status": "??",
+      "path": "G7FinalTwoDelete-20261010.ps1",
+      "sha256": "1566045709f63b672704346bf51f5ffa79cbe0966505122081e21252bfe369e5"
+    },
+    {
+      "status": "??",
+      "path": "G7FinalTwoHandoff-20261010.md",
+      "sha256": "4392ad0a7610426a9468e69f6178464755ce3e4b0d57c13d23a8c6720a384a20"
+    },
+    {
+      "status": "??",
+      "path": "G7FinalTwoResults-20261010.json",
+      "sha256": "b11cf7dafbc255dc6728cbc9ba202c90bac9b72a4491403f35ad4f56653c6a22"
+    },
+    {
+      "status": "??",
+      "path": "G8FinalizationDocs.patch",
+      "sha256": "ada0ce888cdb5bada93b9aa2abbb97cdf3bf19fb87cfe5593132b4d99188d86d"
+    },
+    {
+      "status": "??",
+      "path": "G8FinalizationHandoff.md",
+      "sha256": "2f1397f2f32086489103402241abe59e3f8a32fe42f0bd42acbc466748eebae7"
+    },
+    {
+      "status": "??",
+      "path": "G8FinalizationResults.json",
+      "sha256": "cc13e846645eb9b5911aa309c614221ca7d97ae88840cadf73ebe84c14e880a9"
+    },
+    {
+      "status": "??",
+      "path": "Open-LLM-VTuber/local_mcp/mail_poller.py",
+      "sha256": "18bc7deae61a60f86f39b66b533fbfe7af8f1374f4667759bd271ace85ba2261"
+    },
+    {
+      "status": "??",
+      "path": "Open-LLM-VTuber/local_mcp/mail_status_handoff.py",
+      "sha256": "5bdb41ba474c7b7d164c9228c8f52cedb2b9435039a80dff21d7abc4652912fb"
+    },
+    {
+      "status": "??",
+      "path": "Open-LLM-VTuber/local_mcp/mail_work_handoff.py",
+      "sha256": "88671bcc9e5f0193822650ffe135359ae121e54828264430b179e895455b9b43"
+    },
+    {
+      "status": "??",
+      "path": "devtools/preview_work_companion_v1.py",
+      "sha256": "3d4831f8927f60ec6611d0a3f22e470fee6652f6cd079e0e546ad6a2806ac9f0"
+    },
+    {
+      "status": "??",
+      "path": "devtools/work-companion-ui-v0-v1-20261010/SourceIntegrityBaseline.json",
+      "sha256": "76257056d8af83bd2feb91842bde03ac81cefba758f08c14fd0c957aa9bc94e7"
+    },
+    {
+      "status": "??",
+      "path": "devtools/work-companion-ui-v0-v1-20261010/SourceIntegrityResult.json",
+      "sha256": "4ce37567323af25aa7dcf7182dd43dea5428313a96fa29b4ff4c6544b4061079"
+    },
+    {
+      "status": "??",
+      "path": "devtools/work-companion-ui-v0-v1-20261010/V0Baseline.md",
+      "sha256": "c54cfd6eb48b8b2f3f2e1a5fe415b00e6f7c627e87b40c7846cee47f226093c3"
+    },
+    {
+      "status": "??",
+      "path": "devtools/work-companion-ui-v0-v1-20261010/V1Checkpoint.md",
+      "sha256": "0d6dbb0e41bfefc98440ff000cc17d0f283a199a64db262ee29df1a350661c13"
+    },
+    {
+      "status": "??",
+      "path": "devtools/work-companion-ui-v0-v1-20261010/ValidationResults.json",
+      "sha256": "8f3178b19021bb46d16292837de2541fede19dfb881b9adb313f8128f26696ee"
+    },
+    {
+      "status": "??",
+      "path": "devtools/work-companion-ui-v0-v1-20261010/previews/README.md",
+      "sha256": "a338a88bb3eac0e9e76bd7434f9b34469d152c9b02ce3378e450ecc155e64b16"
+    },
+    {
+      "status": "??",
+      "path": "devtools/work-companion-ui-v0-v1-20261010/previews/chat-2x.png",
+      "sha256": "4831327fe909d5c36b8f7197a3a8c5670a83dc4ba4319d9104191bc847406ef5"
+    },
+    {
+      "status": "??",
+      "path": "devtools/work-companion-ui-v0-v1-20261010/previews/chat-error.png",
+      "sha256": "294759483295c773688c45fdf8a1ba829f90e07f3b42ed80b2ad6a7249692c34"
+    },
+    {
+      "status": "??",
+      "path": "devtools/work-companion-ui-v0-v1-20261010/previews/chat-history.png",
+      "sha256": "f7a4cbd3550f451771fd69486242fbf8cd329a0410cb256b8f6a207725b56649"
+    },
+    {
+      "status": "??",
+      "path": "devtools/work-companion-ui-v0-v1-20261010/previews/chat.png",
+      "sha256": "275040fa72bae774d93c75dbc5a976c2e0b51af6762662902e7aa1c2ef793b30"
+    },
+    {
+      "status": "??",
+      "path": "devtools/work-companion-ui-v0-v1-20261010/previews/settings-1120.png",
+      "sha256": "8e56fc2330c031c3a69041364c690771c2bb9b80e6fed99868f5f1d14036862a"
+    },
+    {
+      "status": "??",
+      "path": "devtools/work-companion-ui-v0-v1-20261010/previews/settings.png",
+      "sha256": "4e8a0d2f66b19149c7c1ce737f379a9fbc9e19a8e984d1a721b677e13b705e81"
+    },
+    {
+      "status": "??",
+      "path": "devtools/work-companion-ui-v0-v1-20261010/previews/today-detail.png",
+      "sha256": "8b3250cecd333b4e023c039e09f8cf811d9e8a463d75410c11fd16189b225ecf"
+    },
+    {
+      "status": "??",
+      "path": "devtools/work-companion-ui-v0-v1-20261010/previews/today.png",
+      "sha256": "bb9b52c621443f64eebf0f73a1289e47ce3cc9c3c67afbb8257920c28864c60b"
+    },
+    {
+      "status": "??",
+      "path": "devtools/work_companion_synthetic.py",
+      "sha256": "9089fd7ef2cf392afff47c65899ac81ecb1f70506632af7799da7d31b7ef0a88"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/CoreApiHostPlan.md",
+      "sha256": "d1256c51f5c2ca48f714f83519f9db4e69af79ae67d977306bde089a68aa02b0"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G0Checkpoint.md",
+      "sha256": "29cfab763a5e60244a10b3231408549c53088d387e509b8c6a2f6085671e8f9f"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G1Checkpoint.md",
+      "sha256": "59ca50c1fa9d612bda79c2792c172deed26b47c0a170e8798b516ca0787aa10c"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G1WorkTodayPlan.md",
+      "sha256": "bd60e65bd1c641573ecfd5d92e8b95767d7486ad3ae67c461fbcb2d467b0c9c1"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G2BackendCutoverPlan.md",
+      "sha256": "f4e4f88487ebd76f76a6a8728e88c37a9148d1b20025d65ff20b1b39d2869914"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G2Checkpoint.md",
+      "sha256": "cc325c07b3f8fa0d74430700f1c9f28a80bd2377fb52338a21070c0228df9d0d"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G3Checkpoint.md",
+      "sha256": "52ee0563ced178852ad8bd4baa9bee18b7ec4560ba9ff7a639c2b3dc1680d148"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G3ConversationCutoverPlan.md",
+      "sha256": "1dee8fb433557261206ace4b7f161532c60e8eaf87cd5553f4b9f73d29d0c92f"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G4Checkpoint.md",
+      "sha256": "e5b0b905c114192055272fbeb8107516ff86231464d3b4468cf9b94ddd2da112"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G4QtParityPlan.md",
+      "sha256": "54ca7f22bde137a40d2bef1e99aabe81bdbcea2be945fb3b4c1a092a11732884"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G5Checkpoint.md",
+      "sha256": "b407d9f8e88d2f4f4d9e24e34c738e95c4615b40e65f4b726bca82816c15973d"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G5DesktopCutoverPlan.md",
+      "sha256": "9972ad58e3ac4f6c382ad861865a189d0abe5ce54f8445962d8eae6db4bbdd3b"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G5G8InitialPathSnapshot.json",
+      "sha256": "12d0625ff69733da27980113e4eda9d2f51defe6e7136b374f63a07731255e43"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G6Checkpoint.md",
+      "sha256": "e2c42d22513bb22db50b99b5151c3f5f2f413410d4300ae68aef8e95550fa23c"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G7Checkpoint.md",
+      "sha256": "75c0c27e533c7e9a72df6bbdbbf37ee818483796daa2b94f6c58a3e1f0f03625"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G7DeletionManifest.json",
+      "sha256": "b605a26741ad56004a6fe45c484bcb447a292cc1d0a0b0004ae5e1eac7f5281b"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G7DeletionResults.json",
+      "sha256": "caa07ae007f37f1a914cc601addaa44d217ea874e5667cde43e6cf16b1f18b11"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G7FollowupDeletionResults.json",
+      "sha256": "252b8e8124876167fbdd6bae99b9ff15ce3be61654b9c30e4fb17b3851d4b2cf"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G7PostDeleteAcceptance-20261010.json",
+      "sha256": "804c5bf26169bc85f19507daa41b70316cdedfe4191417731133bfa27c61a778"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G7PostDeleteAcceptance-20261010.md",
+      "sha256": "6264b830e93524d6117c975fbcb65aa49c54ac967f6e0bda280398e3a75695db"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G8Checkpoint.md",
+      "sha256": "d4c8cdcc662094fdf5637fcbe6daa10572100e4e2ba3bdae58c063052ba09229"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G8Integrity.json",
+      "sha256": "e84ce31bdd28b98d76a5f1cf0adb4eaeb2521150bb56e63fe6f6a08839892c49"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G8ManualAcceptance.md",
+      "sha256": "b296a3254c5ccc4d0734d06f4f31b5e81ace34bd1069837468bda3ecabb4c709"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G8ReviewerStaticFollowup.md",
+      "sha256": "b4891b81f23a5f7c3626f4874a8bdb2827e2af79d19187bd440b0d081ab09637"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/G8ValidationResults.json",
+      "sha256": "27c57ba3daaec32842e6fe8b4ae118e59a336970782f7d91992f658a344c549f"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/MailIntegrationPlan.md",
+      "sha256": "d26e2c1a4f16c6399d67b914ff3c6ecfed82396f418f0d389ad6d4f7597a7319"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/MigrationMatrix.md",
+      "sha256": "15aa9a2521cc4b4ba5ff889805ef202e01b1707120247f780b32ec264a6593b7"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/Plan.md",
+      "sha256": "5918e88e295f4541ddd99d9cfa6851cb113dcc370a68c3237330a37b0d521870"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/Progress.md",
+      "sha256": "4b14ca6afa8716f68253524b7ff55873f3c4ed592c2c6e627a981fb91391a207"
+    },
+    {
+      "status": "??",
+      "path": "docs/agent-runs/qt-ui-convergence-20261007/QtFinalConvergencePlan.md",
+      "sha256": "811d32a3aecf110a9992f2667f552812fc3113fe71f31575dcf72eecde5c4cab"
+    },
+    {
+      "status": "??",
+      "path": "kuro_core/api_server.py",
+      "sha256": "ad2562a5b7f1dd2b3c557165bff5a4804bb0f9686481c877d9d84999093f7109"
+    },
+    {
+      "status": "??",
+      "path": "kuro_core/attention.py",
+      "sha256": "047aa39245fb9adac65c4ece40105d78497f56b957ee3746a491766caa43188e"
+    },
+    {
+      "status": "??",
+      "path": "kuro_core/core_app.py",
+      "sha256": "a09ee7e2e80a0af542cceeae835fdcf952d9bdc42f67531ee8e1c2a86a54a5b8"
+    },
+    {
+      "status": "??",
+      "path": "kuro_core/handoff.py",
+      "sha256": "8222a179ea65ea2ed40ea2e26853adc2578cad1735fce99691f141f4172a3300"
+    },
+    {
+      "status": "??",
+      "path": "kuro_core/integrations.py",
+      "sha256": "5839c13dd88308b40b405eedafb6ae0b67b723395b0a63d9ff770ac4e553c118"
+    },
+    {
+      "status": "??",
+      "path": "kuro_core/mail_adapter.py",
+      "sha256": "0c858fad01ea736f0ff4f10bd1351da07d5547622883d98531173c8c8013a7d4"
+    },
+    {
+      "status": "??",
+      "path": "kuro_core/mail_work_adapter.py",
+      "sha256": "8ee4e55dc0c398f73f2bd105abd1261c11cda10de7635b0b444a022656b414d5"
+    },
+    {
+      "status": "??",
+      "path": "kuro_core/study_adapter.py",
+      "sha256": "1db3a48b6ec23be073e33624c2104f648baafcfba12d3e53043dde7bdccd8e08"
+    },
+    {
+      "status": "??",
+      "path": "kuro_core/study_work_adapter.py",
+      "sha256": "1f9fe5acec1e45daf71fe1f13892f38f0b4e7364b2cb3069711def07d75897b0"
+    },
+    {
+      "status": "??",
+      "path": "kuro_core/today.py",
+      "sha256": "b4f374224bc6e1286a28efc64f7b4ba1fe6a15ba962a318036aa37b45b69dfea"
+    },
+    {
+      "status": "??",
+      "path": "kuro_core/today_capability.py",
+      "sha256": "589eaebea44e1a7391afc9c07ecb7e433183fee114c249775f7d564ded5a569e"
+    },
+    {
+      "status": "??",
+      "path": "kuro_core/today_shadow.py",
+      "sha256": "6ecbf811181a2390b0debd197ecf53fe9e6aaf793ba96426ff53b1f00c096133"
+    },
+    {
+      "status": "??",
+      "path": "kuro_core/work_contracts.py",
+      "sha256": "c92b7e59d7c6e8051d923fe3f4960e28be3c7337874b4669b7800c4adee94ee4"
+    },
+    {
+      "status": "??",
+      "path": "kuro_core/work_evidence.py",
+      "sha256": "ff0244d4c733e06b8b2614fdc117393c5a11e6ebb4181313e8d7391c52a55505"
+    },
+    {
+      "status": "??",
+      "path": "kuro_core/work_projection.py",
+      "sha256": "b61454dd62c4a2d9294cde565c7830b6e660c9c70a02d63f12a56085003edec0"
+    },
+    {
+      "status": "??",
+      "path": "kuro_launcher/mail_environment.py",
+      "sha256": "091a2a6b00a484df9caf808d39a6e5e656db0a8d97a9340b3dec01ea1fa523b4"
+    },
+    {
+      "status": "??",
+      "path": "kuro_launcher/mail_poller_runtime.py",
+      "sha256": "95dfbf894b7886d89a93752faf7f1140b5316c7a0689b32d8a9340a47822ff43"
+    },
+    {
+      "status": "??",
+      "path": "kuro_launcher/qt_core_pages.py",
+      "sha256": "1838ea0fb9d435f3eaf250ce97a5d63776e2af710031cdcafdd5577e736a74f0"
+    },
+    {
+      "status": "??",
+      "path": "kuro_launcher/qt_notifications.py",
+      "sha256": "ca0584422608b0b1c018af58e2946e22b9582b8a427d271f09004cd3f8d47146"
+    },
+    {
+      "status": "??",
+      "path": "kuro_launcher/qt_work_companion_theme.py",
+      "sha256": "d44b41b25aa4a0e8b7fa6ad278ee783a81f40116b1fe7b2830d47260563ed6e7"
+    },
+    {
+      "status": "??",
+      "path": "kuro_launcher/qt_work_companion_view.py",
+      "sha256": "82e5b7f1db77c13c991a67b9e786327aa588533f23f6ed098f78c017574d022b"
+    },
+    {
+      "status": "??",
+      "path": "pet-electron/src/main-process/pet-status.js",
+      "sha256": "5e7671be7b28a4510cdcf9828a4115ac0d69b50bb13f1f0916dec5483c29f6f8"
+    },
+    {
+      "status": "??",
+      "path": "tests/g2_fixtures.py",
+      "sha256": "70ece8264e017470b94fd1c2f62b4e83751215b4871dc5535c61f5a53f907be6"
+    },
+    {
+      "status": "??",
+      "path": "tests/g3_presentation.test.cjs",
+      "sha256": "f37542494e287d8193985ffa19ad02bf40f91872ccf0e995f03da6b3bcea16c3"
+    },
+    {
+      "status": "??",
+      "path": "tests/g5_desktop_owner.test.cjs",
+      "sha256": "dedbb4a78fd8c6e1169aac208021342cf4a8c04eb7963a9b4aa57fdfcfaa7f7e"
+    },
+    {
+      "status": "??",
+      "path": "tests/g6_pet_shell.test.cjs",
+      "sha256": "adc431069b80aa3d3899cccd755fd81563b9dd3cb76b282c73135e142e06c4de"
+    },
+    {
+      "status": "??",
+      "path": "tests/g8_hidden_electron_smoke.cjs",
+      "sha256": "1a255a4a9eeef3bd527537941b21624d72a7faabd14f31d295360c3a51574624"
+    },
+    {
+      "status": "??",
+      "path": "tests/run_qt_convergence.py",
+      "sha256": "2b89bce940a9a1b9ebe105d89463abc466ee24c54b99836c015a1023b581708e"
+    },
+    {
+      "status": "??",
+      "path": "tests/test_g3_conversation.py",
+      "sha256": "4cd5bb42df32ccda8534887718adc1fa879ffeea5f9388c0361f1bc9a395762e"
+    },
+    {
+      "status": "??",
+      "path": "tests/test_g4_qt_core.py",
+      "sha256": "61a74975fcb4e2156f5d4776a3d2982b73250112136f1f05989886bfca8fe9c1"
+    },
+    {
+      "status": "??",
+      "path": "tests/test_g5_desktop.py",
+      "sha256": "5322cff04f776c5ee8023a4945c970827c2b590f409f25929b7def397049d7f8"
+    },
+    {
+      "status": "??",
+      "path": "tests/test_g6_pet_boundary.py",
+      "sha256": "6a2031b217d7d8fc756e018f0f30d5624b12a6e6325071e134761ee295768c7a"
+    },
+    {
+      "status": "??",
+      "path": "tests/test_g8_runtime.py",
+      "sha256": "c4a135eb9d52396bfe3fefd84b619e9b8d225bfa9f3ad1e5dd8b24b0eecae591"
+    },
+    {
+      "status": "??",
+      "path": "tests/test_kuro_core_api_host.py",
+      "sha256": "56347052db8752d53a04929cbb0008548668e983bcd7a14e1866a12b9bc243be"
+    },
+    {
+      "status": "??",
+      "path": "tests/test_kuro_core_mail_adapter.py",
+      "sha256": "c7201dabbdd00358a2bcd263109880d77989bc3f4600f94689f6efb21071cf3b"
+    },
+    {
+      "status": "??",
+      "path": "tests/test_kuro_core_study_adapter.py",
+      "sha256": "f78be00be8c873ae6e1ea876cb9011d10893c947ade704f402f2f1c2e662fe88"
+    },
+    {
+      "status": "??",
+      "path": "tests/test_kuro_core_work_g1.py",
+      "sha256": "c13e1b5ccd4f6f88d30189838332d74b00855af89952b1a102bf22d3ab2aa0ee"
+    },
+    {
+      "status": "??",
+      "path": "tests/test_kuro_core_work_g2.py",
+      "sha256": "e151c11c777f066ce9efa03623efb4d61abe3e9bab980971ac2280f998a5df52"
+    },
+    {
+      "status": "??",
+      "path": "tests/test_mail_poller_runtime.py",
+      "sha256": "b2cc6de55b4a173347ef6eb030506500249f38cd1a83f14875512c97cd0442b8"
+    },
+    {
+      "status": "??",
+      "path": "tests/test_mail_status_handoff.py",
+      "sha256": "1e4228a4380b4b10722838ce35b14cee32da5867947356b321399689fdaace5a"
+    },
+    {
+      "status": "??",
+      "path": "tests/test_mail_work_handoff.py",
+      "sha256": "e0ba15bd66e36c251d142526f9f7d2430ad33910239fad63efdd9750ee372239"
+    },
+    {
+      "status": "??",
+      "path": "tests/test_v1_work_companion_view.py",
+      "sha256": "31d790d0337129e705f8c262d27feccfe4bc83094e516eb2df32ae5486a3b268"
+    }
+  ]
+}

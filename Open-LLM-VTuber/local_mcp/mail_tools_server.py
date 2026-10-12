@@ -17,6 +17,8 @@ from typing import Any
 from urllib.parse import parse_qs, quote, urlencode, urlparse
 
 import httpx
+from mail_status_handoff import MailStatusWriteError, attempt_time, write_status
+from mail_work_handoff import MailWorkWriteError, write_work
 from mcp.server.fastmcp import FastMCP
 
 
@@ -42,7 +44,6 @@ AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URI = "https://oauth2.googleapis.com/token"
 GMAIL_API_ROOT = "https://gmail.googleapis.com/gmail/v1/users/me"
 HTTP_TIMEOUT = 25.0
-DEFAULT_PET_CONTROL_URL = "http://127.0.0.1:23567"
 MAX_MAIL_RESULTS = 500
 DEFAULT_MAIL_PREFERENCES: dict[str, Any] = {
     "version": 1,
@@ -204,8 +205,6 @@ def _iso_from_ts(timestamp: int | float | None) -> str:
     return datetime.fromtimestamp(float(timestamp), tz=timezone.utc).astimezone().isoformat()
 
 
-def _local_date_key() -> str:
-    return datetime.now().astimezone().strftime("%Y-%m-%d")
 
 
 def _ensure_private_dir() -> None:
@@ -667,125 +666,12 @@ def _gmail_profile() -> dict[str, Any]:
     }
 
 
-def _pet_control_base_url(value: str = "") -> str:
-    raw_value = (value or os.getenv("KURO_PET_CONTROL_URL") or DEFAULT_PET_CONTROL_URL).strip()
-    parsed = urlparse(raw_value)
-    if parsed.scheme != "http":
-        raise ValueError("pet_control_url must be an http loopback URL.")
-    if parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
-        raise ValueError("pet_control_url must point to localhost or loopback.")
-    if not parsed.port:
-        raise ValueError("pet_control_url must include the pet control server port.")
-    return raw_value.rstrip("/")
 
 
-def _post_briefing_snapshot(
-    snapshot: dict[str, Any],
-    *,
-    pet_control_url: str = "",
-    timeout_seconds: float = 10.0,
-) -> dict[str, Any]:
-    base_url = _pet_control_base_url(pet_control_url)
-    response = httpx.post(
-        f"{base_url}/briefing/snapshot",
-        json=snapshot,
-        timeout=httpx.Timeout(timeout_seconds),
-    )
-    try:
-        body = response.json()
-    except Exception:
-        body = {"ok": False, "error": response.text[:300]}
-
-    if response.status_code >= 400 or not body.get("ok"):
-        error = body.get("error") or body.get("message") or response.text[:300]
-        raise RuntimeError(f"Briefing update failed ({response.status_code}): {error}")
-
-    snapshot_data = (body.get("data") or {}).get("snapshot") or {}
-    return {
-        "status_code": response.status_code,
-        "panel_ok": bool(body.get("ok")),
-        "section_count": len(snapshot_data.get("sections") or []),
-        "updated_at": snapshot_data.get("updatedAt", ""),
-    }
 
 
-def _get_briefing_snapshot(
-    *,
-    pet_control_url: str = "",
-    timeout_seconds: float = 5.0,
-) -> dict[str, Any]:
-    base_url = _pet_control_base_url(pet_control_url)
-    response = httpx.get(
-        f"{base_url}/briefing",
-        timeout=httpx.Timeout(timeout_seconds),
-    )
-    try:
-        body = response.json()
-    except Exception:
-        body = {"ok": False, "error": response.text[:300]}
-
-    if response.status_code >= 400 or not body.get("ok"):
-        error = body.get("error") or body.get("message") or response.text[:300]
-        raise RuntimeError(f"Briefing read failed ({response.status_code}): {error}")
-    snapshot = body.get("snapshot")
-    if not isinstance(snapshot, dict):
-        raise RuntimeError("Briefing response has no snapshot object.")
-    return snapshot
 
 
-def _mail_payload_from_briefing_snapshot(
-    snapshot: dict[str, Any],
-    *,
-    max_results: int = 20,
-) -> dict[str, Any]:
-    mail = snapshot.get("mail") if isinstance(snapshot.get("mail"), dict) else {}
-    if not mail:
-        raise RuntimeError("Briefing snapshot has no mail data.")
-
-    messages = list(mail.get("messages") or [])
-    response_limit = _clamp_int(max_results, default=20, minimum=1, maximum=MAX_MAIL_RESULTS)
-    priority_messages = [
-        message
-        for message in messages
-        if message.get("requiredEvent") or message.get("attention")
-    ]
-    return {
-        "ok": True,
-        "source": "dashboard_snapshot",
-        "dashboardUpdatedAt": snapshot.get("updatedAt", ""),
-        "account": mail.get("account", ""),
-        "query": mail.get("query", ""),
-        "resultSizeEstimate": mail.get("resultEstimate", 0),
-        "messageCount": len(messages),
-        "counts": {
-            "fetched": mail.get("fetchedCount", len(messages)),
-            "unread": mail.get("unreadCount", 0),
-            "requiredEvents": mail.get("requiredEventCount", 0),
-            "highPriority": mail.get("highPriorityCount", 0),
-            "mediumPriority": mail.get("mediumPriorityCount", 0),
-            "muted": mail.get("mutedCount", 0),
-            "ordinary": mail.get("ordinaryCount", 0),
-            "gmailImportant": mail.get("gmailImportantCount", 0),
-        },
-        "messages": messages[:response_limit],
-        "priorityMessages": priority_messages[:response_limit],
-        "today": snapshot.get("today", {}),
-        "rules": mail.get("rules", {}),
-        "preferences": mail.get("preferences", {}),
-        "briefing_snapshot": snapshot,
-        "privacy": mail.get(
-            "privacy",
-            {
-                "bodyFetched": False,
-                "attachmentsFetched": False,
-                "mailboxModified": False,
-            },
-        ),
-        "next_step": (
-            "This payload is read from the same Kuro Briefing dashboard snapshot. "
-            "Use counts, priorityMessages, and today classification when answering dashboard mail questions."
-        ),
-    }
 
 
 def _build_daily_brief_payload_from_preferences(
@@ -1420,34 +1306,8 @@ def _classify_messages(
     return output
 
 
-def _message_item_text(message: dict[str, Any]) -> str:
-    sender = message.get("from") or "Unknown sender"
-    subject = message.get("subject") or "(no subject)"
-    return _compact_text(f"{subject} - {sender}", 220)
 
 
-def _message_meta(message: dict[str, Any]) -> str:
-    parts = []
-    if message.get("requiredEvent"):
-        event = message.get("event") if isinstance(message.get("event"), dict) else {}
-        parts.append(f"必做：{event.get('name') or '固定事件'}")
-    priority_level = str(message.get("priorityLevel") or "")
-    if priority_level and priority_level != "low":
-        parts.append(
-            {
-                "critical": "關鍵",
-                "high": "高優先",
-                "medium": "中優先",
-                "muted": "降噪",
-            }.get(priority_level, priority_level)
-        )
-    if message.get("unread"):
-        parts.append("未讀")
-    if message.get("important"):
-        parts.append("Gmail 重要")
-    if message.get("date"):
-        parts.append(str(message["date"])[:16])
-    return " / ".join(parts)[:64]
 
 
 def _mail_message_summary(message: dict[str, Any]) -> dict[str, Any]:
@@ -1507,7 +1367,7 @@ def _mail_preferences_summary(preferences: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _build_briefing_snapshot(
+def _build_mail_snapshot(
     *,
     messages: list[dict[str, Any]],
     result_estimate: int,
@@ -1523,166 +1383,10 @@ def _build_briefing_snapshot(
     muted_count = sum(1 for message in messages if message.get("muted"))
     high_priority_count = sum(1 for message in messages if message.get("priorityLevel") in {"critical", "high"})
     medium_priority_count = sum(1 for message in messages if message.get("priorityLevel") == "medium")
-    attention_count = sum(1 for message in messages if message.get("requiredEvent") or message.get("attention"))
-    event_messages = [message for message in messages if message.get("requiredEvent")]
-    priority_messages = event_messages + [
-        message for message in messages if message.get("attention") and not message.get("requiredEvent")
-    ]
-    top_items = [
-        {
-            "text": _message_item_text(message),
-            "meta": _message_meta(message),
-            "source": "gmail",
-        }
-        for message in (priority_messages or messages)[:5]
-    ]
-    if not top_items:
-        top_items = [{"text": "目前查詢條件沒有符合的 Gmail 信件。", "meta": "空"}]
-    task_items = [
-        {
-            "text": _message_item_text(message),
-            "meta": _message_meta(message),
-            "source": "gmail",
-        }
-        for message in event_messages[:8]
-    ]
-    if not task_items:
-        task_items = [{"text": "目前沒有固定事件命中的待處理信件。", "meta": "空"}]
-
     return {
         "schemaVersion": 1,
-        "date": _local_date_key(),
-        "title": "\u4eca\u65e5\u7c21\u5831",
+        "source": "gmail",
         "updatedAt": now,
-        "sections": [
-            {
-                "key": "overview",
-                "label": "\u4eca\u65e5\u5927\u7db1",
-                "icon": "T",
-                "count": attention_count,
-                "subtitle": "\u4eca\u65e5\u90f5\u4ef6\u8207\u512a\u5148\u9805",
-                "accent": "",
-                "modules": [
-                    {
-                        "id": "gmail-priority",
-                        "title": "\u512a\u5148\u8655\u7406",
-                        "tag": "Gmail",
-                        "value": str(attention_count),
-                        "unit": "items",
-                        "wide": True,
-                        "items": top_items[:3],
-                    },
-                    {
-                        "id": "gmail-status",
-                        "title": "\u5de5\u5177\u72c0\u614b",
-                        "tag": "Sources",
-                        "value": "1",
-                        "unit": "online",
-                        "items": [
-                            {
-                                "text": f"Gmail 已連線：{account or '未知帳號'}",
-                                "meta": "已連線",
-                            }
-                        ],
-                    },
-                ],
-            },
-            {
-                "key": "tasks",
-                "label": "\u5f85\u8655\u7406",
-                "icon": "A",
-                "count": required_event_count,
-                "subtitle": "固定規則命中的必做事件",
-                "accent": "accent-yellow",
-                "modules": [
-                    {
-                        "id": "mail-required-events",
-                        "title": "必做事件",
-                        "tag": "Rules",
-                        "value": str(required_event_count),
-                        "unit": "items",
-                        "wide": True,
-                        "items": task_items,
-                    }
-                ],
-            },
-            {
-                "key": "mail",
-                "label": "Mail",
-                "icon": "M",
-                "count": result_estimate,
-                "subtitle": "Gmail 信件摘要（唯讀）",
-                "accent": "accent-cyan",
-                "modules": [
-                    {
-                        "id": "gmail-unread",
-                        "title": "\u672a\u8b80\u8207\u8fd1\u671f\u4fe1\u4ef6",
-                        "tag": "Gmail",
-                        "value": str(result_estimate),
-                        "unit": "符合條件",
-                        "wide": True,
-                        "items": top_items,
-                    },
-                    {
-                        "id": "gmail-counts",
-                        "title": "\u4fe1\u4ef6\u72c0\u614b",
-                        "tag": "唯讀",
-                        "value": str(unread_count),
-                        "unit": "未讀",
-                        "items": [
-                            {"text": f"高優先信件：{high_priority_count}", "meta": "評分"},
-                            {"text": f"Gmail 重要標記：{gmail_important_count}", "meta": "資料"},
-                            {"text": f"查詢條件：{query}", "meta": "Gmail 搜尋"},
-                        ],
-                    },
-                ],
-            },
-            {
-                "key": "messages",
-                "label": "Messages",
-                "icon": "D",
-                "count": 0,
-                "subtitle": "\u8a0a\u606f\u8207\u793e\u7fa4\u6458\u8981",
-                "accent": "accent-green",
-                "modules": [],
-            },
-            {
-                "key": "stocks",
-                "label": "Stocks",
-                "icon": "S",
-                "count": 0,
-                "subtitle": "\u5e02\u5834\u8207 watchlist \u6a21\u7d44",
-                "accent": "accent-red",
-                "modules": [],
-            },
-            {
-                "key": "news",
-                "label": "News",
-                "icon": "N",
-                "count": 0,
-                "subtitle": "\u65b0\u805e\u8207\u4e16\u754c\u8a0a\u865f",
-                "accent": "",
-                "modules": [],
-            },
-            {
-                "key": "notes",
-                "label": "Notes",
-                "icon": "R",
-                "count": 0,
-                "subtitle": "\u5099\u5fd8\u8207\u7814\u7a76\u7b46\u8a18",
-                "accent": "accent-green",
-                "modules": [],
-            },
-        ],
-        "sourceStatus": [
-            {
-                "id": "gmail",
-                "label": "Gmail",
-                "status": "connected",
-                "updatedAt": now,
-                "message": f"已抓取 {len(messages)} 封信。沒有讀取完整內文或附件。",
-            }
-        ],
         "mail": {
             "account": account,
             "query": query,
@@ -1734,7 +1438,7 @@ def _build_daily_brief_payload(
     )
     profile = _gmail_profile()
     account = str(profile.get("emailAddress") or "")
-    snapshot = _build_briefing_snapshot(
+    snapshot = _build_mail_snapshot(
         messages=messages,
         result_estimate=estimate,
         account=account,
@@ -1749,7 +1453,7 @@ def _build_daily_brief_payload(
         "resultSizeEstimate": estimate,
         "messages": messages,
         "rules": _mail_rules_summary(rules),
-        "briefing_snapshot": snapshot,
+        "mail_snapshot": snapshot,
         "privacy": {
             "bodyFetched": False,
             "attachmentsFetched": False,
@@ -2040,53 +1744,66 @@ def mail_get_message_detail(message_id: str, max_body_chars: int = 20_000) -> st
 @mcp.tool(
     name="mail.daily_brief",
     description=(
-        "Read the current Gmail summary from the same Kuro Briefing dashboard snapshot. "
-        "Use this first for mail priority, required-event, or dashboard mail questions so answers match the panel."
+        "Explicitly fetch a read-only Gmail summary using saved Mail preferences. "
+        "This is a provider query, not the Core Today projection; it does not update Today."
     ),
 )
-def mail_daily_brief(
-    max_results: int = 20,
-    newer_than_days: int = 0,
-    unread_only: bool = True,
-    include_spam_trash: bool = False,
-    pet_control_url: str = "",
-) -> str:
+def mail_daily_brief(include_spam_trash: bool = False) -> str:
     try:
-        try:
-            snapshot = _get_briefing_snapshot(pet_control_url=pet_control_url)
-            payload = _mail_payload_from_briefing_snapshot(
-                snapshot,
-                max_results=max_results,
-            )
-        except Exception as dashboard_error:
-            payload = _build_daily_brief_payload_from_preferences(
-                include_spam_trash=include_spam_trash,
-            )
-            payload["source"] = "live_gmail_preferences_fallback"
-            payload["dashboard_error"] = _compact_text(str(dashboard_error), 180)
-            payload["next_step"] = (
-                "Dashboard snapshot was not available, so this was fetched live using the saved Mail settings."
-            )
+        payload = _build_daily_brief_payload_from_preferences(include_spam_trash=include_spam_trash)
+        payload["source"] = "explicit_gmail_query"
         return _json_response(payload)
     except Exception as exc:
         return _error_response(exc, error_type="mail_daily_brief_failed")
 
 
 @mcp.tool(
-    name="mail.update_briefing",
+    name="mail.refresh",
     description=(
-        "Fetch a Gmail read-only daily brief and update the local Kuro Briefing panel. "
+        "Fetch a Gmail read-only summary and publish bounded handoffs for Core Today. "
         "Returns only safe update status; it does not expose message contents."
     ),
 )
-def mail_update_briefing(
+def mail_refresh(
     max_results: int = 0,
     newer_than_days: int = 0,
     unread_only: bool = True,
-    pet_control_url: str = "",
     include_spam_trash: bool = False,
     use_saved_settings: bool = True,
 ) -> str:
+    attempt_at = attempt_time()
+    provider_succeeded = False
+    handoff = {"state": "disabled"}
+    work_handoff = {"state": "disabled"}
+
+    def update_work_handoff(snapshot=None):
+        configured = os.getenv("KURO_MAIL_WORK_FILE", "").strip()
+        if not configured:
+            return {"state": "disabled"}
+        if configured == os.getenv("KURO_MAIL_STATUS_FILE", "").strip():
+            return {"state": "failed", "errorType": "mail_work_path_conflict"}
+        try:
+            return {"state": write_work(configured, private_root=PRIVATE_DIR,
+                                         attempt_at=attempt_at, snapshot=snapshot)}
+        except MailWorkWriteError as exc:
+            return {"state": "failed", "errorType": str(exc)}
+
+    def update_handoff(snapshot=None, error_type="provider_error"):
+        configured = os.getenv("KURO_MAIL_STATUS_FILE", "").strip()
+        if not configured:
+            return {"state": "disabled"}
+        try:
+            state = write_status(
+                configured,
+                private_root=PRIVATE_DIR,
+                attempt_at=attempt_at,
+                snapshot=snapshot,
+                error_type=error_type,
+            )
+            return {"state": state}
+        except MailStatusWriteError as exc:
+            return {"state": "failed", "errorType": str(exc)}
+
     try:
         preferences = _load_mail_preferences()
         requested_max_results = _clamp_int(max_results, default=0, minimum=0, maximum=MAX_MAIL_RESULTS)
@@ -2112,23 +1829,33 @@ def mail_update_briefing(
             unread_only=effective_unread_only,
             include_spam_trash=include_spam_trash,
         )
-        post_result = _post_briefing_snapshot(
-            payload["briefing_snapshot"],
-            pet_control_url=pet_control_url,
-        )
+        provider_succeeded = True
+        # Provider and bounded handoff outcomes remain distinct.
+        handoff = update_handoff(payload["mail_snapshot"])
+        work_handoff = update_work_handoff(payload["mail_snapshot"])
         return _json_response(
             {
-                "ok": True,
+                "ok": handoff["state"] != "failed" and work_handoff["state"] != "failed",
                 "account": payload.get("account", ""),
                 "query": payload.get("query", ""),
                 "resultSizeEstimate": payload.get("resultSizeEstimate", 0),
                 "messageCount": len(payload.get("messages") or []),
-                "briefing": post_result,
+                "handoff": handoff,
+                "workHandoff": work_handoff,
                 "privacy": payload.get("privacy", {}),
             }
         )
     except Exception as exc:
-        return _error_response(exc, error_type="mail_update_briefing_failed")
+        # Only provider-side failures change the provider observation.
+        if not provider_succeeded:
+            work_handoff = update_work_handoff()
+            handoff = update_handoff(
+                error_type="auth_required" if isinstance(exc, MailAuthError) else "provider_error"
+            )
+        result = json.loads(_error_response(exc, error_type="mail_refresh_failed"))
+        result["handoff"] = handoff
+        result["workHandoff"] = work_handoff
+        return _json_response(result)
 
 
 if __name__ == "__main__":

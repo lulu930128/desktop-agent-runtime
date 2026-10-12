@@ -1,0 +1,308 @@
+{
+  "finalization20261009": {
+    "status": "STATIC BLOCKED",
+    "releaseVerdict": "NOT ACCEPTED",
+    "currentEvidence": "../../../G8FinalizationResults.json",
+    "deleted": 33,
+    "remaining": 2,
+    "pythonFullRunTests": 326,
+    "pythonSuites": 25,
+    "nodeTests": 83,
+    "mcpTargetedTests": 14,
+    "additionalOmiPolicyTests": 4,
+    "electronSmoke": "FAIL",
+    "formalWindows": "UNVERIFIED",
+    "historicalFieldsBelowPreserved": true
+  },
+  "schema": "kuro.qt_convergence.validation.v1",
+  "date": "2026-10-09",
+  "releaseVerdict": "NOT_ACCEPTED",
+  "python": {
+    "firstFullRun": {
+      "command": ".\\envs\\kuro-llm310\\python.exe -B tests/run_qt_convergence.py --group python",
+      "tests": 323,
+      "suites": 25,
+      "exit": 0,
+      "records": [
+        {
+          "suite": "test_central_voice.py",
+          "tests": 9,
+          "exit": 0
+        },
+        {
+          "suite": "test_central_voice_client.py",
+          "tests": 12,
+          "exit": 0
+        },
+        {
+          "suite": "test_g3_conversation.py",
+          "tests": 27,
+          "exit": 0
+        },
+        {
+          "suite": "test_g4_qt_core.py",
+          "tests": 15,
+          "exit": 0
+        },
+        {
+          "suite": "test_g5_desktop.py",
+          "tests": 17,
+          "exit": 0
+        },
+        {
+          "suite": "test_g6_pet_boundary.py",
+          "tests": 9,
+          "exit": 0
+        },
+        {
+          "suite": "test_g8_runtime.py",
+          "tests": 3,
+          "exit": 0
+        },
+        {
+          "suite": "test_kuro_core_api_host.py",
+          "tests": 20,
+          "exit": 0
+        },
+        {
+          "suite": "test_kuro_core_contracts.py",
+          "tests": 5,
+          "exit": 0
+        },
+        {
+          "suite": "test_kuro_core_mail_adapter.py",
+          "tests": 13,
+          "exit": 0
+        },
+        {
+          "suite": "test_kuro_core_shadow_probe.py",
+          "tests": 3,
+          "exit": 0
+        },
+        {
+          "suite": "test_kuro_core_store.py",
+          "tests": 6,
+          "exit": 0
+        },
+        {
+          "suite": "test_kuro_core_study_adapter.py",
+          "tests": 16,
+          "exit": 0
+        },
+        {
+          "suite": "test_kuro_core_work_g1.py",
+          "tests": 53,
+          "exit": 0
+        },
+        {
+          "suite": "test_kuro_core_work_g2.py",
+          "tests": 16,
+          "exit": 0
+        },
+        {
+          "suite": "test_launcher_entrypoint.py",
+          "tests": 6,
+          "exit": 0
+        },
+        {
+          "suite": "test_mail_poller_runtime.py",
+          "tests": 9,
+          "exit": 0
+        },
+        {
+          "suite": "test_mail_status_handoff.py",
+          "tests": 16,
+          "exit": 0
+        },
+        {
+          "suite": "test_mail_work_handoff.py",
+          "tests": 7,
+          "exit": 0
+        },
+        {
+          "suite": "test_pet_lifecycle.py",
+          "tests": 9,
+          "exit": 0
+        },
+        {
+          "suite": "test_runtime_capabilities.py",
+          "tests": 8,
+          "exit": 0
+        },
+        {
+          "suite": "test_schedule_api.py",
+          "tests": 6,
+          "exit": 0
+        },
+        {
+          "suite": "test_schedule_core.py",
+          "tests": 19,
+          "exit": 0
+        },
+        {
+          "suite": "test_schedule_notifications.py",
+          "tests": 10,
+          "exit": 0
+        },
+        {
+          "suite": "test_schedule_runtime.py",
+          "tests": 9,
+          "exit": 0
+        }
+      ]
+    },
+    "subsequentAffectedSuites": [
+      {
+        "suite": "test_mail_status_handoff.py",
+        "tests": 16,
+        "exit": 0
+      },
+      {
+        "suite": "test_mail_work_handoff.py",
+        "tests": 8,
+        "exit": 0
+      },
+      {
+        "suite": "test_g6_pet_boundary.py",
+        "tests": 11,
+        "exit": 0
+      },
+      {
+        "suite": "test_pet_lifecycle.py",
+        "tests": 9,
+        "exit": 0
+      },
+      {
+        "suite": "test_runtime_capabilities.py",
+        "tests": 8,
+        "exit": 0
+      },
+      {
+        "suite": "test_g5_desktop.py",
+        "tests": 17,
+        "exit": 0
+      },
+      {
+        "suite": "test_launcher_entrypoint.py",
+        "tests": 6,
+        "exit": 0
+      }
+    ],
+    "finalDistinctRootTests": 326,
+    "finalDistinctRootTestsAreNotOneFullBatch": true,
+    "affectedRuntimeMcp": [
+      {
+        "suite": "Open-LLM-VTuber/tests/test_mcp_m0_identity.py",
+        "tests": 3,
+        "exit": 0
+      },
+      {
+        "suite": "Open-LLM-VTuber/tests/test_mcp_m0_policy.py",
+        "tests": 5,
+        "exit": 0
+      },
+      {
+        "suite": "Open-LLM-VTuber/tests/test_tool_catalog_market_routing.py",
+        "tests": 6,
+        "exit": 0
+      }
+    ],
+    "environment": {
+      "offscreen": true,
+      "disposableTemp": true,
+      "noPyc": true,
+      "syntheticProviders": true,
+      "rootRunnerNetwork": "loopback only; shared/live ports blocked"
+    }
+  },
+  "node": {
+    "command": ".\\envs\\kuro-llm310\\python.exe -B tests/run_qt_convergence.py --group node",
+    "tests": 83,
+    "exit": 0,
+    "realElectron": false
+  },
+  "renderer": {
+    "typecheck": {
+      "command": "npm.cmd --prefix pet-electron run check:renderer",
+      "exit": 0
+    },
+    "build": {
+      "command": "npm.cmd --prefix pet-electron run build:renderer",
+      "exit": 0,
+      "modules": 86,
+      "entrypoints": [
+        "index.html"
+      ],
+      "warning": "Cubism classic external script remains unbundled; existing runtime loading pattern"
+    }
+  },
+  "transportSmoke": {
+    "suite": "tests/test_g8_runtime.py",
+    "tests": 3,
+    "exit": 0,
+    "observed": [
+      "real temporary Core HTTP/SQLite through Qt controller; claim-authorize-synthetic tray display-ack; no duplicate",
+      "real loopback WS, Qt chat with no Pet; Pet role rejects conversation/control; request-bound presentation ack",
+      "external production legacy consumer guard"
+    ],
+    "synthetic": [
+      "conversation provider/context",
+      "tray display",
+      "offscreen Qt"
+    ],
+    "formalDesktopAccepted": false
+  },
+  "windowsEvent": {
+    "isolatedUuidKernelMutexAndEvent": "PASS",
+    "canonicalDesktopSecondLaunch": "UNVERIFIED"
+  },
+  "hiddenElectron": {
+    "fixture": "tests/g8_hidden_electron_smoke.cjs",
+    "result": "FAIL",
+    "processExit": 2147483651,
+    "rendererReason": "launch-failed",
+    "rendererExitCode": 49,
+    "gpuExitCode": -1073741515,
+    "rootCause": "UNVERIFIED: full OS/dependency cause not localized",
+    "modelLoaded": false,
+    "deviceInput": false,
+    "visibleWindow": false,
+    "formalDesktopAccepted": false,
+    "earlierHarnessIssue": "PowerShell native GUI launch returned before child; switched to subprocess.run waiting on owned child. Initial owned child verified and stopped; no global kill."
+  },
+  "g7": {
+    "externalProductionConsumers": 0,
+    "planned": 35,
+    "deleted": 25,
+    "blocked": 10,
+    "osError": "Access denied",
+    "elevation": "Approved, but OS deletion still denied",
+    "aclChanged": false
+  },
+  "runtimeAcceptance": {
+    "coldBoot": "UNVERIFIED",
+    "canonicalSecondLaunch": "UNVERIFIED",
+    "qtVisible": "UNVERIFIED",
+    "xTrayRevealQuit": "UNVERIFIED",
+    "startupAutoStartFalseRealDesktop": "UNVERIFIED",
+    "ownedChildrenShutdownRestart": "UNVERIFIED",
+    "coreAndConversationRestart": "UNVERIFIED",
+    "notificationVisible": "UNVERIFIED",
+    "petCrashRecovery": "UNVERIFIED",
+    "voiceAndLipsync": "UNVERIFIED",
+    "microphoneCameraScreen": "UNVERIFIED",
+    "multiMonitorDpi": "UNVERIFIED",
+    "windowsLogon": "UNVERIFIED"
+  },
+  "boundaries": {
+    "centralVoiceOperations": 0,
+    "providerRefreshes": 0,
+    "externalSends": 0,
+    "privatePayloadReads": 0,
+    "formalDbMigrations": 0,
+    "osStartupRegistryAclChanges": 0,
+    "commits": 0,
+    "pushes": 0
+  },
+  "finalIntegrity": "G8Integrity.json"
+}

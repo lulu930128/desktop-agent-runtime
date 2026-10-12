@@ -341,16 +341,16 @@
         {
           "name": "kuro-mail::mail.daily_brief",
           "level": "read",
-          "capabilities": ["mail", "gmail", "brief", "dashboard_snapshot"],
+          "capabilities": ["mail", "gmail", "brief", "provider_query"],
           "risk": "read_only",
-          "when": "Use for a daily Gmail brief and Kuro Briefing-compatible snapshot. It returns JSON and does not modify the mailbox."
+          "when": "Use for an explicit read-only Gmail summary using saved preferences. This provider query is distinct from Core Today and does not update it."
         },
         {
-          "name": "kuro-mail::mail.update_briefing",
+          "name": "kuro-mail::mail.refresh",
           "level": "read",
-          "capabilities": ["mail", "gmail", "brief", "dashboard_snapshot", "dashboard_update"],
+          "capabilities": ["mail", "gmail", "brief", "core_handoff", "dashboard_update"],
           "risk": "read_only_local_update",
-          "when": "Use when the user asks to update or refresh the Kuro Briefing panel from Gmail. It modifies only the local dashboard snapshot and does not modify the mailbox."
+          "when": "Use when the user explicitly requests a Mail refresh. It publishes bounded Mail status/work handoffs for Core Today and does not modify the mailbox."
         }
       ]
     },

@@ -28,6 +28,7 @@ async def handle_conversation_trigger(
     received_data_buffers: Dict[str, np.ndarray],
     current_conversation_tasks: Dict[str, Optional[asyncio.Task]],
     broadcast_to_group: Callable,
+    individual_send: Optional[Callable] = None,
 ) -> None:
     """Handle triggers that start a conversation"""
     metadata = None
@@ -101,7 +102,7 @@ async def handle_conversation_trigger(
         current_conversation_tasks[client_uid] = asyncio.create_task(
             process_single_conversation(
                 context=context,
-                websocket_send=websocket.send_text,
+                websocket_send=individual_send or websocket.send_text,
                 client_uid=client_uid,
                 user_input=user_input,
                 images=images,

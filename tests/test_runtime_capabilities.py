@@ -78,6 +78,7 @@ class LifecycleTests(unittest.TestCase):
         c._wait_for_service_ready = Mock(return_value=(True, 'ready'))
         c.launch_pet_electron = Mock(return_value={'pid': 123, 'instanceId': 'fixture'})
         c.apply_outfit, c._apply_history_choice_after_start = Mock(), Mock(return_value={'ok': True})
+        c.start_desktop_services = Mock()
         with patch('kuro_launcher.qt_controller.port_is_open', side_effect=[True, False]), patch('kuro_launcher.qt_controller.get_listening_pid_windows', return_value=None), patch('kuro_launcher.qt_controller.start_llm') as llm, patch('kuro_launcher.qt_controller.start_tts') as tts:
             self.assertTrue(c._start_profile_impl()['ok'])
             llm.assert_called_once()

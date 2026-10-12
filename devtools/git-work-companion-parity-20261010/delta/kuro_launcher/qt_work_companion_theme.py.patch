@@ -1,0 +1,32 @@
+--- before/kuro_launcher/qt_work_companion_theme.py
++++ after/kuro_launcher/qt_work_companion_theme.py
+@@ -1,4 +1,6 @@
+-"""V0 visual tokens and scoped QSS for the opt-in Widgets presentation surface."""
++"""Scoped Work Companion styling. Gold/wide Chat follows the supplied image description;
++teal/compact Settings follows the other reference. No Git gold snapshot is claimed.
++"""
+ from dataclasses import dataclass
+ 
+ 
+@@ -158,6 +160,21 @@
+ QWidget#WorkCompanionView QLabel#StateNotice[state="partial"] {{ color: {t.gold}; }}
+ QWidget#WorkCompanionView QLabel#StateNotice[state="error"] {{ color: {t.error}; }}
+ QWidget#WorkCompanionView QLabel#StateNotice[state="loading"] {{ color: {t.blue}; }}
++QWidget#WorkCompanionView QPushButton#CompanionNav {{ text-align: left; padding: 12px 8px; border: none; }}
++QWidget#WorkCompanionView QPushButton#CompanionNav:checked {{ color: {t.gold}; background: #282725; }}
++QWidget#WorkCompanionView[mode="settings"] QPushButton#CompanionNav:checked {{ color: {t.teal}; background: #1C302F; }}
++QWidget#WorkCompanionView QPushButton#HistoryScrim {{ background: rgba(0, 0, 0, 125); border: none; }}
++QWidget#WorkCompanionView QFrame#HistoryDrawer {{ background: #181D26; border-right: 1px solid {t.line}; }}
++QWidget#WorkCompanionView QListWidget#HistoryList {{ background: #181D26; border: none; }}
++QWidget#WorkCompanionView QPushButton#HistoryOpen {{ text-align: left; padding: 6px; font-size: 12px; }}
++QWidget#WorkCompanionView QPushButton#HistoryOpen:checked {{ color: {t.teal}; background: #1C302F; }}
++QWidget#WorkCompanionView QLineEdit#HistorySearch {{ background: #101319; padding: 8px; border: 1px solid {t.line}; }}
++QWidget#WorkCompanionView QTextEdit#TranscriptBox {{ background: #10141D; border: none; font-size: 14px; }}
++QWidget#WorkCompanionView QFrame#ComposerPanel {{ background: #181D26; border: 1px solid {t.line}; border-radius: 8px; }}
++QWidget#WorkCompanionView QPushButton#SettingsDialogNavButton {{ border: none; padding: 14px; text-align: left; }}
++QWidget#WorkCompanionView QPushButton#SettingsDialogNavButton:checked {{ color: {t.teal}; background: #1C302F; border-left: 2px solid {t.teal}; }}
++QWidget#WorkCompanionView QListWidget {{ border: 1px solid {t.line}; background: #101319; }}
++QWidget#WorkCompanionView QListWidget::item:selected {{ color: {t.text}; background: #28423E; }}
+ """
+     if font_family:
+         # The host chooses a locally available family; never interpret QSS input.

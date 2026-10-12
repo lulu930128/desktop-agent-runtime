@@ -1000,10 +1000,15 @@ def _compact_store(store: dict[str, Any]) -> bool:
     return changed
 
 
-def compact_character_memories(conf_uid: str) -> tuple[bool, int]:
+def compact_character_memories(conf_uid: str, *, expected_digests: dict[str, str] | None = None) -> tuple[bool, int]:
     if not conf_uid:
         return False, 0
     store = _load_store(conf_uid)
+    if expected_digests is not None:
+        actual = {str(entry.get("id") or ""): review_digest(entry)
+                  for entry in store.get("entries", []) if isinstance(entry, dict)}
+        if actual != expected_digests:
+            raise ValueError("Memory changed since review; reload before confirming.")
     before_count = len(store.get("entries", [])) if isinstance(store.get("entries"), list) else 0
     changed = _compact_store(store)
     after_count = len(store.get("entries", [])) if isinstance(store.get("entries"), list) else 0
@@ -1105,7 +1110,7 @@ def update_character_memory_status(
     return False
 
 
-def delete_character_memory(conf_uid: str, entry_id: str) -> bool:
+def delete_character_memory(conf_uid: str, entry_id: str, *, expected_digest: str | None = None) -> bool:
     """Permanently remove one memory entry from the canonical store."""
     if not conf_uid or not entry_id:
         return False
@@ -1114,6 +1119,12 @@ def delete_character_memory(conf_uid: str, entry_id: str) -> bool:
     entries = store.get("entries")
     if not isinstance(entries, list):
         return False
+
+    if expected_digest is not None:
+        target = next((entry for entry in entries if isinstance(entry, dict)
+                       and str(entry.get("id") or "") == entry_id), None)
+        if target is None or review_digest(target) != expected_digest:
+            raise ValueError("Memory changed since review; reload before confirming.")
 
     next_entries = [
         entry

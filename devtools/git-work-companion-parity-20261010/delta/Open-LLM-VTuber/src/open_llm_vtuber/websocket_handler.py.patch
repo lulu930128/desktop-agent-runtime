@@ -1,0 +1,261 @@
+--- before/Open-LLM-VTuber/src/open_llm_vtuber/websocket_handler.py
++++ after/Open-LLM-VTuber/src/open_llm_vtuber/websocket_handler.py
+@@ -19,11 +19,13 @@
+ from .chat_history_manager import (
+     create_new_history,
+     get_history,
++    get_history_timeline,
+     delete_history,
+     get_history_list,
+     get_metadata,
+     touch_history_opened,
+ )
++from .chat_event_manager import read_history_events
+ from .config_manager.utils import (
+     scan_config_alts_directory,
+     scan_bg_directory,
+@@ -70,8 +72,9 @@
+ class PrimaryConversationOutput:
+     """One primary wait key per turn; Pet is only a presentation recipient."""
+ 
+-    def __init__(self, send, subscribers):
++    def __init__(self, send, subscribers, identity=None):
+         self.send = send
++        self.identity = dict(identity or {})
+         self.subscribers = subscribers
+         self.request_id = uuid4().hex
+         self.pending = set()
+@@ -99,8 +102,10 @@
+         return {"type": kind, **{key: payload[key] for key in fields[kind] if key in payload}}
+ 
+     async def __call__(self, raw):
+-        await self.send(raw)
+-        payload = self.presentation_payload(json.loads(raw))
++        original = json.loads(raw)
++        await self.send(json.dumps({**original, "conversation_scope": self.identity}, ensure_ascii=False)
++                        if self.identity else raw)
++        payload = self.presentation_payload(original)
+         if payload is None:
+             return
+         subscribers = dict(self.subscribers())
+@@ -146,9 +151,119 @@
+         self.pending_history_bootstrap: Dict[str, bool] = {}
+         self.primary_outputs: Dict[str, PrimaryConversationOutput] = {}
+         self._connecting_roles: Dict[str, str] = {}
+-
+-        # Message handlers mapping
++        self._history_replies: dict[str, dict[str, tuple[str, dict]]] = {}
+         self._message_handlers = self._init_message_handlers()
++
++    @staticmethod
++    def _history_identity(context) -> dict:
++        """A profile load revokes all requests from its previous context."""
++        if not getattr(context, "qt_history_context_id", ""):
++            context.qt_history_context_id = uuid4().hex
++        identity = {
++            "history_protocol": "kuro.conversation.history.v1",
++            "conf_uid": context.character_config.conf_uid,
++            "context_id": context.qt_history_context_id,
++            "active_project_id": getattr(context.character_config, "active_project_id", ""),
++        }
++        agent = getattr(context.character_config, "agent_config", None)
++        if getattr(agent, "conversation_agent_choice", "") == "basic_memory_agent":
++            settings = getattr(getattr(agent, "agent_settings", None), "basic_memory_agent", None)
++            provider = getattr(settings, "llm_provider", "")
++            config = getattr(getattr(agent, "llm_configs", None), provider, None) if provider else None
++            model = getattr(config, "model", None)
++            if isinstance(model, str):
++                identity["effective_model"] = model
++        thinking = getattr(getattr(context, "system_config", None), "thinking_power", None)
++        if isinstance(thinking, str):
++            identity["thinking_power"] = thinking
++        return identity
++
++    async def _handle_fenced_history(self, websocket, client_uid, data):
++        """Qt history commands are serialized by its WS receive loop, never replayed.
++
++        The runtime owns membership, idle checks, conversation memory and events.
++        A bounded per-connection receipt ledger makes duplicate requests harmless.
++        """
++        context = self.client_contexts[client_uid]
++        identity = self._history_identity(context)
++        request_id = data.get("request_id")
++        response = {"type": "history-error", "request_id": request_id,
++                    "client_uid": client_uid, **identity}
++        async def fail(reason):
++            await websocket.send_text(json.dumps({**response, "error": reason}))
++
++        if not isinstance(request_id, str) or not 1 <= len(request_id) <= 100:
++            await fail("history_request_id_required")
++            return
++        if (getattr(context, "qt_profile_switching", False)
++                or data.get("client_uid") != client_uid
++                or any(data.get(key) != identity[key] for key in ("conf_uid", "context_id"))):
++            await fail("history_context_changed")
++            return
++        signature = json.dumps(data, sort_keys=True, ensure_ascii=False)
++        receipts = self._history_replies.setdefault(client_uid, {})
++        if request_id in receipts:
++            previous, reply = receipts[request_id]
++            if previous != signature:
++                await fail("history_request_reused")
++            else:
++                await websocket.send_text(json.dumps(reply, ensure_ascii=False))
++            return
++        operation = data["type"]
++        if operation != "fetch-history-list":
++            idle, _reason = self._is_client_idle_for_switch(client_uid)
++            if not idle:
++                await fail("history_turn_busy")
++                return
++            if data.get("expected_history_uid") != (getattr(context, "history_uid", "") or ""):
++                await fail("history_selection_changed")
++                return
++        uid = data.get("history_uid")
++        try:
++            histories = get_history_list(identity["conf_uid"], strict=True)
++            if operation in {"fetch-and-set-history", "delete-history"}:
++                if not isinstance(uid, str) or uid not in {item["uid"] for item in histories}:
++                    await fail("history_not_found_for_profile")
++                    return
++            if operation == "fetch-history-list":
++                response.update(type="history-list", histories=histories,
++                                current_history_uid=getattr(context, "history_uid", "") or "")
++            elif operation == "fetch-and-set-history":
++                # Reloading the visible timeline must not apply the same history twice.
++                messages = [msg for msg in get_history(identity["conf_uid"], uid, strict=True)
++                            if msg.get("role") != "system"]
++                events = read_history_events(identity["conf_uid"], uid, limit=120, strict=True)
++                timeline = get_history_timeline(identity["conf_uid"], uid, strict=True)
++                if uid != getattr(context, "history_uid", None):
++                    self._load_history_into_context(context, uid, strict=True)
++                response.update(type="history-data", history_uid=uid,
++                                messages=messages, events=events,
++                                timeline=timeline, timeline_limit=120,
++                                title=get_metadata(identity["conf_uid"], uid).get("title", ""))
++            elif operation == "create-new-history":
++                uid = create_new_history(identity["conf_uid"])
++                if not uid:
++                    raise RuntimeError("history_create_failed")
++                self._load_history_into_context(context, uid)
++                self.pending_history_bootstrap.pop(client_uid, None)
++                response.update(type="new-history-created", history_uid=uid, messages=[], events=[])
++            elif operation == "delete-history":
++                if data.get("confirmed") is not True:
++                    await fail("history_delete_confirmation_required")
++                    return
++                success = delete_history(identity["conf_uid"], uid)
++                if success and uid == getattr(context, "history_uid", None):
++                    context.history_uid = None
++                    context.agent_engine.set_memory_from_history(conf_uid=identity["conf_uid"], history_uid="")
++                response.update(type="history-deleted", history_uid=uid, success=success,
++                                current_history_uid=getattr(context, "history_uid", "") or "")
++        except Exception:
++            # Do not disclose file paths or message contents in protocol errors.
++            response.update(type="history-error", error="history_operation_failed")
++        receipts[request_id] = (signature, response)
++        while len(receipts) > 128:
++            receipts.pop(next(iter(receipts)))
++        await websocket.send_text(json.dumps(response, ensure_ascii=False))
+ 
+     def _prune_finished_tasks(self) -> None:
+         for task_key, task in list(self.current_conversation_tasks.items()):
+@@ -222,20 +337,18 @@
+         return [selected, *remaining]
+ 
+     def _load_history_into_context(
+-        self, context: ServiceContext, history_uid: str
++        self, context: ServiceContext, history_uid: str, *, strict: bool = False
+     ) -> list[dict]:
+-        context.history_uid = history_uid
++        messages = get_history(context.character_config.conf_uid, history_uid, strict=strict)
+         context.agent_engine.set_memory_from_history(
+             conf_uid=context.character_config.conf_uid,
+             history_uid=history_uid,
+         )
++        context.history_uid = history_uid
+         touch_history_opened(context.character_config.conf_uid, history_uid)
+         return [
+             msg
+-            for msg in get_history(
+-                context.character_config.conf_uid,
+-                history_uid,
+-            )
++            for msg in messages
+             if msg["role"] != "system"
+         ]
+ 
+@@ -543,7 +656,12 @@
+                 f"Target client {resolved_client_uid} disconnected before hot switch could complete."
+             )
+ 
+-        await context.load_from_config(validated_config.model_copy(deep=True))
++        context.qt_profile_switching = True
++        context.qt_history_context_id = uuid4().hex
++        try:
++            await context.load_from_config(validated_config.model_copy(deep=True))
++        finally:
++            context.qt_profile_switching = False
+ 
+         history_result = await self._resume_latest_history_or_create(websocket, context)
+         selected_history_uid = str(history_result.get("history_uid") or "").strip()
+@@ -557,6 +675,7 @@
+                     "conf_name": context.character_config.conf_name,
+                     "conf_uid": context.character_config.conf_uid,
+                     "client_uid": resolved_client_uid,
++                    **self._history_identity(context),
+                 }
+             )
+         )
+@@ -704,6 +823,7 @@
+                     "conf_uid": session_service_context.character_config.conf_uid,
+                     "client_uid": client_uid,
+                     "client_role": self.client_roles.get(client_uid, "frontend"),
++                    **self._history_identity(session_service_context),
+                 }
+             )
+         )
+@@ -793,6 +913,16 @@
+         }:
+             await websocket.send_text(json.dumps({"type": "error", "message": "Console role cannot control conversations."}))
+             return
++        if (role == "qt-primary" and msg_type in {*MessageType.CONVERSATION.value, "mic-audio-data", "interrupt-signal"}
++                and any(key in data for key in ("client_uid", "conf_uid", "context_id", "history_uid"))):
++            context = self.client_contexts[client_uid]
++            current = self._history_identity(context)
++            expected = {"client_uid": client_uid, "conf_uid": current["conf_uid"],
++                        "context_id": current["context_id"],
++                        "history_uid": getattr(context, "history_uid", "") or ""}
++            if getattr(context, "qt_profile_switching", False) or any(data.get(k) != v for k, v in expected.items()):
++                await websocket.send_text(json.dumps({"type": "error", "message": "conversation_context_changed"}))
++                return
+         if role == "pet-presentation":
+             if msg_type not in {"heartbeat", "request-init-config", "audio-play-start", "frontend-playback-complete"}:
+                 await websocket.send_text(json.dumps({"type": "error", "message": "Presentation role cannot control conversations."}))
+@@ -807,6 +937,9 @@
+             message_handler.handle_message(client_uid, data)
+         if role == "qt-primary" and msg_type in MessageType.GROUP.value:
+             return
++        if role == "qt-primary" and msg_type in MessageType.HISTORY.value:
++            await self._handle_fenced_history(websocket, client_uid, data)
++            return
+         if not msg_type:
+             logger.warning("Message received without type")
+             return
+@@ -843,6 +976,7 @@
+         for output in self.primary_outputs.values():
+             output.disconnect(client_uid)
+         self.primary_outputs.pop(client_uid, None)
++        self._history_replies.pop(client_uid, None)
+         group = self.chat_group_manager.get_client_group(client_uid)
+         if group:
+             await handle_group_interrupt(
+@@ -1075,6 +1209,8 @@
+                 websocket.send_text,
+                 lambda: {uid: ws for uid, ws in self.client_connections.items()
+                          if self.client_roles.get(uid) == "pet-presentation"},
++                identity=({key: data[key] for key in ("client_uid", "conf_uid", "context_id", "history_uid")}
++                          if "context_id" in data else None),
+             )
+             self.primary_outputs[client_uid] = output
+         await handle_conversation_trigger(

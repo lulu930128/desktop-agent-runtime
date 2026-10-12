@@ -1,0 +1,33 @@
+--- before/tests/test_g6_pet_boundary.py
++++ after/tests/test_g6_pet_boundary.py
+@@ -64,17 +64,24 @@
+         self.assertIsNone(window.pending_chat_submit)
+ 
+     def test_mic_result_for_old_history_is_discarded(self):
+-        window = SimpleNamespace(_capture_history_uid="old", pending_chat_submit=None,
+-            chat_client=Mock(current_history_uid="new"), _set_chat_status=Mock(), _queue_chat_submit=Mock())
+-        KuroQtLauncherWindow._on_task_finished(window, "pet-toggle:mic-toggle",
++        client = Mock()
++        client.history_identity.return_value = ("qt", "role", "context", "new")
++        window = SimpleNamespace(_capture_identity=("qt", "role", "context", "old"), pending_chat_submit=None,
++            chat_client=client, _set_chat_status=Mock(), _queue_chat_submit=Mock(),
++            perception_status=Mock(), refresh_status=Mock())
++        KuroQtLauncherWindow._on_task_finished(window, "microphone:submit",
+             {"result":{"ok":True,"capture":self.capture()}})
+         window._queue_chat_submit.assert_not_called()
+ 
+     def test_mic_result_is_submitted_via_qt_with_existing_history_binding(self):
+-        window = SimpleNamespace(_capture_history_uid="same", pending_chat_submit=None,
+-            chat_client=Mock(current_history_uid="same"), _queue_chat_submit=Mock())
++        identity = ("qt", "role", "context", "same")
++        client = Mock()
++        client.history_identity.return_value = identity
++        window = SimpleNamespace(_capture_identity=identity, pending_chat_submit=None,
++            chat_client=client, _queue_chat_submit=Mock(), _chat_response_active=Mock(return_value=False),
++            perception_status=Mock(), refresh_status=Mock())
+         capture = self.capture()
+-        KuroQtLauncherWindow._on_task_finished(window, "pet-toggle:mic-toggle",
++        KuroQtLauncherWindow._on_task_finished(window, "microphone:submit",
+             {"result":{"ok":True,"capture":capture}})
+         window._queue_chat_submit.assert_called_once_with("[語音輸入]", [], capture)
+ 

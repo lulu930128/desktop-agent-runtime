@@ -1,0 +1,62 @@
+{
+  "interpreter": "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+  "start_dir": "tests",
+  "scope": "ISOLATED_ONLY",
+  "source_sha256": {
+    "kuro_launcher/qt_app.py": "342d341adcde87670e87802818fd5ef792c8c4abdaf088a3bc4c17235c333354",
+    "kuro_launcher/qt_chat_client.py": "5a210bd5cbbc0b070c6d542eca7730efb737859915b4969f98b7958691dfcbc5",
+    "kuro_launcher/qt_controller.py": "40e9ce7b4acb4db9ec085944ed2d38fca2fe8f456c36a325c31e830caff8eb9d",
+    "kuro_launcher/qt_core_pages.py": "349513d50656d9cac039d901faf69e83d8779a82c8896d75ff80c939222b7468",
+    "kuro_launcher/qt_notifications.py": "ca0584422608b0b1c018af58e2946e22b9582b8a427d271f09004cd3f8d47146",
+    "kuro_launcher/qt_work_companion_theme.py": "55ef7b8632bacc777e36061f98ec07c65baa73b48fea3e2655b784b1e2804635",
+    "kuro_launcher/qt_work_companion_view.py": "9e8e7c4937f83f30bf50aacdf355c02d38f1f2540c17570e83928af8342dd17d",
+    "Open-LLM-VTuber/src/open_llm_vtuber/websocket_handler.py": "ed64840c85023ef647a229f481404f427ee29d2a2b102b83ff3e65100de4d262",
+    "Open-LLM-VTuber/src/open_llm_vtuber/chat_history_manager.py": "526152e33796ad7346eda900719118187fb47a9cda22b7c4d0399a10b6a29628",
+    "Open-LLM-VTuber/src/open_llm_vtuber/chat_event_manager.py": "8fdbdb1fec57fc0f033c1abe73eed688e8c1aed32a59e6c7bdec9d2621b41438",
+    "Open-LLM-VTuber/src/open_llm_vtuber/character_memory_manager.py": "656387b33cf597673c8e9ccf206a9a2c499b1c45d4b7240a15818fb05bf290cc"
+  },
+  "suites": [
+    {
+      "suite": "test_r2_settings_parity.py",
+      "tests": 13,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_r2_settings_parity.py",
+        "tests"
+      ],
+      "output_sha256": "f5c5ea85c468d0d907d6e8216ecee1acf0d9c53c13ede78f82daebcaf18d4284"
+    },
+    {
+      "suite": "test_work_companion_source_encoding.py",
+      "tests": 3,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_work_companion_source_encoding.py",
+        "tests"
+      ],
+      "output_sha256": "ee3ac72c8bdb239a51eb2e5ddfd1cb3d532c664c5813ba3c6a11733fe944d2f0"
+    },
+    {
+      "suite": "test_v1_work_companion_view.py",
+      "tests": 7,
+      "exit": 0,
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in Work Companion validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(sys.argv[2],pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+        "test_v1_work_companion_view.py",
+        "tests"
+      ],
+      "output_sha256": "075b5c8ab8cd4eabd40f6559e8453f00b36b6c55f1c9e58339bfeb70f9ce22b0"
+    }
+  ]
+}

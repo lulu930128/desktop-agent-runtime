@@ -1,0 +1,105 @@
+--- a/docs/agent-runs/qt-ui-convergence-20261007/G7Checkpoint.md
++++ b/docs/agent-runs/qt-ui-convergence-20261007/G7Checkpoint.md
+@@ -1,3 +1,7 @@
++> 2026-10-09 最終靜態補記：**STATIC BLOCKED；NOT ACCEPTED**。本輪另刪除 8 檔，G7 累計 33/35，剩餘 briefing-window.html、briefing-preload.js 仍受目前執行權限阻擋。Force 的 ArgumentException 已定位到 set_Attributes；無 Force 的實際刪除回報 WinError 5。Python 單次完整 326/25 suites、Node 83、MCP targeted 14（另 OMI 4）、renderer check/build、syntax/diff 通過；最小 Electron 與 G8 fixture 都重現 renderer 49／GPU 0xC0000135。正式 Windows 全部 UNVERIFIED。
++>
++> 最新逐項結果與安全補刪命令見 repo-root [G8FinalizationResults.json](../../../G8FinalizationResults.json)／[G8FinalizationHandoff.md](../../../G8FinalizationHandoff.md)。以下為上一輪歷史證據，保留原文；舊 10 檔 blocker、舊 Force 命令與舊測試數字不代表本輪現況，不應直接照舊執行。
++
+ # G7 physical deletion checkpoint
+ 
+ > **後續更新（2026-10-09）**：G7 原 25/35 是前輪 checkpoint；本輪沿 manifest 另刪除 8 個，現為 **33/35**。其餘 `briefing-window.html`、`briefing-preload.js` 仍在，真正刪除時發生 `UnauthorizedAccessException (0x80070005)`。以 [增量結果](G7FollowupDeletionResults.json) 與 [Reviewer 複查](G8ReviewerStaticFollowup.md) 為當前狀態；下面的原始 25/35 明細是歷史記錄。
+--- a/docs/agent-runs/qt-ui-convergence-20261007/G8Checkpoint.md
++++ b/docs/agent-runs/qt-ui-convergence-20261007/G8Checkpoint.md
+@@ -1,3 +1,7 @@
++> 2026-10-09 最終靜態補記：**STATIC BLOCKED；NOT ACCEPTED**。本輪另刪除 8 檔，G7 累計 33/35，剩餘 briefing-window.html、briefing-preload.js 仍受目前執行權限阻擋。Force 的 ArgumentException 已定位到 set_Attributes；無 Force 的實際刪除回報 WinError 5。Python 單次完整 326/25 suites、Node 83、MCP targeted 14（另 OMI 4）、renderer check/build、syntax/diff 通過；最小 Electron 與 G8 fixture 都重現 renderer 49／GPU 0xC0000135。正式 Windows 全部 UNVERIFIED。
++>
++> 最新逐項結果與安全補刪命令見 repo-root [G8FinalizationResults.json](../../../G8FinalizationResults.json)／[G8FinalizationHandoff.md](../../../G8FinalizationHandoff.md)。以下為上一輪歷史證據，保留原文；舊 10 檔 blocker、舊 Force 命令與舊測試數字不代表本輪現況，不應直接照舊執行。
++
+ # G8 final acceptance checkpoint
+ 
+ > **後續更新（2026-10-09）**：本輪重新執行 Python 326 項／25 suites、Node 83 項、renderer typecheck/build 全部通過；G7 實體刪除從 25/35 改進至 **33/35**，仍有兩檔 Access Denied。最小 Electron 空白頁也重現 renderer 49／GPU 0xC0000135，OS/runtime 根因未定。正式實機仍 UNVERIFIED，結論維持 **STATIC BLOCKED／NOT ACCEPTED**。見 [Reviewer 增量複查](G8ReviewerStaticFollowup.md) 與 [G7 最新結果](G7FollowupDeletionResults.json)。以下保留前輪 checkpoint 原始內容。
+--- a/docs/agent-runs/qt-ui-convergence-20261007/G8ManualAcceptance.md
++++ b/docs/agent-runs/qt-ui-convergence-20261007/G8ManualAcceptance.md
+@@ -1,3 +1,7 @@
++> 2026-10-09 最終靜態補記：**STATIC BLOCKED；NOT ACCEPTED**。本輪另刪除 8 檔，G7 累計 33/35，剩餘 briefing-window.html、briefing-preload.js 仍受目前執行權限阻擋。Force 的 ArgumentException 已定位到 set_Attributes；無 Force 的實際刪除回報 WinError 5。Python 單次完整 326/25 suites、Node 83、MCP targeted 14（另 OMI 4）、renderer check/build、syntax/diff 通過；最小 Electron 與 G8 fixture 都重現 renderer 49／GPU 0xC0000135。正式 Windows 全部 UNVERIFIED。
++>
++> 最新逐項結果與安全補刪命令見 repo-root [G8FinalizationResults.json](../../../G8FinalizationResults.json)／[G8FinalizationHandoff.md](../../../G8FinalizationHandoff.md)。以下為上一輪歷史證據，保留原文；舊 10 檔 blocker、舊 Force 命令與舊測試數字不代表本輪現況，不應直接照舊執行。
++
+ # G8 人工驗收與可重跑步驟
+ 
+ 目前 release verdict：**NOT ACCEPTED**。本文件是待執行 checklist；未填實測證據的項目全部為 **UNVERIFIED**。不把 unit/offscreen/synthetic 或 build 成功當實機 PASS。
+--- a/docs/agent-runs/qt-ui-convergence-20261007/Progress.md
++++ b/docs/agent-runs/qt-ui-convergence-20261007/Progress.md
+@@ -1,3 +1,7 @@
++> 2026-10-09 最終靜態補記：**STATIC BLOCKED；NOT ACCEPTED**。本輪另刪除 8 檔，G7 累計 33/35，剩餘 briefing-window.html、briefing-preload.js 仍受目前執行權限阻擋。Force 的 ArgumentException 已定位到 set_Attributes；無 Force 的實際刪除回報 WinError 5。Python 單次完整 326/25 suites、Node 83、MCP targeted 14（另 OMI 4）、renderer check/build、syntax/diff 通過；最小 Electron 與 G8 fixture 都重現 renderer 49／GPU 0xC0000135。正式 Windows 全部 UNVERIFIED。
++>
++> 最新逐項結果與安全補刪命令見 repo-root [G8FinalizationResults.json](../../../G8FinalizationResults.json)／[G8FinalizationHandoff.md](../../../G8FinalizationHandoff.md)。以下為上一輪歷史證據，保留原文；舊 10 檔 blocker、舊 Force 命令與舊測試數字不代表本輪現況，不應直接照舊執行。
++
+ # Kuro Qt / Live2D 收斂進度
+ 
+ ## G5 → G8 本輪結果（2026-10-09，取代下方歷史現況）
+--- a/docs/agent-runs/qt-ui-convergence-20261007/MigrationMatrix.md
++++ b/docs/agent-runs/qt-ui-convergence-20261007/MigrationMatrix.md
+@@ -1,3 +1,7 @@
++> 2026-10-09 最終靜態補記：**STATIC BLOCKED；NOT ACCEPTED**。本輪另刪除 8 檔，G7 累計 33/35，剩餘 briefing-window.html、briefing-preload.js 仍受目前執行權限阻擋。Force 的 ArgumentException 已定位到 set_Attributes；無 Force 的實際刪除回報 WinError 5。Python 單次完整 326/25 suites、Node 83、MCP targeted 14（另 OMI 4）、renderer check/build、syntax/diff 通過；最小 Electron 與 G8 fixture 都重現 renderer 49／GPU 0xC0000135。正式 Windows 全部 UNVERIFIED。
++>
++> 最新逐項結果與安全補刪命令見 repo-root [G8FinalizationResults.json](../../../G8FinalizationResults.json)／[G8FinalizationHandoff.md](../../../G8FinalizationHandoff.md)。以下為上一輪歷史證據，保留原文；舊 10 檔 blocker、舊 Force 命令與舊測試數字不代表本輪現況，不應直接照舊執行。
++
+ # Kuro Qt / Live2D Migration Matrix
+ 
+ ## G8 current source ownership（2026-10-09）
+--- a/docs/agent-runs/qt-ui-convergence-20261007/G7DeletionResults.json
++++ b/docs/agent-runs/qt-ui-convergence-20261007/G7DeletionResults.json
+@@ -1,4 +1,19 @@
+ {
++  "finalization20261009": {
++    "status": "STATIC BLOCKED",
++    "releaseVerdict": "NOT ACCEPTED",
++    "currentEvidence": "../../../G8FinalizationResults.json",
++    "deleted": 33,
++    "remaining": 2,
++    "pythonFullRunTests": 326,
++    "pythonSuites": 25,
++    "nodeTests": 83,
++    "mcpTargetedTests": 14,
++    "additionalOmiPolicyTests": 4,
++    "electronSmoke": "FAIL",
++    "formalWindows": "UNVERIFIED",
++    "historicalFieldsBelowPreserved": true
++  },
+   "productionExternalConsumerCount": 0,
+   "attempted": 35,
+   "deleted": 25,
+--- a/docs/agent-runs/qt-ui-convergence-20261007/G8ValidationResults.json
++++ b/docs/agent-runs/qt-ui-convergence-20261007/G8ValidationResults.json
+@@ -1,4 +1,19 @@
+ {
++  "finalization20261009": {
++    "status": "STATIC BLOCKED",
++    "releaseVerdict": "NOT ACCEPTED",
++    "currentEvidence": "../../../G8FinalizationResults.json",
++    "deleted": 33,
++    "remaining": 2,
++    "pythonFullRunTests": 326,
++    "pythonSuites": 25,
++    "nodeTests": 83,
++    "mcpTargetedTests": 14,
++    "additionalOmiPolicyTests": 4,
++    "electronSmoke": "FAIL",
++    "formalWindows": "UNVERIFIED",
++    "historicalFieldsBelowPreserved": true
++  },
+   "schema": "kuro.qt_convergence.validation.v1",
+   "date": "2026-10-09",
+   "releaseVerdict": "NOT_ACCEPTED",
+--- a/README.md
++++ b/README.md
+@@ -50,7 +50,7 @@
+ 
+ ## 目前限制
+ 
+-- Qt 收斂 source 已實作並回歸，但尚未正式 ACCEPTED：10 個 legacy source 檔的實體刪除受 OS 權限阻擋，Electron 隔離 smoke 的 renderer/GPU 啟動失敗。詳見 [G8Checkpoint](docs/agent-runs/qt-ui-convergence-20261007/G8Checkpoint.md) 與[人工驗收](docs/agent-runs/qt-ui-convergence-20261007/G8ManualAcceptance.md)。
++- Qt 收斂 source 已實作並回歸，但尚未正式 ACCEPTED：G7 已刪除 33/35 個 legacy source，剩餘 2 檔的刪除受目前執行權限阻擋；本輪獨立靜態回歸通過，最小 Electron 與 G8 隔離 smoke 仍啟動失敗，判定 STATIC BLOCKED。詳見根目錄 [最終靜態交接](G8FinalizationHandoff.md)。詳見 [G8Checkpoint](docs/agent-runs/qt-ui-convergence-20261007/G8Checkpoint.md) 與[人工驗收](docs/agent-runs/qt-ui-convergence-20261007/G8ManualAcceptance.md)。
+ 
+ - Core Today 已接管來源投影；Mail／Study 是否可用取決於 enabled、handoff 與 freshness，目前預設 disabled，不能捏造待辦。
+ - Qt 特定操作有 native confirmation；一般工具 `confirm` 模式目前會拒絕執行，不是完整確認佇列。

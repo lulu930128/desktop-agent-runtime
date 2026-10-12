@@ -13,6 +13,13 @@ def _read_yaml(path: Path) -> Dict[str, Any]:
 
 
 _VAR_PATTERN = re.compile(r"\$\{([A-Za-z0-9_]+)\}")
+_WINDOWS_VAR_PATTERN = re.compile(r"%[^%]+%")
+_CORE_STUDY_MAX_TTL_SECONDS = 30 * 24 * 60 * 60
+_CORE_STUDY_DEFAULT_MAX_BYTES = 2 * 1024 * 1024
+_CORE_STUDY_MAX_BYTES = 16 * 1024 * 1024
+_CORE_MAIL_MAX_TTL_SECONDS = 30 * 24 * 60 * 60
+_CORE_MAIL_DEFAULT_MAX_BYTES = 64 * 1024
+_CORE_MAIL_MAX_BYTES = 64 * 1024
 
 
 def _expand_vars(value: str, mapping: Dict[str, str]) -> str:
@@ -40,6 +47,113 @@ def _coerce_bool(value: Any, default: bool = False) -> bool:
     if normalized in {"0", "false", "no", "n", "off"}:
         return False
     return default
+
+
+def _load_core_study_config(
+    core_cfg: Dict[str, Any],
+    mapping: Dict[str, str],
+    root: Path,
+) -> tuple[bool, Optional[Path], int, int]:
+    integrations = core_cfg.get("integrations") or {}
+    if not isinstance(integrations, dict):
+        raise ValueError("core.integrations must be a mapping")
+    study_cfg = integrations.get("study") or {}
+    if not isinstance(study_cfg, dict):
+        raise ValueError("core.integrations.study must be a mapping")
+
+    enabled = _coerce_bool(study_cfg.get("enabled"), False)
+    ttl_seconds = study_cfg.get("ttl_seconds", 3600)
+    max_bytes = study_cfg.get("max_bytes", _CORE_STUDY_DEFAULT_MAX_BYTES)
+    for field_name, value, maximum in (
+        ("ttl_seconds", ttl_seconds, _CORE_STUDY_MAX_TTL_SECONDS),
+        ("max_bytes", max_bytes, _CORE_STUDY_MAX_BYTES),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= maximum:
+            raise ValueError(
+                f"core.integrations.study.{field_name} must be an integer between 1 and {maximum}"
+            )
+
+    raw_path = study_cfg.get("snapshot_path")
+    if raw_path is not None and not isinstance(raw_path, str):
+        raise ValueError("core.integrations.study.snapshot_path must be a string")
+    path_text = (raw_path or "").strip()
+    if enabled and not path_text:
+        raise ValueError("Enabled Study requires an explicit snapshot_path")
+
+    snapshot_path: Optional[Path] = None
+    if path_text:
+        expanded = os.path.expandvars(_expand_vars(path_text, mapping))
+        if _VAR_PATTERN.search(expanded) or _WINDOWS_VAR_PATTERN.search(expanded):
+            raise ValueError("core.integrations.study.snapshot_path contains unresolved variables")
+        snapshot_path = Path(expanded)
+        if not snapshot_path.is_absolute():
+            snapshot_path = root / snapshot_path
+        snapshot_path = snapshot_path.resolve()
+
+    return enabled, snapshot_path, ttl_seconds, max_bytes
+
+
+def _load_core_mail_config(
+    core_cfg: Dict[str, Any],
+    mapping: Dict[str, str],
+    root: Path,
+) -> tuple[bool, Optional[Path], int, int, Optional[Path], int]:
+    integrations = core_cfg.get("integrations") or {}
+    if not isinstance(integrations, dict):
+        raise ValueError("core.integrations must be a mapping")
+    mail_cfg = integrations.get("mail") or {}
+    if not isinstance(mail_cfg, dict):
+        raise ValueError("core.integrations.mail must be a mapping")
+
+    enabled = _coerce_bool(mail_cfg.get("enabled"), False)
+    ttl_seconds = mail_cfg.get("ttl_seconds", 1800)
+    max_bytes = mail_cfg.get("max_bytes", _CORE_MAIL_DEFAULT_MAX_BYTES)
+    work_max_bytes = mail_cfg.get("work_max_bytes", 2097152)
+    for field_name, value, maximum in (
+        ("ttl_seconds", ttl_seconds, _CORE_MAIL_MAX_TTL_SECONDS),
+        ("max_bytes", max_bytes, _CORE_MAIL_MAX_BYTES),
+        ("work_max_bytes", work_max_bytes, 2097152),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= maximum:
+            raise ValueError(
+                f"core.integrations.mail.{field_name} must be an integer between 1 and {maximum}"
+            )
+
+    raw_path = mail_cfg.get("status_path")
+    if raw_path is not None and not isinstance(raw_path, str):
+        raise ValueError("core.integrations.mail.status_path must be a string")
+    path_text = (raw_path or "").strip()
+    if enabled and not path_text:
+        raise ValueError("Enabled Mail requires an explicit status_path")
+
+    status_path: Optional[Path] = None
+    if path_text:
+        expanded = os.path.expandvars(_expand_vars(path_text, mapping))
+        if _VAR_PATTERN.search(expanded) or _WINDOWS_VAR_PATTERN.search(expanded):
+            raise ValueError("core.integrations.mail.status_path contains unresolved variables")
+        status_path = Path(expanded)
+        if not status_path.is_absolute():
+            status_path = root / status_path
+        status_path = status_path.resolve()
+
+    raw_work = mail_cfg.get("work_path")
+    if raw_work is not None and not isinstance(raw_work, str):
+        raise ValueError("core.integrations.mail.work_path must be a string")
+    work_text = (raw_work or "").strip()
+    if enabled and not work_text:
+        raise ValueError("Enabled Mail requires an explicit work_path")
+    work_path = None
+    if work_text:
+        expanded = os.path.expandvars(_expand_vars(work_text, mapping))
+        if "\x00" in expanded or _VAR_PATTERN.search(expanded) or _WINDOWS_VAR_PATTERN.search(expanded):
+            raise ValueError("core.integrations.mail.work_path contains unresolved variables")
+        work_path = Path(expanded)
+        if not work_path.is_absolute():
+            work_path = root / work_path
+        work_path = work_path.resolve()
+        if work_path == status_path:
+            raise ValueError("Mail work_path must differ from status_path")
+    return enabled, status_path, ttl_seconds, max_bytes, work_path, work_max_bytes
 
 
 def _coerce_string_tuple(value: Any, fallback: tuple[str, ...]) -> tuple[str, ...]:
@@ -85,8 +199,6 @@ class AppConfig:
     llm_port: int
     pet_control_host: str
     pet_control_port: int
-    launcher_control_host: str
-    launcher_control_port: int
 
     llm_provider_env: str
     llm_default_provider: str
@@ -107,6 +219,16 @@ class AppConfig:
     core_port: int = 0
     core_db_path: Optional[Path] = None
     core_timezone: str = "UTC"
+    core_study_enabled: bool = False
+    core_study_snapshot_path: Optional[Path] = None
+    core_study_ttl_seconds: int = 3600
+    core_study_max_bytes: int = _CORE_STUDY_DEFAULT_MAX_BYTES
+    core_mail_enabled: bool = False
+    core_mail_status_path: Optional[Path] = None
+    core_mail_work_path: Optional[Path] = None
+    core_mail_work_max_bytes: int = 2097152
+    core_mail_ttl_seconds: int = 1800
+    core_mail_max_bytes: int = _CORE_MAIL_DEFAULT_MAX_BYTES
 
     @property
     def voice_url(self) -> str:
@@ -132,9 +254,6 @@ class AppConfig:
     def pet_control_url(self) -> str:
         return f"http://{self.pet_control_host}:{self.pet_control_port}"
 
-    @property
-    def launcher_control_url(self) -> str:
-        return f"http://{self.launcher_control_host}:{self.launcher_control_port}"
 
 
 def load_config(config_path: Path) -> AppConfig:
@@ -209,13 +328,28 @@ def load_config(config_path: Path) -> AppConfig:
         raise ValueError("Central voice runtime must use loopback")
     llm_net = net.get("llm") or {}
     pet_control_net = net.get("pet_control") or {}
-    launcher_control_net = net.get("launcher_control") or {}
     core_cfg = cfg.get("core") or {}
+    if not isinstance(core_cfg, dict):
+        raise ValueError("core must be a mapping")
+    (
+        core_study_enabled,
+        core_study_snapshot_path,
+        core_study_ttl_seconds,
+        core_study_max_bytes,
+    ) = _load_core_study_config(core_cfg, mapping, root)
+    (
+        core_mail_enabled,
+        core_mail_status_path,
+        core_mail_ttl_seconds,
+        core_mail_max_bytes,
+        core_mail_work_path,
+        core_mail_work_max_bytes,
+    ) = _load_core_mail_config(core_cfg, mapping, root)
     core_enabled = _coerce_bool(core_cfg.get("enabled"), False)
     core_port = int(core_cfg.get("port", 0))
     if core_enabled and not 1 <= core_port <= 65535:
         raise ValueError("core.port must be configured before enabling Core")
-    if core_port and core_port in {int(x.get("port", 0)) for x in (bridge_net, tts_net, llm_net, pet_control_net, launcher_control_net)}:
+    if core_port and core_port in {int(x.get("port", 0)) for x in (bridge_net, tts_net, llm_net, pet_control_net)}:
         raise ValueError("core.port conflicts with another configured service")
 
     llm = cfg.get("llm") or {}
@@ -231,6 +365,16 @@ def load_config(config_path: Path) -> AppConfig:
         core_timezone=str(core_cfg.get("timezone", "UTC")),
         core_port=core_port,
         core_db_path=_resolve_path(str(core_cfg.get("db_path") or "${ROOT}/local_state/core/work.sqlite3"), mapping).resolve(),
+        core_study_enabled=core_study_enabled,
+        core_study_snapshot_path=core_study_snapshot_path,
+        core_study_ttl_seconds=core_study_ttl_seconds,
+        core_study_max_bytes=core_study_max_bytes,
+        core_mail_enabled=core_mail_enabled,
+        core_mail_status_path=core_mail_status_path,
+        core_mail_work_path=core_mail_work_path,
+        core_mail_work_max_bytes=core_mail_work_max_bytes,
+        core_mail_ttl_seconds=core_mail_ttl_seconds,
+        core_mail_max_bytes=core_mail_max_bytes,
         root=root,
         open_llm_dir=open_llm_dir,
         characters_dir=characters_dir,
@@ -261,8 +405,6 @@ def load_config(config_path: Path) -> AppConfig:
         llm_port=int(llm_net.get("port", 23456)),
         pet_control_host=str(pet_control_net.get("host", "127.0.0.1")),
         pet_control_port=int(pet_control_net.get("port", 23567)),
-        launcher_control_host=str(launcher_control_net.get("host", "127.0.0.1")),
-        launcher_control_port=int(launcher_control_net.get("port", 23568)),
         llm_provider_env=str(llm.get("provider_env", "KURO_LLM_PROVIDER")),
         llm_default_provider=str(llm.get("default_provider", "openai_llm")),
         openai_model_env=str(openai.get("model_env", "OPENAI_LLM_MODEL")),

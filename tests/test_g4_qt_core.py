@@ -1,0 +1,305 @@
+"""G4 synthetic Qt/Core wiring checks; no private state or running services."""
+import ast
+import copy
+import io
+import os
+from pathlib import Path
+import sys
+import time
+from types import SimpleNamespace
+import unittest
+from unittest.mock import Mock, patch
+from urllib.error import HTTPError
+from urllib.parse import parse_qs, urlsplit
+
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "Open-LLM-VTuber" / "src"))
+sys.path.insert(0, str(ROOT / "Open-LLM-VTuber"))
+
+from PySide6.QtWidgets import QApplication, QMainWindow, QWidget
+from kuro_launcher.qt_app import KuroQtLauncherWindow
+from kuro_launcher.qt_controller import QtLauncherController
+from kuro_launcher.qt_core_pages import (
+    MAIN_NAV_KEYS, SETTINGS_LABELS, CoreHealthPage, ScheduleEditor,
+    SchedulePage, TodayPage, today_text,
+)
+
+def today(complete=True):
+    return dict(contract="kuro.core.today.v1", complete=complete, items=[],
+                sections=[], sourceStates=[], limitations=[])
+
+
+class CoreWrapperTests(unittest.TestCase):
+    def setUp(self):
+        self.controller = QtLauncherController.__new__(QtLauncherController)
+        self.controller.core_runtime = Mock()
+        self.controller.core_runtime.request.return_value = {"ok": True}
+
+    def test_today_uses_only_today_route_and_checks_contract(self):
+        request = self.controller.core_runtime.request
+        request.return_value = today()
+        self.assertEqual(self.controller.read_today(), today())
+        request.assert_called_once_with("/v1/today", None)
+        request.return_value = {"contract": "legacy"}
+        with self.assertRaisesRegex(RuntimeError, "contract"):
+            self.controller.read_today()
+
+    def test_schedule_queries_are_encoded_without_losing_values(self):
+        self.controller.read_schedule_view(start="2026-10-09", end="2026-10-16",
+                                           timezone="Asia/Taipei", limit=25, offset=50)
+        route, payload = self.controller.core_runtime.request.call_args.args
+        self.assertIsNone(payload)
+        self.assertEqual(urlsplit(route).path, "/v1/schedule/view")
+        self.assertEqual(parse_qs(urlsplit(route).query), {
+            "start": ["2026-10-09"], "end": ["2026-10-16"],
+            "timezone": ["Asia/Taipei"], "limit": ["25"], "offset": ["50"],
+        })
+        self.controller.read_schedule_item("a/b?x=1&name=行程")
+        route, payload = self.controller.core_runtime.request.call_args.args
+        self.assertEqual(parse_qs(urlsplit(route).query), {"id": ["a/b?x=1&name=行程"]})
+
+    def test_all_schedule_wrappers_delegate_to_core_request(self):
+        item = {"title": "fixture", "timezone": "Asia/Taipei"}
+        command = dict(action="complete", id="schedule-1", scope="this",
+                       occurrenceDate="2026-10-09", expectedRevision=7,
+                       confirmed=True, idempotencyKey="synthetic-key")
+        notification = dict(action="snooze", id="notification-1", confirmed=True,
+                            until="2026-10-09T15:30:00+08:00")
+        cases = [
+            (self.controller.read_core_status, (), "/status", None),
+            (self.controller.prepare_schedule, (item,), "/v1/schedule/prepare", {"item": item}),
+            (self.controller.mutate_schedule, (command,), "/v1/schedule/mutate", command),
+            (self.controller.read_schedule_notifications, (), "/v1/schedule/notifications", None),
+            (self.controller.schedule_notification_action, (notification,), "/v1/schedule/notification-action", notification),
+            (self.controller.materialize_schedule, ("2026-10-16",), "/v1/schedule/materialize", {"through": "2026-10-16"}),
+        ]
+        for method, args, route, payload in cases:
+            with self.subTest(route=route):
+                self.assertEqual(method(*args), {"ok": True})
+                self.controller.core_runtime.request.assert_called_with(route, payload)
+        self.controller.core_runtime.start.assert_not_called()
+
+    def test_unavailable_conflict_and_invalid_response_fail_explicitly(self):
+        request = self.controller.core_runtime.request
+        request.side_effect = ConnectionError("Core unavailable")
+        with self.assertRaisesRegex(ConnectionError, "Core unavailable"):
+            self.controller.read_today()
+        request.side_effect = HTTPError("synthetic", 409, "conflict", {}, io.BytesIO(b"{}"))
+        with self.assertRaisesRegex(RuntimeError, "Core conflict"):
+            self.controller.mutate_schedule({})
+        request.side_effect = None
+        for result in (None, [], {"ok": False}):
+            request.return_value = result
+            with self.assertRaisesRegex(RuntimeError, "Core"):
+                self.controller.read_core_status()
+
+
+class QtCoreTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.controller = Mock(spec=QtLauncherController)
+        self.controller.read_today.return_value = today()
+        self.controller.read_core_status.return_value = {
+            "capabilities": {"schedule": {"today": "2026-10-09", "timezone": "Asia/Taipei"}}}
+        self.controller.read_schedule_view.return_value = {
+            "contract": "kuro.core.schedule.v1", "items": [], "coverage": "complete"}
+        self.controller.read_schedule_notifications.return_value = {"items": []}
+        self.widgets = []
+
+    def tearDown(self):
+        for widget in self.widgets:
+            self.wait_idle(widget)
+            widget.deleteLater()
+        self.app.processEvents()
+
+    def page(self, kind):
+        page = kind(self.controller)
+        self.widgets.append(page)
+        return page
+
+    def wait_idle(self, page):
+        deadline = time.monotonic() + 3
+        while getattr(page, "busy", False) and time.monotonic() < deadline:
+            self.app.processEvents()
+            time.sleep(.005)
+        self.app.processEvents()
+        self.assertFalse(getattr(page, "busy", False), "synthetic Core operation timed out")
+
+    def test_today_healthy_and_degraded_empty_are_distinct(self):
+        page = self.page(TodayPage)
+        page.refresh()
+        self.wait_idle(page)
+        self.assertIn("來源證據健康", page.meta.toPlainText())
+        self.assertIn("不代表真實世界工作覆蓋完整", page.meta.toPlainText())
+        degraded = today(False)
+        degraded["sourceStates"] = [{"source": "mail", "availability": "missing"}]
+        degraded["limitations"] = ["mail_missing"]
+        self.controller.read_today.return_value = degraded
+        page.refresh()
+        self.wait_idle(page)
+        self.assertIn("不能解讀為沒有工作", page.meta.toPlainText())
+        self.assertIn("mail_missing", page.meta.toPlainText())
+        self.assertIn("missing", page.sources.toPlainText())
+        self.controller.read_core_status.assert_not_called()
+
+    def test_today_unavailable_labels_previous_evidence_and_blocks_draft(self):
+        page = self.page(TodayPage)
+        page.apply(today())
+        summaries = []
+        page.summary_changed.connect(summaries.append)
+        self.controller.read_today.side_effect = ConnectionError("Core unavailable")
+        page.refresh()
+        self.wait_idle(page)
+        self.assertIn("Core unavailable", page.status.text())
+        self.assertIn("上次投影", page.status.text())
+        self.assertFalse(page.context_button.isEnabled())
+        self.assertEqual(page.items.count(), 0)
+        self.assertIn("完整度未知", summaries[-1])
+
+    def test_today_invalid_contract_is_not_healthy(self):
+        for payload in ({}, dict(today(), complete="true"), dict(today(), items=None)):
+            with self.assertRaises(ValueError):
+                today_text(payload)
+
+    def test_core_health_retains_independent_failure_evidence(self):
+        page = self.page(CoreHealthPage)
+        self.controller.read_today.side_effect = ConnectionError("Core Today unavailable")
+        page.refresh()
+        self.wait_idle(page)
+        self.assertIn("讀取失敗", page.status.text())
+        self.assertIn("schedule", page.capabilities.toPlainText())
+        self.assertIn("Core Today unavailable", page.sources.toPlainText())
+
+    def test_schedule_read_and_unavailable_are_explicit(self):
+        page = self.page(SchedulePage)
+        page.refresh()
+        self.wait_idle(page)
+        self.controller.read_schedule_view.assert_called_once_with(
+            start="2026-10-09", end="2026-10-10", timezone="Asia/Taipei")
+        self.assertTrue(page.add_button.isEnabled())
+        self.controller.read_core_status.side_effect = ConnectionError("Core unavailable")
+        page.refresh()
+        self.wait_idle(page)
+        self.assertIn("不可視為空行程", page.status.text())
+        self.assertIn("Core unavailable", page.status.text())
+        self.assertFalse(page.add_button.isEnabled())
+        self.assertIsNone(page.loaded_query)
+
+    def test_schedule_action_serialization_preserves_revision_and_scope(self):
+        page = self.page(SchedulePage)
+        record = {"scheduleId": "fixture", "revision": 7, "occurrenceDate": "2026-10-09"}
+        for action in ("update", "complete", "reopen", "skip", "cancel"):
+            for scope in ("this", "future", "all"):
+                command = page.command(action, record, scope)
+                key = command.pop("idempotencyKey")
+                self.assertEqual(len(key), 32)
+                expected = dict(action=action, id="fixture", expectedRevision=7,
+                                scope=scope, confirmed=True)
+                if scope != "all":
+                    expected["occurrenceDate"] = "2026-10-09"
+                self.assertEqual(command, expected)
+
+    def test_editor_prepares_then_submits_with_stable_retry_key(self):
+        item = dict(title=" fixture ", kind="deadline", timezone="Asia/Taipei",
+                    due="2026-10-09T17:00", allDay=False,
+                    recurrence={"frequency": "weekly", "interval": 2, "weekdays": [0, 4], "count": 3},
+                    notification={"enabled": True, "minutesBefore": 20, "allDayTime": "09:30", "channel": "panel"})
+        editor = ScheduleEditor(self.controller, item, {"action": "create"})
+        self.widgets.append(editor.page)
+        self.widgets.append(editor)
+        payload = editor.item_payload()
+        self.assertNotIn("start", payload)
+        self.assertNotIn("end", payload)
+        self.assertEqual(payload["title"], "fixture")
+        self.assertEqual(payload["recurrence"], item["recurrence"])
+        self.assertEqual(payload["notification"], item["notification"])
+        prepared = dict(payload, due="2026-10-09T17:00:00+08:00")
+        self.controller.prepare_schedule.return_value = {"item": prepared}
+        self.controller.mutate_schedule.side_effect = ConnectionError("lost response")
+        editor.save()
+        self.wait_idle(editor.page)
+        first = copy.deepcopy(self.controller.mutate_schedule.call_args.args[0])
+        self.assertEqual(first["item"], prepared)
+        self.assertTrue(first["confirmed"])
+        editor.save()
+        self.wait_idle(editor.page)
+        self.assertEqual(self.controller.mutate_schedule.call_args.args[0], first)
+        editor.fields["title"].setText("changed")
+        editor.save()
+        self.wait_idle(editor.page)
+        self.assertNotEqual(self.controller.mutate_schedule.call_args.args[0]["idempotencyKey"], first["idempotencyKey"])
+        methods = [call[0] for call in self.controller.method_calls]
+        self.assertEqual(methods, ["prepare_schedule", "mutate_schedule"] * 3)
+
+    def test_editor_prepare_failure_never_mutates(self):
+        editor = ScheduleEditor(self.controller, {"kind": "event"}, {"action": "create"})
+        self.widgets.extend([editor.page, editor])
+        self.controller.prepare_schedule.side_effect = ValueError("Core invalid wall time")
+        editor.save()
+        self.wait_idle(editor.page)
+        self.controller.mutate_schedule.assert_not_called()
+        self.assertIn("Core invalid wall time", editor.page.status.text())
+
+
+
+
+    def test_chat_menu_has_no_reader_or_briefing_entry_and_keeps_pet_controls(self):
+        from work_companion_fixture import ProductionWindowFixture
+        fixture = ProductionWindowFixture()
+        self.addCleanup(fixture.close)
+        menu = fixture.window._build_chat_add_menu()
+        labels = [action.text() for action in menu.actions()]
+        self.assertNotIn("Reader", labels)
+        self.assertNotIn("Briefing", labels)
+        for text in ("附加檔案", "開始錄音", "完成錄音並送出", "Camera", "Screen", "顯示桌寵", "停止輸出"):
+            self.assertIn(text, labels)
+
+    def test_window_construction_nav_settings_and_refresh_without_pet(self):
+        from work_companion_fixture import ProductionWindowFixture
+        from kuro_launcher.qt_work_companion_view import WorkCompanionView
+        fixture = ProductionWindowFixture()
+        self.addCleanup(fixture.close)
+        window = fixture.window
+        self.assertIsInstance(window.centralWidget(), WorkCompanionView)
+        self.assertEqual(list(window.nav_buttons), [*MAIN_NAV_KEYS, "settings"])
+        self.assertEqual(window.stack.count(), 4)
+        self.assertEqual(window.settings_stack.count(), 6)
+        self.assertFalse(hasattr(window, "settings_dialog"))
+        with patch.object(window.today_page, "refresh") as today_refresh, \
+             patch.object(window.schedule_page, "refresh") as schedule_refresh, \
+             patch.object(window.core_health_page, "refresh") as health_refresh:
+            fixture.controller.read_companion_diagnostics.return_value = {}
+            window._set_page("today")
+            window._refresh_core_pages()
+            self.assertEqual(today_refresh.call_count, 2)
+            window._set_page("schedule")
+            window._refresh_core_pages()
+            schedule_refresh.assert_called_once_with()
+            window._open_settings_dialog("sources")
+            window._refresh_core_pages()
+            self.assertEqual(health_refresh.call_count, 2)
+        self.assertFalse(hasattr(window, "briefing_meta"))
+
+
+class CanonicalPathTests(unittest.TestCase):
+    def test_only_legacy_builders_can_request_pet_briefing(self):
+        tree = ast.parse((ROOT / "kuro_launcher/qt_app.py").read_text(encoding="utf-8-sig"))
+        legacy = {"_build_briefing_page", "_build_briefing_settings_page", "refresh_briefing"}
+        forbidden = {"read_briefing_summary", "refresh_briefing", "refresh_daily_briefing",
+                     "_build_briefing_page", "_build_briefing_settings_page"}
+        window = next(node for node in tree.body if isinstance(node, ast.ClassDef)
+                      and node.name == "KuroQtLauncherWindow")
+        for method in window.body:
+            if not isinstance(method, ast.FunctionDef) or method.name in legacy:
+                continue
+            for node in ast.walk(method):
+                if isinstance(node, ast.Attribute):
+                    self.assertNotIn(node.attr, forbidden, f"canonical caller: {method.name}")
+
+
+if __name__ == "__main__":
+    unittest.main()

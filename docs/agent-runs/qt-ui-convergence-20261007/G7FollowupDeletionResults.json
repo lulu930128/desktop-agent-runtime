@@ -1,0 +1,60 @@
+{
+  "schema": "kuro.g7.deletion.followup.v1",
+  "latestRecheck": {
+    "date": "2026-10-10",
+    "status": "BLOCKED_2_FILES",
+    "physicalDeleted": 33,
+    "remaining": 2,
+    "evidence": "../../../G7FinalTwoResults-20261010.json",
+    "error": "System.UnauthorizedAccessException / 0x80070005 at FileInfo.Delete()",
+    "regression": "Not rerun: no source change",
+    "historicalFieldsBelowPreserved": true
+  },
+  "date": "2026-10-09",
+  "scope": "desktop-agent-runtime",
+  "status": "BLOCKED_2_FILES",
+  "releaseVerdict": "NOT_ACCEPTED",
+  "origin": "G7DeletionManifest.json / G7DeletionResults.json",
+  "manifestCount": 35,
+  "previouslyDeleted": 25,
+  "newlyDeleted": 8,
+  "totalDeleted": 33,
+  "remaining": 2,
+  "newlyDeletedPaths": [
+    "pet-electron/src/main-process/briefing-store.js",
+    "pet-electron/src/main-process/today-classifier.js",
+    "pet-electron/src/main-process/study-briefing.js",
+    "pet-electron/src/main-process/mail-briefing-service.js",
+    "pet-electron/src/main-process/schedule-notifications.js",
+    "pet-electron/src/main-process/core-client.js",
+    "pet-electron/src/main-process/reader-attachments.js",
+    "pet-electron/src/main-process/work-panel-window.js"
+  ],
+  "blocked": [
+    {
+      "path": "pet-electron/src/briefing-window.html",
+      "sha256": "17507d1d3e06a3450351bf5ffadc5cb479a1cb91678b819d9b409335d28f0c43",
+      "error": "UnauthorizedAccessException",
+      "hresult": "0x80070005",
+      "at": "System.IO.FileInfo.Delete()"
+    },
+    {
+      "path": "pet-electron/src/briefing-preload.js",
+      "sha256": "e6314e5442bc283fce1b459b4505723eff8b6167a2a81640e0d3d3025cbf8ce2",
+      "error": "UnauthorizedAccessException",
+      "hresult": "0x80070005",
+      "at": "System.IO.FileInfo.Delete()"
+    }
+  ],
+  "rootCauseClarification": "Remove-Item -Force triggers FileSystemInfo.set_Attributes() ArgumentException before deletion; ordinary Remove-Item deletes eight files, last two are true UnauthorizedAccessException (not necessarily ACL).",
+  "backup": "g7-source-rollback.zip.bak",
+  "backupSha256": "49c39cccbf702eac763bb3b132d9706432ac564fccfc5c83ac1e6c016288c376",
+  "manifestShaCheck": "PASSED",
+  "productionExternalConsumers": "zero found in bounded 333-source/config static scan; not a live proof",
+  "constraints": [
+    "No ACL/registry/process-wide kill",
+    "No private DB, userData, OAuth, model, voice changes",
+    "No commit/push",
+    "Do not mark G7 PASS until actual removal and followup regression"
+  ]
+}

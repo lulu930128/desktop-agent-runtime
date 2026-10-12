@@ -1,0 +1,168 @@
+"""V0 visual tokens and scoped QSS for the opt-in Widgets presentation surface."""
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class WorkCompanionTokens:
+    chat_background: str = "#10141D"
+    settings_background: str = "#101319"
+    rail_background: str = "#131823"
+    chrome_background: str = "#141924"
+    surface: str = "#171D28"
+    text: str = "#E7EAF0"
+    muted: str = "#929BAD"
+    quiet: str = "#727C8D"
+    line: str = "#303846"
+    turn_line: str = "#252C39"
+    gold: str = "#D7B66F"
+    teal: str = "#61AB9F"
+    blue: str = "#87A0CE"
+    error: str = "#D99B96"
+    chat_rail: int = 180
+    settings_rail: int = 73
+    settings_navigation: int = 226
+    chat_chrome: int = 48
+    settings_chrome: int = 52
+    chat_header: int = 103
+    message_width: int = 760
+    speaker_gutter: int = 69
+    composer_width: int = 820
+    drawer_width: int = 320
+    settings_margin: int = 52
+    settings_gap: int = 42
+
+
+TOKENS = WorkCompanionTokens()
+
+
+def work_companion_qss(font_family: str | None = None) -> str:
+    """Only style descendants of this view; never change QApplication's theme."""
+    t = TOKENS
+    qss = f"""
+QWidget#WorkCompanionView {{ background: {t.chat_background}; }}
+QWidget#WorkCompanionView[mode="settings"] {{ background: {t.settings_background}; }}
+QWidget#WorkCompanionView QWidget {{
+    color: {t.text}; background: transparent;
+    font-family: "Microsoft JhengHei UI", "Segoe UI"; font-size: 14px;
+}}
+QWidget#WorkCompanionView QFrame {{ border: none; }}
+QWidget#WorkCompanionView QWidget#Rail {{
+    background: {t.rail_background}; border-right: 1px solid {t.turn_line};
+}}
+QWidget#WorkCompanionView QWidget#Chrome {{
+    background: {t.chrome_background}; border-bottom: 1px solid {t.turn_line};
+}}
+QWidget#WorkCompanionView QLabel[role="brand"] {{ font-family: "Segoe UI"; font-size: 23px; font-weight: 600; }}
+QWidget#WorkCompanionView QLabel[role="brandMark"] {{
+    border: 1px solid #596174; border-radius: 18px; font-family: "Consolas"; font-size: 16px;
+}}
+QWidget#WorkCompanionView QLabel[role="caption"] {{
+    color: {t.muted}; font-family: "Cascadia Mono", "Consolas"; font-size: 10px;
+}}
+QWidget#WorkCompanionView QLabel[role="muted"] {{ color: {t.muted}; font-size: 12px; }}
+QWidget#WorkCompanionView QLabel[role="title"] {{ font-size: 25px; font-weight: 600; }}
+QWidget#WorkCompanionView QLabel[role="sectionTitle"] {{ font-size: 18px; font-weight: 600; }}
+QWidget#WorkCompanionView QLabel[role="body"] {{ font-size: 15px; }}
+QWidget#WorkCompanionView QLabel[role="speaker"] {{
+    font-family: "Cascadia Mono", "Consolas"; font-size: 11px; color: {t.muted}; font-weight: 600;
+}}
+QWidget#WorkCompanionView QLabel[role="speaker"][assistant="true"] {{ color: {t.gold}; }}
+QWidget#WorkCompanionView QLabel#PreviewBadge {{
+    color: {t.gold}; border: 1px solid #63553B; padding: 4px 8px;
+    font-family: "Consolas"; font-size: 10px;
+}}
+QWidget#WorkCompanionView[mode="settings"] QLabel#PreviewBadge {{ color: {t.teal}; border-color: #365850; }}
+QWidget#WorkCompanionView QPushButton {{
+    border: 1px solid {t.line}; border-radius: 3px; padding: 7px 12px;
+    color: {t.text}; background: transparent;
+}}
+QWidget#WorkCompanionView QPushButton:hover {{ background: #222A38; }}
+QWidget#WorkCompanionView QPushButton:focus {{ border: 1px solid {t.blue}; }}
+QWidget#WorkCompanionView QPushButton:disabled {{ color: {t.quiet}; background: #171C25; border-color: {t.turn_line}; }}
+QWidget#WorkCompanionView QPushButton[role="nav"] {{
+    text-align: left; border: 1px solid transparent; padding: 12px; color: {t.muted};
+}}
+QWidget#WorkCompanionView QPushButton[role="nav"]:checked {{
+    color: {t.gold}; border: 1px solid {t.gold}; background: #242321;
+}}
+QWidget#WorkCompanionView[mode="settings"] QPushButton[role="nav"] {{ padding: 10px; }}
+QWidget#WorkCompanionView[mode="settings"] QPushButton[role="nav"]:checked {{
+    color: {t.teal}; border-color: {t.teal}; background: #1A2B2B;
+}}
+QWidget#WorkCompanionView QPushButton[role="subnav"] {{
+    text-align: left; border: none; border-left: 2px solid transparent;
+    border-radius: 0; padding: 12px 13px; color: {t.muted}; font-size: 13px;
+}}
+QWidget#WorkCompanionView QPushButton[role="subnav"]:checked {{
+    border-left: 2px solid {t.teal}; color: {t.text}; background: #19272A;
+}}
+QWidget#WorkCompanionView QPushButton[role="subnav"]:focus {{ border: 1px solid {t.blue}; }}
+QWidget#WorkCompanionView QPushButton[role="icon"] {{ border: none; padding: 6px; }}
+QWidget#WorkCompanionView QPushButton[role="icon"]:focus {{ border: 1px solid {t.blue}; }}
+QWidget#WorkCompanionView QPushButton#SendButton {{
+    background: {t.gold}; color: #17140F; border: 1px solid {t.gold}; font-weight: 600;
+}}
+QWidget#WorkCompanionView QPushButton#SendButton:disabled {{
+    background: #4A4232; border-color: #4A4232; color: #AEA38B;
+}}
+QWidget#WorkCompanionView QPushButton#SendButton[busy="true"] {{
+    background: #302126; border-color: #8D5855; color: {t.error};
+}}
+QWidget#WorkCompanionView QPushButton[role="primary"] {{
+    background: {t.blue}; color: #101319; border-color: {t.blue}; font-weight: 600;
+}}
+QWidget#WorkCompanionView QPushButton[role="primary"]:disabled {{ background: #303846; color: {t.quiet}; }}
+QWidget#WorkCompanionView QFrame#ChatHeader {{ border-bottom: 1px solid {t.turn_line}; }}
+QWidget#WorkCompanionView QFrame[role="turn"],
+QWidget#WorkCompanionView QFrame[role="settingRow"],
+QWidget#WorkCompanionView QFrame[role="todayRow"] {{ border-bottom: 1px solid {t.turn_line}; }}
+QWidget#WorkCompanionView QFrame#Composer {{
+    background: {t.surface}; border: 1px solid #414A5C; border-radius: 4px;
+}}
+QWidget#WorkCompanionView QPlainTextEdit {{
+    border: none; background: transparent; padding: 5px 0; selection-background-color: #4B566B;
+}}
+QWidget#WorkCompanionView QPlainTextEdit:focus {{ border-bottom: 1px solid {t.gold}; }}
+QWidget#WorkCompanionView QPlainTextEdit:disabled {{ color: {t.quiet}; }}
+QWidget#WorkCompanionView QPlainTextEdit[role="messageBody"] {{
+    border: none; padding: 0; font-size: 15px;
+}}
+QWidget#WorkCompanionView QComboBox {{
+    min-height: 32px; border: 1px solid {t.line}; border-radius: 3px;
+    padding: 0 12px; background: #181D26; font-size: 13px;
+}}
+QWidget#WorkCompanionView QComboBox:focus {{ border-color: {t.blue}; }}
+QWidget#WorkCompanionView QComboBox:disabled {{ color: {t.quiet}; background: #151A22; }}
+QWidget#WorkCompanionView QComboBox::drop-down {{ border: none; width: 24px; }}
+QWidget#WorkCompanionView QComboBox::down-arrow {{ image: none; width: 0; height: 0; }}
+QWidget#WorkCompanionView QComboBox QAbstractItemView {{
+    color: {t.text}; background: #181D26; selection-background-color: #29413F;
+    border: 1px solid {t.line}; padding: 4px;
+}}
+QWidget#WorkCompanionView QComboBox#StatePicker {{ min-height: 26px; font-size: 11px; }}
+QWidget#WorkCompanionView QScrollArea {{ border: none; background: transparent; }}
+QWidget#WorkCompanionView QScrollBar:vertical {{ width: 7px; background: transparent; margin: 0; }}
+QWidget#WorkCompanionView QScrollBar::handle:vertical {{ background: #3A4253; min-height: 30px; border-radius: 3px; }}
+QWidget#WorkCompanionView QScrollBar::add-line:vertical,
+QWidget#WorkCompanionView QScrollBar::sub-line:vertical {{ height: 0; }}
+QWidget#WorkCompanionView QScrollBar::add-page:vertical,
+QWidget#WorkCompanionView QScrollBar::sub-page:vertical {{ background: none; }}
+QWidget#WorkCompanionView QFrame#Drawer {{
+    background: #171D28; border-left: 1px solid #414A5C;
+}}
+QWidget#WorkCompanionView QPushButton[role="history"] {{
+    text-align: left; border: none; border-bottom: 1px solid {t.line}; padding: 16px 4px;
+}}
+QWidget#WorkCompanionView QPushButton[role="history"]:checked {{ color: {t.gold}; background: #242321; }}
+QWidget#WorkCompanionView QLabel#StateNotice {{ color: {t.muted}; padding: 7px 0; font-size: 12px; }}
+QWidget#WorkCompanionView QLabel#StateNotice[state="partial"] {{ color: {t.gold}; }}
+QWidget#WorkCompanionView QLabel#StateNotice[state="error"] {{ color: {t.error}; }}
+QWidget#WorkCompanionView QLabel#StateNotice[state="loading"] {{ color: {t.blue}; }}
+"""
+    if font_family:
+        # The host chooses a locally available family; never interpret QSS input.
+        family = font_family.replace('"', "").replace("\\", "").replace("\n", "")
+        qss = qss.replace('"Microsoft JhengHei UI", "Segoe UI"', f'"{family}"')
+        qss = qss.replace('"Cascadia Mono", "Consolas"', f'"{family}"')
+        qss = qss.replace('"Consolas"', f'"{family}"').replace('"Segoe UI"', f'"{family}"')
+    return qss

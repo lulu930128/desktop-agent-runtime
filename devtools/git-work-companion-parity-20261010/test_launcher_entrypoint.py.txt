@@ -1,0 +1,31 @@
+[launcher-qt] start: 2026-10-10 04:19:24
+[launcher-qt] cwd  : C:\project\desktop-agent-runtime
+[launcher-qt] here : C:\project\desktop-agent-runtime
+[launcher-qt] cfg  : C:\project\desktop-agent-runtime\kuro_launcher.settings.yaml
+[launcher-qt] log  : <MagicMock name='setup_runtime_logging()' id='2353262772288'>
+[launcher-qt] root : C:\project\desktop-agent-runtime
+[launcher-qt] window: constructing
+[launcher-qt] window: constructed
+[launcher-qt] window: shown visible=<MagicMock name='KuroQtLauncherWindow().isVisible()' id='2353262999536'> minimized=<MagicMock name='KuroQtLauncherWindow().isMinimized()' id='2353263056240'>
+[launcher-qt] Qt activation signal received.
+[launcher-qt] start: 2026-10-10 04:19:24
+[launcher-qt] cwd  : C:\project\desktop-agent-runtime
+[launcher-qt] here : C:\project\desktop-agent-runtime
+[launcher-qt] cfg  : C:\project\desktop-agent-runtime\kuro_launcher.settings.yaml
+[launcher-qt] log  : <MagicMock name='setup_runtime_logging()' id='2353263313920'>
+[launcher-qt] root : C:\project\desktop-agent-runtime
+[launcher-qt] window: constructing
+[launcher-qt] window: constructed
+[launcher-qt] window: shown visible=<MagicMock name='KuroQtLauncherWindow().isVisible()' id='2353263574560'> minimized=<MagicMock name='KuroQtLauncherWindow().isMinimized()' id='2353263631216'>
+[launcher-qt] Qt activation signal received.
+test_activation_event_targets_qt_and_entrypoint_has_no_listener (test_launcher_entrypoint.LauncherEntrypointTests) ... ok
+test_desktop_vbs_targets_qt_without_work_panel_build (test_launcher_entrypoint.LauncherEntrypointTests) ... ok
+test_failed_activation_reports_failure (test_launcher_entrypoint.LauncherEntrypointTests) ... ok
+test_first_launch_visible_with_auto_start (test_launcher_entrypoint.LauncherEntrypointTests) ... ok
+test_first_launch_visible_without_auto_start (test_launcher_entrypoint.LauncherEntrypointTests) ... ok
+test_repeated_launch_signals_primary_qt (test_launcher_entrypoint.LauncherEntrypointTests) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.303s
+
+OK

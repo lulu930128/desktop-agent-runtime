@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { app, BrowserWindow } = require('electron');
 const root = path.resolve(__dirname, '..');
-const evidence = path.join(root, 'launcher_logs', 'work-panel-validation');
+const evidence = path.join(root, 'launcher_logs', 'pet-validation');
 fs.mkdirSync(evidence, { recursive: true });
 const profile = fs.mkdtempSync(path.join(evidence, 'pet-offline-'));
 app.setPath('userData', profile);

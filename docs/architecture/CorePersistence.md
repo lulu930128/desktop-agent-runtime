@@ -4,7 +4,10 @@
 
 保留單 DB、固定 table namespace 與 migration owner。這是邏輯切割，沒有拆庫、搬檔、修改 schema 或對正式 DB 執行 migration。獨立 Observation storage 需在後續有具體 research／cutover contract 時再設計。
 
-正式設定：`${ROOT}/local_state/core/work.sqlite3`，DB-wide `PRAGMA user_version=3`。`kuro_core/storage.py:SCHEMA_VERSION` 是全庫支援版本，不是 Observation 專屬版本。ScheduleServer、ScheduleStore、Launcher readiness 與 Electron core-client 都依賴 schema 3，改動須視為跨 consumer contract。
+G0–G8 沒有新增 DB migration。Core Work／Attention／Today 已接管 /v1/today，但採 bounded handoff 的 in-memory projection，沒有新增 TaskStore、Today table 或正式 Observation ingest。Core GET 不 refresh、不呼叫 KuroCoreStore.ingest()；Mail writer 仍屬明確 producer，Study snapshot 由學習 domain 維護。Electron briefing-store 不再是 production truth，既有 private userData 未讀取／遷移／刪除。
+
+
+正式設定：`${ROOT}/local_state/core/work.sqlite3`，DB-wide `PRAGMA user_version=3`。`kuro_core/storage.py:SCHEMA_VERSION` 是全庫支援版本，不是 Observation 專屬版本。`ScheduleCapability`／ScheduleStore 與 Launcher／Electron 的 nested Schedule capability gate 都依賴 schema 3；`CoreApplication` 的 process contract 則是獨立的 `kuro.core.api.v1`。
 
 ## Table 與 migration owner
 
@@ -13,7 +16,7 @@
 | 0 → 1 | `storage.KuroCoreStore.initialize()` | `observations`、`decision_traces`、相關 indexes | 新 DB bootstrap；table 存在不等於 Observation 已採用 |
 | 1 → 2 | `schedule_store.migrate_schedule()` | `schedule_items`、`schedule_occurrences`、`schedule_revisions`、`schedule_mutations`、`schedule_notification_deliveries` | 正式 Schedule state、audit／revision、idempotency |
 | 2 → 3 | `schedule_notifications.migrate_notifications()` | delivery lease／snooze 等 columns；`schedule_preferences`、`schedule_notification_audit` | 正式 notification scheduler／delivery |
-| 全部編排 | `storage.KuroCoreStore.initialize()` | 版本檢查 → v1 → v2 → v3；拒絕較新 schema | `ScheduleServer.__init__()` 在 service DB lease 內呼叫 |
+| 全部編排 | `storage.KuroCoreStore.initialize()` | 版本檢查 → v1 → v2 → v3；拒絕較新 schema | `ScheduleCapability.__init__()` 在 service DB lease 內呼叫；`CoreApplication` 只負責 composition |
 
 ScheduleStore 每次連線要求 schema 3；read 使用既有 DB 的 `mode=ro`，write 使用 `mode=rw` 與 transaction。Observation store 另外提供 ingest／trace persistence，但其 `initialize()` 同樣會跑上述 schedule migrations。
 
@@ -26,7 +29,7 @@ ScheduleStore 每次連線要求 schema 3；read 使用既有 DB 的 `mode=ro`�
 - 三段 migration 不是一次全庫原子升級。若 v3 失敗，可能保留已提交的 v2；修復後再走正常 initializer，不手動改 `user_version`。
 - 必要 tables／columns 有 readiness 檢查，不能以版本號代替 schema 完整性。
 - SQLite backup 包含整庫，不是單一 table 備份；檔案包含私人工作資料，與 DB／WAL／SHM／lease 都不進 Git。
-- Service lease 只約束遵守此協定的 ScheduleServer；直接建立 KuroCoreStore 或 SQLite connection 能繞過 lease，因此 DB 路徑隔離是研究前置條件。
+- Service lease 只約束遵守此協定的 `ScheduleCapability`；直接建立 KuroCoreStore 或 SQLite connection 能繞過 lease，因此 DB 路徑隔離是研究前置條件。
 
 ## Backup／restore 與 rollback contract
 

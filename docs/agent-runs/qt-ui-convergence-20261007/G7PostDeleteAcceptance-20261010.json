@@ -1,0 +1,111 @@
+{
+  "schema": "kuro.g7.post_delete_acceptance.v1",
+  "date": "2026-10-10",
+  "reviewerStatus": "G7_PHYSICAL_DELETION_PASS",
+  "productReleaseVerdict": "NOT_ACCEPTED",
+  "sourceRepository": "C:\\project\\desktop-agent-runtime",
+  "branch": "main",
+  "g7": {
+    "manifest": "G7DeletionManifest.json",
+    "totalCandidates": 35,
+    "physicalAbsent": 35,
+    "existingCandidates": 0,
+    "finalTwo": [
+      "pet-electron/src/briefing-window.html",
+      "pet-electron/src/briefing-preload.js"
+    ],
+    "backupPath": "g7-source-rollback.zip.bak",
+    "backupSha256": "49c39cccbf702eac763bb3b132d9706432ac564fccfc5c83ac1e6c016288c376",
+    "backupArchiveEntriesTotal": 75,
+    "backupManifestEntriesVerified": 35,
+    "archiveCrc": "PASS",
+    "manifestEntryHashes": "PASS",
+    "productionConsumerStatus": "no reachable old application consumers or duplicate ownership found within bounded source and import scans",
+    "boundedScans": {
+      "textFiles": 498,
+      "importFiles": 244,
+      "literalImportEdges": 3021
+    },
+    "staleTextReferences": [
+      "kuro_core/__init__.py:6 (legacy explanation)",
+      "kuro_launcher/qt_controller.py:1452 (legacy comment)"
+    ]
+  },
+  "g8": {
+    "currentRun": {
+      "pythonFull": {
+        "status": "UNVERIFIED",
+        "reason": "Codex sandbox could not create repo-local disposable TEMP; runner exit 1 before any suite result"
+      },
+      "nodeFull": {
+        "status": "UNVERIFIED",
+        "reason": "Same temp precondition blocked execution"
+      },
+      "rendererBuild": {
+        "status": "UNVERIFIED",
+        "reason": "Required controlled write context unavailable"
+      },
+      "nodeArchitecture": {
+        "status": "PASS",
+        "tests": 20,
+        "skipped": 0
+      },
+      "mcpTargeted": {
+        "status": "PASS",
+        "tests": 18,
+        "skipped": 0,
+        "groups": [
+          3,
+          5,
+          6,
+          4
+        ]
+      },
+      "pythonCompile": {
+        "status": "PASS",
+        "fileCount": 204
+      },
+      "nodeSyntax": {
+        "status": "PASS",
+        "fileCount": 15
+      },
+      "rendererTypecheck": {
+        "status": "PASS"
+      },
+      "gitDiffCheck": {
+        "status": "PASS"
+      },
+      "temporaryPaths": "No unexpected residue",
+      "sourceWipHashes": "Unchanged"
+    },
+    "previousRun": {
+      "pythonTests": 326,
+      "nodeTests": 83,
+      "rendererBuild": "PASS",
+      "status": "HISTORICAL_ONLY_NOT_RERUN"
+    },
+    "electronHiddenSmoke": {
+      "status": "PREVIOUS_FAIL_NOT_RERUN",
+      "rendererExit": 49,
+      "gpuExit": "0xC0000135"
+    },
+    "formalDesktop": {
+      "status": "UNVERIFIED",
+      "surfaces": [
+        "Qt cold boot and tray",
+        "Qt chat without Pet",
+        "Core Today and Schedule",
+        "OS notification",
+        "Live2D render",
+        "Voice and device I/O"
+      ]
+    }
+  },
+  "changes": {
+    "sourceFilesModified": 0,
+    "sourceFilesDeletedThisReview": 0,
+    "commit": false,
+    "push": false
+  },
+  "nextStep": "Run full synthetic suite from user PowerShell with writable disposable TEMP, then perform normal Windows desktop acceptance."
+}

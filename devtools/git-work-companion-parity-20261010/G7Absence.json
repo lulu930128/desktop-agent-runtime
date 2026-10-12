@@ -1,0 +1,146 @@
+{
+  "total": 35,
+  "absent": 35,
+  "files": [
+    {
+      "path": "pet-electron/renderer/src/work-panel/main.ts",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/renderer/src/work-panel/model.ts",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/renderer/src/work-panel/schedule.ts",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/renderer/src/work-panel/styles.css",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/renderer/src/work-panel/types.ts",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/renderer/work-panel.html",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/reader-window.html",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/reader-preload.js",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/briefing-window.html",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/briefing-preload.js",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/main-process/briefing-store.js",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/main-process/today-classifier.js",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/main-process/study-briefing.js",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/main-process/mail-briefing-service.js",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/main-process/schedule-notifications.js",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/main-process/core-client.js",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/main-process/reader-attachments.js",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/main-process/work-panel-window.js",
+      "absent": true
+    },
+    {
+      "path": "kuro_launcher/work_panel_activation.py",
+      "absent": true
+    },
+    {
+      "path": "kuro_launcher/work_panel_api.py",
+      "absent": true
+    },
+    {
+      "path": "kuro_launcher/work_panel_recovery.py",
+      "absent": true
+    },
+    {
+      "path": "kuro_core/legacy_briefing_adapter.py",
+      "absent": true
+    },
+    {
+      "path": "tests/core_client.test.cjs",
+      "absent": true
+    },
+    {
+      "path": "tests/mail_poller_owner.test.cjs",
+      "absent": true
+    },
+    {
+      "path": "tests/schedule_cutover.test.cjs",
+      "absent": true
+    },
+    {
+      "path": "tests/schedule_notifications.test.cjs",
+      "absent": true
+    },
+    {
+      "path": "tests/schedule_renderer_smoke.cjs",
+      "absent": true
+    },
+    {
+      "path": "tests/work_panel_window.test.cjs",
+      "absent": true
+    },
+    {
+      "path": "tests/work_panel_process_smoke.py",
+      "absent": true
+    },
+    {
+      "path": "tests/work_panel_process_fixture.cjs",
+      "absent": true
+    },
+    {
+      "path": "tests/work_panel_electron_smoke.cjs",
+      "absent": true
+    },
+    {
+      "path": "tests/test_work_panel_api.py",
+      "absent": true
+    },
+    {
+      "path": "tests/test_work_panel_activation.py",
+      "absent": true
+    },
+    {
+      "path": "tests/test_mcp_m0_launcher_policy.py",
+      "absent": true
+    },
+    {
+      "path": "Open-LLM-VTuber/local_mcp/mail_briefing_poller.py",
+      "absent": true
+    }
+  ]
+}

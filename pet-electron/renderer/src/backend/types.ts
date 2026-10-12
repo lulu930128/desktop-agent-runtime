@@ -3,14 +3,11 @@ export type RendererState = {
   wsConnected: boolean;
   aiState: string;
   latestAssistantText: string;
-  latestUserText: string;
   wsUrl: string;
   baseUrl: string;
   currentModelUrl: string;
   confName: string;
   confUid: string;
-  currentHistoryUid: string;
-  currentHistoryTitle: string;
   currentOutfitId: string;
   currentOutfitParameterId: string;
   currentOutfitParameterIndex: number | null;
@@ -21,7 +18,6 @@ export type RendererState = {
   micPaused: boolean;
   cameraEnabled: boolean;
   screenEnabled: boolean;
-  browserPanelEnabled: boolean;
   live2dInspectorOverlayEnabled: boolean;
 };
 
@@ -32,7 +28,8 @@ export type MicrophoneControlResult = {
   error?: string;
   micEnabled?: boolean;
   micPaused?: boolean;
-  submitted?: boolean;
+  capture?: { format: "pcm16le"; sampleRate: number; data: string };
+  images?: BackendImagePayload[];
   discarded?: boolean;
   empty?: boolean;
 };
@@ -48,22 +45,7 @@ export type BackendImagePayload = {
   mime_type: string;
 };
 
-export type BackendFilePayload = {
-  name: string;
-  data: string;
-  mime_type: string;
-  size?: number;
-  kind?: string;
-};
 
-export type UserAttachmentPayload = {
-  kind?: string;
-  name?: string;
-  data?: string;
-  mime_type?: string;
-  type?: string;
-  size?: number;
-};
 
 export type SpeechLipSyncEnvelope = {
   values: number[];

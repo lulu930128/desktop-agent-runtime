@@ -1,0 +1,158 @@
+## main...origin/main [ahead 3]
+ M AGENTS.md
+ D Open-LLM-VTuber/local_mcp/mail_briefing_poller.py
+ M Open-LLM-VTuber/local_mcp/mail_tools_server.py
+ M Open-LLM-VTuber/src/open_llm_vtuber/character_memory_manager.py
+ M Open-LLM-VTuber/src/open_llm_vtuber/chat_event_manager.py
+ M Open-LLM-VTuber/src/open_llm_vtuber/chat_history_manager.py
+ M Open-LLM-VTuber/src/open_llm_vtuber/conversations/conversation_handler.py
+ M Open-LLM-VTuber/src/open_llm_vtuber/conversations/conversation_utils.py
+ M Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_catalog_manager.py
+ M Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_identity.py
+ M Open-LLM-VTuber/src/open_llm_vtuber/websocket_handler.py
+ M Open-LLM-VTuber/tool_catalog.json
+ M Open-LLM-VTuber/tool_policy.json
+ M README.md
+ M docs/architecture/CorePersistence.md
+ M docs/architecture/DataLineage.md
+ M docs/architecture/OwnershipMap.md
+ M docs/architecture/ResearchBoundary.md
+ M docs/architecture/RuntimeArchitecture.md
+ M docs/architecture/RuntimeServices.md
+ M docs/architecture/index.md
+ M docs/guides/development.md
+ M docs/guides/feature-tour.md
+ M docs/guides/getting-started.md
+ M docs/guides/troubleshooting.md
+ M docs/index.md
+ M kuro_core/__init__.py
+ D kuro_core/legacy_briefing_adapter.py
+ M kuro_core/schedule_api.py
+ M kuro_core/shadow_probe.py
+ M kuro_core/storage.py
+ M kuro_core_service.py
+ M kuro_launcher.settings.yaml
+ M kuro_launcher/config.py
+ M kuro_launcher/core_runtime.py
+ M kuro_launcher/qt_app.py
+ M kuro_launcher/qt_chat_client.py
+ M kuro_launcher/qt_controller.py
+ D kuro_launcher/work_panel_activation.py
+ D kuro_launcher/work_panel_api.py
+ D kuro_launcher/work_panel_recovery.py
+ M launcher_qt.py
+ M pet-electron/renderer/src/backend/adapters/llm-vtuber-adapter.ts
+ M pet-electron/renderer/src/backend/backend-client.ts
+ M pet-electron/renderer/src/backend/kuro-backend-events.ts
+ M pet-electron/renderer/src/backend/text-utils.ts
+ M pet-electron/renderer/src/backend/types.ts
+ M pet-electron/renderer/src/commands/pet-command-router.ts
+ M pet-electron/renderer/src/env.d.ts
+ M pet-electron/renderer/src/main.ts
+ D pet-electron/renderer/src/work-panel/main.ts
+ D pet-electron/renderer/src/work-panel/model.ts
+ D pet-electron/renderer/src/work-panel/schedule.ts
+ D pet-electron/renderer/src/work-panel/styles.css
+ D pet-electron/renderer/src/work-panel/types.ts
+ D pet-electron/renderer/work-panel.html
+ D pet-electron/src/briefing-preload.js
+ D pet-electron/src/briefing-window.html
+ D pet-electron/src/main-process/briefing-store.js
+ M pet-electron/src/main-process/control-server.js
+ D pet-electron/src/main-process/core-client.js
+ D pet-electron/src/main-process/mail-briefing-service.js
+ M pet-electron/src/main-process/menus.js
+ D pet-electron/src/main-process/reader-attachments.js
+ D pet-electron/src/main-process/schedule-notifications.js
+ D pet-electron/src/main-process/study-briefing.js
+ D pet-electron/src/main-process/today-classifier.js
+ D pet-electron/src/main-process/work-panel-window.js
+ M pet-electron/src/main.js
+ M pet-electron/src/preload.js
+ D pet-electron/src/reader-preload.js
+ D pet-electron/src/reader-window.html
+ M pet-electron/src/state.js
+ M pet-electron/vite.renderer.config.ts
+ D tests/core_client.test.cjs
+ M tests/pet_offline_smoke.cjs
+ M tests/pet_placement_smoke.cjs
+ D tests/schedule_cutover.test.cjs
+ D tests/schedule_notifications.test.cjs
+ D tests/schedule_renderer_smoke.cjs
+ M tests/test_kuro_core_contracts.py
+ M tests/test_kuro_core_shadow_probe.py
+ M tests/test_launcher_entrypoint.py
+ D tests/test_mcp_m0_launcher_policy.py
+ M tests/test_pet_lifecycle.py
+ M tests/test_runtime_capabilities.py
+ M tests/test_schedule_api.py
+ M tests/test_schedule_runtime.py
+ D tests/test_work_panel_activation.py
+ D tests/test_work_panel_api.py
+ D tests/work_panel_electron_smoke.cjs
+ D tests/work_panel_process_fixture.cjs
+ D tests/work_panel_process_smoke.py
+ D tests/work_panel_window.test.cjs
+ M 桌寵啟動器.vbs
+?? G7FinalTwoDelete-20261010.ps1
+?? G7FinalTwoHandoff-20261010.md
+?? G7FinalTwoResults-20261010.json
+?? G8FinalizationDocs.patch
+?? G8FinalizationHandoff.md
+?? G8FinalizationResults.json
+?? Open-LLM-VTuber/local_mcp/mail_poller.py
+?? Open-LLM-VTuber/local_mcp/mail_status_handoff.py
+?? Open-LLM-VTuber/local_mcp/mail_work_handoff.py
+?? devtools/
+?? docs/agent-runs/qt-ui-convergence-20261007/
+?? kuro_core/api_server.py
+?? kuro_core/attention.py
+?? kuro_core/core_app.py
+?? kuro_core/handoff.py
+?? kuro_core/integrations.py
+?? kuro_core/mail_adapter.py
+?? kuro_core/mail_work_adapter.py
+?? kuro_core/study_adapter.py
+?? kuro_core/study_work_adapter.py
+?? kuro_core/today.py
+?? kuro_core/today_capability.py
+?? kuro_core/today_shadow.py
+?? kuro_core/work_contracts.py
+?? kuro_core/work_evidence.py
+?? kuro_core/work_projection.py
+?? kuro_launcher/mail_environment.py
+?? kuro_launcher/mail_poller_runtime.py
+?? kuro_launcher/qt_core_pages.py
+?? kuro_launcher/qt_notifications.py
+?? kuro_launcher/qt_work_companion_theme.py
+?? kuro_launcher/qt_work_companion_view.py
+?? pet-electron/src/main-process/pet-status.js
+?? tests/g2_fixtures.py
+?? tests/g3_presentation.test.cjs
+?? tests/g5_desktop_owner.test.cjs
+?? tests/g6_pet_shell.test.cjs
+?? tests/g8_hidden_electron_smoke.cjs
+?? tests/run_qt_convergence.py
+?? tests/run_work_companion_parity.py
+?? tests/test_g3_conversation.py
+?? tests/test_g4_qt_core.py
+?? tests/test_g5_desktop.py
+?? tests/test_g6_pet_boundary.py
+?? tests/test_g8_runtime.py
+?? tests/test_kuro_core_api_host.py
+?? tests/test_kuro_core_mail_adapter.py
+?? tests/test_kuro_core_study_adapter.py
+?? tests/test_kuro_core_work_g1.py
+?? tests/test_kuro_core_work_g2.py
+?? tests/test_mail_poller_runtime.py
+?? tests/test_mail_status_handoff.py
+?? tests/test_mail_work_handoff.py
+?? tests/test_r1_history_parity.py
+?? tests/test_r1_production_view.py
+?? tests/test_r1_ws_dispatch_regression.py
+?? tests/test_r2_settings_parity.py
+?? tests/test_r3_today_schedule_parity.py
+?? tests/test_r4_history_transport.py
+?? tests/test_v1_work_companion_view.py
+?? tests/test_work_companion_source_encoding.py
+?? tests/work_companion_fixture.py

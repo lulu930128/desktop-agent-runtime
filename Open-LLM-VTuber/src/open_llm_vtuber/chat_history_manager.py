@@ -298,7 +298,7 @@ def touch_history_opened(conf_uid: str, history_uid: str) -> bool:
     )
 
 
-def get_history(conf_uid: str, history_uid: str) -> List[HistoryMessage]:
+def get_history(conf_uid: str, history_uid: str, *, strict: bool = False) -> List[HistoryMessage]:
     """Read chat history for the given conf_uid and history_uid"""
     if not conf_uid or not history_uid:
         if not conf_uid:
@@ -310,6 +310,8 @@ def get_history(conf_uid: str, history_uid: str) -> List[HistoryMessage]:
     filepath = _get_safe_history_path(conf_uid, history_uid)
 
     if not os.path.exists(filepath):
+        if strict:
+            raise FileNotFoundError("History is unavailable")
         logger.warning(f"History file not found: {filepath}")
         return []
 
@@ -319,7 +321,33 @@ def get_history(conf_uid: str, history_uid: str) -> List[HistoryMessage]:
             # Filter out metadata
             return [msg for msg in history_data if msg["role"] != "metadata"]
     except Exception:
+        if strict:
+            raise
         return []
+
+
+def get_history_timeline(conf_uid: str, history_uid: str, *, limit: int = 120, strict: bool = False) -> list[dict]:
+    """Canonical transcript projection including runtime-owned tool/memory events."""
+    from .chat_event_manager import read_history_events
+
+    rows = [dict(message) for message in get_history(conf_uid, history_uid, strict=strict)
+            if message.get("role") not in {"metadata", "system"}]
+    for event in read_history_events(conf_uid, history_uid, limit=limit, strict=strict):
+        title = str(event.get("title") or event.get("type") or "事件")
+        state = str(event.get("status") or "")
+        summary = str(event.get("summary") or "")
+        rows.append({"role": "event", "timestamp": event.get("timestamp", ""),
+                     "content": f"{title} · {state}\n{summary}".strip(), "event": event})
+
+    def order(row):
+        try:
+            timestamp = datetime.fromisoformat(str(row.get("timestamp") or "").replace("Z", "+00:00")).timestamp()
+        except (ValueError, TypeError, OverflowError, OSError):
+            timestamp = 0.0
+        priority = 0 if row.get("role") in {"human", "user"} else 1 if row.get("role") == "event" else 2
+        return timestamp, priority
+
+    return sorted(rows, key=order)[-max(1, min(limit, 500)):]
 
 
 def delete_history(conf_uid: str, history_uid: str) -> bool:
@@ -331,6 +359,10 @@ def delete_history(conf_uid: str, history_uid: str) -> bool:
     filepath = _get_safe_history_path(conf_uid, history_uid)
     try:
         if os.path.exists(filepath):
+            # Remove the runtime's paired events before reporting a successful deletion.
+            events_path = os.path.splitext(filepath)[0] + ".events.jsonl"
+            if os.path.exists(events_path):
+                os.remove(events_path)
             os.remove(filepath)
             logger.debug(f"Successfully deleted history file: {filepath}")
             return True
@@ -339,7 +371,7 @@ def delete_history(conf_uid: str, history_uid: str) -> bool:
     return False
 
 
-def get_history_list(conf_uid: str) -> List[dict]:
+def get_history_list(conf_uid: str, *, strict: bool = False) -> List[dict]:
     """Get list of histories with their latest messages"""
     if not conf_uid:
         return []
@@ -422,6 +454,8 @@ def get_history_list(conf_uid: str) -> List[dict]:
                     histories.append(history_info)
             except Exception as e:
                 logger.error('Error reading history file; payload details omitted.')
+                if strict:
+                    raise
                 continue
 
         histories.sort(
@@ -431,6 +465,8 @@ def get_history_list(conf_uid: str) -> List[dict]:
 
     except Exception as e:
         logger.error('Error listing histories; payload details omitted.')
+        if strict:
+            raise
         return []
 
 

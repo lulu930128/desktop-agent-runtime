@@ -1,0 +1,9 @@
+test_qt_core_http_claim_authorize_display_ack_and_no_duplicate (test_g8_runtime.G8RuntimeTests) ... ok
+test_real_ws_qt_without_pet_then_pet_role_fencing_and_ack (test_g8_runtime.G8RuntimeTests) ... [32m2026-10-10 04:33:47.202[0m | [1mINFO    [0m | [36mopen_llm_vtuber.websocket_handler[0m:[36mhandle_new_connection[0m:[36m774[0m - [1mConnection established for client qt role=qt-primary[0m
+ok
+test_removed_ui_has_no_external_production_consumer (test_g8_runtime.G8RuntimeTests) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.788s
+
+OK

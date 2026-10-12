@@ -33,13 +33,6 @@ from .memory_support import (
 from .procs import ManagedProc
 from .project_manager import ProjectDefinition, list_project_definitions
 from .records import CharacterRecord, HistoryRecord, MemoryRecord
-from .work_panel_activation import (
-    MAX_WORK_PANEL_RECOVERY_ATTEMPTS,
-    WorkPanelActivationError,
-    record_activation,
-    window_failure_code,
-)
-from open_llm_vtuber.mcpp.tool_policy_manager import ToolPolicy
 from open_llm_vtuber.character_memory_lifecycle import review_digest
 from .runtime_conf import build_runtime_conf, write_runtime_conf
 from .services import probe_tts, start_bridge, start_llm, start_tts, validate_profile_assets
@@ -151,65 +144,17 @@ class RuntimeStatus:
     ws_connected: bool = False
     ai_state: str = ""
     conf_name: str = ""
-    briefing_visible: bool = False
-    briefing_date: str = ""
-    briefing_updated_at: str = ""
     mic_enabled: bool = False
     camera_enabled: bool = False
     screen_enabled: bool = False
-    browser_panel_enabled: bool = False
-    reader_visible: bool = False
     pet_game_mode: bool = False
     current_outfit_id: str = ""
     current_expression_id: str = ""
     current_expression_label: str = ""
-    current_history_uid: str = ""
-    current_history_title: str = ""
-    latest_user_text: str = ""
-    latest_assistant_text: str = ""
     live2d_inspector_overlay_enabled: bool = False
-
-
-@dataclass(frozen=True)
-class BriefingSummary:
-    ok: bool
-    date: str = ""
-    updated_at: str = ""
-    title: str = ""
-    section_counts: tuple[tuple[str, str, int], ...] = ()
-    source_status: tuple[tuple[str, str, str], ...] = ()
-    overview_items: tuple[tuple[str, str, str], ...] = ()
-    sections: tuple["BriefingSection", ...] = ()
-    error: str = ""
-
-
-@dataclass(frozen=True)
-class BriefingItem:
-    text: str
-    meta: str = ""
-    priority: str = ""
-    source: str = ""
-
-
-@dataclass(frozen=True)
-class BriefingModule:
-    module_id: str
-    title: str
-    tag: str
-    value: str
-    unit: str
-    items: tuple[BriefingItem, ...] = ()
-
-
-@dataclass(frozen=True)
-class BriefingSection:
-    key: str
-    label: str
-    icon: str
-    count: int
-    subtitle: str
-    accent: str
-    modules: tuple[BriefingModule, ...] = ()
+    mic_paused: bool = False
+    force_ignore_mouse: bool = False
+    capture_available: bool = False
 
 
 @dataclass(frozen=True)
@@ -239,8 +184,8 @@ class QtLauncherController:
 
     This intentionally keeps the existing runtime/data pipeline intact:
     - Open-LLM-VTuber and GPT-SoVITS still start through the same helper modules.
-    - pet-electron still owns the Live2D shell and briefing store.
-    - the Qt shell reads the existing control server instead of inventing a new store.
+    - pet-electron owns only Live2D presentation and local input capture.
+    - Core owns Today/Schedule; Qt owns application UI and conversation input.
     """
 
     def __init__(self, cfg: AppConfig, log_cb: LogCallback):
@@ -254,12 +199,12 @@ class QtLauncherController:
         self._last_pet_exit_pid: Optional[int] = None
         self._pet_instance_id = ""
         self._pet_output = None
-        self.last_work_panel_activation = None
-        self.work_panel_control_token = ""
         from .runtime_lifecycle import RuntimeLifecycle
         self.lifecycle = RuntimeLifecycle(cfg.root, log_cb)
         from .core_runtime import CoreRuntime
         self.core_runtime = CoreRuntime(cfg, log_cb)
+        from .mail_poller_runtime import MailPollerRuntime
+        self.mail_poller_runtime = MailPollerRuntime(cfg, log_cb)
         self.current_run_id: Optional[str] = None
         self.character_records: Dict[str, CharacterRecord] = {}
         self.project_records: Dict[str, ProjectDefinition] = {}
@@ -397,226 +342,6 @@ class QtLauncherController:
             raise ValueError("選取的模型不在本機允許清單中。")
         self.llm_model = normalized
 
-    def work_panel_profile_state(self) -> dict:
-        character = self.selected_character()
-        project = self.selected_project()
-        characters = [
-            {
-                "id": record.conf_uid,
-                "name": record.conf_name,
-                "model": record.live2d_model_name,
-                "default_project_id": record.default_project_id,
-            }
-            for record in self.character_records.values()
-            if record.conf_uid
-        ]
-        projects = [
-            {
-                "id": record.project_id,
-                "name": record.display_name,
-            }
-            for record in self.project_records.values()
-            if record.project_id
-        ]
-        expressions = [
-            {
-                "id": expression_id,
-                "label": str(preset.get("label") or expression_id),
-                "parameters": dict(preset.get("parameters") or {}),
-            }
-            for expression_id, preset in EXPRESSION_PRESETS.items()
-        ]
-        return {
-            "ok": True,
-            "runtime": self.lifecycle.snapshot(),
-            "characters": characters,
-            "projects": projects,
-            "models": list(self.cfg.openai_models),
-            "thinking_options": ["fast", "normal", "deep"],
-            "expressions": expressions,
-            "outfits": [
-                {"id": "normal", "label": "一般"},
-                {"id": "hoodie", "label": "帽T"},
-            ],
-            "selected": {
-                "character_id": character.conf_uid if character else "",
-                "project_id": project.project_id if project else "",
-                "model": self.llm_model,
-                "thinking_power": self.thinking_power,
-            },
-        }
-
-    def apply_work_panel_profile(self, *, character_id: str, project_id: str, model: str, thinking_power: str) -> dict:
-        if not self.lifecycle.lock.acquire(blocking=False):
-            raise RuntimeError('啟動作業仍在進行，請稍後切換角色設定')
-        try:
-            return self._apply_work_panel_profile_impl(character_id=character_id, project_id=project_id,
-                                                      model=model, thinking_power=thinking_power)
-        finally:
-            self.lifecycle.lock.release()
-
-    def _apply_work_panel_profile_impl(
-        self,
-        *,
-        character_id: str,
-        project_id: str,
-        model: str,
-        thinking_power: str,
-    ) -> dict:
-        character_key = next(
-            (key for key, item in self.character_records.items() if item.conf_uid == character_id),
-            "",
-        )
-        project_key = next(
-            (key for key, item in self.project_records.items() if item.project_id == project_id),
-            "",
-        )
-        if not character_key:
-            raise ValueError("找不到選取的角色。")
-        if not project_key:
-            raise ValueError("找不到選取的專案。")
-
-        previous = (
-            self.selected_character_key,
-            self.selected_project_key,
-            self.llm_model,
-            self.thinking_power,
-        )
-        try:
-            self.set_selected_character(character_key)
-            self.set_selected_project(project_key)
-            self.set_llm_model(model)
-            self.set_thinking_power(thinking_power)
-            result = self.start_profile()
-        except Exception:
-            (
-                self.selected_character_key,
-                self.selected_project_key,
-                self.llm_model,
-                self.thinking_power,
-            ) = previous
-            raise
-        return {
-            "ok": True,
-            "result": result,
-            "profile": self.work_panel_profile_state(),
-        }
-
-    def work_panel_history_state(self, history_uid: str = "") -> dict:
-        current_uid = self._runtime_current_history_uid()
-        records = self.read_history_records()
-        selected_uid = str(history_uid or current_uid).strip()
-        messages = []
-        if selected_uid:
-            messages = [
-                {
-                    "role": item.role,
-                    "timestamp": item.timestamp,
-                    "content": item.content,
-                }
-                for item in self.read_history_timeline(selected_uid, limit=120)
-            ]
-        selected_record = next((item for item in records if item.uid == selected_uid), None)
-        return {
-            "ok": True,
-            "current_history_uid": current_uid,
-            "selected_history_uid": selected_uid,
-            "title": selected_record.title if selected_record else "",
-            "histories": [
-                {
-                    "uid": item.uid,
-                    "title": item.title,
-                    "preview": item.preview,
-                    "timestamp": item.timestamp,
-                    "is_empty": item.is_empty,
-                }
-                for item in records
-            ],
-            "messages": messages,
-        }
-
-    def work_panel_memory_state(self) -> dict:
-        character = self.selected_character()
-        records = self.read_memory_records()
-        return {
-            "ok": True,
-            "character_id": character.conf_uid if character else "",
-            "character_name": character.conf_name if character else "",
-            "memories": [
-                {
-                    "id": item.entry_id,
-                    "content": item.content,
-                    "memory_type": item.memory_type,
-                    "enabled": item.enabled,
-                    "status": item.status,
-                    "scope": item.scope_level,
-                    "source": item.source,
-                    "updated_at": item.updated_at,
-                    "content_digest": item.content_digest,
-                }
-                for item in records
-            ],
-        }
-
-    def work_panel_tool_policy_state(self) -> dict:
-        policy_path = self.cfg.open_llm_dir / "tool_policy.json"
-        catalog_path = self.cfg.open_llm_dir / "tool_catalog.json"
-        policy: dict = {}
-        catalog: dict = {}
-        try:
-            loaded = json.loads(policy_path.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict):
-                policy = loaded
-        except Exception as exc:
-            return {"ok": False, "error": f"工具政策讀取失敗：{exc}", "tools": []}
-        try:
-            loaded = json.loads(catalog_path.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict):
-                catalog = loaded
-        except Exception:
-            catalog = {}
-
-        category_metadata = catalog.get("categories")
-        category_metadata = category_metadata if isinstance(category_metadata, dict) else {}
-        tool_config = policy.get("tools")
-        tool_config = tool_config if isinstance(tool_config, dict) else {}
-        configured_policy = ToolPolicy(policy)
-        tools = []
-        for name, raw in tool_config.items():
-            config = raw if isinstance(raw, dict) else {}
-            mode = str(config.get("mode") or policy.get("default_mode") or "blocked").strip().lower()
-            decision = configured_policy.check(str(name), {})
-            tools.append(
-                {
-                    "name": str(name),
-                    "category": str(config.get("category") or "other"),
-                    "mode": mode,
-                    "allowed": decision.allowed,
-                    "configured_allowed": decision.allowed,
-                    "effective_allowed": None,
-                    "reason_code": decision.reason_code,
-                    "reason": "設定允許有界讀取；runtime 是否採用尚未驗證。" if decision.allowed else decision.reason,
-                }
-            )
-        categories = [
-            {
-                "id": str(category_id),
-                "title": str(data.get("title") or category_id) if isinstance(data, dict) else str(category_id),
-                "description": str(data.get("description") or "") if isinstance(data, dict) else "",
-            }
-            for category_id, data in category_metadata.items()
-        ]
-        return {
-            "ok": True,
-            "version": policy.get("version"),
-            "default_mode": str(policy.get("default_mode") or "blocked"),
-            "confirmation_available": False,
-            "view": "configured",
-            "configured_digest": configured_policy.digest,
-            "effective_digest": None,
-            "categories": categories,
-            "tools": tools,
-        }
 
     def preview_asset(self) -> PreviewAsset:
         character = self.selected_character()
@@ -867,7 +592,7 @@ class QtLauncherController:
             / "long_term.json"
         )
 
-    def read_memory_records(self) -> tuple[MemoryRecord, ...]:
+    def read_memory_records(self, *, strict: bool = False) -> tuple[MemoryRecord, ...]:
         character = self.selected_character()
         if not character or not character.conf_uid:
             return ()
@@ -875,6 +600,8 @@ class QtLauncherController:
             ensure_character_memory_root(self.cfg.open_llm_dir)
             entries = list_character_memories(character.conf_uid, enabled_only=False)
         except Exception as exc:
+            if strict:
+                raise RuntimeError("Memory owner read failed") from exc
             self.log(f"[{log_ts()}] 角色記憶讀取失敗：{exc}")
             return ()
         return self._memory_records_from_entries(entries)
@@ -926,11 +653,12 @@ class QtLauncherController:
             )
         return tuple(records)
 
-    def _selected_memory_record(self, entry_id: str) -> MemoryRecord:
+    def _selected_memory_record(self, entry_id: str, character=None) -> MemoryRecord:
         entry_id = (entry_id or "").strip()
         if not entry_id:
             raise ValueError("請先選擇一條記憶。")
-        for record in self.read_memory_records():
+        records = self._read_memory_records_for(character) if character else self.read_memory_records()
+        for record in records:
             if record.entry_id == entry_id:
                 return record
         raise ValueError("找不到這條記憶。")
@@ -943,13 +671,21 @@ class QtLauncherController:
         except Exception as exc:
             self.log(f"[{log_ts()}] 角色記憶 prompt 暫未刷新：{exc}")
 
-    def add_memory(self, content: str) -> bool:
+    def _memory_character(self, expected_conf_uid=None):
         character = self.selected_character()
+        if expected_conf_uid is not None and (not character or character.conf_uid != expected_conf_uid):
+            raise ValueError("角色已切換；記憶確認已失效，請重新讀取。")
+        return character
+
+    def add_memory(self, content: str, *, expected_conf_uid: str | None = None) -> bool:
+        character = self._memory_character(expected_conf_uid)
         if not character or not character.conf_uid:
             raise ValueError("請先選擇角色。")
         content = (content or "").strip()
         if not content:
             raise ValueError("記憶內容不可空白。")
+        if len(content) > 260:
+            raise ValueError("目前記憶服務每筆最多 260 字；請縮短內容，避免截斷。")
 
         ensure_character_memory_root(self.cfg.open_llm_dir)
         changed = add_character_memory(
@@ -964,11 +700,12 @@ class QtLauncherController:
             self.log(f"[{log_ts()}] 角色記憶未新增，可能是重複內容或包含敏感資料。")
         return changed
 
-    def set_memory_status(self, entry_id: str, status: str, *, expected_digest: str | None = None) -> bool:
-        character = self.selected_character()
+    def set_memory_status(self, entry_id: str, status: str, *, expected_digest: str | None = None,
+                          expected_conf_uid: str | None = None) -> bool:
+        character = self._memory_character(expected_conf_uid)
         if not character or not character.conf_uid:
             raise ValueError("請先選擇角色。")
-        record = self._selected_memory_record(entry_id)
+        record = self._selected_memory_record(entry_id, character)
         ensure_character_memory_root(self.cfg.open_llm_dir)
         changed = update_character_memory_status(character.conf_uid, record.entry_id, status, expected_digest=expected_digest or record.content_digest)
         if changed:
@@ -988,24 +725,27 @@ class QtLauncherController:
     def reject_memory(self, entry_id: str) -> bool:
         return self.set_memory_status(entry_id, "disabled")
 
-    def delete_memory(self, entry_id: str) -> bool:
-        character = self.selected_character()
+    def delete_memory(self, entry_id: str, *, expected_conf_uid: str | None = None,
+                      expected_digest: str | None = None) -> bool:
+        character = self._memory_character(expected_conf_uid)
         if not character or not character.conf_uid:
             raise ValueError("請先選擇角色。")
-        record = self._selected_memory_record(entry_id)
+        record = self._selected_memory_record(entry_id, character)
         ensure_character_memory_root(self.cfg.open_llm_dir)
-        changed = delete_character_memory(character.conf_uid, record.entry_id)
+        changed = delete_character_memory(character.conf_uid, record.entry_id,
+                                          expected_digest=expected_digest or record.content_digest)
         if changed:
             self.log(f"[{log_ts()}] 已刪除角色記憶：{compact_history_text(record.content, 48)}")
             self._maybe_refresh_memory_prompt()
         return changed
 
-    def compact_memory(self) -> dict:
-        character = self.selected_character()
+    def compact_memory(self, *, expected_conf_uid: str | None = None,
+                       expected_digests: dict[str, str] | None = None) -> dict:
+        character = self._memory_character(expected_conf_uid)
         if not character or not character.conf_uid:
             raise ValueError("請先選擇角色。")
         ensure_character_memory_root(self.cfg.open_llm_dir)
-        changed, removed_count = compact_character_memories(character.conf_uid)
+        changed, removed_count = compact_character_memories(character.conf_uid, expected_digests=expected_digests)
         if changed:
             self._maybe_refresh_memory_prompt()
         self.log(f"[{log_ts()}] 角色記憶已整理，合併/移除 {removed_count} 條。")
@@ -1450,6 +1190,31 @@ class QtLauncherController:
         self.log(f"[{log_ts()}] 已要求 runtime 刷新角色記憶 prompt。")
         return result
 
+    def read_tool_policy_summary(self) -> dict:
+        """Stored policy projection only; never discover/execute tools or claim adoption."""
+        from open_llm_vtuber.mcpp.tool_policy_manager import ToolPolicy
+        path = Path(os.environ.get("KURO_TOOL_POLICY_PATH") or self.cfg.open_llm_dir / "tool_policy.json")
+        if path.stat().st_size > 2 * 1024 * 1024:
+            raise ValueError("Tool policy exceeds the bounded display size.")
+        raw = json.loads(path.read_text(encoding="utf-8-sig"))
+        if not isinstance(raw, dict):
+            raise ValueError("Tool policy must be an object.")
+        policy = ToolPolicy(raw)
+        if not policy.valid:
+            raise ValueError("Invalid tool policy configuration.")
+        records = []
+        for name, config in sorted(policy.tools.items()):
+            decision = policy.check(name, {})
+            config = config if isinstance(config, dict) else {}
+            records.append({"name": name, "category": config.get("category", ""),
+                "mode": config.get("mode", policy.default_mode), "allowed": decision.allowed,
+                "reason": decision.reason, "reason_code": decision.reason_code})
+        return {"default_mode": policy.default_mode, "tools": records,
+                "confirmation_available": False, "runtime_adoption": "UNVERIFIED", "digest": policy.digest}
+
+    def read_companion_diagnostics(self) -> dict:
+        return self.lifecycle.snapshot()
+
     def read_runtime_status(self) -> RuntimeStatus:
         bridge = port_is_open(self.cfg.bridge_host, self.cfg.bridge_port, 0.1)
         tts = port_is_open(self.cfg.tts_host, self.cfg.tts_port, 0.1)
@@ -1459,64 +1224,40 @@ class QtLauncherController:
         ws_connected = False
         ai_state = ""
         conf_name = ""
-        briefing_visible = False
         mic_enabled = False
         camera_enabled = False
         screen_enabled = False
-        browser_panel_enabled = False
-        reader_visible = False
         pet_game_mode = False
         current_outfit_id = ""
         current_expression_id = ""
         current_expression_label = ""
-        current_history_uid = ""
-        current_history_title = ""
-        latest_user_text = ""
-        latest_assistant_text = ""
         live2d_inspector_overlay_enabled = False
-        briefing_date = ""
-        briefing_updated_at = ""
+        mic_paused = force_ignore_mouse = capture_available = False
 
         try:
             with self._pet_lifecycle_lock:
                 self._reconcile_tracked_pet_process()
                 status = self._read_pet_shell_status(timeout=0.8)
             pet_shell = True
+            force_ignore_mouse = bool(status.get("forceIgnoreMouse"))
             pet_mode = str(status.get("mode") or "")
             renderer = status.get("renderer") or {}
             if isinstance(renderer, dict):
+                capture_available = renderer.get("available") is not False and "micEnabled" in renderer
+                mic_paused = bool(renderer.get("micPaused"))
                 ws_connected = bool(renderer.get("wsConnected"))
                 ai_state = str(renderer.get("aiState") or "")
                 conf_name = str(renderer.get("confName") or "")
-                briefing_visible = bool(renderer.get("briefingVisible"))
                 mic_enabled = bool(renderer.get("micEnabled"))
                 camera_enabled = bool(renderer.get("cameraEnabled"))
                 screen_enabled = bool(renderer.get("screenEnabled"))
-                browser_panel_enabled = bool(renderer.get("browserPanelEnabled"))
-                reader_visible = bool(renderer.get("readerVisible"))
                 pet_game_mode = bool(renderer.get("petGameMode"))
                 current_outfit_id = str(renderer.get("currentOutfitId") or "")
                 current_expression_id = str(renderer.get("currentExpressionId") or "")
                 current_expression_label = str(renderer.get("currentExpressionLabel") or "")
-                current_history_uid = str(
-                    renderer.get("currentHistoryUid")
-                    or renderer.get("current_history_uid")
-                    or ""
-                )
-                current_history_title = str(renderer.get("currentHistoryTitle") or "")
-                latest_user_text = str(renderer.get("latestUserText") or "")
-                latest_assistant_text = str(renderer.get("latestAssistantText") or "")
                 live2d_inspector_overlay_enabled = bool(renderer.get("live2dInspectorOverlayEnabled"))
         except Exception:
             pet_shell = False
-
-        try:
-            briefing = http_get_json(self.pet_control_endpoint("/briefing"), timeout=0.8)
-            snapshot = briefing.get("snapshot") or {}
-            briefing_date = str(snapshot.get("date") or "")
-            briefing_updated_at = str(snapshot.get("updatedAt") or briefing.get("updatedAt") or "")
-        except Exception:
-            pass
 
         return RuntimeStatus(
             bridge=bridge,
@@ -1527,146 +1268,68 @@ class QtLauncherController:
             ws_connected=ws_connected,
             ai_state=ai_state,
             conf_name=conf_name,
-            briefing_visible=briefing_visible,
-            briefing_date=briefing_date,
-            briefing_updated_at=briefing_updated_at,
             mic_enabled=mic_enabled,
             camera_enabled=camera_enabled,
             screen_enabled=screen_enabled,
-            browser_panel_enabled=browser_panel_enabled,
-            reader_visible=reader_visible,
             pet_game_mode=pet_game_mode,
             current_outfit_id=current_outfit_id,
             current_expression_id=current_expression_id,
             current_expression_label=current_expression_label,
-            current_history_uid=current_history_uid,
-            current_history_title=current_history_title,
-            latest_user_text=latest_user_text,
-            latest_assistant_text=latest_assistant_text,
             live2d_inspector_overlay_enabled=live2d_inspector_overlay_enabled,
+            mic_paused=mic_paused, force_ignore_mouse=force_ignore_mouse, capture_available=capture_available,
         )
 
-    def read_briefing_summary(self) -> BriefingSummary:
+    def _core_request(self, route: str, payload: dict | None = None) -> dict:
+        """Qt consumer transport only; never start a service or fall back to Pet."""
         try:
-            payload = http_get_json(self.pet_control_endpoint("/briefing"), timeout=2.0)
-        except Exception as exc:
-            return BriefingSummary(ok=False, error=str(exc))
-
-        snapshot = payload.get("snapshot") or {}
-        if not isinstance(snapshot, dict):
-            return BriefingSummary(ok=False, error="Briefing payload has no snapshot.")
-
-        section_counts: list[tuple[str, str, int]] = []
-        sections: list[BriefingSection] = []
-        for section in snapshot.get("sections") or []:
-            if not isinstance(section, dict):
-                continue
-            parsed_section = self._parse_briefing_section(section)
-            sections.append(parsed_section)
-            section_counts.append(
-                (
-                    parsed_section.key,
-                    parsed_section.label,
-                    parsed_section.count,
-                )
-            )
-
-        source_status: list[tuple[str, str, str]] = []
-        for source in snapshot.get("sourceStatus") or []:
-            if not isinstance(source, dict):
-                continue
-            source_status.append(
-                (
-                    str(source.get("label") or source.get("id") or ""),
-                    str(source.get("status") or ""),
-                    str(source.get("message") or ""),
-                )
-            )
-
-        overview_items: list[tuple[str, str, str]] = []
-        overview = next(
-            (
-                section
-                for section in snapshot.get("sections") or []
-                if isinstance(section, dict) and section.get("key") == "overview"
-            ),
-            None,
-        )
-        if isinstance(overview, dict):
-            for module in overview.get("modules") or []:
-                if not isinstance(module, dict):
-                    continue
-                title = str(module.get("title") or "")
-                value = str(module.get("value") or "")
-                unit = str(module.get("unit") or "")
-                overview_items.append((title, value, unit))
-
-        return BriefingSummary(
-            ok=bool(payload.get("ok", True)),
-            date=str(snapshot.get("date") or ""),
-            updated_at=str(snapshot.get("updatedAt") or payload.get("updatedAt") or ""),
-            title=str(snapshot.get("title") or "今日簡報"),
-            section_counts=tuple(section_counts),
-            source_status=tuple(source_status),
-            overview_items=tuple(overview_items),
-            sections=tuple(sections),
-        )
-
-    def refresh_daily_briefing(self) -> dict:
-        try:
-            result = http_post_json(
-                self.pet_control_endpoint("/briefing/mail/refresh"),
-                {},
-                timeout=90.0,
-            )
+            result = self.core_runtime.request(route, payload)
         except urllib.error.HTTPError as exc:
-            code, payload, raw = self._decode_http_error(exc)
-            message = payload.get("error") or payload.get("message") or raw[:240] or f"HTTP {code}"
-            raise RuntimeError(f"每日 Briefing 更新失敗：HTTP {code} {message}") from exc
-        except Exception as exc:
-            raise RuntimeError(f"每日 Briefing 更新失敗：{exc}") from exc
-
-        if not result.get("ok", True):
-            raise RuntimeError(str(result.get("error") or result.get("message") or "每日 Briefing 更新失敗。"))
-        self.log(f"[{log_ts()}] {result.get('message') or '每日 Briefing 已更新。'}")
+            if exc.code == 409:
+                raise RuntimeError("Core conflict (409)：資料已變更，請重新讀取後再操作。") from exc
+            # Retain bounded Core validation errors without exposing request headers.
+            detail = exc.read(4096).decode("utf-8", errors="replace")
+            raise RuntimeError(f"Core HTTP {exc.code}: {detail}") from exc
+        if not isinstance(result, dict) or result.get("ok") is False:
+            raise RuntimeError("Core 回應無效或操作失敗。")
         return result
 
-    def _parse_briefing_section(self, section: dict) -> BriefingSection:
-        modules: list[BriefingModule] = []
-        for module in section.get("modules") or []:
-            if not isinstance(module, dict):
-                continue
-            items: list[BriefingItem] = []
-            for item in module.get("items") or []:
-                if not isinstance(item, dict):
-                    continue
-                items.append(
-                    BriefingItem(
-                        text=str(item.get("text") or item.get("title") or "").strip(),
-                        meta=str(item.get("meta") or "").strip(),
-                        priority=str(item.get("priority") or "").strip(),
-                        source=str(item.get("source") or "").strip(),
-                    )
-                )
-            modules.append(
-                BriefingModule(
-                    module_id=str(module.get("id") or "").strip(),
-                    title=str(module.get("title") or "").strip(),
-                    tag=str(module.get("tag") or "").strip(),
-                    value=str(module.get("value") or "").strip(),
-                    unit=str(module.get("unit") or "").strip(),
-                    items=tuple(items),
-                )
-            )
-        return BriefingSection(
-            key=str(section.get("key") or "").strip(),
-            label=str(section.get("label") or section.get("key") or "").strip(),
-            icon=str(section.get("icon") or "").strip(),
-            count=int(section.get("count") or 0),
-            subtitle=str(section.get("subtitle") or "").strip(),
-            accent=str(section.get("accent") or "").strip(),
-            modules=tuple(modules),
-        )
+    def read_core_status(self) -> dict:
+        return self._core_request("/status")
+
+    def read_today(self) -> dict:
+        result = self._core_request("/v1/today")
+        if result.get("contract") != "kuro.core.today.v1":
+            raise RuntimeError("Core Today contract 不相容。")
+        return result
+
+    def read_schedule_view(self, *, start: str, end: str, timezone: str,
+                           limit: int = 50, offset: int = 0) -> dict:
+        from urllib.parse import urlencode
+        query = urlencode(dict(start=start, end=end, timezone=timezone, limit=limit, offset=offset))
+        return self._core_request("/v1/schedule/view?" + query)
+
+    def read_schedule_item(self, item_id: str) -> dict:
+        from urllib.parse import urlencode
+        return self._core_request("/v1/schedule/item?" + urlencode({"id": item_id}))
+
+    def mutate_schedule(self, payload: dict) -> dict:
+        return self._core_request("/v1/schedule/mutate", payload)
+
+    def prepare_schedule(self, item: dict) -> dict:
+        return self._core_request("/v1/schedule/prepare", {"item": item})
+
+    def read_schedule_notifications(self) -> dict:
+        return self._core_request("/v1/schedule/notifications")
+
+    def schedule_notification_action(self, payload: dict) -> dict:
+        return self._core_request("/v1/schedule/notification-action", payload)
+
+    def schedule_notification_command(self, payload: dict) -> dict:
+        return self._core_request("/v1/schedule/notification-command", payload)
+
+    def materialize_schedule(self, through: str) -> dict:
+        return self._core_request("/v1/schedule/materialize", {"through": through})
+
 
     def _ensure_bridge_on_start(self) -> None:
         if not os.environ.get("OPENAI_API_KEY", "").strip():
@@ -1781,6 +1444,14 @@ class QtLauncherController:
             return {'ok': True, 'mode': 'already-running'}
         return self.start_profile()
 
+    def start_desktop_services(self) -> None:
+        """Existing Launcher owners run independently from Pet creation."""
+        for name, owner in (("Core", self.core_runtime), ("Mail poller", self.mail_poller_runtime)):
+            try:
+                owner.start()
+            except Exception as exc:
+                self.log(f"{name} unavailable: {type(exc).__name__}")
+
     def _start_profile_impl(
         self,
         *,
@@ -1794,6 +1465,7 @@ class QtLauncherController:
         if not project:
             raise ValueError("請先選擇專案。")
 
+        self.start_desktop_services()
         if not port_is_open(self.cfg.bridge_host, self.cfg.bridge_port):
             self.log(f"[{log_ts()}] Bridge 尚未啟動，先補啟動。")
             self._ensure_bridge_on_start()
@@ -2268,27 +1940,25 @@ class QtLauncherController:
             )
         popen_kwargs = windows_hidden_subprocess_kwargs(creationflags)
         env = os.environ.copy()
+        env.pop("KURO_DESKTOP_OWNER", None)
+        env["KURO_DESKTOP_OWNER"] = "qt"
+        env.pop("KURO_LAUNCHER_CONTROL_TOKEN", None)
+        env.pop("KURO_LAUNCHER_CONTROL_URL", None)
+        env.pop("KURO_PRESENTATION", None)
         env["KURO_BACKEND_BASE_URL"] = self.cfg.llm_url
         try:
             env["KURO_PRESENTATION"] = json.dumps(self.presentation_state()['presentation'], ensure_ascii=True)
         except (ValueError, OSError) as exc:
             self.log(f"Live2D bootstrap unavailable: {type(exc).__name__}")
-        env["KURO_BACKEND_WS_URL"] = f"ws://{self.cfg.llm_host}:{self.cfg.llm_port}/client-ws"
+        env["KURO_BACKEND_WS_URL"] = f"ws://{self.cfg.llm_host}:{self.cfg.llm_port}/client-ws?client_role=pet-presentation"
         env["KURO_PET_CONTROL_HOST"] = self.cfg.pet_control_host
         env["KURO_PET_CONTROL_PORT"] = str(self.cfg.pet_control_port)
-        env["KURO_LAUNCHER_CONTROL_URL"] = self.cfg.launcher_control_url
         instance_id = uuid.uuid4().hex
         env["KURO_PET_INSTANCE_ID"] = instance_id
-        for key in ("KURO_CORE_URL", "KURO_CORE_TOKEN", "KURO_CORE_INSTANCE"):
+        # Settings own the handoff path; inherited env must not bypass disabled.
+        for key in ("KURO_CORE_URL", "KURO_CORE_TOKEN", "KURO_CORE_INSTANCE",
+                    "KURO_MAIL_STATUS_FILE", "KURO_MAIL_WORK_FILE", "KURO_MAIL_POLLER_OWNER"):
             env.pop(key, None)
-        if hasattr(self, "core_runtime"):
-            try:
-                self.core_runtime.start()
-            except Exception as exc:
-                self.log(f"Core unavailable; other services remain available: {exc}")
-            env.update(self.core_runtime.child_environment())
-        if self.work_panel_control_token:
-            env["KURO_LAUNCHER_CONTROL_TOKEN"] = self.work_panel_control_token
         log_path = self.cfg.logs_dir / "pet-electron" / f"{instance_id}.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         output = log_path.open("ab")
@@ -2367,126 +2037,16 @@ class QtLauncherController:
     def launch_pet_electron(self) -> dict:
         with self._pet_lifecycle_lock:
             status = self._ensure_pet_shell_ready_locked()
+            self.run_pet_command("set-presentation", {
+                "presentation": self.presentation_state()["presentation"],
+                "expectedInstanceId": status["instanceId"],
+            })
         self.log(
             f"[{log_ts()}] Kuro Pet shell ready："
             f"pid={status.get('pid')}，instance={status.get('instanceId')}"
         )
         return status
 
-    def _reveal_work_panel_locked(self, status: dict, result: dict, *, timeout_s: float) -> None:
-        result.update(pid=status["pid"], instance_id=status["instanceId"], pet_control_identity_ok=True)
-        response = http_post_json(
-            self.pet_control_endpoint("/command"),
-            {"action": "set-briefing-visible", "enabled": True,
-             "expectedInstanceId": status["instanceId"], "requestId": result["request_id"]},
-            timeout=3.0,
-        )
-        if response.get("ok") is not True:
-            if response.get("error") == "WP_PET_IDENTITY_MISMATCH":
-                raise PetShellIdentityError("Pet instance changed before reveal.")
-            raise RuntimeError("Work Panel reveal command was not accepted.")
-        deadline = time.monotonic() + min(5.0, max(0.05, timeout_s))
-        while time.monotonic() < deadline:
-            fresh = self._read_pet_shell_status(timeout=0.8)
-            if (fresh["pid"], fresh["instanceId"]) != (status["pid"], status["instanceId"]):
-                raise PetShellIdentityError("Pet instance changed during Work Panel verification.")
-            window = fresh.get("workPanel")
-            result["window"] = window
-            failure = window_failure_code(window)
-            result["failure_code"] = failure
-            if not failure:
-                return
-            if failure == "WP_WINDOW_CONTRACT_UNSUPPORTED":
-                raise RuntimeError("Pet shell 缺少新版工作面板 contract；請退出舊桌寵後重試。")
-            time.sleep(0.1)
-        raise RuntimeError("工作面板未在驗證期限內就緒。")
-
-    def _recover_work_panel_pet_locked(self) -> None:
-        """Recover only our original Popen handle, never a PID adopted from HTTP."""
-        self._reconcile_tracked_pet_process()
-        proc = self.proc_pet_electron
-        # Fresh identity check also rejects a listener replacement before termination.
-        try:
-            fresh = self._read_pet_shell_status(timeout=0.8)
-            if not window_failure_code(fresh.get("workPanel")):
-                return  # The first reveal completed late; retry without terminating.
-        except PetShellIdentityError:
-            raise
-        except Exception:
-            pass
-        listener = get_listening_pid_windows(self.cfg.pet_control_port, self.cfg.pet_control_host)
-        occupied = port_is_open(self.cfg.pet_control_host, self.cfg.pet_control_port, 0.2)
-        if proc is None:
-            if listener is not None or occupied:
-                raise PetShellIdentityError("Pet shell is not a tracked child; automatic termination refused.")
-            return
-        if listener is not None and listener != proc.pid:
-            raise PetShellIdentityError("Pet port belongs to a different process; recovery refused.")
-        if occupied and listener != proc.pid:
-            raise PetShellIdentityError("Pet listener ownership is unknown; recovery refused.")
-        # Popen retains the Windows process handle, protecting against PID reuse.
-        if proc.poll() is None:
-            proc.terminate()
-            proc.wait(timeout=3.0)
-        self._reconcile_tracked_pet_process()
-        deadline = time.monotonic() + 3.0
-        while time.monotonic() < deadline:
-            if not port_is_open(self.cfg.pet_control_host, self.cfg.pet_control_port, 0.2):
-                return
-            time.sleep(0.1)
-        raise RuntimeError("Pet control port did not close after owned-child recovery.")
-
-    def ensure_work_panel(self, *, timeout_s: float = 15.0, request_id: str = "", source: str = "launcher") -> dict:
-        started_at = time.monotonic()
-        result = {"ok": False, "request_id": request_id or uuid.uuid4().hex[:12], "source": source,
-                  "launcher_pid": os.getpid(), "pid": None, "instance_id": "", "window": None,
-                  "pet_control_identity_ok": False, "pet_state": "unknown", "recovery_attempt": 0,
-                  "recovery_reason": "", "final_status": "pending", "failure_code": ""}
-        record_activation("activation-recovery-start", result, self.log)
-        acquired = self._pet_lifecycle_lock.acquire(timeout=max(0.05, timeout_s))
-        try:
-            if not acquired:
-                result["failure_code"] = "WP_LIFECYCLE_BUSY"
-                raise RuntimeError("Pet lifecycle is busy; retry after the current operation completes.")
-            for attempt in range(MAX_WORK_PANEL_RECOVERY_ATTEMPTS + 1):
-                result["recovery_attempt"] = attempt
-                result["failure_code"] = "WP_PET_CONTROL_TIMEOUT"
-                try:
-                    before = self.proc_pet_electron
-                    status = self._ensure_pet_shell_ready_locked(timeout_s=timeout_s)
-                    spawned = self.proc_pet_electron is not None and self.proc_pet_electron is not before
-                    result["pet_state"] = "recovered" if attempt else ("spawned" if spawned else "reused")
-                    self._reveal_work_panel_locked(status, result, timeout_s=timeout_s)
-                    result.update(ok=True, final_status="recovered" if attempt else "ready", failure_code="")
-                    break
-                except PetShellIdentityError:
-                    raise
-                except Exception:
-                    if attempt == MAX_WORK_PANEL_RECOVERY_ATTEMPTS or result["failure_code"] == "WP_WINDOW_CONTRACT_UNSUPPORTED":
-                        raise
-                    result["recovery_reason"] = result["failure_code"]
-                    result["previous_pid"] = result["pid"]
-                    result["previous_instance_id"] = result["instance_id"]
-                    result["recovery_attempt"] = attempt + 1
-                    record_activation("activation-recovery-retry", result, self.log)
-                    self._recover_work_panel_pet_locked()
-            result["duration_ms"] = int((time.monotonic() - started_at) * 1000)
-            self.last_work_panel_activation = dict(result)
-            record_activation("activation-recovery-succeeded", result, self.log)
-            return result
-        except Exception as exc:
-            result["final_status"] = "failed"
-            if isinstance(exc, PetShellIdentityError):
-                result["failure_code"] = "WP_PET_IDENTITY_MISMATCH"
-                result["pet_control_identity_ok"] = False
-            result["error"] = str(exc)[:1000]
-            result["duration_ms"] = int((time.monotonic() - started_at) * 1000)
-            self.last_work_panel_activation = dict(result)
-            record_activation("activation-recovery-failed", result, self.log)
-            raise WorkPanelActivationError(result, str(exc)) from exc
-        finally:
-            if acquired:
-                self._pet_lifecycle_lock.release()
 
     def stop_pet_electron(self, *, silent: bool = False) -> None:
         stopped = False
@@ -2564,7 +2124,9 @@ class QtLauncherController:
         if payload:
             body.update(payload)
         result = http_post_json(self.pet_control_endpoint("/command"), body, timeout=5.0)
-        if not result.get("ok", True):
+        if not isinstance(result, dict) or result.get("ok") is not True:
+            if not isinstance(result, dict):
+                raise RuntimeError("Pet command response is invalid")
             inner = result.get("result") if isinstance(result.get("result"), dict) else {}
             message = result.get("message") or inner.get("error") or "pet command failed"
             raise RuntimeError(str(message))
@@ -2573,21 +2135,19 @@ class QtLauncherController:
 
     def set_pet_toggle(self, action: str, enabled: bool) -> dict:
         allowed = {
-            "set-reader-visible",
-            "set-briefing-visible",
             "mic-toggle",
             "toggle-camera",
             "toggle-screen",
-            "toggle-browser",
             "set-game-mode",
             "set-live2d-inspector",
+            "set-force-ignore-mouse",
         }
         if action not in allowed:
             raise ValueError(f"Unsupported pet toggle action: {action}")
         return self.run_pet_command(action, {"enabled": bool(enabled)})
 
     def interrupt_pet(self) -> dict:
-        return self.run_pet_command("interrupt")
+        return self.run_pet_command("stop-playback")
 
     def show_pet(self) -> dict:
         return self.run_pet_command("show-pet")
@@ -2618,44 +2178,11 @@ class QtLauncherController:
             },
             timeout=8.0,
         )
+        if not isinstance(result, dict) or result.get("ok") is not True:
+            raise RuntimeError("Pet backend configuration failed; renderer readiness is unverified")
         self.log(f"[{log_ts()}] {result.get('message') or '已套用桌寵後端端點。'}")
         return result
 
-    def send_pet_text(self, text: str, attachments: Optional[list[dict]] = None) -> dict:
-        text = (text or "").strip()
-        attachments = attachments or []
-        if not text and not attachments:
-            raise ValueError("訊息不可空白。")
-        return self.run_pet_command(
-            "send-text",
-            {
-                "text": text,
-                "attachments": attachments,
-            },
-        )
-
-    def send_pet_text_for_chat(
-        self,
-        text: str,
-        attachments: Optional[list[dict]] = None,
-        *,
-        create_history: bool = False,
-    ) -> dict:
-        result: dict = {
-            "ok": True,
-            "history": {},
-            "send": {},
-        }
-        if create_history:
-            history_result = self.create_history()
-            result["history"] = history_result
-            history_uid = str(history_result.get("history_uid") or "").strip()
-            if history_uid:
-                result["history_uid"] = history_uid
-                time.sleep(0.2)
-
-        result["send"] = self.send_pet_text(text, attachments)
-        return result
 
     def expression_options(self) -> tuple[tuple[str, str], ...]:
         return tuple(
@@ -2723,5 +2250,9 @@ class QtLauncherController:
         try:
             self.stop_profile(silent=True)
         finally:
-            if hasattr(self, "core_runtime"):
-                self.core_runtime.stop()
+            try:
+                if hasattr(self, "mail_poller_runtime"):
+                    self.mail_poller_runtime.stop()
+            finally:
+                if hasattr(self, "core_runtime"):
+                    self.core_runtime.stop()

@@ -45,16 +45,15 @@ export function bindPetCommands({
 
     if (payload.type === 'local-model-set') {
       client.setPresentationModel(payload.presentation || null);
-    } else if (payload.type === "interrupt") {
-      client.sendInterrupt();
+    } else if (payload.type === "stop-playback") {
+      client.stopPlayback();
     } else if (payload.type === "mic-toggle") {
       void client.setMicrophoneEnabled(Boolean(payload.enabled));
     } else if (payload.type === "camera-toggle") {
       void client.setCameraEnabled(Boolean(payload.enabled));
     } else if (payload.type === "screen-toggle") {
       void client.setScreenEnabled(Boolean(payload.enabled));
-    } else if (payload.type === "browser-toggle") {
-      client.setBrowserPanelEnabled(Boolean(payload.enabled));
+
     } else if (payload.type === "outfit-set") {
       const outfitId = String(payload.outfitId || "normal");
       const parameterId = String(payload.parameterId || defaultOutfitParameterId);

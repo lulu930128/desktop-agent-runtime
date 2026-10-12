@@ -1,0 +1,193 @@
+--- before/tests/test_r1_production_view.py
++++ after/tests/test_r1_production_view.py
+@@ -0,0 +1,190 @@
++"""Production WorkCompanionView -> Qt client -> WS handler, entirely isolated."""
++import asyncio
++import json
++from types import SimpleNamespace
++import unittest
++from unittest.mock import AsyncMock, Mock, patch
++
++from work_companion_fixture import APP, ROOT, ProductionWindowFixture
++from PySide6.QtCore import Qt
++from PySide6.QtTest import QTest
++from PySide6.QtWidgets import QMessageBox, QPushButton
++from kuro_launcher.qt_work_companion_view import WorkCompanionView, HistoryDrawer
++from open_llm_vtuber.websocket_handler import WebSocketHandler
++
++
++class ProductionViewTests(unittest.TestCase):
++    def setUp(self):
++        self.fixture = ProductionWindowFixture()
++        self.addCleanup(self.fixture.close)
++        self.window = self.fixture.window
++        self.client = self.window.chat_client
++        self.drawer = self.window.history_drawer
++        self.wire = []
++        self.cursor = 0
++        self.app = Mock()
++        self.app.send.side_effect = lambda data: self.wire.append(json.loads(data))
++        self.client._ws_app = self.app
++        self.client._connected = True
++        self.identity = dict(client_uid="qt-fixture", conf_uid="synthetic-role", context_id="fixture-context")
++        self.store = {
++            "one": dict(uid="one", title="測試對話一", preview="搜尋字樣", timestamp="2026-10-10", is_empty=False),
++            "two": dict(uid="two", title="測試對話二", preview="第二筆", timestamp="2026-10-09", is_empty=False),
++        }
++        self.context = SimpleNamespace(character_config=SimpleNamespace(conf_uid="synthetic-role"),
++            qt_history_context_id="fixture-context", history_uid="", agent_engine=Mock())
++        self.handler = WebSocketHandler(self.context)
++        self.handler.client_contexts["qt-fixture"] = self.context
++        self.handler.client_roles["qt-fixture"] = "qt-primary"
++        self.ws = SimpleNamespace(send_text=AsyncMock(side_effect=lambda raw: self.client._on_message(self.app, raw)))
++        self.handler.client_connections["qt-fixture"] = self.ws
++        self.text_dispatch = AsyncMock()
++        self.handler._message_handlers["text-input"] = self.text_dispatch
++        self.interrupt_dispatch = AsyncMock()
++        self.handler._message_handlers["interrupt-signal"] = self.interrupt_dispatch
++        for name, mock in {
++            "get_history_list": Mock(side_effect=lambda _conf, **_: list(self.store.values())),
++            "get_history": Mock(return_value=[]), "get_metadata": Mock(return_value={}),
++            "touch_history_opened": Mock(), "read_history_events": Mock(return_value=[]),
++            "get_history_timeline": Mock(side_effect=lambda _conf, uid, **_: [
++                {"role": "user", "content": f"{uid}\n  保留換行", "timestamp": "SYNTHETIC"},
++                {"role": "event", "content": "工具完成 · evidence", "timestamp": "SYNTHETIC"}]),
++            "create_new_history": Mock(side_effect=self.create),
++            "delete_history": Mock(side_effect=lambda _conf, uid: bool(self.store.pop(uid, None))),
++        }.items():
++            self.fixture.patches.enter_context(patch("open_llm_vtuber.websocket_handler." + name, mock))
++        self.event(type="set-model-and-conf", **self.identity, conf_name="SYNTHETIC 角色",
++                   active_project_id="fixture-project", history_protocol="kuro.conversation.history.v1")
++        self.window._ensure_auto_empty_chat()
++        self.drain()
++
++    def create(self, _conf):
++        uid = "new-" + str(len(self.store))
++        self.store[uid] = dict(uid=uid, title="新對話", preview="", timestamp="", is_empty=True)
++        return uid
++
++    def event(self, **payload):
++        self.client._on_message(self.app, json.dumps(payload, ensure_ascii=False))
++        APP.processEvents()
++
++    def drain(self):
++        while self.cursor < len(self.wire):
++            body = self.wire[self.cursor]
++            self.cursor += 1
++            asyncio.run(self.handler._route_message(self.ws, "qt-fixture", body))
++            APP.processEvents()
++
++    def open_drawer(self):
++        QTest.mouseClick(self.window.history_toggle, Qt.MouseButton.LeftButton)
++        self.drain()
++        self.assertTrue(self.drawer.isVisible())
++
++    def click_record(self, uid, action="HistoryOpen"):
++        for row in range(self.drawer.list.count()):
++            item = self.drawer.list.item(row)
++            if item.data(Qt.ItemDataRole.UserRole) == uid:
++                widget = self.drawer.list.itemWidget(item).findChild(QPushButton, action)
++                QTest.mouseClick(widget, Qt.MouseButton.LeftButton)
++                return
++        self.fail("fixture record not found")
++
++    def test_actual_main_view_has_exactly_one_visible_history_drawer(self):
++        self.assertIsInstance(self.window.centralWidget(), WorkCompanionView)
++        self.assertEqual(len(self.window.findChildren(HistoryDrawer)), 1)
++        self.open_drawer()
++        self.assertTrue(self.drawer.create.isVisible())
++        self.assertTrue(self.drawer.search.isVisible())
++        self.assertEqual(self.drawer.list.count(), 2)
++        self.drawer.search.setText("搜尋字樣")
++        self.assertEqual(self.drawer.list.count(), 1)
++        self.click_record("one")
++        self.assertFalse(self.drawer.create.isEnabled())
++        self.drain()
++        self.assertEqual(self.context.history_uid, "one")
++        self.assertEqual(self.client.current_history_uid, "one")
++        self.assertFalse(self.drawer.isVisible())
++        self.assertIn("one\n  保留換行", self.window.history_transcript.toPlainText())
++        self.assertIn("工具完成", self.window.history_transcript.toPlainText())
++        self.assertIn("fixture-project", self.window.chat_identity_label.text())
++        self.fixture.controller.read_history_records.assert_not_called()
++        self.fixture.controller.read_history_timeline.assert_not_called()
++
++    def test_new_history_button_changes_owner_once_and_clears_draft(self):
++        self.open_drawer()
++        self.window.chat_input.setPlainText("尚未送出的測試")
++        QTest.mouseClick(self.drawer.create, Qt.MouseButton.LeftButton)
++        QTest.mouseClick(self.drawer.create, Qt.MouseButton.LeftButton)
++        self.assertTrue(self.client.history_pending)
++        self.drain()
++        self.assertEqual(len(self.store), 3)
++        self.assertTrue(self.context.history_uid.startswith("new-"))
++        self.assertEqual(self.window.chat_input.toPlainText(), "")
++        self.assertFalse(self.drawer.isVisible())
++
++    def test_delete_cancel_confirmation_then_confirmed_owner_delete(self):
++        self.open_drawer()
++        with patch("kuro_launcher.qt_app.QMessageBox.question", return_value=QMessageBox.StandardButton.No):
++            self.click_record("one", "DeleteHistory")
++        self.assertFalse(any(item["type"] == "delete-history" for item in self.wire))
++        with patch("kuro_launcher.qt_app.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes) as confirm:
++            self.click_record("one", "DeleteHistory")
++        self.assertIn("synthetic-role", confirm.call_args.args[2])
++        self.drain()
++        self.assertNotIn("one", self.store)
++        self.assertEqual(self.drawer.list.count(), 1)
++
++    def test_confirmation_invalidated_by_identity_change(self):
++        self.open_drawer()
++        def confirm(*_):
++            self.client.context_id = "changed"
++            return QMessageBox.StandardButton.Yes
++        with patch("kuro_launcher.qt_app.QMessageBox.question", side_effect=confirm):
++            self.click_record("one", "DeleteHistory")
++        self.assertFalse(any(item["type"] == "delete-history" for item in self.wire))
++        self.assertIn("已失效", self.window.chat_connection_status.text())
++
++    def test_empty_error_busy_and_stale_response_are_visible(self):
++        self.store.clear()
++        self.open_drawer()
++        self.assertIn("沒有對話", self.drawer.status.text())
++        QTest.mouseClick(self.drawer.create, Qt.MouseButton.LeftButton)
++        pending = dict(self.client._history_pending)
++        self.event(type="history-error", **self.identity, request_id=pending["request_id"], error="fixture owner failure")
++        self.assertIn("fixture owner failure", self.drawer.status.text())
++        self.assertTrue(self.drawer.create.isEnabled())
++        self.event(type="new-history-created", **self.identity, request_id=pending["request_id"], history_uid="late")
++        self.assertEqual(self.client.current_history_uid, "")
++        self.assertTrue(self.drawer.isVisible())
++
++    def test_text_tools_and_stop_use_primary_ws_without_pet(self):
++        self.window.chat_input.setPlainText("測試\n  second line")
++        QTest.mouseClick(self.window.chat_send_button, Qt.MouseButton.LeftButton)
++        self.drain()
++        self.text_dispatch.assert_awaited_once()
++        self.assertEqual(self.text_dispatch.call_args.args[2]["text"], "測試\n  second line")
++        self.event(type="tool_call_status", tool_id="call-1", tool_name="fixture-tool", status="running", preview="not an answer")
++        self.event(type="tool_call_status", tool_id="call-1", tool_name="fixture-tool", status="completed")
++        text = self.window.history_transcript.toPlainText()
++        self.assertIn("fixture-tool · completed", text)
++        self.assertNotIn("not an answer", text)
++        self.assertEqual(text.count("fixture-tool"), 1)
++        self.assertFalse(self.drawer.create.isEnabled())
++        self.event(type="full-text", text="真正的 fixture 回覆")
++        self.assertIn("真正的 fixture 回覆", self.window.history_transcript.toPlainText())
++        QTest.mouseClick(self.window.chat_send_button, Qt.MouseButton.LeftButton)
++        self.drain()
++        self.interrupt_dispatch.assert_awaited_once()
++        self.fixture.controller.run_pet_command.assert_not_called()
++
++    def test_offscreen_screenshot_uses_actual_production_view(self):
++        self.open_drawer()
++        self.window.work_companion.privacy_status.setText("SYNTHETIC FIXTURE · 無私人資料／服務連線")
++        APP.processEvents()
++        image = self.window.work_companion.grab()
++        self.assertFalse(image.isNull())
++        artifact = ROOT / "devtools/git-work-companion-parity-20261010/R1-ProductionHistory-offscreen.png"
++        self.assertTrue(image.save(str(artifact), "PNG"))
++
++
++if __name__ == "__main__":
++    unittest.main()

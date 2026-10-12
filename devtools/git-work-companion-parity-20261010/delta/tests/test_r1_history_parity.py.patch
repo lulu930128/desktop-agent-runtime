@@ -1,0 +1,280 @@
+--- before/tests/test_r1_history_parity.py
++++ after/tests/test_r1_history_parity.py
+@@ -0,0 +1,277 @@
++"""Git History parity: synthetic runtime/WS/widgets only, no personal state."""
++import asyncio
++import json
++import os
++from pathlib import Path
++import sys
++from types import SimpleNamespace
++import unittest
++from unittest.mock import AsyncMock, Mock, patch
++
++os.environ["QT_QPA_PLATFORM"] = "offscreen"
++ROOT = Path(__file__).resolve().parents[1]
++sys.path[:0] = [str(ROOT / "Open-LLM-VTuber/src"), str(ROOT / "Open-LLM-VTuber")]
++
++from PySide6.QtCore import Qt
++from PySide6.QtTest import QTest
++from PySide6.QtWidgets import QApplication, QPushButton, QWidget
++from kuro_launcher.qt_chat_client import QtRuntimeChatClient
++from kuro_launcher.qt_work_companion_view import WorkCompanionView, transcript_html
++from open_llm_vtuber.websocket_handler import WebSocketHandler, PrimaryConversationOutput
++from open_llm_vtuber.chat_history_manager import get_history_timeline
++
++APP = QApplication.instance() or QApplication([])
++IDENTITY = dict(client_uid="qt", conf_uid="synthetic-role", context_id="context-1")
++
++
++class ClientTests(unittest.TestCase):
++    def setUp(self):
++        self.client = QtRuntimeChatClient()
++        self.client._connected = True
++        self.client._ws_app = Mock()
++        self.client._handle_payload({"type": "set-model-and-conf", **IDENTITY,
++                                     "history_protocol": "kuro.conversation.history.v1"})
++        self.received = []
++        self.client.message_received.connect(self.received.append)
++
++    def reply(self, **values):
++        pending = self.client._history_pending
++        body = {**IDENTITY, "request_id": pending["request_id"], **values}
++        self.client._on_message(self.client._ws_app, json.dumps(body))
++        return body
++
++    def test_list_never_selects_first_record(self):
++        self.assertTrue(self.client.request_history_list())
++        self.reply(type="history-list", histories=[{"uid": "not-active"}], current_history_uid="")
++        self.assertEqual(self.client.current_history_uid, "")
++        self.assertFalse(self.client.history_pending)
++
++    def test_select_identity_and_duplicate_reply(self):
++        self.assertTrue(self.client.select_history("one"))
++        self.assertFalse(self.client.select_history("two"))
++        body = self.reply(type="history-data", history_uid="one", messages=[])
++        self.client._on_message(self.client._ws_app, json.dumps(body))
++        self.assertEqual(len(self.received), 1)
++        self.assertEqual(self.client.current_history_uid, "one")
++
++    def test_old_profile_response_is_ignored(self):
++        self.client.select_history("one")
++        old = {**IDENTITY, "request_id": self.client._history_pending["request_id"],
++               "type": "history-data", "history_uid": "one"}
++        self.client._handle_payload({"type": "set-model-and-conf", **IDENTITY, "context_id": "context-2"})
++        self.client._on_message(self.client._ws_app, json.dumps(old))
++        self.assertEqual(self.client.current_history_uid, "")
++        self.assertFalse(self.received)
++
++    def test_wrong_uid_or_request_cannot_complete_pending(self):
++        self.client.select_history("one")
++        self.reply(type="history-data", history_uid="two")
++        self.assertTrue(self.client.history_pending)
++        self.assertFalse(self.received)
++        self.reply(type="history-data", history_uid="one", request_id="old")
++        self.assertTrue(self.client.history_pending)
++
++    def test_delete_requires_confirmation_and_clears_active(self):
++        self.client.current_history_uid = "one"
++        self.assertFalse(self.client.delete_history("one"))
++        self.assertTrue(self.client.delete_history("one", confirmed=True))
++        self.reply(type="history-deleted", history_uid="one", success=True)
++        self.assertEqual(self.client.current_history_uid, "")
++
++    def test_timeout_does_not_replay(self):
++        self.client.create_history()
++        body = {**IDENTITY, "request_id": self.client._history_pending["request_id"],
++                "type": "new-history-created", "history_uid": "late"}
++        self.client._history_pending["started"] -= 20
++        self.client.expire_history_request()
++        self.client._on_message(self.client._ws_app, json.dumps(body))
++        self.assertEqual(self.client.current_history_uid, "")
++        self.assertEqual(self.client._ws_app.send.call_count, 1)
++
++    def test_error_releases_pending_without_success(self):
++        self.client.create_history()
++        self.reply(type="history-error", error="history_turn_busy")
++        self.assertFalse(self.client.history_pending)
++        self.assertEqual(self.client.current_history_uid, "")
++
++    def test_old_protocol_is_disabled_and_multiline_preserved(self):
++        self.client.history_protocol = ""
++        self.assertFalse(self.client.create_history())
++        self.assertEqual(self.client._normalize_text("a\n  code\n\nb"), "a\n  code\n\nb")
++
++    def test_replaced_socket_callbacks_cannot_clear_new_identity(self):
++        old = Mock()
++        self.client._on_open(old)
++        self.client._on_close(old, 1000, "old")
++        self.client._on_message(old, json.dumps({"type": "set-model-and-conf"}))
++        self.assertTrue(self.client.history_ready)
++        self.assertEqual(self.client.context_id, "context-1")
++        current = self.client._ws_app
++        self.client.disconnect()
++        self.client._on_open(current)
++        self.assertFalse(self.client.connected)
++
++    def test_late_turn_text_and_tool_status_cannot_enter_other_history(self):
++        self.client.current_history_uid = "active"
++        self.client.send_text("fixture")
++        sent = json.loads(self.client._ws_app.send.call_args.args[0])
++        self.assertEqual(sent["context_id"], "context-1")
++        self.assertEqual(sent["history_uid"], "active")
++        old = {**IDENTITY, "history_uid": "previous"}
++        for kind in ("full-text", "tool_call_status", "control"):
++            self.client._on_message(self.client._ws_app, json.dumps({"type": kind,
++                "text": "stale", "conversation_scope": old}))
++        self.assertFalse(self.received)
++        self.client._on_message(self.client._ws_app, json.dumps({"type": "full-text",
++            "text": "valid", "conversation_scope": {**IDENTITY, "history_uid": "active"}}))
++        self.assertEqual(self.client._assistant_text, "valid")
++
++
++class RuntimeTests(unittest.IsolatedAsyncioTestCase):
++    def setUp(self):
++        self.context = SimpleNamespace(character_config=SimpleNamespace(conf_uid=IDENTITY["conf_uid"]),
++                                       agent_engine=Mock(), history_uid="active", qt_history_context_id="context-1")
++        self.handler = WebSocketHandler(self.context)
++        self.ws = SimpleNamespace(send_text=AsyncMock())
++        self.handler.client_contexts["qt"] = self.context
++        self.handler.client_connections["qt"] = self.ws
++        self.handler.client_roles["qt"] = "qt-primary"
++        self.patches = [patch("open_llm_vtuber.websocket_handler.get_history_list", return_value=[{"uid": "active"}, {"uid": "other"}]),
++                        patch("open_llm_vtuber.websocket_handler.get_history", return_value=[]),
++                        patch("open_llm_vtuber.websocket_handler.get_metadata", return_value={}),
++                        patch("open_llm_vtuber.websocket_handler.touch_history_opened"),
++                        patch("open_llm_vtuber.websocket_handler.read_history_events", return_value=[{"type": "tool_call"}]),
++                        patch("open_llm_vtuber.websocket_handler.get_history_timeline", return_value=[{"role": "event", "content": "tool"}])]
++        for item in self.patches:
++            item.start()
++            self.addCleanup(item.stop)
++
++    async def request(self, operation="fetch-history-list", **values):
++        data = {"type": operation, **IDENTITY, "request_id": "request-1", "expected_history_uid": "active", **values}
++        await self.handler._route_message(self.ws, "qt", data)
++        return json.loads(self.ws.send_text.call_args.args[0])
++
++    async def test_canonical_list_and_timeline(self):
++        listing = await self.request()
++        self.assertEqual(listing["current_history_uid"], "active")
++        reply = await self.request("fetch-and-set-history", history_uid="other", request_id="request-2")
++        self.assertEqual(reply["timeline"][0]["role"], "event")
++        self.assertEqual(self.context.history_uid, "other")
++
++    async def test_foreign_or_stale_context_cannot_write(self):
++        with patch("open_llm_vtuber.websocket_handler.create_new_history") as create:
++            for key in ("client_uid", "conf_uid", "context_id", "expected_history_uid"):
++                reply = await self.request("create-new-history", **{key: "wrong"})
++                self.assertEqual(reply["type"], "history-error")
++            create.assert_not_called()
++
++    async def test_unknown_history_does_not_load_context(self):
++        reply = await self.request("fetch-and-set-history", history_uid="../foreign")
++        self.assertEqual(reply["error"], "history_not_found_for_profile")
++        self.context.agent_engine.set_memory_from_history.assert_not_called()
++
++    async def test_create_receipt_is_idempotent(self):
++        with patch("open_llm_vtuber.websocket_handler.create_new_history", return_value="new") as create:
++            first = await self.request("create-new-history")
++            second = await self.request("create-new-history")
++        self.assertEqual(first, second)
++        create.assert_called_once()
++        changed = await self.request("delete-history", history_uid="new", confirmed=True)
++        self.assertEqual(changed["error"], "history_request_reused")
++
++    async def test_busy_turn_preserves_context(self):
++        task = asyncio.create_task(asyncio.sleep(10))
++        self.handler.current_conversation_tasks["qt"] = task
++        try:
++            reply = await self.request("fetch-and-set-history", history_uid="other")
++            self.assertEqual(reply["error"], "history_turn_busy")
++            self.assertEqual(self.context.history_uid, "active")
++        finally:
++            task.cancel()
++            await asyncio.gather(task, return_exceptions=True)
++
++    async def test_delete_confirmation_and_failure(self):
++        with patch("open_llm_vtuber.websocket_handler.delete_history", return_value=False) as delete:
++            denied = await self.request("delete-history", history_uid="active")
++            delete.assert_not_called()
++            self.assertEqual(denied["error"], "history_delete_confirmation_required")
++            reply = await self.request("delete-history", history_uid="active", confirmed=True)
++            self.assertFalse(reply["success"])
++            self.assertEqual(self.context.history_uid, "active")
++
++    async def test_context_fences_cover_text_audio_and_interrupt_before_dispatch(self):
++        for kind in ("text-input", "mic-audio-data", "mic-audio-end", "interrupt-signal"):
++            target = AsyncMock()
++            self.handler._message_handlers[kind] = target
++            await self.handler._route_message(self.ws, "qt", {"type": kind, **IDENTITY,
++                "history_uid": "previous"})
++            target.assert_not_awaited()
++            await self.handler._route_message(self.ws, "qt", {"type": kind, **IDENTITY,
++                "history_uid": "active"})
++            target.assert_awaited_once()
++
++    async def test_read_failure_is_error_and_does_not_apply_history(self):
++        with patch("open_llm_vtuber.websocket_handler.get_history_timeline", side_effect=OSError("fixture")):
++            reply = await self.request("fetch-and-set-history", history_uid="other")
++        self.assertEqual(reply["error"], "history_operation_failed")
++        self.assertEqual(self.context.history_uid, "active")
++        self.context.agent_engine.set_memory_from_history.assert_not_called()
++
++    async def test_primary_scope_is_preserved_without_leaking_to_pet(self):
++        pet = SimpleNamespace(send_text=AsyncMock())
++        scope = {**IDENTITY, "history_uid": "active"}
++        output = PrimaryConversationOutput(self.ws.send_text, lambda: {"pet": pet}, identity=scope)
++        await output(json.dumps({"type": "tool_call_status", "name": "fixture", "status": "running"}))
++        self.assertEqual(json.loads(self.ws.send_text.call_args.args[0])["conversation_scope"], scope)
++        pet.send_text.assert_not_awaited()
++        await output(json.dumps({"type": "full-text", "text": "fixture"}))
++        self.assertNotIn("conversation_scope", json.loads(pet.send_text.call_args.args[0]))
++
++
++class WidgetTests(unittest.TestCase):
++    def test_drawer_search_preview_active_and_intents(self):
++        page = WorkCompanionView(chat=QWidget(), today=QWidget(), schedule=QWidget(), settings=QWidget())
++        page.resize(1000, 600)
++        page.show()
++        page.show_history(True)
++        drawer = page.history_drawer
++        records = [SimpleNamespace(uid="one", title="First", preview="needle", timestamp="SYNTHETIC", is_empty=False),
++                   SimpleNamespace(uid="two", title="Second", preview="", timestamp="", is_empty=True)]
++        drawer.set_state(ready=True)
++        drawer.set_records(records, "two")
++        drawer.search.setText("needle")
++        self.assertEqual(drawer.list.count(), 1)
++        clicked = []
++        drawer.selected.connect(clicked.append)
++        QTest.mouseClick(drawer.findChild(QPushButton, "HistoryOpen"), Qt.MouseButton.LeftButton)
++        self.assertEqual(clicked, ["one"])
++        drawer.search.setText("no match")
++        self.assertIn("找不到", drawer.status.text())
++        drawer.set_state(ready=True, pending=True)
++        self.assertFalse(drawer.create.isEnabled())
++        drawer.set_state(ready=True, error="fixture error")
++        self.assertEqual(drawer.status.text(), "fixture error")
++        page.show_history(False)
++        self.assertFalse(drawer.isVisible())
++        page.close()
++        page.deleteLater()
++
++    def test_transcript_is_escaped_and_multiline(self):
++        markup = transcript_html([("User", "now", "<script>\n  indented"), ("event", "", "tool blocked")])
++        self.assertNotIn("<script>", markup)
++        self.assertIn("&lt;script&gt;<br>  indented", markup)
++        self.assertIn("EVENT", markup)
++
++    def test_timeline_from_runtime_includes_tool_events(self):
++        with patch("open_llm_vtuber.chat_history_manager.get_history", return_value=[
++                {"role": "system", "content": "private prompt"},
++                {"role": "human", "content": "question", "timestamp": "2026-01-01T10:00:00Z"}]), \
++             patch("open_llm_vtuber.chat_event_manager.read_history_events", return_value=[
++                {"type": "tool_call", "title": "Search", "status": "blocked", "timestamp": "2026-01-01T10:00:01Z"}]):
++            rows = get_history_timeline("synthetic", "thread")
++        self.assertEqual([row["role"] for row in rows], ["human", "event"])
++        self.assertIn("blocked", rows[1]["content"])
++
++
++if __name__ == "__main__":
++    unittest.main()

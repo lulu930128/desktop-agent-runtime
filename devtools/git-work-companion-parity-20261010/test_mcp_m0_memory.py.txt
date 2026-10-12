@@ -1,0 +1,15 @@
+test_claim_and_forged_evidence_never_activate (test_mcp_m0_memory.MemoryTrustTests) ... ok
+test_duplicate_and_conflicting_claim_preserves_decisions (test_mcp_m0_memory.MemoryTrustTests) ... ok
+test_explicit_save_and_ordinary_statement (test_mcp_m0_memory.MemoryTrustTests) ... ok
+test_interrupted_migration_retains_original_and_verified_backup (test_mcp_m0_memory.MemoryTrustTests) ... ok
+test_legacy_dry_run_migration_restore (test_mcp_m0_memory.MemoryTrustTests) ... ok
+test_malformed_store_is_not_replaced_by_empty_data (test_mcp_m0_memory.MemoryTrustTests) ... [32m2026-10-10 04:19:56.151[0m | [31m[1mERROR   [0m | [36mopen_llm_vtuber.character_memory_repository[0m:[36mload[0m:[36m103[0m - [31m[1mFailed to load character memory store; raw error omitted.[0m
+ok
+test_review_digest_and_final_delete_refresh_index (test_mcp_m0_memory.MemoryTrustTests) ... ok
+test_stale_snapshot_and_revoked_approval_cannot_overwrite (test_mcp_m0_memory.MemoryTrustTests) ... ok
+test_status_and_content_tampering_fail_closed (test_mcp_m0_memory.MemoryTrustTests) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.210s
+
+OK

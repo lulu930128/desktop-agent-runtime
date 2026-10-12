@@ -1,0 +1,233 @@
+{
+  "head": "995c23c7c8d1be62000229d58610d2214f3bb745",
+  "files": [
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/character_memory_manager.py",
+      "before_sha256": "f14d104ea054885fc5a321b85348a5489e9308f23bf0c2ee1d8a8a04ee95f526",
+      "after_sha256": "656387b33cf597673c8e9ccf206a9a2c499b1c45d4b7240a15818fb05bf290cc",
+      "before_bytes_available": true,
+      "new_file": false,
+      "retired": false,
+      "patch": "delta/Open-LLM-VTuber/src/open_llm_vtuber/character_memory_manager.py.patch"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/chat_event_manager.py",
+      "before_sha256": "55d3504e3329d00317cf11462c0c1efa8d11ff6ac7d097339b3e3a613cc1bd88",
+      "after_sha256": "8fdbdb1fec57fc0f033c1abe73eed688e8c1aed32a59e6c7bdec9d2621b41438",
+      "before_bytes_available": true,
+      "new_file": false,
+      "retired": false,
+      "patch": "delta/Open-LLM-VTuber/src/open_llm_vtuber/chat_event_manager.py.patch"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/chat_history_manager.py",
+      "before_sha256": "1736d483f63e759eb5552c4a29d6a7df5e43c9e8a12893743904894eb08bfeec",
+      "after_sha256": "526152e33796ad7346eda900719118187fb47a9cda22b7c4d0399a10b6a29628",
+      "before_bytes_available": true,
+      "new_file": false,
+      "retired": false,
+      "patch": "delta/Open-LLM-VTuber/src/open_llm_vtuber/chat_history_manager.py.patch"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/websocket_handler.py",
+      "before_sha256": "c7aee703136eda11f7836b951c8363d646ef09b0c8a7434e88f93a186a0b7655",
+      "after_sha256": "ed64840c85023ef647a229f481404f427ee29d2a2b102b83ff3e65100de4d262",
+      "before_bytes_available": true,
+      "new_file": false,
+      "retired": false,
+      "patch": "delta/Open-LLM-VTuber/src/open_llm_vtuber/websocket_handler.py.patch"
+    },
+    {
+      "path": "devtools/preview_work_companion_v1.py",
+      "before_sha256": "3d4831f8927f60ec6611d0a3f22e470fee6652f6cd079e0e546ad6a2806ac9f0",
+      "after_sha256": null,
+      "before_bytes_available": true,
+      "new_file": false,
+      "retired": true,
+      "patch": "delta/devtools/preview_work_companion_v1.py.patch"
+    },
+    {
+      "path": "devtools/work_companion_synthetic.py",
+      "before_sha256": "9089fd7ef2cf392afff47c65899ac81ecb1f70506632af7799da7d31b7ef0a88",
+      "after_sha256": null,
+      "before_bytes_available": true,
+      "new_file": false,
+      "retired": true,
+      "patch": "delta/devtools/work_companion_synthetic.py.patch"
+    },
+    {
+      "path": "kuro_launcher/qt_app.py",
+      "before_sha256": "953f2c85aa92e668b90e089d34439110bc1c5c23826cf49d997f7db92d4ad674",
+      "after_sha256": "ef849746d262a0f6ecf391c0996a988bca87db470fbbd39e0818dc22b7ad8f42",
+      "before_bytes_available": true,
+      "new_file": false,
+      "retired": false,
+      "patch": "delta/kuro_launcher/qt_app.py.patch"
+    },
+    {
+      "path": "kuro_launcher/qt_chat_client.py",
+      "before_sha256": "8ec4d4f93a77ab0d4888a55007ccbfc3c242a15d0174f970955de1432b795f24",
+      "after_sha256": "5a210bd5cbbc0b070c6d542eca7730efb737859915b4969f98b7958691dfcbc5",
+      "before_bytes_available": true,
+      "new_file": false,
+      "retired": false,
+      "patch": "delta/kuro_launcher/qt_chat_client.py.patch"
+    },
+    {
+      "path": "kuro_launcher/qt_controller.py",
+      "before_sha256": "c649b1c8ca5c9275eca864f29f972f794f623afd29c206b34e202295fad0cd74",
+      "after_sha256": "40e9ce7b4acb4db9ec085944ed2d38fca2fe8f456c36a325c31e830caff8eb9d",
+      "before_bytes_available": true,
+      "new_file": false,
+      "retired": false,
+      "patch": "delta/kuro_launcher/qt_controller.py.patch"
+    },
+    {
+      "path": "kuro_launcher/qt_core_pages.py",
+      "before_sha256": "1838ea0fb9d435f3eaf250ce97a5d63776e2af710031cdcafdd5577e736a74f0",
+      "after_sha256": "4161c1a304d0c3f9fa6bdd3b4429202d11ee13c3005c0a5fdd0b420cead684a6",
+      "before_bytes_available": true,
+      "new_file": false,
+      "retired": false,
+      "patch": "delta/kuro_launcher/qt_core_pages.py.patch"
+    },
+    {
+      "path": "kuro_launcher/qt_work_companion_theme.py",
+      "before_sha256": "d44b41b25aa4a0e8b7fa6ad278ee783a81f40116b1fe7b2830d47260563ed6e7",
+      "after_sha256": "55ef7b8632bacc777e36061f98ec07c65baa73b48fea3e2655b784b1e2804635",
+      "before_bytes_available": true,
+      "new_file": false,
+      "retired": false,
+      "patch": "delta/kuro_launcher/qt_work_companion_theme.py.patch"
+    },
+    {
+      "path": "kuro_launcher/qt_work_companion_view.py",
+      "before_sha256": "82e5b7f1db77c13c991a67b9e786327aa588533f23f6ed098f78c017574d022b",
+      "after_sha256": "9e8e7c4937f83f30bf50aacdf355c02d38f1f2540c17570e83928af8342dd17d",
+      "before_bytes_available": true,
+      "new_file": false,
+      "retired": false,
+      "patch": "delta/kuro_launcher/qt_work_companion_view.py.patch"
+    },
+    {
+      "path": "tests/run_work_companion_parity.py",
+      "before_sha256": null,
+      "after_sha256": "55ad1994c47ce4141d8eef6bc2464bb3cea2a0c3020032ff1e6c4d57c62ec024",
+      "before_bytes_available": false,
+      "new_file": true,
+      "retired": false,
+      "patch": "delta/tests/run_work_companion_parity.py.patch"
+    },
+    {
+      "path": "tests/test_g3_conversation.py",
+      "before_sha256": "4cd5bb42df32ccda8534887718adc1fa879ffeea5f9388c0361f1bc9a395762e",
+      "after_sha256": "023a85f426e8b1c7062518d510cd7b75bcc1d8cbd1005de58298774c471ef359",
+      "before_bytes_available": false,
+      "new_file": false,
+      "retired": false
+    },
+    {
+      "path": "tests/test_g4_qt_core.py",
+      "before_sha256": "61a74975fcb4e2156f5d4776a3d2982b73250112136f1f05989886bfca8fe9c1",
+      "after_sha256": "6e9718c763b9b40169ec22a49b99d12a0c50e8721234877dd936fbd3a2ff46f9",
+      "before_bytes_available": true,
+      "new_file": false,
+      "retired": false,
+      "patch": "delta/tests/test_g4_qt_core.py.patch"
+    },
+    {
+      "path": "tests/test_g6_pet_boundary.py",
+      "before_sha256": "6a2031b217d7d8fc756e018f0f30d5624b12a6e6325071e134761ee295768c7a",
+      "after_sha256": "7f16612b6dba7da25f204f7bf60b9da0a026f578363bbca63ec019b2ff7f81ac",
+      "before_bytes_available": true,
+      "new_file": false,
+      "retired": false,
+      "patch": "delta/tests/test_g6_pet_boundary.py.patch"
+    },
+    {
+      "path": "tests/test_r1_history_parity.py",
+      "before_sha256": null,
+      "after_sha256": "7124c98b7c2ce9ccbfcd1d87ff53097a8aa10e0a3a51620cce6f39c6af50975a",
+      "before_bytes_available": false,
+      "new_file": true,
+      "retired": false,
+      "patch": "delta/tests/test_r1_history_parity.py.patch"
+    },
+    {
+      "path": "tests/test_r1_production_view.py",
+      "before_sha256": null,
+      "after_sha256": "5951fb3d612a2291b3a278695758ca80ca3502fe9bfceb220156c33643363b0f",
+      "before_bytes_available": false,
+      "new_file": true,
+      "retired": false,
+      "patch": "delta/tests/test_r1_production_view.py.patch"
+    },
+    {
+      "path": "tests/test_r1_ws_dispatch_regression.py",
+      "before_sha256": null,
+      "after_sha256": "196c6f309835dad69077a95de058b44a30de5dcb9052d24ec4f2339be32a4a05",
+      "before_bytes_available": false,
+      "new_file": true,
+      "retired": false,
+      "patch": "delta/tests/test_r1_ws_dispatch_regression.py.patch"
+    },
+    {
+      "path": "tests/test_r2_settings_parity.py",
+      "before_sha256": null,
+      "after_sha256": "4ab02b08148dcc3714b26193e09a3968f5e43df8d48259f6e067fabd4f2cdb4b",
+      "before_bytes_available": false,
+      "new_file": true,
+      "retired": false,
+      "patch": "delta/tests/test_r2_settings_parity.py.patch"
+    },
+    {
+      "path": "tests/test_r3_today_schedule_parity.py",
+      "before_sha256": null,
+      "after_sha256": "21358a22952c6e95b230dbd1fb195cbdea7c6667b1b36b454c62c0b64c3a57c1",
+      "before_bytes_available": false,
+      "new_file": true,
+      "retired": false,
+      "patch": "delta/tests/test_r3_today_schedule_parity.py.patch"
+    },
+    {
+      "path": "tests/test_r4_history_transport.py",
+      "before_sha256": null,
+      "after_sha256": "60734fdbc4609064dc797dc05655d737a55bc42ad48829068b1f8a2fccf13bc1",
+      "before_bytes_available": false,
+      "new_file": true,
+      "retired": false,
+      "patch": "delta/tests/test_r4_history_transport.py.patch"
+    },
+    {
+      "path": "tests/test_v1_work_companion_view.py",
+      "before_sha256": "31d790d0337129e705f8c262d27feccfe4bc83094e516eb2df32ae5486a3b268",
+      "after_sha256": "d6ec631cbe1ae6621ccb7645d8ffbe2ba3604a11ad361c7eb1b4268b297332ac",
+      "before_bytes_available": true,
+      "new_file": false,
+      "retired": false,
+      "patch": "delta/tests/test_v1_work_companion_view.py.patch"
+    },
+    {
+      "path": "tests/test_work_companion_source_encoding.py",
+      "before_sha256": null,
+      "after_sha256": "4eeca8e7877211eb65734ffbe90dd6cdc75010979155830afec5417e94d60fdb",
+      "before_bytes_available": false,
+      "new_file": true,
+      "retired": false,
+      "patch": "delta/tests/test_work_companion_source_encoding.py.patch"
+    },
+    {
+      "path": "tests/work_companion_fixture.py",
+      "before_sha256": null,
+      "after_sha256": "5b420bb16be4e3f92b00380e426ccfba72a34b3953ce4fbe23384021b4ac6c00",
+      "before_bytes_available": false,
+      "new_file": true,
+      "retired": false,
+      "patch": "delta/tests/work_companion_fixture.py.patch"
+    }
+  ],
+  "rollback_gap": {
+    "path": "tests/test_g3_conversation.py",
+    "reason": "Before hash retained, but exact pre-edit bytes were not captured. Do not claim byte-exact test-file rollback."
+  }
+}

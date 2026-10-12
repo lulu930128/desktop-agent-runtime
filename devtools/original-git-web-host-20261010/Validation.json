@@ -1,0 +1,156 @@
+[
+  {
+    "name": "preview-protocol",
+    "command": [
+      "C:\\miniconda3\\python.exe",
+      "-B",
+      "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010\\test_preview_protocol.py"
+    ],
+    "cwd": "C:\\project\\desktop-agent-runtime",
+    "exit": 0,
+    "stdout": "",
+    "stderr": "....\n----------------------------------------------------------------------\nRan 4 tests in 0.001s\n\nOK\n"
+  },
+  {
+    "name": "frontend-typecheck",
+    "command": [
+      "node",
+      "C:\\project\\desktop-agent-runtime\\pet-electron\\node_modules\\typescript\\bin\\tsc",
+      "--project",
+      "tsconfig.json",
+      "--noEmit"
+    ],
+    "cwd": "C:\\project\\desktop-agent-runtime\\kuro_launcher\\work_companion_web",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "name": "frontend-build",
+    "command": [
+      "node",
+      "C:\\project\\desktop-agent-runtime\\pet-electron\\node_modules\\vite\\bin\\vite.js",
+      "build",
+      "--config",
+      "vite.config.mjs"
+    ],
+    "cwd": "C:\\project\\desktop-agent-runtime\\kuro_launcher\\work_companion_web",
+    "exit": 0,
+    "stdout": "vite v8.0.13 building client environment for production...\n\u001b[2K\ntransforming...✓ 13 modules transformed.\nrendering chunks...\ncomputing gzip size...\ndist/qt-preview.html                     0.72 kB │ gzip:  0.43 kB\ndist/work-panel.html                     0.73 kB │ gzip:  0.43 kB\ndist/assets/main-ThBymPWv.css           31.57 kB │ gzip:  7.20 kB\ndist/assets/baseline-CkAhr1hq.js         0.21 kB │ gzip:  0.20 kB │ map:   0.46 kB\ndist/assets/qt-D6Oc_Rab.js               1.24 kB │ gzip:  0.67 kB │ map:   3.50 kB\ndist/assets/preview-bridge-DTtRndYE.js   6.13 kB │ gzip:  2.69 kB │ map:   4.89 kB\ndist/assets/main-k32sC9jm.js            78.13 kB │ gzip: 24.10 kB │ map: 187.16 kB\n\n✓ built in 53ms\n",
+    "stderr": ""
+  },
+  {
+    "name": "test_g3_conversation.py",
+    "command": [
+      "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+      "-B",
+      "-c",
+      "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in original renderer validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover('tests',pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+      "test_g3_conversation.py"
+    ],
+    "cwd": "C:\\project\\desktop-agent-runtime",
+    "exit": 0,
+    "stdout": "",
+    "stderr": "................\u001b[32m2026-10-10 05:23:40.681\u001b[0m | \u001b[31m\u001b[1mERROR   \u001b[0m | \u001b[36mopen_llm_vtuber.websocket_handler\u001b[0m:\u001b[36mhandle_new_connection\u001b[0m:\u001b[36m780\u001b[0m - \u001b[31m\u001b[1mFailed to initialize connection for client two: Canonical Qt conversation frontend is exclusive.\u001b[0m\n\u001b[32m2026-10-10 05:23:40.682\u001b[0m | \u001b[1mINFO    \u001b[0m | \u001b[36mopen_llm_vtuber.websocket_handler\u001b[0m:\u001b[36mhandle_new_connection\u001b[0m:\u001b[36m774\u001b[0m - \u001b[1mConnection established for client one role=qt-primary\u001b[0m\n.\u001b[32m2026-10-10 05:23:40.692\u001b[0m | \u001b[1mINFO    \u001b[0m | \u001b[36mopen_llm_vtuber.websocket_handler\u001b[0m:\u001b[36mhandle_disconnect\u001b[0m:\u001b[36m1015\u001b[0m - \u001b[1mClient pet disconnected\u001b[0m\n.\u001b[32m2026-10-10 05:23:40.704\u001b[0m | \u001b[1mINFO    \u001b[0m | \u001b[36mopen_llm_vtuber.conversations.conversation_utils\u001b[0m:\u001b[36msend_conversation_end_signal\u001b[0m:\u001b[36m3387\u001b[0m - \u001b[1m😎👍✅ Conversation Chain 😊 completed!\u001b[0m\n...\u001b[32m2026-10-10 05:23:40.732\u001b[0m | \u001b[33m\u001b[1mWARNING \u001b[0m | \u001b[36mopen_llm_vtuber.websocket_handler\u001b[0m:\u001b[36m__call__\u001b[0m:\u001b[36m120\u001b[0m - \u001b[33m\u001b[1mPresentation delivery unavailable for pet; primary turn continues.\u001b[0m\n....\u001b[32m2026-10-10 05:23:40.764\u001b[0m | \u001b[31m\u001b[1mERROR   \u001b[0m | \u001b[36mopen_llm_vtuber.websocket_handler\u001b[0m:\u001b[36mhandle_new_connection\u001b[0m:\u001b[36m780\u001b[0m - \u001b[31m\u001b[1mFailed to initialize connection for client other: Canonical Qt conversation frontend is exclusive.\u001b[0m\n\u001b[32m2026-10-10 05:23:40.764\u001b[0m | \u001b[31m\u001b[1mERROR   \u001b[0m | \u001b[36mopen_llm_vtuber.websocket_handler\u001b[0m:\u001b[36mhandle_new_connection\u001b[0m:\u001b[36m780\u001b[0m - \u001b[31m\u001b[1mFailed to initialize connection for client other: Canonical Qt conversation frontend is exclusive.\u001b[0m\n..\n----------------------------------------------------------------------\nRan 27 tests in 0.158s\n\nOK\n"
+  },
+  {
+    "name": "test_g4_qt_core.py",
+    "command": [
+      "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+      "-B",
+      "-c",
+      "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in original renderer validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover('tests',pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+      "test_g4_qt_core.py"
+    ],
+    "cwd": "C:\\project\\desktop-agent-runtime",
+    "exit": 0,
+    "stdout": "",
+    "stderr": "...............\n----------------------------------------------------------------------\nRan 15 tests in 0.545s\n\nOK\n"
+  },
+  {
+    "name": "test_g5_desktop.py",
+    "command": [
+      "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+      "-B",
+      "-c",
+      "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in original renderer validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover('tests',pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+      "test_g5_desktop.py"
+    ],
+    "cwd": "C:\\project\\desktop-agent-runtime",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ".................\n----------------------------------------------------------------------\nRan 17 tests in 0.274s\n\nOK\n"
+  },
+  {
+    "name": "test_g6_pet_boundary.py",
+    "command": [
+      "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+      "-B",
+      "-c",
+      "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in original renderer validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover('tests',pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+      "test_g6_pet_boundary.py"
+    ],
+    "cwd": "C:\\project\\desktop-agent-runtime",
+    "exit": 0,
+    "stdout": "",
+    "stderr": "...........\n----------------------------------------------------------------------\nRan 11 tests in 0.007s\n\nOK\n"
+  },
+  {
+    "name": "test_g8_runtime.py",
+    "command": [
+      "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+      "-B",
+      "-c",
+      "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in original renderer validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover('tests',pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+      "test_g8_runtime.py"
+    ],
+    "cwd": "C:\\project\\desktop-agent-runtime",
+    "exit": 1,
+    "stdout": "",
+    "stderr": ".\u001b[32m2026-10-10 05:23:46.555\u001b[0m | \u001b[1mINFO    \u001b[0m | \u001b[36mopen_llm_vtuber.websocket_handler\u001b[0m:\u001b[36mhandle_new_connection\u001b[0m:\u001b[36m774\u001b[0m - \u001b[1mConnection established for client qt role=qt-primary\u001b[0m\n.F\n======================================================================\nFAIL: test_removed_ui_has_no_external_production_consumer (test_g8_runtime.G8RuntimeTests)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"C:\\project\\desktop-agent-runtime\\tests\\test_g8_runtime.py\", line 213, in test_removed_ui_has_no_external_production_consumer\n    self.assertEqual(matches, [])\nAssertionError: Lists differ: [('kuro_launcher/work_companion_web/qt-pre[410 chars]el')] != []\n\nFirst list contains 6 additional elements.\nFirst extra element 0:\n('kuro_launcher/work_companion_web/qt-preview.html', 'work-panel')\n\n+ []\n- [('kuro_launcher/work_companion_web/qt-preview.html', 'work-panel'),\n-  ('kuro_launcher/work_companion_web/work-panel.html', 'work-panel'),\n-  ('kuro_launcher/work_companion_web/dist/assets/main-k32sC9jm.js',\n-   'work-panel'),\n-  ('kuro_launcher/work_companion_web/dist/assets/preview-bridge-DTtRndYE.js',\n-   'work-panel'),\n-  ('kuro_launcher/work_companion_web/src/preview-bridge.ts', 'work-panel'),\n-  ('kuro_launcher/work_companion_web/src/work-panel/main.ts', 'work-panel')]\n\n----------------------------------------------------------------------\nRan 3 tests in 0.804s\n\nFAILED (failures=1)\n"
+  },
+  {
+    "name": "pet-owner-regression",
+    "command": [
+      "node",
+      "--test",
+      "tests/g3_presentation.test.cjs",
+      "tests/g5_desktop_owner.test.cjs",
+      "tests/g6_pet_shell.test.cjs"
+    ],
+    "cwd": "C:\\project\\desktop-agent-runtime",
+    "exit": 0,
+    "stdout": "✔ canonical Pet URL and init never create history (91.8286ms)\n✔ Pet captures audio for Qt but never sends a conversation trigger (34.0935ms)\n✔ local playback stop never controls the Qt conversation (23.8864ms)\n✔ reconfiguration cannot promote Pet to a controllable frontend (26.6165ms)\n✔ Pet acknowledges only after actual playback queue drains (20.5493ms)\n✔ stale playback timer cannot acknowledge a later turn (21.5012ms)\n✔ interrupt resets pending playback without inventing completion (22.7481ms)\n✔ desktop owner qt: execute production startup gates with synthetic effects (3.2902ms)\n✔ desktop owner electron: execute production startup gates with synthetic effects (2.0441ms)\n✔ desktop owner undefined: execute production startup gates with synthetic effects (1.4986ms)\n✔ pet-local status is independent of Launcher and preserves missing/loading/failed/offscreen (34.2861ms)\n✔ real production probe uses only renderer and never reports a Launcher failure (0.6418ms)\n✔ presentation push updates bootstrap before renderer readiness, without a second source (0.7737ms)\n✔ Electron has one BrowserWindow and no non-pet startup/IPC/owner fallback (0.5381ms)\n✔ context menu affects only pet, with no app quit, business, or conversation commands (0.954ms)\n✔ actual loopback status remains responsive when renderer hangs (393.7479ms)\n✔ deleted routes have no consumers or fallback (16.4155ms)\n✔ conversation/business actions are rejected before dispatch (9.1187ms)\n✔ pet commands preserve instance fencing and explicit renderer failure (5.6957ms)\n✔ remote bind is forbidden (0.384ms)\nℹ tests 20\nℹ suites 0\nℹ pass 20\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 661.7025\n",
+    "stderr": ""
+  },
+  {
+    "name": "pet-renderer-typecheck",
+    "command": [
+      "node",
+      "node_modules/typescript/bin/tsc",
+      "--project",
+      "tsconfig.renderer.json",
+      "--noEmit"
+    ],
+    "cwd": "C:\\project\\desktop-agent-runtime\\pet-electron",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "name": "pet-renderer-build-isolated-output",
+    "command": [
+      "node",
+      "node_modules/vite/bin/vite.js",
+      "build",
+      "--config",
+      "vite.renderer.config.ts",
+      "--outDir",
+      "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010\\.runtime\\validation\\pet-renderer-dist"
+    ],
+    "cwd": "C:\\project\\desktop-agent-runtime\\pet-electron",
+    "exit": 0,
+    "stdout": "vite v8.0.13 building client environment for production...\n\u001b[2K\ntransforming...✓ 86 modules transformed.\nrendering chunks...\ncomputing gzip size...\n../devtools/original-git-web-host-20261010/.runtime/validation/pet-renderer-dist/index.html                 0.46 kB │ gzip:  0.29 kB\n../devtools/original-git-web-host-20261010/.runtime/validation/pet-renderer-dist/assets/pet-BH7DfI1-.css    0.63 kB │ gzip:  0.33 kB\n../devtools/original-git-web-host-20261010/.runtime/validation/pet-renderer-dist/assets/pet-CwaBcRha.js   323.18 kB │ gzip: 72.19 kB │ map: 1,352.55 kB\n\n✓ built in 91ms\n",
+    "stderr": "<script src=\"./live2d/live2dcubismcore.min.js\"> in \"/index.html\" can't be bundled without type=\"module\" attribute\n"
+  }
+]

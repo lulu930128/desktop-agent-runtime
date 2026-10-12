@@ -14,15 +14,18 @@ from .chat_group import (
     broadcast_to_group,
 )
 from .message_handler import message_handler
+from uuid import uuid4
 from .utils.stream_audio import prepare_audio_payload
 from .chat_history_manager import (
     create_new_history,
     get_history,
+    get_history_timeline,
     delete_history,
     get_history_list,
     get_metadata,
     touch_history_opened,
 )
+from .chat_event_manager import read_history_events
 from .config_manager.utils import (
     scan_config_alts_directory,
     scan_bg_directory,
@@ -66,6 +69,73 @@ class WSMessage(TypedDict, total=False):
     display_text: Optional[dict]
 
 
+class PrimaryConversationOutput:
+    """One primary wait key per turn; Pet is only a presentation recipient."""
+
+    def __init__(self, send, subscribers, identity=None):
+        self.send = send
+        self.identity = dict(identity or {})
+        self.subscribers = subscribers
+        self.request_id = uuid4().hex
+        self.pending = set()
+        self.completed = asyncio.Event()
+        self.synth_complete = False
+
+    @staticmethod
+    def presentation_payload(payload):
+        fields = {
+            "audio": ("audio", "display_text", "actions", "speech_status", "volumes", "slice_length"),
+            "full-text": ("text",),
+            "backend-synth-complete": (),
+            "force-new-message": (),
+        }
+        kind = payload.get("type")
+        if kind == "control":
+            if payload.get("text") not in {
+                "conversation-chain-start", "conversation-chain-end", "interrupt",
+                "interrupt-signal", "audio-play-start",
+            }:
+                return None
+            return {"type": kind, "text": payload["text"]}
+        if kind not in fields:
+            return None
+        return {"type": kind, **{key: payload[key] for key in fields[kind] if key in payload}}
+
+    async def __call__(self, raw):
+        original = json.loads(raw)
+        await self.send(json.dumps({**original, "conversation_scope": self.identity}, ensure_ascii=False)
+                        if self.identity else raw)
+        payload = self.presentation_payload(original)
+        if payload is None:
+            return
+        subscribers = dict(self.subscribers())
+        if payload["type"] == "backend-synth-complete":
+            self.synth_complete = True
+            self.pending = set(subscribers)
+            payload["request_id"] = self.request_id
+        for uid, socket in subscribers.items():
+            try:
+                await asyncio.wait_for(socket.send_text(json.dumps(payload)), timeout=2)
+            except Exception:
+                logger.warning(f"Presentation delivery unavailable for {uid}; primary turn continues.")
+                self.disconnect(uid)
+        if self.synth_complete and not self.pending:
+            self.completed.set()
+
+    def acknowledge(self, uid, request_id):
+        if self.synth_complete and request_id == self.request_id and uid in self.pending:
+            self.disconnect(uid)
+
+    def disconnect(self, uid):
+        self.pending.discard(uid)
+        if self.synth_complete and not self.pending:
+            self.completed.set()
+
+    async def wait_for_playback(self):
+        await self.completed.wait()
+        return {"type": "frontend-playback-complete", "request_id": self.request_id}
+
+
 class WebSocketHandler:
     """Handles WebSocket connections and message routing"""
 
@@ -79,9 +149,121 @@ class WebSocketHandler:
         self.default_context_cache = default_context_cache
         self.received_data_buffers: Dict[str, np.ndarray] = {}
         self.pending_history_bootstrap: Dict[str, bool] = {}
-
-        # Message handlers mapping
+        self.primary_outputs: Dict[str, PrimaryConversationOutput] = {}
+        self._connecting_roles: Dict[str, str] = {}
+        self._history_replies: dict[str, dict[str, tuple[str, dict]]] = {}
         self._message_handlers = self._init_message_handlers()
+
+    @staticmethod
+    def _history_identity(context) -> dict:
+        """A profile load revokes all requests from its previous context."""
+        if not getattr(context, "qt_history_context_id", ""):
+            context.qt_history_context_id = uuid4().hex
+        identity = {
+            "history_protocol": "kuro.conversation.history.v1",
+            "conf_uid": context.character_config.conf_uid,
+            "context_id": context.qt_history_context_id,
+            "active_project_id": getattr(context.character_config, "active_project_id", ""),
+        }
+        agent = getattr(context.character_config, "agent_config", None)
+        if getattr(agent, "conversation_agent_choice", "") == "basic_memory_agent":
+            settings = getattr(getattr(agent, "agent_settings", None), "basic_memory_agent", None)
+            provider = getattr(settings, "llm_provider", "")
+            config = getattr(getattr(agent, "llm_configs", None), provider, None) if provider else None
+            model = getattr(config, "model", None)
+            if isinstance(model, str):
+                identity["effective_model"] = model
+        thinking = getattr(getattr(context, "system_config", None), "thinking_power", None)
+        if isinstance(thinking, str):
+            identity["thinking_power"] = thinking
+        return identity
+
+    async def _handle_fenced_history(self, websocket, client_uid, data):
+        """Qt history commands are serialized by its WS receive loop, never replayed.
+
+        The runtime owns membership, idle checks, conversation memory and events.
+        A bounded per-connection receipt ledger makes duplicate requests harmless.
+        """
+        context = self.client_contexts[client_uid]
+        identity = self._history_identity(context)
+        request_id = data.get("request_id")
+        response = {"type": "history-error", "request_id": request_id,
+                    "client_uid": client_uid, **identity}
+        async def fail(reason):
+            await websocket.send_text(json.dumps({**response, "error": reason}))
+
+        if not isinstance(request_id, str) or not 1 <= len(request_id) <= 100:
+            await fail("history_request_id_required")
+            return
+        if (getattr(context, "qt_profile_switching", False)
+                or data.get("client_uid") != client_uid
+                or any(data.get(key) != identity[key] for key in ("conf_uid", "context_id"))):
+            await fail("history_context_changed")
+            return
+        signature = json.dumps(data, sort_keys=True, ensure_ascii=False)
+        receipts = self._history_replies.setdefault(client_uid, {})
+        if request_id in receipts:
+            previous, reply = receipts[request_id]
+            if previous != signature:
+                await fail("history_request_reused")
+            else:
+                await websocket.send_text(json.dumps(reply, ensure_ascii=False))
+            return
+        operation = data["type"]
+        if operation != "fetch-history-list":
+            idle, _reason = self._is_client_idle_for_switch(client_uid)
+            if not idle:
+                await fail("history_turn_busy")
+                return
+            if data.get("expected_history_uid") != (getattr(context, "history_uid", "") or ""):
+                await fail("history_selection_changed")
+                return
+        uid = data.get("history_uid")
+        try:
+            histories = get_history_list(identity["conf_uid"], strict=True)
+            if operation in {"fetch-and-set-history", "delete-history"}:
+                if not isinstance(uid, str) or uid not in {item["uid"] for item in histories}:
+                    await fail("history_not_found_for_profile")
+                    return
+            if operation == "fetch-history-list":
+                response.update(type="history-list", histories=histories,
+                                current_history_uid=getattr(context, "history_uid", "") or "")
+            elif operation == "fetch-and-set-history":
+                # Reloading the visible timeline must not apply the same history twice.
+                messages = [msg for msg in get_history(identity["conf_uid"], uid, strict=True)
+                            if msg.get("role") != "system"]
+                events = read_history_events(identity["conf_uid"], uid, limit=120, strict=True)
+                timeline = get_history_timeline(identity["conf_uid"], uid, strict=True)
+                if uid != getattr(context, "history_uid", None):
+                    self._load_history_into_context(context, uid, strict=True)
+                response.update(type="history-data", history_uid=uid,
+                                messages=messages, events=events,
+                                timeline=timeline, timeline_limit=120,
+                                title=get_metadata(identity["conf_uid"], uid).get("title", ""))
+            elif operation == "create-new-history":
+                uid = create_new_history(identity["conf_uid"])
+                if not uid:
+                    raise RuntimeError("history_create_failed")
+                self._load_history_into_context(context, uid)
+                self.pending_history_bootstrap.pop(client_uid, None)
+                response.update(type="new-history-created", history_uid=uid, messages=[], events=[])
+            elif operation == "delete-history":
+                if data.get("confirmed") is not True:
+                    await fail("history_delete_confirmation_required")
+                    return
+                success = delete_history(identity["conf_uid"], uid)
+                if success and uid == getattr(context, "history_uid", None):
+                    context.history_uid = None
+                    context.agent_engine.set_memory_from_history(conf_uid=identity["conf_uid"], history_uid="")
+                response.update(type="history-deleted", history_uid=uid, success=success,
+                                current_history_uid=getattr(context, "history_uid", "") or "")
+        except Exception:
+            # Do not disclose file paths or message contents in protocol errors.
+            response.update(type="history-error", error="history_operation_failed")
+        receipts[request_id] = (signature, response)
+        while len(receipts) > 128:
+            receipts.pop(next(iter(receipts)))
+        await websocket.send_text(json.dumps(response, ensure_ascii=False))
 
     def _prune_finished_tasks(self) -> None:
         for task_key, task in list(self.current_conversation_tasks.items()):
@@ -90,6 +272,8 @@ class WebSocketHandler:
 
     def _normalize_client_role(self, client_role: Optional[str]) -> str:
         role = str(client_role or "").strip().lower()
+        if role in {"qt-primary", "pet-presentation"}:
+            return role
         if role in {"launcher-console", "launcher", "qt-launcher", "console"}:
             return "launcher-console"
         return "frontend"
@@ -98,7 +282,7 @@ class WebSocketHandler:
         return [
             client_uid
             for client_uid in connected_clients
-            if self.client_roles.get(client_uid, "frontend") != "launcher-console"
+            if self.client_roles.get(client_uid, "frontend") in {"frontend", "qt-primary"}
         ]
 
     def _resolve_launcher_target(
@@ -109,8 +293,8 @@ class WebSocketHandler:
         if client_uid:
             if client_uid not in self.client_connections:
                 return None, connected_clients, f"Client {client_uid} is not connected."
-            if self.client_roles.get(client_uid, "frontend") == "launcher-console":
-                return None, connected_clients, f"Client {client_uid} is a launcher console, not a frontend session."
+            if client_uid not in controllable_clients:
+                return None, connected_clients, f"Client {client_uid} is not a controllable frontend session."
             return client_uid, connected_clients, None
 
         if len(controllable_clients) == 1:
@@ -153,20 +337,18 @@ class WebSocketHandler:
         return [selected, *remaining]
 
     def _load_history_into_context(
-        self, context: ServiceContext, history_uid: str
+        self, context: ServiceContext, history_uid: str, *, strict: bool = False
     ) -> list[dict]:
-        context.history_uid = history_uid
+        messages = get_history(context.character_config.conf_uid, history_uid, strict=strict)
         context.agent_engine.set_memory_from_history(
             conf_uid=context.character_config.conf_uid,
             history_uid=history_uid,
         )
+        context.history_uid = history_uid
         touch_history_opened(context.character_config.conf_uid, history_uid)
         return [
             msg
-            for msg in get_history(
-                context.character_config.conf_uid,
-                history_uid,
-            )
+            for msg in messages
             if msg["role"] != "system"
         ]
 
@@ -474,7 +656,12 @@ class WebSocketHandler:
                 f"Target client {resolved_client_uid} disconnected before hot switch could complete."
             )
 
-        await context.load_from_config(validated_config.model_copy(deep=True))
+        context.qt_profile_switching = True
+        context.qt_history_context_id = uuid4().hex
+        try:
+            await context.load_from_config(validated_config.model_copy(deep=True))
+        finally:
+            context.qt_profile_switching = False
 
         history_result = await self._resume_latest_history_or_create(websocket, context)
         selected_history_uid = str(history_result.get("history_uid") or "").strip()
@@ -488,6 +675,7 @@ class WebSocketHandler:
                     "conf_name": context.character_config.conf_name,
                     "conf_uid": context.character_config.conf_uid,
                     "client_uid": resolved_client_uid,
+                    **self._history_identity(context),
                 }
             )
         )
@@ -555,6 +743,19 @@ class WebSocketHandler:
             Exception: If initialization fails
         """
         try:
+            role = self._normalize_client_role(client_role)
+            controllable = self._controllable_client_uids(list(self.client_connections))
+            connecting = set(self._connecting_roles.values())
+            if (role == "qt-primary" and (controllable or connecting & {"frontend", "qt-primary"})) or (
+                role == "frontend" and ("qt-primary" in self.client_roles.values() or "qt-primary" in connecting)
+            ):
+                raise ValueError("Canonical Qt conversation frontend is exclusive.")
+            if role == "pet-presentation":
+                self.client_connections[client_uid] = websocket
+                self.client_roles[client_uid] = role
+                await self._handle_init_config_request(websocket, client_uid, {})
+                return
+            self._connecting_roles[client_uid] = role
             session_service_context = await self._init_service_context(
                 websocket.send_text, client_uid
             )
@@ -581,6 +782,8 @@ class WebSocketHandler:
             )
             await self._cleanup_failed_connection(client_uid)
             raise
+        finally:
+            self._connecting_roles.pop(client_uid, None)
 
     async def _store_client_data(
         self,
@@ -620,6 +823,7 @@ class WebSocketHandler:
                     "conf_uid": session_service_context.character_config.conf_uid,
                     "client_uid": client_uid,
                     "client_role": self.client_roles.get(client_uid, "frontend"),
+                    **self._history_identity(session_service_context),
                 }
             )
         )
@@ -628,7 +832,7 @@ class WebSocketHandler:
         await self.send_group_update(websocket, client_uid)
 
         # Start microphone
-        if self.client_roles.get(client_uid, "frontend") != "launcher-console":
+        if self.client_roles.get(client_uid, "frontend") == "frontend":
             await websocket.send_text(json.dumps({"type": "control", "text": "start-mic"}))
 
     async def _init_service_context(
@@ -671,7 +875,6 @@ class WebSocketHandler:
             while True:
                 try:
                     data = await websocket.receive_json()
-                    message_handler.handle_message(client_uid, data)
                     await self._route_message(websocket, client_uid, data)
                 except WebSocketDisconnect:
                     raise
@@ -704,6 +907,39 @@ class WebSocketHandler:
             data: Message data
         """
         msg_type = data.get("type")
+        role = self.client_roles.get(client_uid, "frontend")
+        if role == "launcher-console" and msg_type in {
+            *MessageType.CONVERSATION.value, *MessageType.GROUP.value, "interrupt-signal",
+        }:
+            await websocket.send_text(json.dumps({"type": "error", "message": "Console role cannot control conversations."}))
+            return
+        if (role == "qt-primary" and msg_type in {*MessageType.CONVERSATION.value, "mic-audio-data", "interrupt-signal"}
+                and any(key in data for key in ("client_uid", "conf_uid", "context_id", "history_uid"))):
+            context = self.client_contexts[client_uid]
+            current = self._history_identity(context)
+            expected = {"client_uid": client_uid, "conf_uid": current["conf_uid"],
+                        "context_id": current["context_id"],
+                        "history_uid": getattr(context, "history_uid", "") or ""}
+            if getattr(context, "qt_profile_switching", False) or any(data.get(k) != v for k, v in expected.items()):
+                await websocket.send_text(json.dumps({"type": "error", "message": "conversation_context_changed"}))
+                return
+        if role == "pet-presentation":
+            if msg_type not in {"heartbeat", "request-init-config", "audio-play-start", "frontend-playback-complete"}:
+                await websocket.send_text(json.dumps({"type": "error", "message": "Presentation role cannot control conversations."}))
+                return
+            if msg_type == "frontend-playback-complete":
+                for output in self.primary_outputs.values():
+                    output.acknowledge(client_uid, data.get("request_id"))
+                return
+            if msg_type == "audio-play-start":
+                return
+        elif not (role == "qt-primary" and msg_type == "frontend-playback-complete"):
+            message_handler.handle_message(client_uid, data)
+        if role == "qt-primary" and msg_type in MessageType.GROUP.value:
+            return
+        if role == "qt-primary" and msg_type in MessageType.HISTORY.value:
+            await self._handle_fenced_history(websocket, client_uid, data)
+            return
         if not msg_type:
             logger.warning("Message received without type")
             return
@@ -724,6 +960,8 @@ class WebSocketHandler:
             "invitee_uid" if operation == "add-client-to-group" else "target_uid"
         )
 
+        if self.client_roles.get(target_uid) in {"qt-primary", "pet-presentation"}:
+            return
         await handle_group_operation(
             operation=operation,
             client_uid=client_uid,
@@ -735,6 +973,10 @@ class WebSocketHandler:
 
     async def handle_disconnect(self, client_uid: str) -> None:
         """Handle client disconnection"""
+        for output in self.primary_outputs.values():
+            output.disconnect(client_uid)
+        self.primary_outputs.pop(client_uid, None)
+        self._history_replies.pop(client_uid, None)
         group = self.chat_group_manager.get_client_group(client_uid)
         if group:
             await handle_group_interrupt(
@@ -851,6 +1093,10 @@ class WebSocketHandler:
                 heard_response=heard_response,
             )
 
+            output = self.primary_outputs.pop(client_uid, None)
+            if output:
+                await output(json.dumps({"type": "control", "text": "interrupt"}))
+
     async def _handle_history_list_request(
         self, websocket: WebSocket, client_uid: str, data: WSMessage
     ) -> None:
@@ -872,7 +1118,7 @@ class WebSocketHandler:
         context = self.client_contexts[client_uid]
         messages = self._load_history_into_context(context, history_uid)
         await websocket.send_text(
-            json.dumps({"type": "history-data", "messages": messages})
+            json.dumps({"type": "history-data", "history_uid": history_uid, "messages": messages})
         )
 
     async def _handle_create_history(
@@ -953,6 +1199,20 @@ class WebSocketHandler:
         self, websocket: WebSocket, client_uid: str, data: WSMessage
     ) -> None:
         """Handle triggers that start a conversation"""
+        output = None
+        if self.client_roles.get(client_uid) == "qt-primary":
+            task = self.current_conversation_tasks.get(client_uid)
+            if task and not task.done():
+                await websocket.send_text(json.dumps({"type": "error", "message": "Conversation turn is already active."}))
+                return
+            output = PrimaryConversationOutput(
+                websocket.send_text,
+                lambda: {uid: ws for uid, ws in self.client_connections.items()
+                         if self.client_roles.get(uid) == "pet-presentation"},
+                identity=({key: data[key] for key in ("client_uid", "conf_uid", "context_id", "history_uid")}
+                          if "context_id" in data else None),
+            )
+            self.primary_outputs[client_uid] = output
         await handle_conversation_trigger(
             msg_type=data.get("type", ""),
             data=data,
@@ -965,6 +1225,7 @@ class WebSocketHandler:
             received_data_buffers=self.received_data_buffers,
             current_conversation_tasks=self.current_conversation_tasks,
             broadcast_to_group=self.broadcast_to_group,
+            individual_send=output,
         )
 
     async def _handle_fetch_configs(
@@ -1027,7 +1288,11 @@ class WebSocketHandler:
         """Handle request for initialization configuration"""
         context = self.client_contexts.get(client_uid)
         if not context:
-            context = self.default_context_cache
+            context = next(
+                (ctx for uid, ctx in self.client_contexts.items()
+                 if self.client_roles.get(uid) == "qt-primary"),
+                self.default_context_cache,
+            )
 
         await websocket.send_text(
             json.dumps(

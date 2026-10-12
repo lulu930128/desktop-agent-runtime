@@ -1,0 +1,28 @@
+test_delete_requires_confirmation_and_clears_active (test_r1_history_parity.ClientTests) ... ok
+test_error_releases_pending_without_success (test_r1_history_parity.ClientTests) ... ok
+test_late_turn_text_and_tool_status_cannot_enter_other_history (test_r1_history_parity.ClientTests) ... ok
+test_list_never_selects_first_record (test_r1_history_parity.ClientTests) ... ok
+test_old_profile_response_is_ignored (test_r1_history_parity.ClientTests) ... ok
+test_old_protocol_is_disabled_and_multiline_preserved (test_r1_history_parity.ClientTests) ... ok
+test_replaced_socket_callbacks_cannot_clear_new_identity (test_r1_history_parity.ClientTests) ... ok
+test_select_identity_and_duplicate_reply (test_r1_history_parity.ClientTests) ... ok
+test_timeout_does_not_replay (test_r1_history_parity.ClientTests) ... ok
+test_wrong_uid_or_request_cannot_complete_pending (test_r1_history_parity.ClientTests) ... ok
+test_busy_turn_preserves_context (test_r1_history_parity.RuntimeTests) ... ok
+test_canonical_list_and_timeline (test_r1_history_parity.RuntimeTests) ... ok
+test_context_fences_cover_text_audio_and_interrupt_before_dispatch (test_r1_history_parity.RuntimeTests) ... ok
+test_create_receipt_is_idempotent (test_r1_history_parity.RuntimeTests) ... Executing <Task pending name='Task-11' coro=<IsolatedAsyncioTestCase._asyncioLoopRunner() running at C:\project\desktop-agent-runtime\envs\kuro-llm310\lib\unittest\async_case.py:95> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\project\desktop-agent-runtime\envs\kuro-llm310\lib\asyncio\base_events.py:429> created at C:\project\desktop-agent-runtime\envs\kuro-llm310\lib\unittest\async_case.py:117> took 0.110 seconds
+ok
+test_delete_confirmation_and_failure (test_r1_history_parity.RuntimeTests) ... ok
+test_foreign_or_stale_context_cannot_write (test_r1_history_parity.RuntimeTests) ... ok
+test_primary_scope_is_preserved_without_leaking_to_pet (test_r1_history_parity.RuntimeTests) ... ok
+test_read_failure_is_error_and_does_not_apply_history (test_r1_history_parity.RuntimeTests) ... ok
+test_unknown_history_does_not_load_context (test_r1_history_parity.RuntimeTests) ... ok
+test_drawer_search_preview_active_and_intents (test_r1_history_parity.WidgetTests) ... ok
+test_timeline_from_runtime_includes_tool_events (test_r1_history_parity.WidgetTests) ... ok
+test_transcript_is_escaped_and_multiline (test_r1_history_parity.WidgetTests) ... ok
+
+----------------------------------------------------------------------
+Ran 22 tests in 0.337s
+
+OK

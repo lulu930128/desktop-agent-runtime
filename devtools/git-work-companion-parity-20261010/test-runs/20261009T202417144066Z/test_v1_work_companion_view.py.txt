@@ -1,0 +1,12 @@
+test_enter_shift_enter_and_ime_on_real_composer (test_v1_work_companion_view.ProductionLayoutTests) ... ok
+test_git_attachment_limits_and_growth_are_enforced_before_encoding (test_v1_work_companion_view.ProductionLayoutTests) ... ok
+test_message_html_is_literal_and_long_text_stays_in_transcript (test_v1_work_companion_view.ProductionLayoutTests) ... ok
+test_offline_pet_controls_have_reason_and_do_not_dispatch (test_v1_work_companion_view.ProductionLayoutTests) ... ok
+test_single_surface_and_drawer_at_supported_sizes (test_v1_work_companion_view.ProductionLayoutTests) ... ok
+test_formal_host_has_one_view_and_no_preview_import (test_v1_work_companion_view.SourceCutoverTests) ... ok
+test_g7_retired_paths_remain_absent (test_v1_work_companion_view.SourceCutoverTests) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 1.337s
+
+OK

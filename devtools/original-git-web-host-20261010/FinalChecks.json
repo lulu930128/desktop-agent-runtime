@@ -1,0 +1,230 @@
+{
+  "pythonSyntax": "PASS",
+  "utf8Readback": "PASS",
+  "jsonParse": "PASS",
+  "sourceContracts": {
+    "renderShell": true,
+    "renderChat": true,
+    "renderSettings": true,
+    "renderHistoryDrawer": true,
+    "settingsAssistantGroup": true,
+    "settingsConversationGroup": true,
+    "settingsPerceptionGroup": true,
+    "settingsToolsGroup": true,
+    "settingsPetGroup": true,
+    "settingsRuntimeGroup": true,
+    "--rail-width: 78px": true,
+    "--chrome-height: 50px": true,
+    "--iris: #65b3a6": true,
+    ".settings-shell": true,
+    ".settings-nav": true,
+    ".settings-content": true
+  },
+  "planChangedFromBaseline": true,
+  "planChangeNote": "Concurrent checkpoint observed; this run append/patch attempts returned access errors. Preserve current plan.",
+  "wipPassExcludingConcurrentPlan": true,
+  "scopedDiffChecks": [
+    {
+      "file": "devtools/original-git-web-host-20261010/.gitignore",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/BrowserProbe.json",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/Checkpoint.md",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/EnvironmentBlockers.json",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/FinalChecks.json",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/PlanAddendum.md",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/PreviewHttp.json",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/README.md",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/SourceVerification.json",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/Validation.json",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/ValidationFollowup.json",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/WebEngineProbe.json",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/WipBefore.json",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/capture_parity.py",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/frontend/.gitattributes",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/frontend/.gitignore",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/frontend/package.json",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/frontend/qt-preview.html",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/frontend/src/baseline.ts",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/frontend/src/env.d.ts",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/frontend/src/preview-bridge.ts",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/frontend/src/qt.ts",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/frontend/src/synthetic.json",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/frontend/tsconfig.json",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/frontend/vite.config.mjs",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/geometry.js",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/preview_bridge.test.cjs",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/preview_protocol.py",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/qt_preview_host.py",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/requirements-preview.txt",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/test_preview_protocol.py",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/validate.py",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    },
+    {
+      "file": "devtools/original-git-web-host-20261010/verify_sources.py",
+      "noIndexExit": 1,
+      "whitespaceIssues": "",
+      "pass": true
+    }
+  ],
+  "existingProductionFilesChanged": [],
+  "commitPush": false,
+  "scopedGitDiffCheckExit": 0,
+  "diffCheckNote": "git --no-index implies exit-code: 1 is expected for a new nonempty file; --check emitted no whitespace errors. Immutable originals verified by raw SHA instead of normalization."
+}

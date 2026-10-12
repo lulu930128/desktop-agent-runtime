@@ -1,0 +1,15 @@
+test_backend_prepares_wall_time_and_rejects_dst_gap (test_schedule_notifications.NotificationTests) ... ok
+test_cancel_after_claim_prevents_dispatch (test_schedule_notifications.NotificationTests) ... ok
+test_claim_lease_recovers_but_dispatch_unknown_does_not_retry (test_schedule_notifications.NotificationTests) ... ok
+test_disabled_never_produces_reminder (test_schedule_notifications.NotificationTests) ... ok
+test_due_delivery_ack_and_no_replay (test_schedule_notifications.NotificationTests) ... ok
+test_invalid_preferences_and_snooze (test_schedule_notifications.NotificationTests) ... ok
+test_multiple_consumers_only_one_claim (test_schedule_notifications.NotificationTests) ... ok
+test_quiet_and_missed_window (test_schedule_notifications.NotificationTests) ... ok
+test_quiet_ending_releases_recent_candidate (test_schedule_notifications.NotificationTests) ... ok
+test_snooze_dismiss_and_restart (test_schedule_notifications.NotificationTests) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.547s
+
+OK

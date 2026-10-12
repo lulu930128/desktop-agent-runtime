@@ -1,0 +1,175 @@
+{
+  "finalization20261009": {
+    "status": "STATIC BLOCKED",
+    "releaseVerdict": "NOT ACCEPTED",
+    "currentEvidence": "../../../G8FinalizationResults.json",
+    "deleted": 33,
+    "remaining": 2,
+    "pythonFullRunTests": 326,
+    "pythonSuites": 25,
+    "nodeTests": 83,
+    "mcpTargetedTests": 14,
+    "additionalOmiPolicyTests": 4,
+    "electronSmoke": "FAIL",
+    "formalWindows": "UNVERIFIED",
+    "historicalFieldsBelowPreserved": true
+  },
+  "productionExternalConsumerCount": 0,
+  "attempted": 35,
+  "deleted": 25,
+  "blocked": 10,
+  "elevatedRetry": "approved_but_OS_access_denied",
+  "aclChanged": false,
+  "files": [
+    {
+      "path": "pet-electron/renderer/src/work-panel/main.ts",
+      "deleted": true
+    },
+    {
+      "path": "pet-electron/renderer/src/work-panel/model.ts",
+      "deleted": true
+    },
+    {
+      "path": "pet-electron/renderer/src/work-panel/schedule.ts",
+      "deleted": true
+    },
+    {
+      "path": "pet-electron/renderer/src/work-panel/styles.css",
+      "deleted": true
+    },
+    {
+      "path": "pet-electron/renderer/src/work-panel/types.ts",
+      "deleted": true
+    },
+    {
+      "path": "pet-electron/renderer/work-panel.html",
+      "deleted": true
+    },
+    {
+      "path": "pet-electron/src/reader-window.html",
+      "deleted": true
+    },
+    {
+      "path": "pet-electron/src/reader-preload.js",
+      "deleted": true
+    },
+    {
+      "path": "pet-electron/src/briefing-window.html",
+      "deleted": false,
+      "error": "ArgumentException"
+    },
+    {
+      "path": "pet-electron/src/briefing-preload.js",
+      "deleted": false,
+      "error": "ArgumentException"
+    },
+    {
+      "path": "pet-electron/src/main-process/briefing-store.js",
+      "deleted": false,
+      "error": "ArgumentException"
+    },
+    {
+      "path": "pet-electron/src/main-process/today-classifier.js",
+      "deleted": false,
+      "error": "ArgumentException"
+    },
+    {
+      "path": "pet-electron/src/main-process/study-briefing.js",
+      "deleted": false,
+      "error": "ArgumentException"
+    },
+    {
+      "path": "pet-electron/src/main-process/mail-briefing-service.js",
+      "deleted": false,
+      "error": "ArgumentException"
+    },
+    {
+      "path": "pet-electron/src/main-process/schedule-notifications.js",
+      "deleted": false,
+      "error": "ArgumentException"
+    },
+    {
+      "path": "pet-electron/src/main-process/core-client.js",
+      "deleted": false,
+      "error": "ArgumentException"
+    },
+    {
+      "path": "pet-electron/src/main-process/reader-attachments.js",
+      "deleted": false,
+      "error": "ArgumentException"
+    },
+    {
+      "path": "pet-electron/src/main-process/work-panel-window.js",
+      "deleted": false,
+      "error": "ArgumentException"
+    },
+    {
+      "path": "kuro_launcher/work_panel_activation.py",
+      "deleted": true
+    },
+    {
+      "path": "kuro_launcher/work_panel_api.py",
+      "deleted": true
+    },
+    {
+      "path": "kuro_launcher/work_panel_recovery.py",
+      "deleted": true
+    },
+    {
+      "path": "kuro_core/legacy_briefing_adapter.py",
+      "deleted": true
+    },
+    {
+      "path": "tests/core_client.test.cjs",
+      "deleted": true
+    },
+    {
+      "path": "tests/mail_poller_owner.test.cjs",
+      "deleted": true
+    },
+    {
+      "path": "tests/schedule_cutover.test.cjs",
+      "deleted": true
+    },
+    {
+      "path": "tests/schedule_notifications.test.cjs",
+      "deleted": true
+    },
+    {
+      "path": "tests/schedule_renderer_smoke.cjs",
+      "deleted": true
+    },
+    {
+      "path": "tests/work_panel_window.test.cjs",
+      "deleted": true
+    },
+    {
+      "path": "tests/work_panel_process_smoke.py",
+      "deleted": true
+    },
+    {
+      "path": "tests/work_panel_process_fixture.cjs",
+      "deleted": true
+    },
+    {
+      "path": "tests/work_panel_electron_smoke.cjs",
+      "deleted": true
+    },
+    {
+      "path": "tests/test_work_panel_api.py",
+      "deleted": true
+    },
+    {
+      "path": "tests/test_work_panel_activation.py",
+      "deleted": true
+    },
+    {
+      "path": "tests/test_mcp_m0_launcher_policy.py",
+      "deleted": true
+    },
+    {
+      "path": "Open-LLM-VTuber/local_mcp/mail_briefing_poller.py",
+      "deleted": true
+    }
+  ]
+}

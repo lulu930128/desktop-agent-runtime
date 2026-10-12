@@ -1,0 +1,373 @@
+"""Bounded synthetic/offscreen tests. Never import the production Qt launcher."""
+from __future__ import annotations
+
+import ast
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+os.environ["QT_SCALE_FACTOR"] = "1"
+sys.dont_write_bytecode = True
+
+from PySide6.QtCore import QEvent, QPoint, Qt, qInstallMessageHandler
+from PySide6.QtGui import QImage, QInputMethodEvent
+from PySide6.QtTest import QSignalSpy, QTest
+from PySide6.QtWidgets import QApplication, QLabel
+
+from kuro_launcher.qt_work_companion_theme import TOKENS
+from kuro_launcher.qt_work_companion_view import Message, MessageText, STATE_LABELS, WorkCompanionView
+from devtools.work_companion_synthetic import HISTORY, SECTIONS, SyntheticPreviewModel
+from devtools.preview_work_companion_v1 import configure_preview_font
+
+
+ROOT = Path(__file__).resolve().parents[1]
+ARTIFACTS = ROOT / "devtools/work-companion-ui-v0-v1-20261010"
+APP = QApplication.instance() or QApplication(["synthetic-view-tests"])
+FONT_FAMILY = configure_preview_font(APP)
+
+
+def settle():
+    APP.processEvents()
+    # Wrapped text posts nested layout requests; let that bounded chain settle.
+    QTest.qWait(20)
+    APP.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    APP.processEvents()
+
+
+class ViewTests(unittest.TestCase):
+    def setUp(self):
+        self.warnings = []
+        self.old_handler = qInstallMessageHandler(lambda kind, context, message: self.warnings.append(message))
+        self.view = WorkCompanionView(font_family=FONT_FAMILY)
+        self.model = SyntheticPreviewModel(self.view, reply_delay_ms=4000)
+        self.view.resize(1280, 720)
+        self.view.show()
+        settle()
+
+    def tearDown(self):
+        self.model.reply_timer.stop()
+        self.view.close()
+        self.view.deleteLater()
+        settle()
+        qInstallMessageHandler(self.old_handler)
+        self.assertFalse([message for message in self.warnings if "stylesheet" in message.lower()],
+                         self.warnings)
+
+    def click(self, widget):
+        QTest.mouseClick(widget, Qt.MouseButton.LeftButton)
+        settle()
+
+    def test_chat_geometry_and_native_pixels_match_baseline(self):
+        geometry = self.view.geometry_snapshot()
+        self.assertEqual(geometry["rail"]["width"], 180)
+        self.assertEqual(geometry["chrome"]["height"], 48)
+        self.assertEqual(geometry["messages"]["width"], 760)
+        self.assertLessEqual(abs(geometry["messages"]["x"] - 346), 6)
+        self.assertEqual(geometry["composer"]["width"], 820)
+        self.assertEqual(geometry["composer"]["x"], 320)
+        self.assertLessEqual(abs(geometry["composer"]["y"] - 614), 12)
+        self.assertEqual(len(self.view.message_rows), 4)
+        self.assertFalse(self.view.drawer.isVisible())
+        pixels = self.view.grab().toImage()
+        self.assertEqual(pixels.pixelColor(200, 400).name().upper(), TOKENS.chat_background)
+        self.assertEqual(pixels.pixelColor(10, 400).name().upper(), TOKENS.rail_background)
+
+    def test_navigation_and_settings_geometry(self):
+        spy = QSignalSpy(self.view.page_changed)
+        self.click(self.view.nav_buttons["settings"])
+        geometry = self.view.geometry_snapshot()
+        self.assertEqual(self.view.page, "settings")
+        self.assertEqual(geometry["rail"]["width"], 73)
+        self.assertEqual(geometry["chrome"]["height"], 52)
+        self.assertEqual(geometry["settings_nav"]["x"], 125)
+        self.assertEqual(geometry["settings_nav"]["width"], 226)
+        self.assertEqual(geometry["settings_content"]["x"], 393)
+        pixels = self.view.grab().toImage()
+        self.assertEqual(pixels.pixelColor(100, 400).name().upper(), TOKENS.settings_background)
+        self.click(self.view.nav_buttons["today"])
+        self.assertEqual(self.view.page, "today")
+        self.click(self.view.nav_buttons["chat"])
+        self.assertEqual(self.view.rail.width(), 180)
+        self.assertEqual(spy.count(), 3)
+
+    def test_all_pages_fit_1120_1280_and_1440(self):
+        for width in (1120, 1280, 1440):
+            self.view.resize(width, 720)
+            for page in ("chat", "today", "settings"):
+                with self.subTest(width=width, page=page):
+                    self.view.set_page(page)
+                    settle()
+                    self.assertEqual(self.view.width(), width)
+                    self.assertEqual(self.view.height(), 720)
+                    self.assertTrue(self.view.rect().contains(self.view.workspace.geometry()))
+                    self.assertLessEqual(self.view.composer.width(), 820)
+                    for turn in self.view.message_rows:
+                        self.assertLessEqual(turn.findChild(MessageText).width(), 760)
+                    for section in SECTIONS if page == "settings" else ():
+                        self.view.select_settings_section(section.key)
+                        settle()
+                        for combo in self.view.setting_combos.values():
+                            pos = combo.mapTo(self.view, QPoint(0, 0))
+                            self.assertGreaterEqual(pos.x(), 393)
+                            self.assertLessEqual(pos.x() + combo.width(), width - 40)
+                            self.assertGreaterEqual(combo.height(), 32)
+                        for field in self.view.settings_content.findChildren(QLabel):
+                            if field.isVisible():
+                                self.assertGreater(field.width(), 30)
+                    self.assertEqual(self.view.messages_scroll.horizontalScrollBar().maximum(), 0)
+                    self.assertEqual(self.view.today_scroll.horizontalScrollBar().maximum(), 0)
+
+    def test_history_overlay_is_optional_and_does_not_shrink_transcript(self):
+        original = self.view.message_column.width()
+        self.click(self.view.history_toggle)
+        self.assertEqual(self.view.drawer_kind, "history")
+        self.assertEqual(self.view.message_column.width(), original)
+        self.assertEqual(self.view.drawer.width(), 320)
+        self.assertEqual(set(self.view.history_buttons), {entry.key for entry in HISTORY})
+        self.click(self.view.history_buttons["notes"])
+        self.assertFalse(self.view.drawer.isVisible())
+        self.assertEqual(self.model.selected_history, "notes")
+        self.assertEqual(len(self.view.message_rows), 2)
+        self.click(self.view.history_toggle)
+        QTest.keyClick(self.view.drawer_close, Qt.Key.Key_Escape)
+        settle()
+        self.assertFalse(self.view.drawer.isVisible())
+        self.assertTrue(self.view.history_toggle.hasFocus())
+
+    def test_today_detail_preserves_source_time_and_partial(self):
+        self.view.set_page("today")
+        settle()
+        spy = QSignalSpy(self.view.today_selected)
+        self.click(self.view.today_buttons["missing"])
+        self.assertEqual(spy.count(), 1)
+        self.assertEqual(self.view.drawer_kind, "today")
+        text = "\n".join(widget.text() for widget in self.view.drawer.findChildren(QLabel))
+        self.assertIn("PARTIAL", text)
+        self.assertIn("2026-01-01 08:50 +08:00", text)
+        self.assertIn("尚缺", text)
+        self.click(self.view.drawer_close)
+        self.assertFalse(self.view.drawer.isVisible())
+
+    def test_all_six_settings_sections_change_and_retain_local_values(self):
+        self.view.set_page("settings")
+        self.assertEqual(len(self.view.section_buttons), 6)
+        spy = QSignalSpy(self.view.setting_changed)
+        for section in SECTIONS:
+            self.click(self.view.section_buttons[section.key])
+            for field in section.fields:
+                combo = self.view.setting_combos[field.key]
+                self.assertEqual(combo.isEnabled(), field.enabled)
+                if field.enabled and len(field.options) > 1:
+                    combo.setCurrentIndex(1)
+                    self.assertEqual(self.model.settings[section.key, field.key], field.options[1])
+        self.assertGreater(spy.count(), 6)
+        self.view.select_settings_section("assistant")
+        self.assertEqual(self.view.setting_combos["character"].currentIndex(), 1)
+        self.click(self.view.reset_settings_button)
+        self.assertEqual(self.view.setting_combos["character"].currentIndex(), 0)
+        self.assertEqual(self.model.settings["assistant", "character"], SECTIONS[0].fields[0].options[0])
+
+    def test_enter_shift_enter_blank_and_stop(self):
+        edit = self.view.composer_edit
+        self.assertFalse(self.view.send_button.isEnabled())
+        edit.setPlainText("   ")
+        self.assertFalse(self.view.send_button.isEnabled())
+        spy = QSignalSpy(self.view.send_requested)
+        QTest.keyClick(edit, Qt.Key.Key_Return)
+        self.assertEqual(spy.count(), 0)
+        edit.setPlainText("neutral first line")
+        edit.moveCursor(edit.textCursor().MoveOperation.End)
+        QTest.keyClick(edit, Qt.Key.Key_Return, Qt.KeyboardModifier.ShiftModifier)
+        self.assertTrue(edit.toPlainText().endswith("\n"))
+        edit.insertPlainText("neutral second line")
+        QTest.keyClick(edit, Qt.Key.Key_Return)
+        settle()
+        self.assertEqual(spy.count(), 1)
+        self.assertTrue(self.model.pending)
+        self.assertTrue(self.view.busy)
+        self.assertFalse(edit.isEnabled())
+        self.assertEqual(self.model.threads["start"][-1].text, "neutral first line\nneutral second line")
+        self.click(self.view.send_button)
+        self.assertFalse(self.model.pending)
+        self.assertFalse(self.model.reply_timer.isActive())
+        self.assertTrue(edit.isEnabled())
+        self.model.finish_reply()
+        self.assertEqual(len(self.model.threads["start"]), 5)
+
+    def test_reply_completion_and_history_switch_cancel_stale_reply(self):
+        self.model.send("neutral demonstration")
+        self.model.finish_reply()
+        self.assertEqual(len(self.model.threads["start"]), 6)
+        self.assertFalse(self.view.busy)
+        self.assertIn("固定", self.model.threads["start"][-1].text)
+        self.model.send("another example")
+        self.model.select_history("notes")
+        self.model.finish_reply()
+        self.assertEqual(len(self.model.threads["notes"]), 2)
+        self.assertFalse(self.model.reply_timer.isActive())
+
+    def test_real_preview_timer_completes_and_scrolls_new_turn_into_view(self):
+        self.model.reply_timer.setInterval(30)
+        self.model.send("neutral example\n" * 30)
+        QTest.qWait(60)
+        settle()
+        self.assertFalse(self.model.pending)
+        self.assertEqual(len(self.model.threads["start"]), 6)
+        scrollbar = self.view.messages_scroll.verticalScrollBar()
+        self.assertGreater(scrollbar.maximum(), 0)
+        self.assertEqual(scrollbar.value(), scrollbar.maximum())
+        self.click(self.view.history_toggle)
+        self.assertIn("6", self.view.history_buttons["start"].text())
+
+    def test_ime_preedit_return_does_not_submit(self):
+        edit = self.view.composer_edit
+        edit.setPlainText("範例")
+        spy = QSignalSpy(self.view.send_requested)
+        APP.sendEvent(edit, QInputMethodEvent("注音", []))
+        QTest.keyClick(edit, Qt.Key.Key_Return)
+        self.assertEqual(spy.count(), 0)
+        APP.sendEvent(edit, QInputMethodEvent("", []))
+        QTest.keyClick(edit, Qt.Key.Key_Return)
+        self.assertEqual(spy.count(), 1)
+
+    def test_state_matrix_is_explicit_and_recovers(self):
+        for state in STATE_LABELS:
+            with self.subTest(state=state):
+                self.model.set_state(state)
+                for page in ("chat", "today", "settings"):
+                    self.view.set_page(page)
+                    settle()
+                    self.assertEqual(self.view.ui_state, state)
+                    self.assertEqual(self.view.state_notice.isVisible(), state != "idle")
+                    self.assertFalse(self.view.grab().isNull())
+                self.assertEqual(self.view.composer_edit.isEnabled(), state not in ("disabled", "loading"))
+                self.assertEqual(len(self.view.message_rows), 0 if state == "empty" else 4)
+        self.model.set_state("idle")
+        self.assertEqual(len(self.view.today_buttons), 3)
+        self.assertTrue(self.view.composer_edit.isEnabled())
+
+    def test_state_change_cancels_pending_and_empty_send_starts_empty_thread(self):
+        self.model.send("neutral example")
+        self.model.set_state("disabled")
+        self.model.finish_reply()
+        self.assertEqual(len(self.model.threads["start"]), 5)
+        self.model.set_state("empty")
+        self.model.send("new sample")
+        self.assertEqual(self.model.selected_history, "blank")
+        self.assertEqual(len(self.model.threads["blank"]), 1)
+
+    def test_untrusted_text_is_plain_and_long_lines_wrap(self):
+        payload = "<img src='file:///private'> " + "字" * 2400 + "X" * 1200
+        self.view.set_messages((Message("YOU", "00:00", payload),))
+        settle()
+        for widget in self.view.message_column.findChildren(QLabel):
+            self.assertEqual(widget.textFormat(), Qt.TextFormat.PlainText)
+        bodies = self.view.message_rows[0].findChildren(MessageText)
+        self.assertEqual(bodies[0].toPlainText(), payload)
+        self.assertEqual(self.view.messages_scroll.horizontalScrollBar().maximum(), 0)
+        self.assertGreater(self.view.messages_scroll.verticalScrollBar().maximum(), 0)
+
+    def test_actions_have_no_python_file_network_or_process_side_effects(self):
+        modules_before = set(sys.modules)
+        def denied(*args, **kwargs):
+            raise AssertionError("No IO or process execution in preview interaction")
+        with patch("builtins.open", denied), patch("pathlib.Path.open", denied), \
+                patch("socket.socket.connect", denied), patch("subprocess.Popen", denied), \
+                patch("os.system", denied):
+            self.model.attach()
+            self.model.send("a neutral sample")
+            self.model.finish_reply()
+            self.model.select_history("notes")
+            self.model.select_today("outline")
+            self.model.change_setting("assistant", "model", "Demo Compact")
+            self.model.reset_settings("assistant")
+            self.model.set_state("partial")
+        self.assertTrue(all(not name.startswith(("kuro_core", "kuro_launcher.qt_controller",
+                                                 "kuro_launcher.qt_chat_client", "launcher_qt"))
+                            for name in set(sys.modules) - modules_before))
+
+
+class IntegrityTests(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get("KURO_V1_VERIFY_BASELINE") == "1",
+                         "Historical WIP hash audit is opt-in; do not freeze future repo work")
+    def test_existing_source_and_g7_deleted_paths_are_unchanged(self):
+        baseline = json.loads((ARTIFACTS / "SourceIntegrityBaseline.json").read_text(encoding="utf-8"))
+        for relative, expected in baseline["protected_source_sha256"].items():
+            with self.subTest(path=relative):
+                self.assertEqual(hashlib.sha256((ROOT / relative).read_bytes()).hexdigest(), expected)
+        self.assertEqual(baseline["g7_total"], 35)
+        self.assertEqual(len(baseline["g7_absent"]), 35)
+        for relative in baseline["g7_absent"]:
+            self.assertFalse((ROOT / relative).exists(), relative)
+
+    def test_formal_entrypoints_do_not_import_preview(self):
+        for relative in ("launcher_qt.py", "kuro_launcher/qt_app.py",
+                         "kuro_launcher/qt_controller.py", "kuro_launcher/qt_core_pages.py",
+                         "kuro_launcher/qt_chat_client.py"):
+            tree = ast.parse((ROOT / relative).read_text(encoding="utf-8-sig"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom):
+                    modules = [node.module or ""]
+                elif isinstance(node, ast.Import):
+                    modules = [alias.name for alias in node.names]
+                else:
+                    continue
+                self.assertFalse(any("work_companion" in name for name in modules), relative)
+
+    def test_presentation_and_fixtures_have_strict_import_boundary(self):
+        allowed = {"__future__", "dataclasses", "PySide6.QtCore", "PySide6.QtGui",
+                   "PySide6.QtWidgets", "qt_work_companion_theme",
+                   "kuro_launcher.qt_work_companion_view"}
+        paths = ("kuro_launcher/qt_work_companion_view.py",
+                 "kuro_launcher/qt_work_companion_theme.py",
+                 "devtools/work_companion_synthetic.py")
+        forbidden_calls = {"open", "exec", "eval", "__import__", "compile",
+                           "write_text", "write_bytes", "startDetached", "connectToHost"}
+        for relative in paths:
+            tree = ast.parse((ROOT / relative).read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom):
+                    self.assertIn(node.module, allowed, relative)
+                elif isinstance(node, ast.Import):
+                    for alias in node.names:
+                        self.assertIn(alias.name, allowed, relative)
+                elif isinstance(node, ast.Call):
+                    name = node.func.id if isinstance(node.func, ast.Name) else (
+                        node.func.attr if isinstance(node.func, ast.Attribute) else "")
+                    self.assertNotIn(name, forbidden_calls, relative)
+
+    def test_snapshot_cli_high_dpi_and_no_clobber(self):
+        with tempfile.TemporaryDirectory(prefix="kuro-v1-qt-") as folder:
+            output = Path(folder) / "settings-2x.png"
+            command = [sys.executable, "-B", str(ROOT / "devtools/preview_work_companion_v1.py"),
+                       "--page", "settings", "--width", "1120", "--scale", "2",
+                       "--snapshot", str(output)]
+            env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", PYTHONIOENCODING="utf-8",
+                       TEMP=folder, TMP=folder)
+            flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            run = subprocess.run(command, cwd=ROOT, env=env, capture_output=True,
+                                 text=True, encoding="utf-8", timeout=30, creationflags=flags)
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            record = json.loads(run.stdout)
+            self.assertEqual(record["platform"], "offscreen")
+            self.assertEqual(record["logical_size"], [1120, 720])
+            self.assertEqual(record["physical_size"], [2240, 1440])
+            self.assertEqual(record["device_pixel_ratio"], 2)
+            image = QImage(str(output))
+            self.assertFalse(image.isNull())
+            initial_hash = hashlib.sha256(output.read_bytes()).hexdigest()
+            repeat = subprocess.run(command, cwd=ROOT, env=env, capture_output=True,
+                                    text=True, encoding="utf-8", timeout=30, creationflags=flags)
+            self.assertEqual(repeat.returncode, 2)
+            self.assertEqual(hashlib.sha256(output.read_bytes()).hexdigest(), initial_hash)
+
+
+if __name__ == "__main__":
+    unittest.main()

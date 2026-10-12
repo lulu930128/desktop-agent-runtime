@@ -1,0 +1,1556 @@
+{
+  "scope": "W1-W5 feature-off only; W6/W7 not started",
+  "gates": {
+    "W1": "FAIL",
+    "W2": "IMPLEMENTED_RUNTIME_UNVERIFIED",
+    "W3": "IMPLEMENTED_RUNTIME_UNVERIFIED",
+    "W4": "IMPLEMENTED_RUNTIME_UNVERIFIED",
+    "W5": "IMPLEMENTED_RUNTIME_UNVERIFIED"
+  },
+  "head": "af83df273602be3a616d6567855ea71d61a9ace7",
+  "branch": "main",
+  "index": "",
+  "baseline": "devtools\\original-git-web-host-20261010\\.runtime\\w1-w5-20261010T080647Z\\Before.json",
+  "baselineFiles": 1223,
+  "baselineDirtyEntries": 404,
+  "currentStatus": " M AGENTS.md\n D Open-LLM-VTuber/local_mcp/mail_briefing_poller.py\n M Open-LLM-VTuber/local_mcp/mail_tools_server.py\n M Open-LLM-VTuber/src/open_llm_vtuber/character_memory_manager.py\n M Open-LLM-VTuber/src/open_llm_vtuber/chat_event_manager.py\n M Open-LLM-VTuber/src/open_llm_vtuber/chat_history_manager.py\n M Open-LLM-VTuber/src/open_llm_vtuber/conversations/conversation_handler.py\n M Open-LLM-VTuber/src/open_llm_vtuber/conversations/conversation_utils.py\n M Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_catalog_manager.py\n M Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_identity.py\n M Open-LLM-VTuber/src/open_llm_vtuber/websocket_handler.py\n M Open-LLM-VTuber/tool_catalog.json\n M Open-LLM-VTuber/tool_policy.json\n M README.md\n M devtools/original-git-web-host-20261010/capture_parity.py\n M devtools/original-git-web-host-20261010/geometry.js\n M docs/architecture/CorePersistence.md\n M docs/architecture/DataLineage.md\n M docs/architecture/OwnershipMap.md\n M docs/architecture/ResearchBoundary.md\n M docs/architecture/RuntimeArchitecture.md\n M docs/architecture/RuntimeServices.md\n M docs/architecture/index.md\n M docs/guides/development.md\n M docs/guides/feature-tour.md\n M docs/guides/getting-started.md\n M docs/guides/troubleshooting.md\n M docs/index.md\n M kuro_core/__init__.py\n D kuro_core/legacy_briefing_adapter.py\n M kuro_core/schedule_api.py\n M kuro_core/schedule_notifications.py\n M kuro_core/shadow_probe.py\n M kuro_core/storage.py\n M kuro_core_service.py\n M kuro_launcher.settings.yaml\n M kuro_launcher/config.py\n M kuro_launcher/core_runtime.py\n M kuro_launcher/qt_app.py\n M kuro_launcher/qt_chat_client.py\n M kuro_launcher/qt_controller.py\n D kuro_launcher/work_panel_activation.py\n D kuro_launcher/work_panel_api.py\n D kuro_launcher/work_panel_recovery.py\n M launcher_qt.py\n M pet-electron/renderer/src/backend/adapters/llm-vtuber-adapter.ts\n M pet-electron/renderer/src/backend/backend-client.ts\n M pet-electron/renderer/src/backend/kuro-backend-events.ts\n M pet-electron/renderer/src/backend/text-utils.ts\n M pet-electron/renderer/src/backend/types.ts\n M pet-electron/renderer/src/commands/pet-command-router.ts\n M pet-electron/renderer/src/env.d.ts\n M pet-electron/renderer/src/main.ts\n D pet-electron/renderer/src/work-panel/main.ts\n D pet-electron/renderer/src/work-panel/model.ts\n D pet-electron/renderer/src/work-panel/schedule.ts\n D pet-electron/renderer/src/work-panel/styles.css\n D pet-electron/renderer/src/work-panel/types.ts\n D pet-electron/renderer/work-panel.html\n D pet-electron/src/briefing-preload.js\n D pet-electron/src/briefing-window.html\n D pet-electron/src/main-process/briefing-store.js\n M pet-electron/src/main-process/control-server.js\n D pet-electron/src/main-process/core-client.js\n D pet-electron/src/main-process/mail-briefing-service.js\n M pet-electron/src/main-process/menus.js\n D pet-electron/src/main-process/reader-attachments.js\n D pet-electron/src/main-process/schedule-notifications.js\n D pet-electron/src/main-process/study-briefing.js\n D pet-electron/src/main-process/today-classifier.js\n D pet-electron/src/main-process/work-panel-window.js\n M pet-electron/src/main.js\n M pet-electron/src/preload.js\n D pet-electron/src/reader-preload.js\n D pet-electron/src/reader-window.html\n M pet-electron/src/state.js\n M pet-electron/vite.renderer.config.ts\n D tests/core_client.test.cjs\n M tests/pet_offline_smoke.cjs\n M tests/pet_placement_smoke.cjs\n D tests/schedule_cutover.test.cjs\n D tests/schedule_notifications.test.cjs\n D tests/schedule_renderer_smoke.cjs\n M tests/test_kuro_core_contracts.py\n M tests/test_kuro_core_shadow_probe.py\n M tests/test_launcher_entrypoint.py\n D tests/test_mcp_m0_launcher_policy.py\n M tests/test_pet_lifecycle.py\n M tests/test_runtime_capabilities.py\n M tests/test_schedule_api.py\n M tests/test_schedule_runtime.py\n D tests/test_work_panel_activation.py\n D tests/test_work_panel_api.py\n D tests/work_panel_electron_smoke.cjs\n D tests/work_panel_process_fixture.cjs\n D tests/work_panel_process_smoke.py\n D tests/work_panel_window.test.cjs\n M \"\\346\\241\\214\\345\\257\\265\\345\\225\\237\\345\\213\\225\\345\\231\\250.vbs\"\n?? G7FinalTwoDelete-20261010.ps1\n?? G7FinalTwoHandoff-20261010.md\n?? G7FinalTwoResults-20261010.json\n?? G8FinalizationDocs.patch\n?? G8FinalizationHandoff.md\n?? G8FinalizationResults.json\n?? Open-LLM-VTuber/local_mcp/mail_poller.py\n?? Open-LLM-VTuber/local_mcp/mail_status_handoff.py\n?? Open-LLM-VTuber/local_mcp/mail_work_handoff.py\n?? devtools/git-work-companion-parity-20261010/Baseline.json\n?? devtools/git-work-companion-parity-20261010/DeltaManifest.json\n?? devtools/git-work-companion-parity-20261010/DiffCheck.txt\n?? devtools/git-work-companion-parity-20261010/EncodingFix.md\n?? devtools/git-work-companion-parity-20261010/FinalGitStatus.txt\n?? devtools/git-work-companion-parity-20261010/FinalStaticChecks.json\n?? devtools/git-work-companion-parity-20261010/G7Absence.json\n?? devtools/git-work-companion-parity-20261010/GitSourceInventory.json\n?? devtools/git-work-companion-parity-20261010/GitWorkCompanionParityMatrix.md\n?? devtools/git-work-companion-parity-20261010/NodeOwnerRegression.txt\n?? devtools/git-work-companion-parity-20261010/OffscreenEvidence.json\n?? devtools/git-work-companion-parity-20261010/Plan.md\n?? devtools/git-work-companion-parity-20261010/Progress.md\n?? devtools/git-work-companion-parity-20261010/Prompt.md\n?? devtools/git-work-companion-parity-20261010/R1-ProductionHistory-offscreen.png\n?? devtools/git-work-companion-parity-20261010/R1-dispatch-tests.txt\n?? devtools/git-work-companion-parity-20261010/R1DispatchFix.json\n?? devtools/git-work-companion-parity-20261010/R1DispatchFix.md\n?? devtools/git-work-companion-parity-20261010/R2-Settings-offscreen.png\n?? devtools/git-work-companion-parity-20261010/R3-Today-offscreen.png\n?? devtools/git-work-companion-parity-20261010/R4-Chat-offscreen.png\n?? devtools/git-work-companion-parity-20261010/ReviewerHandoff.md\n?? devtools/git-work-companion-parity-20261010/Rollback.md\n?? devtools/git-work-companion-parity-20261010/ValidationSummary.json\n?? devtools/git-work-companion-parity-20261010/WIPIntegrity.json\n?? devtools/git-work-companion-parity-20261010/after-source/Open-LLM-VTuber/src/open_llm_vtuber/character_memory_manager.py\n?? devtools/git-work-companion-parity-20261010/after-source/Open-LLM-VTuber/src/open_llm_vtuber/chat_event_manager.py\n?? devtools/git-work-companion-parity-20261010/after-source/Open-LLM-VTuber/src/open_llm_vtuber/chat_history_manager.py\n?? devtools/git-work-companion-parity-20261010/after-source/Open-LLM-VTuber/src/open_llm_vtuber/websocket_handler.py\n?? devtools/git-work-companion-parity-20261010/after-source/kuro_launcher/qt_app.py\n?? devtools/git-work-companion-parity-20261010/after-source/kuro_launcher/qt_chat_client.py\n?? devtools/git-work-companion-parity-20261010/after-source/kuro_launcher/qt_controller.py\n?? devtools/git-work-companion-parity-20261010/after-source/kuro_launcher/qt_core_pages.py\n?? devtools/git-work-companion-parity-20261010/after-source/kuro_launcher/qt_work_companion_theme.py\n?? devtools/git-work-companion-parity-20261010/after-source/kuro_launcher/qt_work_companion_view.py\n?? devtools/git-work-companion-parity-20261010/after-source/tests/run_work_companion_parity.py\n?? devtools/git-work-companion-parity-20261010/after-source/tests/test_g3_conversation.py\n?? devtools/git-work-companion-parity-20261010/after-source/tests/test_g4_qt_core.py\n?? devtools/git-work-companion-parity-20261010/after-source/tests/test_g6_pet_boundary.py\n?? devtools/git-work-companion-parity-20261010/after-source/tests/test_r1_history_parity.py\n?? devtools/git-work-companion-parity-20261010/after-source/tests/test_r1_production_view.py\n?? devtools/git-work-companion-parity-20261010/after-source/tests/test_r1_ws_dispatch_regression.py\n?? devtools/git-work-companion-parity-20261010/after-source/tests/test_r2_settings_parity.py\n?? devtools/git-work-companion-parity-20261010/after-source/tests/test_r3_today_schedule_parity.py\n?? devtools/git-work-companion-parity-20261010/after-source/tests/test_r4_history_transport.py\n?? devtools/git-work-companion-parity-20261010/after-source/tests/test_v1_work_companion_view.py\n?? devtools/git-work-companion-parity-20261010/after-source/tests/test_work_companion_source_encoding.py\n?? devtools/git-work-companion-parity-20261010/after-source/tests/work_companion_fixture.py\n?? devtools/git-work-companion-parity-20261010/build_parity_matrix.py\n?? devtools/git-work-companion-parity-20261010/delta/Open-LLM-VTuber/src/open_llm_vtuber/character_memory_manager.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/Open-LLM-VTuber/src/open_llm_vtuber/chat_event_manager.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/Open-LLM-VTuber/src/open_llm_vtuber/chat_history_manager.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/Open-LLM-VTuber/src/open_llm_vtuber/websocket_handler.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/devtools/preview_work_companion_v1.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/devtools/work_companion_synthetic.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/kuro_launcher/qt_app.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/kuro_launcher/qt_chat_client.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/kuro_launcher/qt_controller.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/kuro_launcher/qt_core_pages.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/kuro_launcher/qt_work_companion_theme.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/kuro_launcher/qt_work_companion_view.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/tests/run_work_companion_parity.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/tests/test_g4_qt_core.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/tests/test_g6_pet_boundary.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/tests/test_r1_history_parity.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/tests/test_r1_production_view.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/tests/test_r1_ws_dispatch_regression.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/tests/test_r2_settings_parity.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/tests/test_r3_today_schedule_parity.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/tests/test_r4_history_transport.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/tests/test_v1_work_companion_view.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/tests/test_work_companion_source_encoding.py.patch\n?? devtools/git-work-companion-parity-20261010/delta/tests/work_companion_fixture.py.patch\n?? devtools/git-work-companion-parity-20261010/finalize_evidence.py\n?? devtools/git-work-companion-parity-20261010/rollback/Open-LLM-VTuber/src/open_llm_vtuber/character_memory_manager.py.before\n?? devtools/git-work-companion-parity-20261010/rollback/Open-LLM-VTuber/src/open_llm_vtuber/chat_event_manager.py.before\n?? devtools/git-work-companion-parity-20261010/rollback/Open-LLM-VTuber/src/open_llm_vtuber/chat_history_manager.py.before\n?? devtools/git-work-companion-parity-20261010/rollback/Open-LLM-VTuber/src/open_llm_vtuber/websocket_handler.py.before\n?? devtools/git-work-companion-parity-20261010/rollback/devtools/preview_work_companion_v1.py.before\n?? devtools/git-work-companion-parity-20261010/rollback/devtools/work_companion_synthetic.py.before\n?? devtools/git-work-companion-parity-20261010/rollback/kuro_launcher/qt_app.py.before\n?? devtools/git-work-companion-parity-20261010/rollback/kuro_launcher/qt_chat_client.py.before\n?? devtools/git-work-companion-parity-20261010/rollback/kuro_launcher/qt_controller.py.before\n?? devtools/git-work-companion-parity-20261010/rollback/kuro_launcher/qt_core_pages.py.before\n?? devtools/git-work-companion-parity-20261010/rollback/kuro_launcher/qt_work_companion_theme.py.before\n?? devtools/git-work-companion-parity-20261010/rollback/kuro_launcher/qt_work_companion_view.py.before\n?? devtools/git-work-companion-parity-20261010/rollback/tests/test_g4_qt_core.py.before\n?? devtools/git-work-companion-parity-20261010/rollback/tests/test_g6_pet_boundary.py.before\n?? devtools/git-work-companion-parity-20261010/rollback/tests/test_v1_work_companion_view.py.before\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T201917774653Z/results.json\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T201917774653Z/test_launcher_entrypoint.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T201917774653Z/test_runtime_capabilities.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T201917774653Z/test_schedule_api.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T201917774653Z/test_schedule_core.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T201917774653Z/test_schedule_notifications.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T201955427137Z/results.json\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T201955427137Z/test_character_memory_manager.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T201955427137Z/test_mcp_m0_memory.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T202323296579Z/results.json\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T202323296579Z/test_r2_settings_parity.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T202341581093Z/results.json\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T202341581093Z/test_r2_settings_parity.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T202341581093Z/test_v1_work_companion_view.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T202341581093Z/test_work_companion_source_encoding.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T202417144066Z/R1-ProductionHistory-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T202417144066Z/R2-Settings-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T202417144066Z/R3-Today-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T202417144066Z/R4-Chat-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T202417144066Z/results.json\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T202417144066Z/test_v1_work_companion_view.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T202858868055Z/R1-ProductionHistory-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T202858868055Z/R2-Settings-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T202858868055Z/R3-Today-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T202858868055Z/R4-Chat-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T202858868055Z/results.json\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T202858868055Z/test_v1_work_companion_view.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203243535050Z/R1-ProductionHistory-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203243535050Z/R2-Settings-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203243535050Z/R3-Today-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203243535050Z/R4-Chat-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203243535050Z/results.json\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203243535050Z/test_r2_settings_parity.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203243535050Z/test_r3_today_schedule_parity.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203313691014Z/R1-ProductionHistory-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203313691014Z/R2-Settings-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203313691014Z/R3-Today-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203313691014Z/R4-Chat-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203313691014Z/results.json\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203313691014Z/test_g3_conversation.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203313691014Z/test_g4_qt_core.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203313691014Z/test_g5_desktop.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203313691014Z/test_g6_pet_boundary.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203313691014Z/test_g8_runtime.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203313691014Z/test_r1_history_parity.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203313691014Z/test_r1_production_view.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203313691014Z/test_r1_ws_dispatch_regression.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203313691014Z/test_r2_settings_parity.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203313691014Z/test_r3_today_schedule_parity.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203313691014Z/test_r4_history_transport.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203313691014Z/test_v1_work_companion_view.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203313691014Z/test_work_companion_source_encoding.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203614884181Z/R1-ProductionHistory-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203614884181Z/R2-Settings-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203614884181Z/R3-Today-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203614884181Z/R4-Chat-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203614884181Z/results.json\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T203614884181Z/test_work_companion_source_encoding.py.txt\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T204119519102Z/R1-ProductionHistory-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T204119519102Z/R2-Settings-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T204119519102Z/R3-Today-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T204119519102Z/R4-Chat-offscreen.png\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T204119519102Z/results.json\n?? devtools/git-work-companion-parity-20261010/test-runs/20261009T204119519102Z/test_v1_work_companion_view.py.txt\n?? devtools/git-work-companion-parity-20261010/test_character_memory_manager.py.txt\n?? devtools/git-work-companion-parity-20261010/test_g3_conversation.py.txt\n?? devtools/git-work-companion-parity-20261010/test_g4_qt_core.py.txt\n?? devtools/git-work-companion-parity-20261010/test_g5_desktop.py.txt\n?? devtools/git-work-companion-parity-20261010/test_g6_pet_boundary.py.txt\n?? devtools/git-work-companion-parity-20261010/test_g8_runtime.py.txt\n?? devtools/git-work-companion-parity-20261010/test_launcher_entrypoint.py.txt\n?? devtools/git-work-companion-parity-20261010/test_mcp_m0_memory.py.txt\n?? devtools/git-work-companion-parity-20261010/test_r1_history_parity.py.txt\n?? devtools/git-work-companion-parity-20261010/test_r1_production_view.py.txt\n?? devtools/git-work-companion-parity-20261010/test_r1_ws_dispatch_regression.py.txt\n?? devtools/git-work-companion-parity-20261010/test_r2_settings_parity.py.txt\n?? devtools/git-work-companion-parity-20261010/test_r3_today_schedule_parity.py.txt\n?? devtools/git-work-companion-parity-20261010/test_r4_history_transport.py.txt\n?? devtools/git-work-companion-parity-20261010/test_runtime_capabilities.py.txt\n?? devtools/git-work-companion-parity-20261010/test_schedule_api.py.txt\n?? devtools/git-work-companion-parity-20261010/test_schedule_core.py.txt\n?? devtools/git-work-companion-parity-20261010/test_schedule_notifications.py.txt\n?? devtools/git-work-companion-parity-20261010/test_v1_work_companion_view.py.txt\n?? devtools/git-work-companion-parity-20261010/test_work_companion_source_encoding.py.txt\n?? devtools/original-git-web-host-20261010/.gitignore\n?? devtools/original-git-web-host-20261010/BrowserProbe.json\n?? devtools/original-git-web-host-20261010/Checkpoint.md\n?? devtools/original-git-web-host-20261010/EnvironmentBlockers.json\n?? devtools/original-git-web-host-20261010/FinalChecks.json\n?? devtools/original-git-web-host-20261010/Invoke-W1WindowsRelay.ps1\n?? devtools/original-git-web-host-20261010/PlanAddendum.md\n?? devtools/original-git-web-host-20261010/PreviewHttp.json\n?? devtools/original-git-web-host-20261010/README.md\n?? devtools/original-git-web-host-20261010/ScopedPreimageDiff.patch\n?? devtools/original-git-web-host-20261010/SourceVerification.json\n?? devtools/original-git-web-host-20261010/Validation.json\n?? devtools/original-git-web-host-20261010/ValidationFollowup.json\n?? devtools/original-git-web-host-20261010/W1InstalledCheckpoint.md\n?? devtools/original-git-web-host-20261010/W1RelayCheckpoint.md\n?? devtools/original-git-web-host-20261010/W1RetryCheckpoint.md\n?? devtools/original-git-web-host-20261010/W1TodayParityCheckpoint.md\n?? devtools/original-git-web-host-20261010/W1TokenMeasurementCheckpoint.md\n?? devtools/original-git-web-host-20261010/W1W5Checkpoint.md\n?? devtools/original-git-web-host-20261010/W1W5Evidence.json\n?? devtools/original-git-web-host-20261010/W1W5MethodCoverage.md\n?? devtools/original-git-web-host-20261010/WebEngineProbe.json\n?? devtools/original-git-web-host-20261010/WipBefore.json\n?? devtools/original-git-web-host-20261010/compare_deep_geometry.py\n?? devtools/original-git-web-host-20261010/diagnose_parity.py\n?? devtools/original-git-web-host-20261010/frontend/src/canonical-model.ts\n?? devtools/original-git-web-host-20261010/frontend/src/owner-bootstrap.ts\n?? devtools/original-git-web-host-20261010/frontend/src/owner-bridge.ts\n?? devtools/original-git-web-host-20261010/frontend/src/owner-presentation.ts\n?? devtools/original-git-web-host-20261010/frontend/vite.owner.config.mjs\n?? devtools/original-git-web-host-20261010/test_deep_comparison.py\n?? devtools/original-git-web-host-20261010/test_deep_geometry.cjs\n?? devtools/original-git-web-host-20261010/test_geometry.cjs\n?? devtools/original-git-web-host-20261010/test_parity_collection.py\n?? devtools/original-git-web-host-20261010/test_parity_diagnosis.py\n?? devtools/original-git-web-host-20261010/test_w1_smoke.py\n?? devtools/original-git-web-host-20261010/validate.py\n?? devtools/original-git-web-host-20261010/validate_candidate.py\n?? devtools/original-git-web-host-20261010/verify_sources.py\n?? devtools/original-git-web-host-20261010/w1_environment_probe.py\n?? devtools/original-git-web-host-20261010/w1_import_probe.py\n?? devtools/original-git-web-host-20261010/w1_preflight.py\n?? devtools/original-git-web-host-20261010/w1_smoke.py\n?? devtools/work-companion-ui-v0-v1-20261010/SourceIntegrityBaseline.json\n?? devtools/work-companion-ui-v0-v1-20261010/SourceIntegrityResult.json\n?? devtools/work-companion-ui-v0-v1-20261010/V0Baseline.md\n?? devtools/work-companion-ui-v0-v1-20261010/V1Checkpoint.md\n?? devtools/work-companion-ui-v0-v1-20261010/ValidationResults.json\n?? devtools/work-companion-ui-v0-v1-20261010/previews/README.md\n?? devtools/work-companion-ui-v0-v1-20261010/previews/chat-2x.png\n?? devtools/work-companion-ui-v0-v1-20261010/previews/chat-error.png\n?? devtools/work-companion-ui-v0-v1-20261010/previews/chat-history.png\n?? devtools/work-companion-ui-v0-v1-20261010/previews/chat.png\n?? devtools/work-companion-ui-v0-v1-20261010/previews/settings-1120.png\n?? devtools/work-companion-ui-v0-v1-20261010/previews/settings.png\n?? devtools/work-companion-ui-v0-v1-20261010/previews/today-detail.png\n?? devtools/work-companion-ui-v0-v1-20261010/previews/today.png\n?? docs/agent-runs/kuro-original-web-cutover-20261010/W1Checkpoint.md\n?? docs/agent-runs/qt-ui-convergence-20261007/CoreApiHostPlan.md\n?? docs/agent-runs/qt-ui-convergence-20261007/G0Checkpoint.md\n?? docs/agent-runs/qt-ui-convergence-20261007/G1Checkpoint.md\n?? docs/agent-runs/qt-ui-convergence-20261007/G1WorkTodayPlan.md\n?? docs/agent-runs/qt-ui-convergence-20261007/G2BackendCutoverPlan.md\n?? docs/agent-runs/qt-ui-convergence-20261007/G2Checkpoint.md\n?? docs/agent-runs/qt-ui-convergence-20261007/G3Checkpoint.md\n?? docs/agent-runs/qt-ui-convergence-20261007/G3ConversationCutoverPlan.md\n?? docs/agent-runs/qt-ui-convergence-20261007/G4Checkpoint.md\n?? docs/agent-runs/qt-ui-convergence-20261007/G4QtParityPlan.md\n?? docs/agent-runs/qt-ui-convergence-20261007/G5Checkpoint.md\n?? docs/agent-runs/qt-ui-convergence-20261007/G5DesktopCutoverPlan.md\n?? docs/agent-runs/qt-ui-convergence-20261007/G5G8InitialPathSnapshot.json\n?? docs/agent-runs/qt-ui-convergence-20261007/G6Checkpoint.md\n?? docs/agent-runs/qt-ui-convergence-20261007/G7Checkpoint.md\n?? docs/agent-runs/qt-ui-convergence-20261007/G7DeletionManifest.json\n?? docs/agent-runs/qt-ui-convergence-20261007/G7DeletionResults.json\n?? docs/agent-runs/qt-ui-convergence-20261007/G7FollowupDeletionResults.json\n?? docs/agent-runs/qt-ui-convergence-20261007/G7PostDeleteAcceptance-20261010.json\n?? docs/agent-runs/qt-ui-convergence-20261007/G7PostDeleteAcceptance-20261010.md\n?? docs/agent-runs/qt-ui-convergence-20261007/G8Checkpoint.md\n?? docs/agent-runs/qt-ui-convergence-20261007/G8Integrity.json\n?? docs/agent-runs/qt-ui-convergence-20261007/G8ManualAcceptance.md\n?? docs/agent-runs/qt-ui-convergence-20261007/G8ReviewerStaticFollowup.md\n?? docs/agent-runs/qt-ui-convergence-20261007/G8ValidationResults.json\n?? docs/agent-runs/qt-ui-convergence-20261007/MailIntegrationPlan.md\n?? docs/agent-runs/qt-ui-convergence-20261007/MigrationMatrix.md\n?? docs/agent-runs/qt-ui-convergence-20261007/Plan.md\n?? docs/agent-runs/qt-ui-convergence-20261007/Progress.md\n?? docs/agent-runs/qt-ui-convergence-20261007/QtFinalConvergencePlan.md\n?? kuro_core/api_server.py\n?? kuro_core/attention.py\n?? kuro_core/core_app.py\n?? kuro_core/handoff.py\n?? kuro_core/integrations.py\n?? kuro_core/mail_adapter.py\n?? kuro_core/mail_work_adapter.py\n?? kuro_core/study_adapter.py\n?? kuro_core/study_work_adapter.py\n?? kuro_core/today.py\n?? kuro_core/today_capability.py\n?? kuro_core/today_shadow.py\n?? kuro_core/work_contracts.py\n?? kuro_core/work_evidence.py\n?? kuro_core/work_projection.py\n?? kuro_launcher/mail_environment.py\n?? kuro_launcher/mail_poller_runtime.py\n?? kuro_launcher/qt_core_pages.py\n?? kuro_launcher/qt_notifications.py\n?? kuro_launcher/qt_web_adapter.py\n?? kuro_launcher/qt_web_host.py\n?? kuro_launcher/qt_web_protocol.py\n?? kuro_launcher/qt_work_companion_theme.py\n?? kuro_launcher/qt_work_companion_view.py\n?? pet-electron/src/main-process/pet-status.js\n?? tests/g2_fixtures.py\n?? tests/g3_presentation.test.cjs\n?? tests/g5_desktop_owner.test.cjs\n?? tests/g6_pet_shell.test.cjs\n?? tests/g8_hidden_electron_smoke.cjs\n?? tests/qt_web_frontend.test.cjs\n?? tests/run_qt_convergence.py\n?? tests/run_work_companion_parity.py\n?? tests/test_g3_conversation.py\n?? tests/test_g4_qt_core.py\n?? tests/test_g5_desktop.py\n?? tests/test_g6_pet_boundary.py\n?? tests/test_g8_runtime.py\n?? tests/test_kuro_core_api_host.py\n?? tests/test_kuro_core_mail_adapter.py\n?? tests/test_kuro_core_study_adapter.py\n?? tests/test_kuro_core_work_g1.py\n?? tests/test_kuro_core_work_g2.py\n?? tests/test_mail_poller_runtime.py\n?? tests/test_mail_status_handoff.py\n?? tests/test_mail_work_handoff.py\n?? tests/test_qt_web_assets.py\n?? tests/test_qt_web_candidate.py\n?? tests/test_qt_web_transport.py\n?? tests/test_r1_history_parity.py\n?? tests/test_r1_production_view.py\n?? tests/test_r1_ws_dispatch_regression.py\n?? tests/test_r2_settings_parity.py\n?? tests/test_r3_today_schedule_parity.py\n?? tests/test_r4_history_transport.py\n?? tests/test_v1_work_companion_view.py\n?? tests/test_web_notification_commands.py\n?? tests/test_work_companion_source_encoding.py\n?? tests/web_candidate_fixtures.py\n?? tests/work_companion_fixture.py\n",
+  "integrity": true,
+  "unexpected": [],
+  "changedExisting": [
+    {
+      "path": "tests/test_g8_runtime.py",
+      "before": "c4a135eb9d52396bfe3fefd84b619e9b8d225bfa9f3ad1e5dd8b24b0eecae591",
+      "after": "508bae57681809de6307976b72275c19b848e26fc07d99609cf5363f04402dfd"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/capture_parity.py",
+      "before": "e6a463890b9a12595cf7d38ffb976c4b8498723e9a89dcb5f9c6f59ed7afc9c2",
+      "after": "6647de58e6839ca16f1c6a2098f4243410ec7211f1ba02fa62b1d1523302dd00"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/geometry.js",
+      "before": "ebd9ce84e160ebb3478b646626ccd0d1f8482037a9481abed916e2ed04ae8e26",
+      "after": "da1292bd8bf8d9ae9001c62889f614dc923f2a21d993682416f2ee436015d46d"
+    },
+    {
+      "path": "kuro_core/schedule_api.py",
+      "before": "68561cb9c9cd97f1abb3ff2e9fe04a771f9aacf219c5e57f5868860ae92c4a2c",
+      "after": "e96f854b7fee940ca2f846f39cba091fc82d0dec7ae0640dcf8f5faca2b581a9"
+    },
+    {
+      "path": "kuro_core/schedule_notifications.py",
+      "before": "feaaa6f14f2fee8bb9800bcd6452e933db46c34a6eecbc7d113344d0a7bcdae9",
+      "after": "f421d9e449309d1b4ec15b702eac77e360b1c30fb0b966f81fbb1b7b1d9a3760"
+    },
+    {
+      "path": "kuro_launcher/qt_controller.py",
+      "before": "40e9ce7b4acb4db9ec085944ed2d38fca2fe8f456c36a325c31e830caff8eb9d",
+      "after": "c75a3a4642ee79252c4bd4ba25800a4f8c90c26aceb25528a8eedada4f075bab"
+    }
+  ],
+  "newFiles": [
+    {
+      "path": "devtools/original-git-web-host-20261010/Invoke-W1WindowsRelay.ps1",
+      "sha256": "9b1a02888bf44e6de827786c6e42dd5fa6c066bfc17bba52a94f0fb9dd488f87"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/ScopedPreimageDiff.patch",
+      "sha256": "249d28cd9e011d6cd34af6516e360621095b527e0edd27d23e183ab749f8f56f"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/W1W5Checkpoint.md",
+      "sha256": "f8f95de96976768aa10425e853b38e117e034abf0149923ac8d0272cb81de8a7"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/W1W5MethodCoverage.md",
+      "sha256": "4a28d0e5a225d280d5c6feae5e3df4a223450f375bb4d389177e405eccbff0d2"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/compare_deep_geometry.py",
+      "sha256": "d3dc343c7f61a62327158d395ca1f30e78060c0ba0800123d20cd87c5acac36a"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/frontend/src/canonical-model.ts",
+      "sha256": "58079c7a7675fc29b53215751b5440d93ed5dc93f7d90cc4a74e3292c3e5b220"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/frontend/src/owner-bootstrap.ts",
+      "sha256": "ed7f4783cbc413afe0d3b2d0bac8f16aea7b86057c476c9950e8bc795d978d48"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/frontend/src/owner-bridge.ts",
+      "sha256": "917e0ecad13dac99d0b7c28daa66d58ea1ee517edec6af4436358c3857500856"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/frontend/src/owner-presentation.ts",
+      "sha256": "a9433b5353f1e1bcbb7b828a13b3f6f63d9d78fd345842c5b8796eed5ad27a3f"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/frontend/vite.owner.config.mjs",
+      "sha256": "e4734b5d29072a416f568bffabe403b7817e32559dacdd6b960d184c29b1c61a"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/test_deep_comparison.py",
+      "sha256": "ff7206260f6dfc90a0f03c33eb2f86a80b72c66b0a2c2d13efae9cf5ca60addc"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/test_deep_geometry.cjs",
+      "sha256": "0679936e2a845f4161e519d94319937e2a832d7158678aad2533d3421ba08aba"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/validate_candidate.py",
+      "sha256": "a0fb53ebf3e1f4bcb1c90577e3c9f218d08aa645e6e099f4feaaadf3bde1a611"
+    },
+    {
+      "path": "kuro_launcher/qt_web_adapter.py",
+      "sha256": "c1d83db8c866c87bb09806da41c057a0c845560289ffbb56427c76a4615f2762"
+    },
+    {
+      "path": "kuro_launcher/qt_web_host.py",
+      "sha256": "91ddbe9579357c2bb6b8f476509a868dc4cd15f13afd4354bcc97827b3f1861d"
+    },
+    {
+      "path": "kuro_launcher/qt_web_protocol.py",
+      "sha256": "53bb70b904e9c52251cacfc6431c3a301c3f1ab3fcf4f28cbd294659ef3b3ccb"
+    },
+    {
+      "path": "tests/qt_web_frontend.test.cjs",
+      "sha256": "0e5cbe7f3b009ac3c90f8e0f61023ec29fa8b1b043e8bf6a2306eabbb56a6238"
+    },
+    {
+      "path": "tests/test_qt_web_assets.py",
+      "sha256": "a077b7337695af1bef83d639169ebb53fa0c662bcc610d26754c2c63dab54db8"
+    },
+    {
+      "path": "tests/test_qt_web_candidate.py",
+      "sha256": "9fe1a983ede647fba7fb541e77279d0650672917765d71db4efed3e41b25edb6"
+    },
+    {
+      "path": "tests/test_qt_web_transport.py",
+      "sha256": "b8f7ac7200a8b6b904e3285cec80e990518813f1d00c045a627118819d66a8a0"
+    },
+    {
+      "path": "tests/test_web_notification_commands.py",
+      "sha256": "1738d629ace6d9fbc07ecd9c7c8c3c2572387ef2f89c9a1dcd383c1370cb4b53"
+    },
+    {
+      "path": "tests/web_candidate_fixtures.py",
+      "sha256": "6ad25ceae386f7b6f570a0bc4bb63277d33a854634bf54545dc55542e554ee19"
+    }
+  ],
+  "originalSix": [
+    {
+      "path": "devtools/original-git-web-host-20261010/frontend/src/work-panel/main.ts",
+      "before": "9f0b8eb99c7f1e0435b0b85eaf46222edce1215c6cf89dce91be1105d9cdbbc5",
+      "after": "9f0b8eb99c7f1e0435b0b85eaf46222edce1215c6cf89dce91be1105d9cdbbc5",
+      "gitSource": "9f0b8eb99c7f1e0435b0b85eaf46222edce1215c6cf89dce91be1105d9cdbbc5",
+      "equal": true
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/frontend/src/work-panel/styles.css",
+      "before": "d6c5bbf9bd49609300f8675061b4acbf4639d3dd08940cf70b79b4054715020f",
+      "after": "d6c5bbf9bd49609300f8675061b4acbf4639d3dd08940cf70b79b4054715020f",
+      "gitSource": "d6c5bbf9bd49609300f8675061b4acbf4639d3dd08940cf70b79b4054715020f",
+      "equal": true
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/frontend/src/work-panel/model.ts",
+      "before": "25b91217df1a805160b92f6215878b16f9ee49af7ed10d9a128b7f15093d0792",
+      "after": "25b91217df1a805160b92f6215878b16f9ee49af7ed10d9a128b7f15093d0792",
+      "gitSource": "25b91217df1a805160b92f6215878b16f9ee49af7ed10d9a128b7f15093d0792",
+      "equal": true
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/frontend/src/work-panel/types.ts",
+      "before": "c06528df69736b5338911b793e6c0fc83ba702e61c6505742ff12b60b1949e52",
+      "after": "c06528df69736b5338911b793e6c0fc83ba702e61c6505742ff12b60b1949e52",
+      "gitSource": "c06528df69736b5338911b793e6c0fc83ba702e61c6505742ff12b60b1949e52",
+      "equal": true
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/frontend/src/work-panel/schedule.ts",
+      "before": "695bf308ecc1ba010839a3d50703c6696f6e154457c1346874f8fd3a57f66e99",
+      "after": "695bf308ecc1ba010839a3d50703c6696f6e154457c1346874f8fd3a57f66e99",
+      "gitSource": "695bf308ecc1ba010839a3d50703c6696f6e154457c1346874f8fd3a57f66e99",
+      "equal": true
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/frontend/work-panel.html",
+      "before": "35f01f7e3f8cd449e81a7ec6d119cfe88d996f96c72415537fa0f1385dc74acb",
+      "after": "35f01f7e3f8cd449e81a7ec6d119cfe88d996f96c72415537fa0f1385dc74acb",
+      "gitSource": "35f01f7e3f8cd449e81a7ec6d119cfe88d996f96c72415537fa0f1385dc74acb",
+      "equal": true
+    }
+  ],
+  "g7Absence": [
+    {
+      "path": "pet-electron/renderer/src/work-panel/main.ts",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/renderer/src/work-panel/model.ts",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/renderer/src/work-panel/schedule.ts",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/renderer/src/work-panel/styles.css",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/renderer/src/work-panel/types.ts",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/renderer/work-panel.html",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/reader-window.html",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/reader-preload.js",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/briefing-window.html",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/briefing-preload.js",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/main-process/briefing-store.js",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/main-process/today-classifier.js",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/main-process/study-briefing.js",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/main-process/mail-briefing-service.js",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/main-process/schedule-notifications.js",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/main-process/core-client.js",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/main-process/reader-attachments.js",
+      "absent": true
+    },
+    {
+      "path": "pet-electron/src/main-process/work-panel-window.js",
+      "absent": true
+    },
+    {
+      "path": "kuro_launcher/work_panel_activation.py",
+      "absent": true
+    },
+    {
+      "path": "kuro_launcher/work_panel_api.py",
+      "absent": true
+    },
+    {
+      "path": "kuro_launcher/work_panel_recovery.py",
+      "absent": true
+    },
+    {
+      "path": "kuro_core/legacy_briefing_adapter.py",
+      "absent": true
+    },
+    {
+      "path": "tests/core_client.test.cjs",
+      "absent": true
+    },
+    {
+      "path": "tests/mail_poller_owner.test.cjs",
+      "absent": true
+    },
+    {
+      "path": "tests/schedule_cutover.test.cjs",
+      "absent": true
+    },
+    {
+      "path": "tests/schedule_notifications.test.cjs",
+      "absent": true
+    },
+    {
+      "path": "tests/schedule_renderer_smoke.cjs",
+      "absent": true
+    },
+    {
+      "path": "tests/work_panel_window.test.cjs",
+      "absent": true
+    },
+    {
+      "path": "tests/work_panel_process_smoke.py",
+      "absent": true
+    },
+    {
+      "path": "tests/work_panel_process_fixture.cjs",
+      "absent": true
+    },
+    {
+      "path": "tests/work_panel_electron_smoke.cjs",
+      "absent": true
+    },
+    {
+      "path": "tests/test_work_panel_api.py",
+      "absent": true
+    },
+    {
+      "path": "tests/test_work_panel_activation.py",
+      "absent": true
+    },
+    {
+      "path": "tests/test_mcp_m0_launcher_policy.py",
+      "absent": true
+    },
+    {
+      "path": "Open-LLM-VTuber/local_mcp/mail_briefing_poller.py",
+      "absent": true
+    }
+  ],
+  "syntax": {
+    "exit": 0,
+    "files": [
+      "tests/test_g8_runtime.py",
+      "devtools/original-git-web-host-20261010/capture_parity.py",
+      "kuro_core/schedule_api.py",
+      "kuro_core/schedule_notifications.py",
+      "kuro_launcher/qt_controller.py",
+      "devtools/original-git-web-host-20261010/compare_deep_geometry.py",
+      "devtools/original-git-web-host-20261010/test_deep_comparison.py",
+      "devtools/original-git-web-host-20261010/validate_candidate.py",
+      "kuro_launcher/qt_web_adapter.py",
+      "kuro_launcher/qt_web_host.py",
+      "kuro_launcher/qt_web_protocol.py",
+      "tests/test_qt_web_assets.py",
+      "tests/test_qt_web_candidate.py",
+      "tests/test_qt_web_transport.py",
+      "tests/test_web_notification_commands.py",
+      "tests/web_candidate_fixtures.py"
+    ]
+  },
+  "diffChecks": [
+    {
+      "name": "scoped-diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check",
+        "--",
+        "devtools/original-git-web-host-20261010/geometry.js",
+        "devtools/original-git-web-host-20261010/capture_parity.py",
+        "kuro_launcher/qt_controller.py",
+        "kuro_core/schedule_notifications.py",
+        "kuro_core/schedule_api.py",
+        "tests/test_g8_runtime.py"
+      ],
+      "exit": 0,
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/scoped-diff-check.log"
+    },
+    {
+      "name": "whole-diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/whole-diff-check.log"
+    }
+  ],
+  "finalTestCount": 272,
+  "finalTestSuites": 27,
+  "finalCommands": [
+    {
+      "suite": "typecheck",
+      "command": [
+        "node",
+        "../../../pet-electron/node_modules/typescript/bin/tsc",
+        "--project",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010\\frontend",
+      "exit": 0,
+      "tests": null,
+      "elapsed_ms": 796,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/typecheck.log"
+    },
+    {
+      "suite": "original-build",
+      "command": [
+        "node",
+        "../../../pet-electron/node_modules/vite/bin/vite.js",
+        "build",
+        "--config",
+        "vite.config.mjs"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010\\frontend",
+      "exit": 0,
+      "tests": null,
+      "elapsed_ms": 328,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/original-build.log"
+    },
+    {
+      "suite": "candidate-build",
+      "command": [
+        "node",
+        "../../../pet-electron/node_modules/vite/bin/vite.js",
+        "build",
+        "--config",
+        "vite.owner.config.mjs"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010\\frontend",
+      "exit": 0,
+      "tests": null,
+      "elapsed_ms": 313,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/candidate-build.log"
+    },
+    {
+      "suite": "formal-addons",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "from PySide6.QtWebChannel import QWebChannel; from PySide6.QtWebEngineWidgets import QWebEngineView; from PySide6.QtCore import qVersion; print(qVersion())"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 1,
+      "tests": null,
+      "elapsed_ms": 172,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/formal-addons.log"
+    },
+    {
+      "suite": "qt_web_candidate",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_qt_web_candidate.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 41,
+      "elapsed_ms": 235,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-6/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-6/qt_web_candidate.log"
+    },
+    {
+      "suite": "qt_web_assets",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_qt_web_assets.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 4,
+      "elapsed_ms": 406,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/qt_web_assets.log"
+    },
+    {
+      "suite": "qt_web_transport",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_qt_web_transport.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 2,
+      "elapsed_ms": 1109,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-6/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-6/qt_web_transport.log"
+    },
+    {
+      "suite": "web_notification_commands",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_web_notification_commands.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 9,
+      "elapsed_ms": 1438,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-4/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-4/web_notification_commands.log"
+    },
+    {
+      "suite": "schedule_core",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_schedule_core.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 19,
+      "elapsed_ms": 1328,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/schedule_core.log"
+    },
+    {
+      "suite": "schedule_notifications",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_schedule_notifications.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 10,
+      "elapsed_ms": 891,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/schedule_notifications.log"
+    },
+    {
+      "suite": "schedule_api",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_schedule_api.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 6,
+      "elapsed_ms": 4172,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/schedule_api.log"
+    },
+    {
+      "suite": "schedule_runtime",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_schedule_runtime.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 9,
+      "elapsed_ms": 4796,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/schedule_runtime.log"
+    },
+    {
+      "suite": "g3_conversation",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_g3_conversation.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 27,
+      "elapsed_ms": 7313,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/g3_conversation.log"
+    },
+    {
+      "suite": "g4_qt_core",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_g4_qt_core.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 15,
+      "elapsed_ms": 1562,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/g4_qt_core.log"
+    },
+    {
+      "suite": "g5_desktop",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_g5_desktop.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 17,
+      "elapsed_ms": 907,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/g5_desktop.log"
+    },
+    {
+      "suite": "g6_pet_boundary",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_g6_pet_boundary.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 11,
+      "elapsed_ms": 547,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/g6_pet_boundary.log"
+    },
+    {
+      "suite": "g8_runtime",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_g8_runtime.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 3,
+      "elapsed_ms": 5156,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-3/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-3/g8_runtime.log"
+    },
+    {
+      "suite": "r1_history_parity",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_r1_history_parity.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 22,
+      "elapsed_ms": 6297,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/r1_history_parity.log"
+    },
+    {
+      "suite": "r2_settings_parity",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_r2_settings_parity.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 16,
+      "elapsed_ms": 3140,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/r2_settings_parity.log"
+    },
+    {
+      "suite": "r3_today_schedule_parity",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_r3_today_schedule_parity.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 6,
+      "elapsed_ms": 1610,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/r3_today_schedule_parity.log"
+    },
+    {
+      "suite": "r4_history_transport",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_r4_history_transport.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 2,
+      "elapsed_ms": 5062,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/r4_history_transport.log"
+    },
+    {
+      "suite": "parity_collection",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010",
+        "test_parity_collection.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 6,
+      "elapsed_ms": 203,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/parity_collection.log"
+    },
+    {
+      "suite": "parity_diagnosis",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010",
+        "test_parity_diagnosis.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 3,
+      "elapsed_ms": 110,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/parity_diagnosis.log"
+    },
+    {
+      "suite": "w1_smoke",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010",
+        "test_w1_smoke.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 8,
+      "elapsed_ms": 343,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/w1_smoke.log"
+    },
+    {
+      "suite": "qt_web_frontend",
+      "command": [
+        "node",
+        "--test",
+        "C:\\project\\desktop-agent-runtime\\tests\\qt_web_frontend.test.cjs"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 10,
+      "elapsed_ms": 328,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-3/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-3/qt_web_frontend.log"
+    },
+    {
+      "suite": "g3_presentation",
+      "command": [
+        "node",
+        "--test",
+        "C:\\project\\desktop-agent-runtime\\tests\\g3_presentation.test.cjs"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 7,
+      "elapsed_ms": 469,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/g3_presentation.log"
+    },
+    {
+      "suite": "g5_desktop_owner",
+      "command": [
+        "node",
+        "--test",
+        "C:\\project\\desktop-agent-runtime\\tests\\g5_desktop_owner.test.cjs"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 3,
+      "elapsed_ms": 297,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/g5_desktop_owner.log"
+    },
+    {
+      "suite": "g6_pet_shell",
+      "command": [
+        "node",
+        "--test",
+        "C:\\project\\desktop-agent-runtime\\tests\\g6_pet_shell.test.cjs"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 10,
+      "elapsed_ms": 750,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/g6_pet_shell.log"
+    },
+    {
+      "suite": "test_geometry",
+      "command": [
+        "node",
+        "--test",
+        "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010\\test_geometry.cjs"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 1,
+      "elapsed_ms": 156,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/test_geometry.log"
+    },
+    {
+      "suite": "test_deep_geometry",
+      "command": [
+        "node",
+        "--test",
+        "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010\\test_deep_geometry.cjs"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 2,
+      "elapsed_ms": 140,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/test_deep_geometry.log"
+    },
+    {
+      "suite": "deep_comparison",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010",
+        "test_deep_comparison.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 3,
+      "elapsed_ms": 140,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-4/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-4/deep_comparison.log"
+    }
+  ],
+  "attemptHistory": [
+    {
+      "suite": "typecheck",
+      "command": [
+        "node",
+        "../../../pet-electron/node_modules/typescript/bin/tsc",
+        "--project",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010\\frontend",
+      "exit": 0,
+      "tests": null,
+      "elapsed_ms": 796,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/typecheck.log"
+    },
+    {
+      "suite": "original-build",
+      "command": [
+        "node",
+        "../../../pet-electron/node_modules/vite/bin/vite.js",
+        "build",
+        "--config",
+        "vite.config.mjs"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010\\frontend",
+      "exit": 0,
+      "tests": null,
+      "elapsed_ms": 328,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/original-build.log"
+    },
+    {
+      "suite": "candidate-build",
+      "command": [
+        "node",
+        "../../../pet-electron/node_modules/vite/bin/vite.js",
+        "build",
+        "--config",
+        "vite.owner.config.mjs"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010\\frontend",
+      "exit": 0,
+      "tests": null,
+      "elapsed_ms": 313,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/candidate-build.log"
+    },
+    {
+      "suite": "formal-addons",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "from PySide6.QtWebChannel import QWebChannel; from PySide6.QtWebEngineWidgets import QWebEngineView; from PySide6.QtCore import qVersion; print(qVersion())"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 1,
+      "tests": null,
+      "elapsed_ms": 172,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/formal-addons.log"
+    },
+    {
+      "suite": "qt_web_candidate",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_qt_web_candidate.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 38,
+      "elapsed_ms": 265,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/qt_web_candidate.log"
+    },
+    {
+      "suite": "qt_web_assets",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_qt_web_assets.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 4,
+      "elapsed_ms": 406,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/qt_web_assets.log"
+    },
+    {
+      "suite": "qt_web_transport",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_qt_web_transport.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 2,
+      "elapsed_ms": 1250,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/qt_web_transport.log"
+    },
+    {
+      "suite": "web_notification_commands",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_web_notification_commands.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 1,
+      "tests": 8,
+      "elapsed_ms": 438,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/web_notification_commands.log"
+    },
+    {
+      "suite": "schedule_core",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_schedule_core.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 19,
+      "elapsed_ms": 1328,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/schedule_core.log"
+    },
+    {
+      "suite": "schedule_notifications",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_schedule_notifications.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 10,
+      "elapsed_ms": 891,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/schedule_notifications.log"
+    },
+    {
+      "suite": "schedule_api",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_schedule_api.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 6,
+      "elapsed_ms": 4172,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/schedule_api.log"
+    },
+    {
+      "suite": "schedule_runtime",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_schedule_runtime.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 9,
+      "elapsed_ms": 4796,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/schedule_runtime.log"
+    },
+    {
+      "suite": "g3_conversation",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_g3_conversation.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 27,
+      "elapsed_ms": 7313,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/g3_conversation.log"
+    },
+    {
+      "suite": "g4_qt_core",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_g4_qt_core.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 15,
+      "elapsed_ms": 1562,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/g4_qt_core.log"
+    },
+    {
+      "suite": "g5_desktop",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_g5_desktop.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 17,
+      "elapsed_ms": 907,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/g5_desktop.log"
+    },
+    {
+      "suite": "g6_pet_boundary",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_g6_pet_boundary.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 11,
+      "elapsed_ms": 547,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/g6_pet_boundary.log"
+    },
+    {
+      "suite": "g8_runtime",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_g8_runtime.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 1,
+      "tests": 3,
+      "elapsed_ms": 28031,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/g8_runtime.log"
+    },
+    {
+      "suite": "r1_history_parity",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_r1_history_parity.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 22,
+      "elapsed_ms": 6297,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/r1_history_parity.log"
+    },
+    {
+      "suite": "r2_settings_parity",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_r2_settings_parity.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 16,
+      "elapsed_ms": 3140,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/r2_settings_parity.log"
+    },
+    {
+      "suite": "r3_today_schedule_parity",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_r3_today_schedule_parity.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 6,
+      "elapsed_ms": 1610,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/r3_today_schedule_parity.log"
+    },
+    {
+      "suite": "r4_history_transport",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_r4_history_transport.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 2,
+      "elapsed_ms": 5062,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/r4_history_transport.log"
+    },
+    {
+      "suite": "parity_collection",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010",
+        "test_parity_collection.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 6,
+      "elapsed_ms": 203,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/parity_collection.log"
+    },
+    {
+      "suite": "parity_diagnosis",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010",
+        "test_parity_diagnosis.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 3,
+      "elapsed_ms": 110,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/parity_diagnosis.log"
+    },
+    {
+      "suite": "w1_smoke",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010",
+        "test_w1_smoke.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 8,
+      "elapsed_ms": 343,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/w1_smoke.log"
+    },
+    {
+      "suite": "qt_web_frontend",
+      "command": [
+        "node",
+        "--test",
+        "C:\\project\\desktop-agent-runtime\\tests\\qt_web_frontend.test.cjs"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 9,
+      "elapsed_ms": 313,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/qt_web_frontend.log"
+    },
+    {
+      "suite": "g3_presentation",
+      "command": [
+        "node",
+        "--test",
+        "C:\\project\\desktop-agent-runtime\\tests\\g3_presentation.test.cjs"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 7,
+      "elapsed_ms": 469,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/g3_presentation.log"
+    },
+    {
+      "suite": "g5_desktop_owner",
+      "command": [
+        "node",
+        "--test",
+        "C:\\project\\desktop-agent-runtime\\tests\\g5_desktop_owner.test.cjs"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 3,
+      "elapsed_ms": 297,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/g5_desktop_owner.log"
+    },
+    {
+      "suite": "g6_pet_shell",
+      "command": [
+        "node",
+        "--test",
+        "C:\\project\\desktop-agent-runtime\\tests\\g6_pet_shell.test.cjs"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 10,
+      "elapsed_ms": 750,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/g6_pet_shell.log"
+    },
+    {
+      "suite": "test_geometry",
+      "command": [
+        "node",
+        "--test",
+        "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010\\test_geometry.cjs"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 1,
+      "elapsed_ms": 156,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/test_geometry.log"
+    },
+    {
+      "suite": "test_deep_geometry",
+      "command": [
+        "node",
+        "--test",
+        "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010\\test_deep_geometry.cjs"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 2,
+      "elapsed_ms": 140,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-1/test_deep_geometry.log"
+    },
+    {
+      "suite": "web_notification_commands",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_web_notification_commands.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 8,
+      "elapsed_ms": 718,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-2/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-2/web_notification_commands.log"
+    },
+    {
+      "suite": "qt_web_candidate",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_qt_web_candidate.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 40,
+      "elapsed_ms": 235,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-3/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-3/qt_web_candidate.log"
+    },
+    {
+      "suite": "g8_runtime",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_g8_runtime.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 3,
+      "elapsed_ms": 5156,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-3/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-3/g8_runtime.log"
+    },
+    {
+      "suite": "qt_web_frontend",
+      "command": [
+        "node",
+        "--test",
+        "C:\\project\\desktop-agent-runtime\\tests\\qt_web_frontend.test.cjs"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 10,
+      "elapsed_ms": 328,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-3/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-3/qt_web_frontend.log"
+    },
+    {
+      "suite": "web_notification_commands",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_web_notification_commands.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 9,
+      "elapsed_ms": 1438,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-4/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-4/web_notification_commands.log"
+    },
+    {
+      "suite": "deep_comparison",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010",
+        "test_deep_comparison.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 3,
+      "elapsed_ms": 140,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-4/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-4/deep_comparison.log"
+    },
+    {
+      "suite": "qt_web_candidate",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_qt_web_candidate.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 41,
+      "elapsed_ms": 250,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-5/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-5/qt_web_candidate.log"
+    },
+    {
+      "suite": "qt_web_transport",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_qt_web_transport.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 2,
+      "elapsed_ms": 1203,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-5/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-5/qt_web_transport.log"
+    },
+    {
+      "suite": "qt_web_candidate",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_qt_web_candidate.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 41,
+      "elapsed_ms": 235,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-6/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-6/qt_web_candidate.log"
+    },
+    {
+      "suite": "qt_web_transport",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-c",
+        "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in candidate validation')\n return original(self,address)\nsocket.socket.connect=bounded\nr=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover(sys.argv[1],pattern=sys.argv[2]))\nsys.exit(not r.wasSuccessful())\n",
+        "tests",
+        "test_qt_web_transport.py"
+      ],
+      "cwd": "C:\\project\\desktop-agent-runtime",
+      "exit": 0,
+      "tests": 2,
+      "elapsed_ms": 1109,
+      "receipt": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-6/Results.json",
+      "log": "devtools/original-git-web-host-20261010/.runtime/w1-w5-20261010T080647Z/validation-6/qt_web_transport.log"
+    }
+  ],
+  "assetManifest": {
+    "contract": "kuro.qt.assets.v1",
+    "files": {
+      "work-panel.html": "2b68b3be88b04aecfa3284c441823c11cd8c9fbedc86ad5791f9da673f678202",
+      "assets/main-Biy-YcNW.js": "421d6c4735d644408b0b71e76cea59d7d1747b7ed4ce68d2013101ac8d96b3b3",
+      "assets/main-ThBymPWv.css": "ee0a05721bc68dd2d901f8f6d53909f4c87380c0725084443e837d9c29139816",
+      "assets/work-panel-BKGKxaHu.js": "168b4e9d729a4caa9c206200e71d357865124c946088a35e476354ec7b8f67cc"
+    }
+  },
+  "caveats": [
+    "Source baseline excludes ignored runtime state; no complete ignored-state preservation claim.",
+    "Evidence JSON excludes its own hash; docs directory write failed, task directory used.",
+    "Real custom scheme/QWebChannel/native GUI unverified; formal Addons probe exit 1.",
+    "W1 original pixel drift remains FAIL; synthetic geometry is not Windows root-cause evidence."
+  ]
+}

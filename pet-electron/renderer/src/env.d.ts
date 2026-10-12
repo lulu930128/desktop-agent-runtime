@@ -115,17 +115,6 @@ declare global {
       ) => () => void;
     };
     __kuroPetRendererState?: Record<string, unknown>;
-    __kuroPetSendTextInput?: (
-      text: string,
-      attachments?: Array<{
-        kind?: string;
-        name?: string;
-        data?: string;
-        mime_type?: string;
-        type?: string;
-        size?: number;
-      }>
-    ) => Promise<{ ok: boolean; error?: string; text?: string }>;
     __kuroPetApplyBackendConfig?: (
       baseUrl: string,
       wsUrl: string,
@@ -135,6 +124,7 @@ declare global {
       kind: string,
       enabled: boolean
     ) => Promise<{ ok: boolean; error?: string }> | { ok: boolean; error?: string };
+    __kuroPetCaptureInput?: () => Promise<{ ok: boolean; images: import("./backend/types").BackendImagePayload[] }>;
     __kuroPetControlMicrophone?: (
       action: "start" | "pause" | "resume" | "submit" | "cancel"
     ) => Promise<{
@@ -142,7 +132,8 @@ declare global {
       error?: string;
       micEnabled?: boolean;
       micPaused?: boolean;
-      submitted?: boolean;
+      capture?: { format: "pcm16le"; sampleRate: number; data: string };
+      images?: import("./backend/types").BackendImagePayload[];
       discarded?: boolean;
       empty?: boolean;
     }>;

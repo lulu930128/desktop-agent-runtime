@@ -1,7 +1,7 @@
 import "./styles.css";
 import { PetLive2DRenderer } from "./live2d/pet-live2d-renderer";
 import { BackendClient } from "./backend/backend-client";
-import type { RendererState, UserAttachmentPayload } from "./backend/types";
+import type { RendererState } from "./backend/types";
 import { bindPetCommands } from "./commands/pet-command-router";
 import { bindModelPointerControls } from "./interaction/model-pointer-controls";
 import { PetRenderSurfaceController } from "./live2d/pet-render-surface-controller";
@@ -60,14 +60,11 @@ const rendererState: RendererState = {
   wsConnected: false,
   aiState: "idle",
   latestAssistantText: "",
-  latestUserText: "",
   wsUrl: "",
   baseUrl: "",
   currentModelUrl: "",
   confName: "",
   confUid: "",
-  currentHistoryUid: "",
-  currentHistoryTitle: "",
   currentOutfitId: "normal",
   currentOutfitParameterId: DEFAULT_OUTFIT_PARAMETER_ID,
   currentOutfitParameterIndex: null,
@@ -78,7 +75,6 @@ const rendererState: RendererState = {
   micPaused: false,
   cameraEnabled: false,
   screenEnabled: false,
-  browserPanelEnabled: false,
   live2dInspectorOverlayEnabled: false
 };
 
@@ -173,18 +169,16 @@ const client = new BackendClient(
   reportState
 );
 
-window.__kuroPetSendTextInput = (text: string, attachments: UserAttachmentPayload[] = []) =>
-  client.sendText(text, attachments);
 window.__kuroPetApplyBackendConfig = (baseUrl: string, wsUrl: string, reconnect = true) =>
   client.applyConfig(baseUrl, wsUrl, reconnect);
 window.__kuroPetSetInputEnabled = async (kind: string, enabled: boolean) => {
   if (kind === "microphone") return client.setMicrophoneEnabled(enabled);
   if (kind === "camera") return client.setCameraEnabled(enabled);
   if (kind === "screen") return client.setScreenEnabled(enabled);
-  if (kind === "browser") return client.setBrowserPanelEnabled(enabled);
   return { ok: false, error: "unsupported-input-kind" };
 };
 window.__kuroPetControlMicrophone = (action) => client.controlMicrophone(action);
+window.__kuroPetCaptureInput = () => client.captureInput();
 window.__kuroLive2DPreview = {
   capture: async (options = {}) => {
     const outfitId = String(options.outfitId || "").trim();

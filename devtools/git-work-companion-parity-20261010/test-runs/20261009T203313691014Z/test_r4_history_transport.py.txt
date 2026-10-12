@@ -1,0 +1,21 @@
+test_real_main_drawer_crud_and_tool_timeline_through_ws (test_r4_history_transport.HistoryTransportTests) ... [32m2026-10-10 04:33:34.907[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mcreate_new_history[0m:[36m143[0m - [34m[1mCreated new history file with empty metadata: chat_history\synthetic-role\2026-10-10_04-33-34_7d2b885433354931bf1c3c046e635d54.json[0m
+[32m2026-10-10 04:33:34.907[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mstore_message[0m:[36m173[0m - [34m[1mStoring human message to chat_history\synthetic-role\2026-10-10_04-33-34_7d2b885433354931bf1c3c046e635d54.json[0m
+[32m2026-10-10 04:33:34.914[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mstore_message[0m:[36m229[0m - [34m[1mSuccessfully stored human message[0m
+[32m2026-10-10 04:33:35.192[0m | [1mINFO    [0m | [36mopen_llm_vtuber.websocket_handler[0m:[36mhandle_new_connection[0m:[36m774[0m - [1mConnection established for client qt-temp role=qt-primary[0m
+[32m2026-10-10 04:33:35.250[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mupdate_metadate[0m:[36m284[0m - [34m[1mUpdated metadata for history 2026-10-10_04-33-34_7d2b885433354931bf1c3c046e635d54[0m
+[32m2026-10-10 04:33:35.282[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mcreate_new_history[0m:[36m143[0m - [34m[1mCreated new history file with empty metadata: chat_history\synthetic-role\2026-10-10_04-33-35_08f5e4c04b3c4307a2281b02ce7eea29.json[0m
+[32m2026-10-10 04:33:35.288[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mupdate_metadate[0m:[36m284[0m - [34m[1mUpdated metadata for history 2026-10-10_04-33-35_08f5e4c04b3c4307a2281b02ce7eea29[0m
+[32m2026-10-10 04:33:35.328[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mdelete_history[0m:[36m367[0m - [34m[1mSuccessfully deleted history file: chat_history\synthetic-role\2026-10-10_04-33-35_08f5e4c04b3c4307a2281b02ce7eea29.json[0m
+[32m2026-10-10 04:33:35.338[0m | [31m[1mERROR   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mget_history_list[0m:[36m456[0m - [31m[1mError reading history file; payload details omitted.[0m
+[32m2026-10-10 04:33:35.338[0m | [31m[1mERROR   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mget_history_list[0m:[36m467[0m - [31m[1mError listing histories; payload details omitted.[0m
+[32m2026-10-10 04:33:35.344[0m | [31m[1mERROR   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mget_history_list[0m:[36m456[0m - [31m[1mError reading history file; payload details omitted.[0m
+[32m2026-10-10 04:33:35.344[0m | [31m[1mERROR   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mget_history_list[0m:[36m467[0m - [31m[1mError listing histories; payload details omitted.[0m
+ok
+test_strict_owner_read_errors_and_event_sidecar_delete (test_r4_history_transport.HistoryTransportTests) ... [32m2026-10-10 04:33:35.400[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mcreate_new_history[0m:[36m143[0m - [34m[1mCreated new history file with empty metadata: chat_history\fixture\2026-10-10_04-33-35_dc0893cc29b64c38a490754078ba4271.json[0m
+[32m2026-10-10 04:33:35.403[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.chat_history_manager[0m:[36mdelete_history[0m:[36m367[0m - [34m[1mSuccessfully deleted history file: chat_history\fixture\2026-10-10_04-33-35_dc0893cc29b64c38a490754078ba4271.json[0m
+ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.503s
+
+OK

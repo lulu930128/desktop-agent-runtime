@@ -1,0 +1,5936 @@
+{
+  "HEAD": {
+    "main.ts": {
+      "sha256": "9f0b8eb99c7f1e0435b0b85eaf46222edce1215c6cf89dce91be1105d9cdbbc5",
+      "lines": 1951,
+      "functions": [
+        {
+          "function": "schedule",
+          "line": 66
+        },
+        {
+          "function": "getState",
+          "line": 67
+        },
+        {
+          "function": "getData",
+          "line": 68
+        },
+        {
+          "function": "getChatState",
+          "line": 69
+        },
+        {
+          "function": "getChatHistory",
+          "line": 70
+        },
+        {
+          "function": "getProfile",
+          "line": 71
+        },
+        {
+          "function": "applyProfile",
+          "line": 72
+        },
+        {
+          "function": "getHistories",
+          "line": 73
+        },
+        {
+          "function": "createHistory",
+          "line": 74
+        },
+        {
+          "function": "selectHistory",
+          "line": 75
+        },
+        {
+          "function": "deleteHistory",
+          "line": 76
+        },
+        {
+          "function": "getMemories",
+          "line": 77
+        },
+        {
+          "function": "memoryAction",
+          "line": 78
+        },
+        {
+          "function": "getTools",
+          "line": 79
+        },
+        {
+          "function": "sendText",
+          "line": 80
+        },
+        {
+          "function": "refreshMail",
+          "line": 81
+        },
+        {
+          "function": "getMailMessage",
+          "line": 82
+        },
+        {
+          "function": "control",
+          "line": 83
+        },
+        {
+          "function": "button",
+          "line": 110
+        },
+        {
+          "function": "toBoolean",
+          "line": 117
+        },
+        {
+          "function": "normalizeMode",
+          "line": 122
+        },
+        {
+          "function": "isBusyState",
+          "line": 126
+        },
+        {
+          "function": "wait",
+          "line": 130
+        },
+        {
+          "function": "messageRoleLabel",
+          "line": 134
+        },
+        {
+          "function": "messageRoleClass",
+          "line": 141
+        },
+        {
+          "function": "fileExtension",
+          "line": 148
+        },
+        {
+          "function": "classifyFile",
+          "line": 156
+        },
+        {
+          "function": "attachmentLimit",
+          "line": 168
+        },
+        {
+          "function": "readFileAsDataUrl",
+          "line": 176
+        },
+        {
+          "function": "formatFileSize",
+          "line": 185
+        },
+        {
+          "function": "constructor",
+          "line": 219
+        },
+        {
+          "function": "renderShell",
+          "line": 230
+        },
+        {
+          "function": "bindShell",
+          "line": 279
+        },
+        {
+          "function": "refreshAll",
+          "line": 293
+        },
+        {
+          "function": "refreshHistory",
+          "line": 313
+        },
+        {
+          "function": "refreshMemories",
+          "line": 322
+        },
+        {
+          "function": "reconcileProfileRuntime",
+          "line": 330
+        },
+        {
+          "function": "scheduleHistoryRefresh",
+          "line": 356
+        },
+        {
+          "function": "onRuntimeState",
+          "line": 364
+        },
+        {
+          "function": "onBriefingData",
+          "line": 371
+        },
+        {
+          "function": "onChatState",
+          "line": 377
+        },
+        {
+          "function": "setMode",
+          "line": 408
+        },
+        {
+          "function": "setHistoryOpen",
+          "line": 417
+        },
+        {
+          "function": "renderHistoryDrawer",
+          "line": 423
+        },
+        {
+          "function": "historyRow",
+          "line": 482
+        },
+        {
+          "function": "applyHistoryPayload",
+          "line": 497
+        },
+        {
+          "function": "createNewHistory",
+          "line": 515
+        },
+        {
+          "function": "selectHistory",
+          "line": 529
+        },
+        {
+          "function": "deleteHistory",
+          "line": 547
+        },
+        {
+          "function": "renderChrome",
+          "line": 558
+        },
+        {
+          "function": "renderActiveView",
+          "line": 606
+        },
+        {
+          "function": "viewRoot",
+          "line": 613
+        },
+        {
+          "function": "renderChat",
+          "line": 619
+        },
+        {
+          "function": "updateChatHeader",
+          "line": 726
+        },
+        {
+          "function": "populateChatControls",
+          "line": 745
+        },
+        {
+          "function": "applyProfilePatch",
+          "line": 802
+        },
+        {
+          "function": "sensorEnabled",
+          "line": 862
+        },
+        {
+          "function": "microphonePaused",
+          "line": 869
+        },
+        {
+          "function": "updateSensorControls",
+          "line": 873
+        },
+        {
+          "function": "handleMicrophonePrimary",
+          "line": 901
+        },
+        {
+          "function": "runMicrophoneAction",
+          "line": 909
+        },
+        {
+          "function": "toggleSensor",
+          "line": 948
+        },
+        {
+          "function": "mergedChatMessages",
+          "line": 975
+        },
+        {
+          "function": "renderChatTranscript",
+          "line": 990
+        },
+        {
+          "function": "renderChatContext",
+          "line": 1027
+        },
+        {
+          "function": "updateComposerState",
+          "line": 1041
+        },
+        {
+          "function": "setComposerNotice",
+          "line": 1072
+        },
+        {
+          "function": "addFiles",
+          "line": 1085
+        },
+        {
+          "function": "renderAttachments",
+          "line": 1112
+        },
+        {
+          "function": "sendCurrentText",
+          "line": 1130
+        },
+        {
+          "function": "stopOutput",
+          "line": 1161
+        },
+        {
+          "function": "renderToday",
+          "line": 1166
+        },
+        {
+          "function": "renderPriorityBlock",
+          "line": 1197
+        },
+        {
+          "function": "renderSourcesBlock",
+          "line": 1225
+        },
+        {
+          "function": "refreshMail",
+          "line": 1288
+        },
+        {
+          "function": "openDetail",
+          "line": 1300
+        },
+        {
+          "function": "loadMailDetail",
+          "line": 1307
+        },
+        {
+          "function": "closeDetail",
+          "line": 1321
+        },
+        {
+          "function": "renderDetail",
+          "line": 1329
+        },
+        {
+          "function": "bringItemToChat",
+          "line": 1386
+        },
+        {
+          "function": "renderSettings",
+          "line": 1397
+        },
+        {
+          "function": "settingsSelectRow",
+          "line": 1439
+        },
+        {
+          "function": "settingsAssistantGroup",
+          "line": 1463
+        },
+        {
+          "function": "settingsConversationGroup",
+          "line": 1513
+        },
+        {
+          "function": "settingsMemoryGroup",
+          "line": 1539
+        },
+        {
+          "function": "memoryRow",
+          "line": 1578
+        },
+        {
+          "function": "addMemoryFromSettings",
+          "line": 1600
+        },
+        {
+          "function": "runMemoryAction",
+          "line": 1609
+        },
+        {
+          "function": "settingsPerceptionGroup",
+          "line": 1621
+        },
+        {
+          "function": "settingsMicrophoneRow",
+          "line": 1640
+        },
+        {
+          "function": "settingsToolsGroup",
+          "line": 1672
+        },
+        {
+          "function": "settingsGroup",
+          "line": 1701
+        },
+        {
+          "function": "settingToggle",
+          "line": 1710
+        },
+        {
+          "function": "settingsExperienceGroup",
+          "line": 1728
+        },
+        {
+          "function": "settingsPetGroup",
+          "line": 1755
+        },
+        {
+          "function": "applyOutfit",
+          "line": 1795
+        },
+        {
+          "function": "applyExpression",
+          "line": 1811
+        },
+        {
+          "function": "capabilitySummary",
+          "line": 1832
+        },
+        {
+          "function": "settingsRuntimeGroup",
+          "line": 1849
+        },
+        {
+          "function": "settingsSourceGroup",
+          "line": 1883
+        },
+        {
+          "function": "setPetBoolean",
+          "line": 1903
+        },
+        {
+          "function": "runControl",
+          "line": 1914
+        },
+        {
+          "function": "applyPreferences",
+          "line": 1919
+        },
+        {
+          "function": "hideToast",
+          "line": 1924
+        },
+        {
+          "function": "showToast",
+          "line": 1932
+        }
+      ],
+      "events": [
+        {
+          "line": 113,
+          "source": "element.addEventListener(\"click\", onClick);"
+        },
+        {
+          "line": 225,
+          "source": "bridge.onState((state) => this.onRuntimeState(state));"
+        },
+        {
+          "line": 226,
+          "source": "bridge.onData((data) => this.onBriefingData(data));"
+        },
+        {
+          "line": 227,
+          "source": "bridge.onChatState((state) => this.onChatState(state));"
+        },
+        {
+          "line": 235,
+          "source": "<div class=\"brand-orbit\" aria-hidden=\"true\">K<span class=\"state-pulse\" data-state-pulse></span></div>"
+        },
+        {
+          "line": 242,
+          "source": "<button class=\"rail-button\" type=\"button\" data-mode=\"chat\" aria-label=\"普通對話\">${ICONS.chat}<span class=\"rail-label\">對話</span></button>"
+        },
+        {
+          "line": 243,
+          "source": "<button class=\"rail-button\" type=\"button\" data-mode=\"today\" aria-label=\"今天與行事曆\">${ICONS.today}<span class=\"rail-label\">今天</span></button>"
+        },
+        {
+          "line": 247,
+          "source": "<div class=\"presence\"><span class=\"presence-dot\" data-presence-dot></span><span class=\"presence-label\" data-presence-label>正在確認連線</span></div>"
+        },
+        {
+          "line": 248,
+          "source": "<button class=\"rail-button\" type=\"button\" data-mode=\"settings\" aria-label=\"設定\">${ICONS.settings}<span class=\"rail-label\">設定</span></button>"
+        },
+        {
+          "line": 254,
+          "source": "<span class=\"chrome-title\" data-chrome-title>Kuro 工作面板</span>"
+        },
+        {
+          "line": 255,
+          "source": "<span class=\"chrome-meta\" data-chrome-meta>LOCAL-FIRST</span>"
+        },
+        {
+          "line": 258,
+          "source": "<div class=\"privacy-indicators\" data-privacy-indicators aria-label=\"感知功能狀態\"></div>"
+        },
+        {
+          "line": 260,
+          "source": "<button class=\"window-button\" type=\"button\" data-window=\"minimize\" aria-label=\"最小化\">${ICONS.minimize}</button>"
+        },
+        {
+          "line": 261,
+          "source": "<button class=\"window-button\" type=\"button\" data-window=\"maximize\" aria-label=\"最大化或還原\">${ICONS.maximize}</button>"
+        },
+        {
+          "line": 262,
+          "source": "<button class=\"window-button close\" type=\"button\" data-window=\"close\" aria-label=\"關閉\">${ICONS.close}</button>"
+        },
+        {
+          "line": 266,
+          "source": "<div class=\"runtime-status\" data-runtime-status role=\"status\"></div>"
+        },
+        {
+          "line": 267,
+          "source": "<div class=\"stage\" data-stage>"
+        },
+        {
+          "line": 268,
+          "source": "<button class=\"history-scrim\" type=\"button\" data-history-scrim aria-label=\"關閉對話紀錄\"></button>"
+        },
+        {
+          "line": 269,
+          "source": "<aside class=\"history-drawer\" data-history-drawer aria-label=\"對話紀錄\"></aside>"
+        },
+        {
+          "line": 270,
+          "source": "<main class=\"view-root\" data-view-root></main>"
+        },
+        {
+          "line": 271,
+          "source": "<aside class=\"detail-drawer\" data-detail-drawer aria-label=\"項目詳情\"></aside>"
+        },
+        {
+          "line": 273,
+          "source": "<div class=\"toast\" role=\"status\" aria-live=\"polite\" data-toast></div>"
+        },
+        {
+          "line": 280,
+          "source": "appRoot.querySelectorAll<HTMLButtonElement>(\"[data-mode]\").forEach((element) => {"
+        },
+        {
+          "line": 281,
+          "source": "element.addEventListener(\"click\", () => this.setMode(normalizeMode(element.dataset.mode || \"today\")));"
+        },
+        {
+          "line": 283,
+          "source": "appRoot.querySelector<HTMLButtonElement>(\"[data-window='minimize']\")"
+        },
+        {
+          "line": 284,
+          "source": "?.addEventListener(\"click\", () => bridge.minimizeWindow());"
+        },
+        {
+          "line": 285,
+          "source": "appRoot.querySelector<HTMLButtonElement>(\"[data-window='maximize']\")"
+        },
+        {
+          "line": 286,
+          "source": "?.addEventListener(\"click\", () => bridge.toggleMaximizeWindow());"
+        },
+        {
+          "line": 287,
+          "source": "appRoot.querySelector<HTMLButtonElement>(\"[data-window='close']\")"
+        },
+        {
+          "line": 288,
+          "source": "?.addEventListener(\"click\", () => bridge.closeWindow());"
+        },
+        {
+          "line": 289,
+          "source": "appRoot.querySelector<HTMLButtonElement>(\"[data-history-scrim]\")"
+        },
+        {
+          "line": 290,
+          "source": "?.addEventListener(\"click\", () => this.setHistoryOpen(false));"
+        },
+        {
+          "line": 295,
+          "source": "bridge.getState(),"
+        },
+        {
+          "line": 296,
+          "source": "bridge.getData(),"
+        },
+        {
+          "line": 297,
+          "source": "bridge.getChatState(),"
+        },
+        {
+          "line": 298,
+          "source": "bridge.getProfile(),"
+        },
+        {
+          "line": 299,
+          "source": "bridge.getMemories(),"
+        },
+        {
+          "line": 300,
+          "source": "bridge.getTools()"
+        },
+        {
+          "line": 315,
+          "source": "const result = await bridge.getHistories();"
+        },
+        {
+          "line": 316,
+          "source": "this.history = result?.ok ? result : await bridge.getChatHistory();"
+        },
+        {
+          "line": 324,
+          "source": "this.memories = await bridge.getMemories();"
+        },
+        {
+          "line": 333,
+          "source": "bridge.getState(),"
+        },
+        {
+          "line": 334,
+          "source": "bridge.getChatState(),"
+        },
+        {
+          "line": 335,
+          "source": "bridge.getProfile()"
+        },
+        {
+          "line": 419,
+          "source": "appRoot.querySelector<HTMLElement>(\"[data-stage]\")?.classList.toggle(\"has-history\", this.historyOpen);"
+        },
+        {
+          "line": 424,
+          "source": "const drawer = appRoot.querySelector<HTMLElement>(\"[data-history-drawer]\");"
+        },
+        {
+          "line": 445,
+          "source": "search.addEventListener(\"input\", () => {"
+        },
+        {
+          "line": 449,
+          "source": "const next = appRoot.querySelector<HTMLInputElement>(\"[data-history-drawer] .history-search\");"
+        },
+        {
+          "line": 517,
+          "source": "const result = await bridge.createHistory();"
+        },
+        {
+          "line": 535,
+          "source": "const result = await bridge.selectHistory(historyUid);"
+        },
+        {
+          "line": 548,
+          "source": "const result = await bridge.deleteHistory(record.uid, record.title);"
+        },
+        {
+          "line": 564,
+          "source": "const chromeTitle = appRoot.querySelector<HTMLElement>(\"[data-chrome-title]\");"
+        },
+        {
+          "line": 565,
+          "source": "const chromeMeta = appRoot.querySelector<HTMLElement>(\"[data-chrome-meta]\");"
+        },
+        {
+          "line": 566,
+          "source": "const presenceDot = appRoot.querySelector<HTMLElement>(\"[data-presence-dot]\");"
+        },
+        {
+          "line": 567,
+          "source": "const presenceLabel = appRoot.querySelector<HTMLElement>(\"[data-presence-label]\");"
+        },
+        {
+          "line": 568,
+          "source": "const statePulse = appRoot.querySelector<HTMLElement>(\"[data-state-pulse]\");"
+        },
+        {
+          "line": 569,
+          "source": "const privacy = appRoot.querySelector<HTMLElement>(\"[data-privacy-indicators]\");"
+        },
+        {
+          "line": 579,
+          "source": "const capabilityStatus = appRoot.querySelector<HTMLElement>('[data-runtime-status]');"
+        },
+        {
+          "line": 599,
+          "source": "appRoot.querySelectorAll<HTMLButtonElement>(\"[data-mode]\").forEach((element) => {"
+        },
+        {
+          "line": 614,
+          "source": "const root = appRoot.querySelector<HTMLElement>(\"[data-view-root]\");"
+        },
+        {
+          "line": 627,
+          "source": "<button class=\"history-toggle\" type=\"button\" data-history-toggle aria-label=\"開啟對話紀錄\">${ICONS.history}</button>"
+        },
+        {
+          "line": 629,
+          "source": "<h1 class=\"chat-title\" data-chat-title>普通對話</h1>"
+        },
+        {
+          "line": 630,
+          "source": "<div class=\"chat-subtitle\" data-chat-subtitle>目前對話</div>"
+        },
+        {
+          "line": 634,
+          "source": "<label class=\"inline-select character-select\"><span>角色</span><select data-character-select aria-label=\"目前角色\"></select></label>"
+        },
+        {
+          "line": 635,
+          "source": "<span class=\"runtime-pill\" data-chat-runtime>正在確認連線</span>"
+        },
+        {
+          "line": 638,
+          "source": "<div class=\"chat-context\" data-chat-context>"
+        },
+        {
+          "line": 639,
+          "source": "<div class=\"chat-context-copy\" data-chat-context-copy></div>"
+        },
+        {
+          "line": 640,
+          "source": "<button class=\"text-button\" type=\"button\" data-clear-context>清除</button>"
+        },
+        {
+          "line": 643,
+          "source": "<div class=\"message-list\" data-message-list aria-live=\"polite\"><div class=\"message-list-inner\" data-message-inner></div></div>"
+        },
+        {
+          "line": 645,
+          "source": "<div class=\"attachment-row\" data-attachment-row></div>"
+        },
+        {
+          "line": 648,
+          "source": "<button class=\"sensor-button\" type=\"button\" data-sensor=\"microphone\" aria-label=\"開啟麥克風\">${ICONS.mic}<span>麥克風</span></button>"
+        },
+        {
+          "line": 649,
+          "source": "<button class=\"sensor-button mic-submit\" type=\"button\" data-mic-action=\"submit\" aria-label=\"完成並送出錄音\" hidden>${ICONS.send}<span>送出錄音</span></button>"
+        },
+        {
+          "line": 650,
+          "source": "<button class=\"sensor-button mic-cancel\" type=\"button\" data-mic-action=\"cancel\" aria-label=\"取消錄音\" hidden>${ICONS.cancel}<span>取消</span></button>"
+        },
+        {
+          "line": 651,
+          "source": "<button class=\"sensor-button\" type=\"button\" data-sensor=\"camera\" aria-label=\"開啟鏡頭\">${ICONS.camera}<span>鏡頭</span></button>"
+        },
+        {
+          "line": 652,
+          "source": "<button class=\"sensor-button\" type=\"button\" data-sensor=\"screen\" aria-label=\"本回合擷取螢幕\">${ICONS.screen}<span>本回合螢幕</span></button>"
+        },
+        {
+          "line": 655,
+          "source": "<label class=\"inline-select\"><span>模型</span><select data-model-select aria-label=\"LLM 模型\"></select></label>"
+        },
+        {
+          "line": 656,
+          "source": "<label class=\"inline-select\"><span>推理</span><select data-thinking-select aria-label=\"推理深度\"></select></label>"
+        },
+        {
+          "line": 660,
+          "source": "<button class=\"composer-button\" type=\"button\" data-attach aria-label=\"加入附件\">${ICONS.attach}</button>"
+        },
+        {
+          "line": 661,
+          "source": "<textarea rows=\"1\" data-composer-input aria-label=\"輸入普通對話\" placeholder=\"問 Kuro，或從今天的項目延伸討論…\"></textarea>"
+        },
+        {
+          "line": 662,
+          "source": "<button class=\"composer-button send\" type=\"button\" data-composer-action aria-label=\"送出訊息\">${ICONS.send}</button>"
+        },
+        {
+          "line": 663,
+          "source": "<input type=\"file\" data-file-input hidden multiple />"
+        },
+        {
+          "line": 665,
+          "source": "<div class=\"composer-foot\"><span data-composer-notice>Enter 送出 · Shift + Enter 換行</span><span data-ai-state>IDLE</span></div>"
+        },
+        {
+          "line": 670,
+          "source": "const input = root.querySelector<HTMLTextAreaElement>(\"[data-composer-input]\");"
+        },
+        {
+          "line": 673,
+          "source": "input.addEventListener(\"input\", () => {"
+        },
+        {
+          "line": 678,
+          "source": "input.addEventListener(\"keydown\", (event) => {"
+        },
+        {
+          "line": 685,
+          "source": "root.querySelector<HTMLButtonElement>(\"[data-attach]\")?.addEventListener(\"click\", () => {"
+        },
+        {
+          "line": 686,
+          "source": "root.querySelector<HTMLInputElement>(\"[data-file-input]\")?.click();"
+        },
+        {
+          "line": 688,
+          "source": "root.querySelector<HTMLInputElement>(\"[data-file-input]\")?.addEventListener(\"change\", (event) => {"
+        },
+        {
+          "line": 692,
+          "source": "root.querySelector<HTMLButtonElement>(\"[data-composer-action]\")?.addEventListener(\"click\", () => {"
+        },
+        {
+          "line": 697,
+          "source": "root.querySelector<HTMLButtonElement>(\"[data-clear-context]\")?.addEventListener(\"click\", () => {"
+        },
+        {
+          "line": 701,
+          "source": "root.querySelector<HTMLButtonElement>(\"[data-history-toggle]\")?.addEventListener(\"click\", async () => {"
+        },
+        {
+          "line": 705,
+          "source": "root.querySelectorAll<HTMLButtonElement>(\"[data-sensor]\").forEach((element) => {"
+        },
+        {
+          "line": 706,
+          "source": "element.addEventListener(\"click\", () => {"
+        },
+        {
+          "line": 712,
+          "source": "root.querySelectorAll<HTMLButtonElement>(\"[data-mic-action]\").forEach((element) => {"
+        },
+        {
+          "line": 713,
+          "source": "element.addEventListener(\"click\", () => {"
+        },
+        {
+          "line": 728,
+          "source": "const titleElement = this.viewRoot().querySelector<HTMLElement>(\"[data-chat-title]\");"
+        },
+        {
+          "line": 729,
+          "source": "const subtitleElement = this.viewRoot().querySelector<HTMLElement>(\"[data-chat-subtitle]\");"
+        },
+        {
+          "line": 730,
+          "source": "const runtimeElement = this.viewRoot().querySelector<HTMLElement>(\"[data-chat-runtime]\");"
+        },
+        {
+          "line": 748,
+          "source": "const character = this.viewRoot().querySelector<HTMLSelectElement>(\"[data-character-select]\");"
+        },
+        {
+          "line": 749,
+          "source": "const model = this.viewRoot().querySelector<HTMLSelectElement>(\"[data-model-select]\");"
+        },
+        {
+          "line": 750,
+          "source": "const thinking = this.viewRoot().querySelector<HTMLSelectElement>(\"[data-thinking-select]\");"
+        },
+        {
+          "line": 766,
+          "source": "character.addEventListener(\"change\", () => this.applyProfilePatch({ character_id: character.value }));"
+        },
+        {
+          "line": 781,
+          "source": "model.addEventListener(\"change\", () => this.applyProfilePatch({ model: model.value }));"
+        },
+        {
+          "line": 798,
+          "source": "thinking.addEventListener(\"change\", () => this.applyProfilePatch({ thinking_power: thinking.value }));"
+        },
+        {
+          "line": 821,
+          "source": "const result = await bridge.applyProfile(payload) as Record<string, unknown> & {"
+        },
+        {
+          "line": 875,
+          "source": "this.viewRoot().querySelectorAll<HTMLButtonElement>(\"[data-sensor]\").forEach((element) => {"
+        },
+        {
+          "line": 895,
+          "source": "this.viewRoot().querySelectorAll<HTMLButtonElement>(\"[data-mic-action]\").forEach((element) => {"
+        },
+        {
+          "line": 913,
+          "source": "const result = await bridge.control(`mic-${action}`, {});"
+        },
+        {
+          "line": 954,
+          "source": "const result = await bridge.control(action, { enabled });"
+        },
+        {
+          "line": 992,
+          "source": "const list = this.viewRoot().querySelector<HTMLElement>(\"[data-message-list]\");"
+        },
+        {
+          "line": 993,
+          "source": "const inner = this.viewRoot().querySelector<HTMLElement>(\"[data-message-inner]\");"
+        },
+        {
+          "line": 1029,
+          "source": "const context = this.viewRoot().querySelector<HTMLElement>(\"[data-chat-context]\");"
+        },
+        {
+          "line": 1030,
+          "source": "const copy = this.viewRoot().querySelector<HTMLElement>(\"[data-chat-context-copy]\");"
+        },
+        {
+          "line": 1043,
+          "source": "const action = this.viewRoot().querySelector<HTMLButtonElement>(\"[data-composer-action]\");"
+        },
+        {
+          "line": 1044,
+          "source": "const attach = this.viewRoot().querySelector<HTMLButtonElement>(\"[data-attach]\");"
+        },
+        {
+          "line": 1045,
+          "source": "const input = this.viewRoot().querySelector<HTMLTextAreaElement>(\"[data-composer-input]\");"
+        },
+        {
+          "line": 1046,
+          "source": "const notice = this.viewRoot().querySelector<HTMLElement>(\"[data-composer-notice]\");"
+        },
+        {
+          "line": 1047,
+          "source": "const state = this.viewRoot().querySelector<HTMLElement>(\"[data-ai-state]\");"
+        },
+        {
+          "line": 1074,
+          "source": "const notice = this.viewRoot().querySelector<HTMLElement>(\"[data-composer-notice]\");"
+        },
+        {
+          "line": 1114,
+          "source": "const row = this.viewRoot().querySelector<HTMLElement>(\"[data-attachment-row]\");"
+        },
+        {
+          "line": 1133,
+          "source": "? this.viewRoot().querySelector<HTMLTextAreaElement>(\"[data-composer-input]\")"
+        },
+        {
+          "line": 1140,
+          "source": "const result = await bridge.sendText(message, this.attachments);"
+        },
+        {
+          "line": 1162,
+          "source": "const result = await bridge.control(\"interrupt\");"
+        },
+        {
+          "line": 1293,
+          "source": "const result = await bridge.refreshMail();"
+        },
+        {
+          "line": 1309,
+          "source": "const result = await bridge.getMailMessage(messageId);"
+        },
+        {
+          "line": 1330,
+          "source": "const stage = appRoot.querySelector<HTMLElement>(\"[data-stage]\");"
+        },
+        {
+          "line": 1331,
+          "source": "const drawer = appRoot.querySelector<HTMLElement>(\"[data-detail-drawer]\");"
+        },
+        {
+          "line": 1391,
+          "source": "const input = this.viewRoot().querySelector<HTMLTextAreaElement>(\"[data-composer-input]\");"
+        },
+        {
+          "line": 1610,
+          "source": "const result = await bridge.memoryAction(action, payload);"
+        },
+        {
+          "line": 1797,
+          "source": "const result = await bridge.control(\"set-outfit\", {"
+        },
+        {
+          "line": 1817,
+          "source": "const result = await bridge.control(\"set-expression\", {"
+        },
+        {
+          "line": 1904,
+          "source": "const result = await bridge.control(action, { enabled });"
+        },
+        {
+          "line": 1915,
+          "source": "const result = await bridge.control(action, payload);"
+        },
+        {
+          "line": 1925,
+          "source": "const toast = appRoot.querySelector<HTMLElement>(\"[data-toast]\");"
+        },
+        {
+          "line": 1933,
+          "source": "const toast = appRoot.querySelector<HTMLElement>(\"[data-toast]\");"
+        }
+      ],
+      "selectors": [],
+      "declarations": []
+    },
+    "types.ts": {
+      "sha256": "c06528df69736b5338911b793e6c0fc83ba702e61c6505742ff12b60b1949e52",
+      "lines": 286,
+      "functions": [
+        {
+          "function": "refreshMail",
+          "line": 271
+        }
+      ],
+      "events": [],
+      "selectors": [],
+      "declarations": [
+        {
+          "line": 1,
+          "source": "export type WorkMode = \"chat\" | \"today\" | \"settings\";"
+        },
+        {
+          "line": 3,
+          "source": "export interface AttachmentPayload {"
+        },
+        {
+          "line": 11,
+          "source": "export interface ChatState {"
+        },
+        {
+          "line": 30,
+          "source": "export interface HistoryMessage {"
+        },
+        {
+          "line": 36,
+          "source": "export interface ChatHistoryPayload {"
+        },
+        {
+          "line": 49,
+          "source": "export interface HistorySummary {"
+        },
+        {
+          "line": 57,
+          "source": "export interface SelectOption {"
+        },
+        {
+          "line": 66,
+          "source": "export interface ProfileState {"
+        },
+        {
+          "line": 83,
+          "source": "export interface MemoryEntry {"
+        },
+        {
+          "line": 95,
+          "source": "export interface MemoryState {"
+        },
+        {
+          "line": 105,
+          "source": "export interface ToolPolicyEntry {"
+        },
+        {
+          "line": 113,
+          "source": "export interface ToolPolicyState {"
+        },
+        {
+          "line": 123,
+          "source": "export interface RuntimeState {"
+        },
+        {
+          "line": 157,
+          "source": "export interface SourceStatus {"
+        },
+        {
+          "line": 165,
+          "source": "export interface BriefingItem {"
+        },
+        {
+          "line": 192,
+          "source": "export interface BriefingModule {"
+        },
+        {
+          "line": 202,
+          "source": "export interface BriefingSection {"
+        },
+        {
+          "line": 211,
+          "source": "export interface TodaySnapshot {"
+        },
+        {
+          "line": 218,
+          "source": "export interface MailSnapshot {"
+        },
+        {
+          "line": 223,
+          "source": "export interface BriefingSnapshot {"
+        },
+        {
+          "line": 234,
+          "source": "export interface BriefingData {"
+        },
+        {
+          "line": 242,
+          "source": "export interface ViewItem {"
+        },
+        {
+          "line": 255,
+          "source": "export interface WorkPanelBridge {"
+        },
+        {
+          "line": 256,
+          "source": "schedule(action: \"status\" | \"view\" | \"item\" | \"mutate\" | \"materialize\" | \"prepare\" | \"notifications\" | \"notification-action\", payload?: Record<string, unknown>): Promise<Record<string, unknown> & { ok: boolean; error?: string }>;"
+        },
+        {
+          "line": 257,
+          "source": "getState(): Promise<RuntimeState>;"
+        },
+        {
+          "line": 258,
+          "source": "getData(): Promise<BriefingData>;"
+        },
+        {
+          "line": 259,
+          "source": "getChatState(): Promise<ChatState>;"
+        },
+        {
+          "line": 260,
+          "source": "getChatHistory(): Promise<ChatHistoryPayload>;"
+        },
+        {
+          "line": 261,
+          "source": "getProfile(): Promise<ProfileState>;"
+        },
+        {
+          "line": 262,
+          "source": "applyProfile(payload: Record<string, unknown>): Promise<Record<string, unknown>>;"
+        },
+        {
+          "line": 263,
+          "source": "getHistories(historyUid?: string): Promise<ChatHistoryPayload>;"
+        },
+        {
+          "line": 264,
+          "source": "createHistory(): Promise<ChatHistoryPayload>;"
+        },
+        {
+          "line": 265,
+          "source": "selectHistory(historyUid: string): Promise<ChatHistoryPayload>;"
+        },
+        {
+          "line": 266,
+          "source": "deleteHistory(historyUid: string, historyTitle?: string): Promise<ChatHistoryPayload>;"
+        },
+        {
+          "line": 267,
+          "source": "getMemories(): Promise<MemoryState>;"
+        },
+        {
+          "line": 268,
+          "source": "memoryAction(action: string, payload?: Record<string, unknown>): Promise<MemoryState & Record<string, unknown>>;"
+        },
+        {
+          "line": 269,
+          "source": "getTools(): Promise<ToolPolicyState>;"
+        },
+        {
+          "line": 270,
+          "source": "sendText(text: string, attachments: AttachmentPayload[]): Promise<Record<string, unknown>>;"
+        },
+        {
+          "line": 271,
+          "source": "refreshMail(): Promise<Record<string, unknown>>;"
+        },
+        {
+          "line": 272,
+          "source": "getMailMessage(messageId: string): Promise<Record<string, unknown>>;"
+        },
+        {
+          "line": 273,
+          "source": "control(action: string, payload?: Record<string, unknown>): Promise<Record<string, unknown>>;"
+        },
+        {
+          "line": 274,
+          "source": "closeWindow(): void;"
+        },
+        {
+          "line": 275,
+          "source": "minimizeWindow(): void;"
+        },
+        {
+          "line": 276,
+          "source": "toggleMaximizeWindow(): void;"
+        },
+        {
+          "line": 277,
+          "source": "onState(callback: (state: RuntimeState) => void): () => void;"
+        },
+        {
+          "line": 278,
+          "source": "onData(callback: (data: BriefingData) => void): () => void;"
+        },
+        {
+          "line": 279,
+          "source": "onChatState(callback: (state: ChatState) => void): () => void;"
+        }
+      ],
+      "bridge_methods": [
+        {
+          "line": 256,
+          "source": "schedule(action: \"status\" | \"view\" | \"item\" | \"mutate\" | \"materialize\" | \"prepare\" | \"notifications\" | \"notification-action\", payload?: Record<string, unknown>): Promise<Record<string, unknown> & { ok: boolean; error?: string }>;",
+          "function": "schedule"
+        },
+        {
+          "line": 257,
+          "source": "getState(): Promise<RuntimeState>;",
+          "function": "getState"
+        },
+        {
+          "line": 258,
+          "source": "getData(): Promise<BriefingData>;",
+          "function": "getData"
+        },
+        {
+          "line": 259,
+          "source": "getChatState(): Promise<ChatState>;",
+          "function": "getChatState"
+        },
+        {
+          "line": 260,
+          "source": "getChatHistory(): Promise<ChatHistoryPayload>;",
+          "function": "getChatHistory"
+        },
+        {
+          "line": 261,
+          "source": "getProfile(): Promise<ProfileState>;",
+          "function": "getProfile"
+        },
+        {
+          "line": 262,
+          "source": "applyProfile(payload: Record<string, unknown>): Promise<Record<string, unknown>>;",
+          "function": "applyProfile"
+        },
+        {
+          "line": 263,
+          "source": "getHistories(historyUid?: string): Promise<ChatHistoryPayload>;",
+          "function": "getHistories"
+        },
+        {
+          "line": 264,
+          "source": "createHistory(): Promise<ChatHistoryPayload>;",
+          "function": "createHistory"
+        },
+        {
+          "line": 265,
+          "source": "selectHistory(historyUid: string): Promise<ChatHistoryPayload>;",
+          "function": "selectHistory"
+        },
+        {
+          "line": 266,
+          "source": "deleteHistory(historyUid: string, historyTitle?: string): Promise<ChatHistoryPayload>;",
+          "function": "deleteHistory"
+        },
+        {
+          "line": 267,
+          "source": "getMemories(): Promise<MemoryState>;",
+          "function": "getMemories"
+        },
+        {
+          "line": 268,
+          "source": "memoryAction(action: string, payload?: Record<string, unknown>): Promise<MemoryState & Record<string, unknown>>;",
+          "function": "memoryAction"
+        },
+        {
+          "line": 269,
+          "source": "getTools(): Promise<ToolPolicyState>;",
+          "function": "getTools"
+        },
+        {
+          "line": 270,
+          "source": "sendText(text: string, attachments: AttachmentPayload[]): Promise<Record<string, unknown>>;",
+          "function": "sendText"
+        },
+        {
+          "line": 271,
+          "source": "refreshMail(): Promise<Record<string, unknown>>;",
+          "function": "refreshMail"
+        },
+        {
+          "line": 272,
+          "source": "getMailMessage(messageId: string): Promise<Record<string, unknown>>;",
+          "function": "getMailMessage"
+        },
+        {
+          "line": 273,
+          "source": "control(action: string, payload?: Record<string, unknown>): Promise<Record<string, unknown>>;",
+          "function": "control"
+        },
+        {
+          "line": 274,
+          "source": "closeWindow(): void;",
+          "function": "closeWindow"
+        },
+        {
+          "line": 275,
+          "source": "minimizeWindow(): void;",
+          "function": "minimizeWindow"
+        },
+        {
+          "line": 276,
+          "source": "toggleMaximizeWindow(): void;",
+          "function": "toggleMaximizeWindow"
+        },
+        {
+          "line": 277,
+          "source": "onState(callback: (state: RuntimeState) => void): () => void;",
+          "function": "onState"
+        },
+        {
+          "line": 278,
+          "source": "onData(callback: (data: BriefingData) => void): () => void;",
+          "function": "onData"
+        },
+        {
+          "line": 279,
+          "source": "onChatState(callback: (state: ChatState) => void): () => void;",
+          "function": "onChatState"
+        }
+      ]
+    },
+    "model.ts": {
+      "sha256": "25b91217df1a805160b92f6215878b16f9ee49af7ed10d9a128b7f15093d0792",
+      "lines": 204,
+      "functions": [
+        {
+          "function": "text",
+          "line": 59
+        },
+        {
+          "function": "sourceLabel",
+          "line": 64
+        },
+        {
+          "function": "levelLabel",
+          "line": 69
+        },
+        {
+          "function": "statusLabel",
+          "line": 74
+        },
+        {
+          "function": "statusTone",
+          "line": 79
+        },
+        {
+          "function": "formatDateLabel",
+          "line": 87
+        },
+        {
+          "function": "formatFullDate",
+          "line": 99
+        },
+        {
+          "function": "normalizeViewItem",
+          "line": 107
+        },
+        {
+          "function": "sectionItems",
+          "line": 131
+        },
+        {
+          "function": "uniqueItems",
+          "line": 147
+        },
+        {
+          "function": "todayItems",
+          "line": 157
+        },
+        {
+          "function": "sourceItems",
+          "line": 167
+        },
+        {
+          "function": "priorityItems",
+          "line": 185
+        },
+        {
+          "function": "sourceCount",
+          "line": 193
+        },
+        {
+          "function": "sourceStatus",
+          "line": 201
+        }
+      ],
+      "events": [],
+      "selectors": [],
+      "declarations": []
+    },
+    "schedule.ts": {
+      "sha256": "695bf308ecc1ba010839a3d50703c6696f6e154457c1346874f8fd3a57f66e99",
+      "lines": 170,
+      "functions": [
+        {
+          "function": "btn",
+          "line": 11
+        },
+        {
+          "function": "shift",
+          "line": 14
+        },
+        {
+          "function": "errorText",
+          "line": 15
+        },
+        {
+          "function": "constructor",
+          "line": 35
+        },
+        {
+          "function": "call",
+          "line": 41
+        },
+        {
+          "function": "refresh",
+          "line": 44
+        },
+        {
+          "function": "render",
+          "line": 63
+        },
+        {
+          "function": "row",
+          "line": 95
+        },
+        {
+          "function": "mutateState",
+          "line": 107
+        },
+        {
+          "function": "cancel",
+          "line": 111
+        },
+        {
+          "function": "modal",
+          "line": 116
+        },
+        {
+          "function": "field",
+          "line": 120
+        },
+        {
+          "function": "select",
+          "line": 121
+        },
+        {
+          "function": "input",
+          "line": 122
+        },
+        {
+          "function": "edit",
+          "line": 123
+        },
+        {
+          "function": "noticeAction",
+          "line": 161
+        },
+        {
+          "function": "editPreferences",
+          "line": 166
+        }
+      ],
+      "events": [
+        {
+          "line": 12,
+          "source": "const node=el(\"button\",cls,label);node.type=\"button\";node.onclick=callback;return node;"
+        },
+        {
+          "line": 42,
+          "source": "try{return await this.bridge.schedule(action,payload);}catch{return {ok:false,error:\"core_unavailable\"};}"
+        },
+        {
+          "line": 47,
+          "source": "const health=await this.call(\"status\");"
+        },
+        {
+          "line": 53,
+          "source": "if(materialize)await this.call(\"materialize\",{through:shift(end,1)});"
+        },
+        {
+          "line": 54,
+          "source": "const [result,notifications]=await Promise.all([this.call(\"view\",{start:this.start,end,timezone:this.timezone,limit:100,offset:more?this.view.nextOffset||0:0}),this.call(\"notifications\")]);"
+        },
+        {
+          "line": 68,
+          "source": "const date=el(\"input\");date.type=\"date\";date.value=this.start;date.setAttribute(\"aria-label\",\"查看日期\");date.onchange=()=>{if(date.value){this.followingToday=false;this.start=date.value;void this.refresh();}};"
+        },
+        {
+          "line": 70,
+          "source": "for(const [value,label] of [[1,\"單日\"],[7,\"七日\"]] as const){const o=el(\"option\",\"\",label);o.value=String(value);range.append(o);}range.value=String(this.span);range.onchange=()=>{this.span=Number(range.value);void this.refresh();};"
+        },
+        {
+          "line": 108,
+          "source": "const result=await this.call(\"mutate\",{action,id:entry.scheduleId,expectedRevision:entry.revision,scope:\"this\",occurrenceDate:entry.occurrenceDate,confirmed:true,idempotencyKey:crypto.randomUUID()});"
+        },
+        {
+          "line": 113,
+          "source": "const error=el(\"p\",\"schedule-status is-error\");const submit=btn(\"確認取消\",async()=>{submit.disabled=true;const result=await this.call(\"mutate\",{action:\"cancel\",id:entry.scheduleId,expectedRevision:entry.revision,scope:scope.value,...(scope.value!==\"all\"?{occurrenceDate:entry.occurrenceDate}:{}),confirmed:true,idempotencyKey:crypto.randomUUID()});if(!result.ok){error.textContent=errorText(result);submit.disabled=false;}else{dialog.close();await this.refresh();}});"
+        },
+        {
+          "line": 118,
+          "source": "dialog.addEventListener(\"close\",()=>{dialog.remove();if(this.dialog===dialog)this.dialog=null;});document.body.append(dialog);this.dialog=dialog;return dialog;"
+        },
+        {
+          "line": 124,
+          "source": "let record=entry?await this.call(\"item\",{id:entry.scheduleId}):null;"
+        },
+        {
+          "line": 143,
+          "source": "fill(seed);scope.onchange=()=>{const master=record!.item as Item;fill(scope.value===\"all\"?master:{...entry!.item,recurrence:scope.value===\"future\"?master.recurrence:null});};"
+        },
+        {
+          "line": 144,
+          "source": "allDay.onchange=()=>{const s=start.value.slice(0,10),e=end.value.slice(0,10);update();start.value=allDay.checked?s:`${s}T09:00`;end.value=allDay.checked?(e===s?shift(e,1):e):`${e}T10:00`;};"
+        },
+        {
+          "line": 145,
+          "source": "kind.onchange=()=>{completion.checked=kind.value!==\"event\";update();};recurring.onchange=ending.onchange=notify.onchange=update;"
+        },
+        {
+          "line": 149,
+          "source": "const reload=btn(\"重新讀取版本（保留草稿）\",async()=>{if(!entry)return;const latest=await this.call(\"item\",{id:entry.scheduleId});if(!latest.ok){error.textContent=errorText(latest);return;}record=latest;error.textContent=\"已讀取最新版本，草稿仍保留。請確認內容與修改範圍，再儲存。\";});"
+        },
+        {
+          "line": 151,
+          "source": "form.onsubmit=async(event)=>{event.preventDefault();if(save.disabled)return;save.disabled=true;error.textContent=\"\";"
+        },
+        {
+          "line": 155,
+          "source": "const prepared=await this.call(\"prepare\",{item});if(!prepared.ok){error.textContent=errorText(prepared);save.disabled=false;return;}"
+        },
+        {
+          "line": 158,
+          "source": "const result=await this.call(\"mutate\",{...payload,idempotencyKey:pendingKey});if(!result.ok){error.textContent=errorText(result);save.disabled=false;return;}dialog.close();await this.refresh();};"
+        },
+        {
+          "line": 164,
+          "source": "const result=await this.call(\"notification-action\",{action,id:notice.id,confirmed:true,...(action===\"snooze\"?{until}:{})});if(!result.ok)window.alert(errorText(result));await this.refresh(false);"
+        },
+        {
+          "line": 168,
+          "source": "dialog.append(this.field(\"啟用勿擾（面板仍保留提醒）\",enabled),this.field(\"開始\",start),this.field(\"結束\",end),this.field(\"勿擾時區\",tz),error,btn(\"儲存設定\",async()=>{const result=await this.call(\"notification-action\",{action:\"preferences\",confirmed:true,preferences:{quietEnabled:enabled.checked,quietStart:start.value,quietEnd:end.value,timezone:tz.value}});if(!result.ok){error.textContent=errorText(result);return;}dialog.close();await this.refresh(false);}));dialog.showModal();"
+        }
+      ],
+      "selectors": [],
+      "declarations": []
+    },
+    "styles.css": {
+      "sha256": "d6c5bbf9bd49609300f8675061b4acbf4639d3dd08940cf70b79b4054715020f",
+      "lines": 2233,
+      "functions": [],
+      "events": [
+        {
+          "line": 18,
+          "source": "--data-font: \"Cascadia Mono\", \"SFMono-Regular\", Consolas, monospace;"
+        },
+        {
+          "line": 31,
+          "source": ".schedule-row-copy span {font:12px var(--data-font);color:var(--moon);}"
+        },
+        {
+          "line": 150,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 180,
+          "source": ".state-pulse[data-state=\"thinking\"],"
+        },
+        {
+          "line": 181,
+          "source": ".state-pulse[data-state=\"processing\"],"
+        },
+        {
+          "line": 182,
+          "source": ".state-pulse[data-state=\"loading\"] {"
+        },
+        {
+          "line": 190,
+          "source": ".state-pulse[data-state=\"speaking\"],"
+        },
+        {
+          "line": 191,
+          "source": ".state-pulse[data-state=\"listening\"] {"
+        },
+        {
+          "line": 197,
+          "source": ".state-pulse[data-state=\"offline\"] {"
+        },
+        {
+          "line": 220,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 363,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 593,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 646,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 679,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 783,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 965,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1043,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1073,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1121,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1360,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1391,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1431,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1510,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1567,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1629,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1746,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1913,
+          "source": "font-family: var(--data-font);"
+        }
+      ],
+      "selectors": [
+        {
+          "line": 1,
+          "source": ":root"
+        },
+        {
+          "line": 22,
+          "source": ".local-schedule"
+        },
+        {
+          "line": 23,
+          "source": ".schedule-toolbar, .schedule-row-actions"
+        },
+        {
+          "line": 24,
+          "source": ".schedule-toolbar input, .schedule-toolbar select, .schedule-field input:not([type=checkbox]), .schedule-field select, .schedule-field textarea"
+        },
+        {
+          "line": 25,
+          "source": ".schedule-toolbar input, .schedule-toolbar select"
+        },
+        {
+          "line": 26,
+          "source": ".schedule-group"
+        },
+        {
+          "line": 27,
+          "source": ".schedule-group h3, .schedule-group summary"
+        },
+        {
+          "line": 28,
+          "source": ".local-schedule-row"
+        },
+        {
+          "line": 29,
+          "source": ".schedule-row-copy"
+        },
+        {
+          "line": 30,
+          "source": ".schedule-row-copy strong"
+        },
+        {
+          "line": 31,
+          "source": ".schedule-row-copy span"
+        },
+        {
+          "line": 32,
+          "source": ".schedule-row-copy small"
+        },
+        {
+          "line": 33,
+          "source": ".schedule-row-actions"
+        },
+        {
+          "line": 34,
+          "source": ".schedule-row-actions button"
+        },
+        {
+          "line": 35,
+          "source": ".schedule-status"
+        },
+        {
+          "line": 36,
+          "source": ".schedule-status.is-error"
+        },
+        {
+          "line": 37,
+          "source": ".schedule-dialog"
+        },
+        {
+          "line": 38,
+          "source": ".schedule-dialog::backdrop"
+        },
+        {
+          "line": 39,
+          "source": ".schedule-dialog .block-heading"
+        },
+        {
+          "line": 40,
+          "source": ".schedule-form"
+        },
+        {
+          "line": 41,
+          "source": ".schedule-form fieldset, .schedule-form > .schedule-status, .schedule-form > button"
+        },
+        {
+          "line": 42,
+          "source": ".schedule-field"
+        },
+        {
+          "line": 43,
+          "source": ".schedule-field input[type=checkbox]"
+        },
+        {
+          "line": 44,
+          "source": ".schedule-form fieldset"
+        },
+        {
+          "line": 45,
+          "source": ".schedule-form-grid"
+        },
+        {
+          "line": 46,
+          "source": ".schedule-weekdays"
+        },
+        {
+          "line": 47,
+          "source": ".schedule-dialog [hidden]"
+        },
+        {
+          "line": 48,
+          "source": ".schedule-reminders"
+        },
+        {
+          "line": 49,
+          "source": ".reminder-row"
+        },
+        {
+          "line": 50,
+          "source": ".reminder-row strong"
+        },
+        {
+          "line": 51,
+          "source": "select:focus-visible"
+        },
+        {
+          "line": 52,
+          "source": "@media(max-width:640px)"
+        },
+        {
+          "line": 52,
+          "source": ".local-schedule-row"
+        },
+        {
+          "line": 52,
+          "source": ".schedule-row-actions"
+        },
+        {
+          "line": 52,
+          "source": ".schedule-form"
+        },
+        {
+          "line": 52,
+          "source": ".schedule-dialog"
+        },
+        {
+          "line": 54,
+          "source": "*"
+        },
+        {
+          "line": 58,
+          "source": "html, body, #app"
+        },
+        {
+          "line": 67,
+          "source": "body"
+        },
+        {
+          "line": 75,
+          "source": "button, textarea, input"
+        },
+        {
+          "line": 81,
+          "source": "button"
+        },
+        {
+          "line": 85,
+          "source": "button:focus-visible, textarea:focus-visible, input:focus-visible"
+        },
+        {
+          "line": 92,
+          "source": "button:disabled"
+        },
+        {
+          "line": 97,
+          "source": "::-webkit-scrollbar"
+        },
+        {
+          "line": 102,
+          "source": "::-webkit-scrollbar-thumb"
+        },
+        {
+          "line": 107,
+          "source": "::-webkit-scrollbar-track"
+        },
+        {
+          "line": 111,
+          "source": ".work-panel"
+        },
+        {
+          "line": 119,
+          "source": ".rail"
+        },
+        {
+          "line": 131,
+          "source": ".brand"
+        },
+        {
+          "line": 140,
+          "source": ".brand-orbit"
+        },
+        {
+          "line": 155,
+          "source": ".brand-orbit::after"
+        },
+        {
+          "line": 167,
+          "source": ".state-pulse"
+        },
+        {
+          "line": 180,
+          "source": ".state-pulse[data-state=\"thinking\"], .state-pulse[data-state=\"processing\"], .state-pulse[data-state=\"loading\"]"
+        },
+        {
+          "line": 190,
+          "source": ".state-pulse[data-state=\"speaking\"], .state-pulse[data-state=\"listening\"]"
+        },
+        {
+          "line": 197,
+          "source": ".state-pulse[data-state=\"offline\"]"
+        },
+        {
+          "line": 201,
+          "source": "@keyframes state-breathe"
+        },
+        {
+          "line": 202,
+          "source": "0%, 100%"
+        },
+        {
+          "line": 203,
+          "source": "50%"
+        },
+        {
+          "line": 206,
+          "source": ".brand-copy"
+        },
+        {
+          "line": 210,
+          "source": ".brand-name"
+        },
+        {
+          "line": 216,
+          "source": ".brand-role"
+        },
+        {
+          "line": 228,
+          "source": ".rail-nav"
+        },
+        {
+          "line": 234,
+          "source": ".rail-spacer"
+        },
+        {
+          "line": 238,
+          "source": ".rail-button"
+        },
+        {
+          "line": 257,
+          "source": ".rail-button:hover"
+        },
+        {
+          "line": 262,
+          "source": ".rail-button.is-active"
+        },
+        {
+          "line": 268,
+          "source": ".rail-button svg"
+        },
+        {
+          "line": 276,
+          "source": ".rail-button.is-active svg"
+        },
+        {
+          "line": 280,
+          "source": ".rail-label"
+        },
+        {
+          "line": 288,
+          "source": ".rail-footer"
+        },
+        {
+          "line": 296,
+          "source": ".presence"
+        },
+        {
+          "line": 307,
+          "source": ".presence-dot"
+        },
+        {
+          "line": 315,
+          "source": ".presence-dot.is-online"
+        },
+        {
+          "line": 320,
+          "source": ".presence-label"
+        },
+        {
+          "line": 324,
+          "source": ".workspace"
+        },
+        {
+          "line": 332,
+          "source": ".chrome"
+        },
+        {
+          "line": 345,
+          "source": ".chrome-context"
+        },
+        {
+          "line": 352,
+          "source": ".chrome-title"
+        },
+        {
+          "line": 360,
+          "source": ".chrome-meta"
+        },
+        {
+          "line": 369,
+          "source": ".window-actions"
+        },
+        {
+          "line": 375,
+          "source": ".chrome-right"
+        },
+        {
+          "line": 383,
+          "source": ".privacy-indicators"
+        },
+        {
+          "line": 390,
+          "source": ".privacy-chip"
+        },
+        {
+          "line": 403,
+          "source": ".window-button"
+        },
+        {
+          "line": 414,
+          "source": ".window-button:hover"
+        },
+        {
+          "line": 419,
+          "source": ".window-button.close:hover"
+        },
+        {
+          "line": 424,
+          "source": ".window-button svg"
+        },
+        {
+          "line": 432,
+          "source": ".stage"
+        },
+        {
+          "line": 442,
+          "source": ".stage.has-detail"
+        },
+        {
+          "line": 446,
+          "source": ".history-scrim"
+        },
+        {
+          "line": 457,
+          "source": ".history-drawer"
+        },
+        {
+          "line": 474,
+          "source": ".stage.has-history .history-scrim"
+        },
+        {
+          "line": 479,
+          "source": ".stage.has-history .history-drawer"
+        },
+        {
+          "line": 483,
+          "source": ".history-drawer-header"
+        },
+        {
+          "line": 491,
+          "source": ".history-drawer-title"
+        },
+        {
+          "line": 498,
+          "source": ".history-drawer-header p"
+        },
+        {
+          "line": 505,
+          "source": ".history-drawer-actions"
+        },
+        {
+          "line": 512,
+          "source": ".history-drawer-actions .primary-button"
+        },
+        {
+          "line": 517,
+          "source": ".history-search"
+        },
+        {
+          "line": 529,
+          "source": ".history-search:focus"
+        },
+        {
+          "line": 534,
+          "source": ".history-list"
+        },
+        {
+          "line": 540,
+          "source": ".history-row"
+        },
+        {
+          "line": 549,
+          "source": ".history-row.is-active"
+        },
+        {
+          "line": 554,
+          "source": ".history-open"
+        },
+        {
+          "line": 565,
+          "source": ".history-open:hover, .history-delete:hover"
+        },
+        {
+          "line": 570,
+          "source": ".history-title, .history-preview, .history-meta"
+        },
+        {
+          "line": 578,
+          "source": ".history-title"
+        },
+        {
+          "line": 584,
+          "source": ".history-preview"
+        },
+        {
+          "line": 590,
+          "source": ".history-meta"
+        },
+        {
+          "line": 597,
+          "source": ".history-delete"
+        },
+        {
+          "line": 608,
+          "source": ".history-delete svg"
+        },
+        {
+          "line": 613,
+          "source": ".history-empty"
+        },
+        {
+          "line": 624,
+          "source": ".history-empty strong"
+        },
+        {
+          "line": 629,
+          "source": ".view-root"
+        },
+        {
+          "line": 636,
+          "source": ".view-frame"
+        },
+        {
+          "line": 643,
+          "source": ".section-kicker"
+        },
+        {
+          "line": 652,
+          "source": ".section-title"
+        },
+        {
+          "line": 661,
+          "source": ".section-description"
+        },
+        {
+          "line": 669,
+          "source": ".section-heading-row"
+        },
+        {
+          "line": 677,
+          "source": ".mono-meta"
+        },
+        {
+          "line": 683,
+          "source": ".primary-button, .quiet-button, .icon-button, .source-filter, .text-button"
+        },
+        {
+          "line": 693,
+          "source": ".primary-button"
+        },
+        {
+          "line": 701,
+          "source": ".primary-button:hover"
+        },
+        {
+          "line": 705,
+          "source": ".quiet-button"
+        },
+        {
+          "line": 713,
+          "source": ".quiet-button:hover"
+        },
+        {
+          "line": 718,
+          "source": ".quiet-button.is-danger"
+        },
+        {
+          "line": 723,
+          "source": ".text-button"
+        },
+        {
+          "line": 729,
+          "source": ".text-button:hover"
+        },
+        {
+          "line": 734,
+          "source": ".empty-state"
+        },
+        {
+          "line": 744,
+          "source": ".empty-state strong"
+        },
+        {
+          "line": 751,
+          "source": ".detail-drawer"
+        },
+        {
+          "line": 762,
+          "source": ".stage.has-detail .detail-drawer"
+        },
+        {
+          "line": 767,
+          "source": ".detail-scroll"
+        },
+        {
+          "line": 773,
+          "source": ".detail-topline"
+        },
+        {
+          "line": 781,
+          "source": ".detail-eyebrow"
+        },
+        {
+          "line": 789,
+          "source": ".icon-button"
+        },
+        {
+          "line": 798,
+          "source": ".icon-button:hover"
+        },
+        {
+          "line": 803,
+          "source": ".detail-title"
+        },
+        {
+          "line": 811,
+          "source": ".detail-meta-list"
+        },
+        {
+          "line": 822,
+          "source": ".detail-meta-list dt"
+        },
+        {
+          "line": 826,
+          "source": ".detail-meta-list dd"
+        },
+        {
+          "line": 832,
+          "source": ".detail-copy"
+        },
+        {
+          "line": 838,
+          "source": ".detail-note"
+        },
+        {
+          "line": 847,
+          "source": ".detail-actions"
+        },
+        {
+          "line": 855,
+          "source": ".chat-frame"
+        },
+        {
+          "line": 863,
+          "source": ".chat-header"
+        },
+        {
+          "line": 868,
+          "source": ".chat-heading-row"
+        },
+        {
+          "line": 875,
+          "source": ".chat-title-cluster, .chat-header-actions"
+        },
+        {
+          "line": 883,
+          "source": ".history-toggle"
+        },
+        {
+          "line": 896,
+          "source": ".history-toggle:hover"
+        },
+        {
+          "line": 901,
+          "source": ".history-toggle svg"
+        },
+        {
+          "line": 906,
+          "source": ".history-toggle svg, .history-delete svg, .sensor-button svg"
+        },
+        {
+          "line": 916,
+          "source": ".inline-select"
+        },
+        {
+          "line": 925,
+          "source": ".inline-select select"
+        },
+        {
+          "line": 937,
+          "source": ".inline-select select:focus"
+        },
+        {
+          "line": 941,
+          "source": ".chat-title"
+        },
+        {
+          "line": 948,
+          "source": ".chat-subtitle"
+        },
+        {
+          "line": 954,
+          "source": ".runtime-pill, .status-pill, .level-pill"
+        },
+        {
+          "line": 970,
+          "source": ".runtime-pill::before, .status-pill::before"
+        },
+        {
+          "line": 979,
+          "source": ".runtime-pill.is-online::before, .status-pill.tone-good::before"
+        },
+        {
+          "line": 984,
+          "source": ".status-pill.tone-warn::before"
+        },
+        {
+          "line": 988,
+          "source": ".status-pill.tone-bad::before"
+        },
+        {
+          "line": 992,
+          "source": ".chat-context"
+        },
+        {
+          "line": 1003,
+          "source": ".chat-context.is-visible"
+        },
+        {
+          "line": 1007,
+          "source": ".chat-context-copy"
+        },
+        {
+          "line": 1013,
+          "source": ".chat-context-copy strong"
+        },
+        {
+          "line": 1017,
+          "source": ".message-list"
+        },
+        {
+          "line": 1024,
+          "source": ".message-list-inner"
+        },
+        {
+          "line": 1029,
+          "source": ".message"
+        },
+        {
+          "line": 1037,
+          "source": ".message:first-child"
+        },
+        {
+          "line": 1041,
+          "source": ".message-role"
+        },
+        {
+          "line": 1049,
+          "source": ".message.is-assistant .message-role"
+        },
+        {
+          "line": 1053,
+          "source": ".message.is-event .message-role"
+        },
+        {
+          "line": 1057,
+          "source": ".message-copy"
+        },
+        {
+          "line": 1066,
+          "source": ".message.is-user .message-copy"
+        },
+        {
+          "line": 1070,
+          "source": ".message-time"
+        },
+        {
+          "line": 1077,
+          "source": ".typing-line"
+        },
+        {
+          "line": 1084,
+          "source": ".typing-line i"
+        },
+        {
+          "line": 1092,
+          "source": ".typing-line i:nth-child(2)"
+        },
+        {
+          "line": 1096,
+          "source": ".typing-line i:nth-child(3)"
+        },
+        {
+          "line": 1100,
+          "source": "@keyframes thinking"
+        },
+        {
+          "line": 1101,
+          "source": "0%, 100%"
+        },
+        {
+          "line": 1102,
+          "source": "50%"
+        },
+        {
+          "line": 1105,
+          "source": ".chat-empty"
+        },
+        {
+          "line": 1112,
+          "source": ".chat-empty-mark"
+        },
+        {
+          "line": 1124,
+          "source": ".chat-empty h2"
+        },
+        {
+          "line": 1130,
+          "source": ".chat-empty p"
+        },
+        {
+          "line": 1137,
+          "source": ".composer-wrap"
+        },
+        {
+          "line": 1142,
+          "source": ".conversation-controls"
+        },
+        {
+          "line": 1150,
+          "source": ".sensor-controls, .response-controls"
+        },
+        {
+          "line": 1158,
+          "source": ".sensor-button"
+        },
+        {
+          "line": 1172,
+          "source": ".sensor-button:hover"
+        },
+        {
+          "line": 1177,
+          "source": ".sensor-button.is-on"
+        },
+        {
+          "line": 1183,
+          "source": ".sensor-button.is-paused"
+        },
+        {
+          "line": 1189,
+          "source": ".sensor-button.mic-submit"
+        },
+        {
+          "line": 1195,
+          "source": ".sensor-button.mic-cancel"
+        },
+        {
+          "line": 1199,
+          "source": ".sensor-button:disabled"
+        },
+        {
+          "line": 1204,
+          "source": ".sensor-button svg"
+        },
+        {
+          "line": 1209,
+          "source": ".sensor-button[hidden]"
+        },
+        {
+          "line": 1213,
+          "source": ".attachment-row"
+        },
+        {
+          "line": 1221,
+          "source": ".attachment-row:empty"
+        },
+        {
+          "line": 1225,
+          "source": ".attachment-chip"
+        },
+        {
+          "line": 1237,
+          "source": ".attachment-chip span"
+        },
+        {
+          "line": 1243,
+          "source": ".attachment-chip button"
+        },
+        {
+          "line": 1250,
+          "source": ".composer"
+        },
+        {
+          "line": 1261,
+          "source": ".composer:focus-within"
+        },
+        {
+          "line": 1265,
+          "source": ".composer-button"
+        },
+        {
+          "line": 1277,
+          "source": ".composer-button:hover"
+        },
+        {
+          "line": 1282,
+          "source": ".composer-button.send"
+        },
+        {
+          "line": 1287,
+          "source": ".composer-button.stop"
+        },
+        {
+          "line": 1292,
+          "source": ".composer-button svg"
+        },
+        {
+          "line": 1300,
+          "source": ".composer textarea"
+        },
+        {
+          "line": 1313,
+          "source": ".composer textarea::placeholder"
+        },
+        {
+          "line": 1317,
+          "source": ".composer-foot"
+        },
+        {
+          "line": 1326,
+          "source": ".composer-notice.is-error"
+        },
+        {
+          "line": 1331,
+          "source": ".today-frame"
+        },
+        {
+          "line": 1335,
+          "source": ".today-question"
+        },
+        {
+          "line": 1344,
+          "source": ".today-question em"
+        },
+        {
+          "line": 1349,
+          "source": ".today-summary"
+        },
+        {
+          "line": 1358,
+          "source": ".today-summary strong"
+        },
+        {
+          "line": 1364,
+          "source": ".today-primary"
+        },
+        {
+          "line": 1371,
+          "source": ".block-heading"
+        },
+        {
+          "line": 1382,
+          "source": ".block-heading h2"
+        },
+        {
+          "line": 1389,
+          "source": ".block-heading span"
+        },
+        {
+          "line": 1395,
+          "source": ".priority-list"
+        },
+        {
+          "line": 1399,
+          "source": ".priority-item"
+        },
+        {
+          "line": 1414,
+          "source": ".priority-item::before"
+        },
+        {
+          "line": 1424,
+          "source": ".priority-item:hover::before, .priority-item.is-selected::before"
+        },
+        {
+          "line": 1429,
+          "source": ".priority-source"
+        },
+        {
+          "line": 1437,
+          "source": ".priority-title"
+        },
+        {
+          "line": 1443,
+          "source": ".priority-meta"
+        },
+        {
+          "line": 1449,
+          "source": ".level-pill"
+        },
+        {
+          "line": 1456,
+          "source": ".level-pill.level-urgent, .level-pill.level-must"
+        },
+        {
+          "line": 1462,
+          "source": ".level-pill.level-focus, .level-pill.level-watch"
+        },
+        {
+          "line": 1468,
+          "source": ".schedule"
+        },
+        {
+          "line": 1474,
+          "source": ".schedule::before"
+        },
+        {
+          "line": 1484,
+          "source": ".schedule-item"
+        },
+        {
+          "line": 1496,
+          "source": ".schedule-item::before"
+        },
+        {
+          "line": 1508,
+          "source": ".schedule-time"
+        },
+        {
+          "line": 1514,
+          "source": ".schedule-title"
+        },
+        {
+          "line": 1521,
+          "source": ".schedule-meta"
+        },
+        {
+          "line": 1527,
+          "source": ".schedule-empty"
+        },
+        {
+          "line": 1534,
+          "source": ".sources-block"
+        },
+        {
+          "line": 1538,
+          "source": ".source-filters"
+        },
+        {
+          "line": 1545,
+          "source": ".source-filter"
+        },
+        {
+          "line": 1555,
+          "source": ".source-filter:hover"
+        },
+        {
+          "line": 1559,
+          "source": ".source-filter.is-active"
+        },
+        {
+          "line": 1564,
+          "source": ".source-filter small"
+        },
+        {
+          "line": 1571,
+          "source": ".source-status-line"
+        },
+        {
+          "line": 1583,
+          "source": ".source-status-copy"
+        },
+        {
+          "line": 1590,
+          "source": ".source-list"
+        },
+        {
+          "line": 1597,
+          "source": ".source-item"
+        },
+        {
+          "line": 1611,
+          "source": ".source-item:hover .source-item-title"
+        },
+        {
+          "line": 1615,
+          "source": ".source-item-title"
+        },
+        {
+          "line": 1621,
+          "source": ".source-item-meta"
+        },
+        {
+          "line": 1627,
+          "source": ".source-item-arrow"
+        },
+        {
+          "line": 1633,
+          "source": ".settings-grid"
+        },
+        {
+          "line": 1640,
+          "source": ".settings-column"
+        },
+        {
+          "line": 1646,
+          "source": ".settings-group"
+        },
+        {
+          "line": 1650,
+          "source": ".settings-group-header"
+        },
+        {
+          "line": 1658,
+          "source": ".settings-group-header h2"
+        },
+        {
+          "line": 1664,
+          "source": ".settings-group-header span"
+        },
+        {
+          "line": 1669,
+          "source": ".setting-row"
+        },
+        {
+          "line": 1678,
+          "source": ".setting-copy strong"
+        },
+        {
+          "line": 1684,
+          "source": ".setting-copy span"
+        },
+        {
+          "line": 1692,
+          "source": ".switch"
+        },
+        {
+          "line": 1703,
+          "source": ".switch::after"
+        },
+        {
+          "line": 1715,
+          "source": ".switch.is-on"
+        },
+        {
+          "line": 1719,
+          "source": ".switch.is-on::after"
+        },
+        {
+          "line": 1724,
+          "source": ".diagnostic-list"
+        },
+        {
+          "line": 1728,
+          "source": ".diagnostic-row"
+        },
+        {
+          "line": 1737,
+          "source": ".diagnostic-row dt"
+        },
+        {
+          "line": 1741,
+          "source": ".diagnostic-row dd"
+        },
+        {
+          "line": 1751,
+          "source": ".settings-actions"
+        },
+        {
+          "line": 1758,
+          "source": ".settings-shell"
+        },
+        {
+          "line": 1765,
+          "source": ".settings-nav"
+        },
+        {
+          "line": 1771,
+          "source": ".settings-nav-item"
+        },
+        {
+          "line": 1784,
+          "source": ".settings-nav-item strong"
+        },
+        {
+          "line": 1790,
+          "source": ".settings-nav-item span"
+        },
+        {
+          "line": 1795,
+          "source": ".settings-nav-item:hover"
+        },
+        {
+          "line": 1799,
+          "source": ".settings-nav-item.is-active"
+        },
+        {
+          "line": 1805,
+          "source": ".settings-nav-item.is-active strong"
+        },
+        {
+          "line": 1809,
+          "source": ".settings-content"
+        },
+        {
+          "line": 1816,
+          "source": ".setting-row-select"
+        },
+        {
+          "line": 1820,
+          "source": ".settings-select"
+        },
+        {
+          "line": 1832,
+          "source": ".settings-select:focus"
+        },
+        {
+          "line": 1836,
+          "source": ".settings-select:disabled"
+        },
+        {
+          "line": 1840,
+          "source": ".settings-note"
+        },
+        {
+          "line": 1849,
+          "source": ".microphone-setting-row"
+        },
+        {
+          "line": 1853,
+          "source": ".microphone-setting-actions"
+        },
+        {
+          "line": 1861,
+          "source": ".memory-add"
+        },
+        {
+          "line": 1870,
+          "source": ".memory-input"
+        },
+        {
+          "line": 1883,
+          "source": ".memory-input:focus"
+        },
+        {
+          "line": 1887,
+          "source": ".memory-list, .tool-list"
+        },
+        {
+          "line": 1892,
+          "source": ".memory-row, .tool-row"
+        },
+        {
+          "line": 1898,
+          "source": ".memory-row-top, .memory-actions, .tool-row"
+        },
+        {
+          "line": 1906,
+          "source": ".memory-row-top, .tool-row"
+        },
+        {
+          "line": 1911,
+          "source": ".memory-meta"
+        },
+        {
+          "line": 1917,
+          "source": ".memory-content"
+        },
+        {
+          "line": 1925,
+          "source": ".memory-actions"
+        },
+        {
+          "line": 1930,
+          "source": ".text-button.is-danger"
+        },
+        {
+          "line": 1934,
+          "source": ".tool-policy-summary"
+        },
+        {
+          "line": 1943,
+          "source": ".tool-policy-summary strong"
+        },
+        {
+          "line": 1948,
+          "source": ".tool-policy-summary span, .tool-copy span"
+        },
+        {
+          "line": 1955,
+          "source": ".tool-copy"
+        },
+        {
+          "line": 1961,
+          "source": ".tool-copy strong"
+        },
+        {
+          "line": 1966,
+          "source": ".toast"
+        },
+        {
+          "line": 1984,
+          "source": ".toast.is-visible"
+        },
+        {
+          "line": 1989,
+          "source": ".toast.is-error"
+        },
+        {
+          "line": 1994,
+          "source": ".is-compact .priority-item, .is-compact .source-item, .is-compact .setting-row"
+        },
+        {
+          "line": 2002,
+          "source": ".is-compact .message"
+        },
+        {
+          "line": 2006,
+          "source": ".reduce-motion *, .reduce-motion *::before, .reduce-motion *::after"
+        },
+        {
+          "line": 2015,
+          "source": "@media (max-width: 1080px)"
+        },
+        {
+          "line": 2016,
+          "source": ":root"
+        },
+        {
+          "line": 2021,
+          "source": ".rail"
+        },
+        {
+          "line": 2026,
+          "source": ".brand"
+        },
+        {
+          "line": 2032,
+          "source": ".brand-copy, .rail-label, .presence-label"
+        },
+        {
+          "line": 2038,
+          "source": ".rail-button"
+        },
+        {
+          "line": 2044,
+          "source": ".presence"
+        },
+        {
+          "line": 2049,
+          "source": ".view-frame"
+        },
+        {
+          "line": 2054,
+          "source": ".today-primary"
+        },
+        {
+          "line": 2058,
+          "source": ".source-list"
+        },
+        {
+          "line": 2062,
+          "source": ".settings-shell"
+        },
+        {
+          "line": 2067,
+          "source": ".chat-header-actions .character-select span, .conversation-controls .inline-select span"
+        },
+        {
+          "line": 2073,
+          "source": "@media (max-width: 900px)"
+        },
+        {
+          "line": 2074,
+          "source": ".stage, .stage.has-detail"
+        },
+        {
+          "line": 2079,
+          "source": ".detail-drawer"
+        },
+        {
+          "line": 2092,
+          "source": ".stage.has-detail .detail-drawer"
+        },
+        {
+          "line": 2096,
+          "source": ".today-primary, .settings-grid"
+        },
+        {
+          "line": 2101,
+          "source": ".today-primary"
+        },
+        {
+          "line": 2105,
+          "source": ".settings-shell"
+        },
+        {
+          "line": 2110,
+          "source": ".settings-nav"
+        },
+        {
+          "line": 2116,
+          "source": ".settings-nav-item"
+        },
+        {
+          "line": 2122,
+          "source": ".settings-nav-item.is-active"
+        },
+        {
+          "line": 2126,
+          "source": ".chat-heading-row, .conversation-controls"
+        },
+        {
+          "line": 2132,
+          "source": ".chat-header-actions, .conversation-controls, .sensor-controls, .response-controls"
+        },
+        {
+          "line": 2139,
+          "source": ".inline-select"
+        },
+        {
+          "line": 2143,
+          "source": ".inline-select select"
+        },
+        {
+          "line": 2149,
+          "source": "@media (max-width: 650px)"
+        },
+        {
+          "line": 2150,
+          "source": ".privacy-chip"
+        },
+        {
+          "line": 2160,
+          "source": ".view-frame, .chat-header"
+        },
+        {
+          "line": 2166,
+          "source": ".composer-wrap"
+        },
+        {
+          "line": 2170,
+          "source": ".sensor-button span"
+        },
+        {
+          "line": 2174,
+          "source": ".sensor-button"
+        },
+        {
+          "line": 2180,
+          "source": ".setting-row-select, .memory-add, .microphone-setting-row"
+        },
+        {
+          "line": 2186,
+          "source": ".microphone-setting-actions"
+        },
+        {
+          "line": 2192,
+          "source": "@media (max-height: 650px)"
+        },
+        {
+          "line": 2193,
+          "source": ".rail"
+        },
+        {
+          "line": 2197,
+          "source": ".brand"
+        },
+        {
+          "line": 2201,
+          "source": ".rail-button"
+        },
+        {
+          "line": 2205,
+          "source": ".view-frame"
+        },
+        {
+          "line": 2209,
+          "source": ".chat-header"
+        },
+        {
+          "line": 2214,
+          "source": ".message-list"
+        },
+        {
+          "line": 2220,
+          "source": "@media (prefers-reduced-motion: reduce)"
+        },
+        {
+          "line": 2221,
+          "source": "*, *::before, *::after"
+        },
+        {
+          "line": 2231,
+          "source": ".runtime-status"
+        },
+        {
+          "line": 2232,
+          "source": ".runtime-status[hidden]"
+        },
+        {
+          "line": 2233,
+          "source": ".workspace > .stage"
+        }
+      ],
+      "declarations": [],
+      "root_tokens": [
+        {
+          "line": 3,
+          "source": "--ink: #101319;"
+        },
+        {
+          "line": 4,
+          "source": "--deep: #181d26;"
+        },
+        {
+          "line": 5,
+          "source": "--paper: #e7eaf0;"
+        },
+        {
+          "line": 6,
+          "source": "--muted: #929bad;"
+        },
+        {
+          "line": 7,
+          "source": "--line: #303846;"
+        },
+        {
+          "line": 8,
+          "source": "--moon: #87a0ce;"
+        },
+        {
+          "line": 9,
+          "source": "--iris: #65b3a6;"
+        },
+        {
+          "line": 10,
+          "source": "--good: #65b3a6;"
+        },
+        {
+          "line": 11,
+          "source": "--warn: #d0a660;"
+        },
+        {
+          "line": 12,
+          "source": "--bad: #c77e78;"
+        },
+        {
+          "line": 13,
+          "source": "--quiet: #7e8898;"
+        },
+        {
+          "line": 14,
+          "source": "--rail-width: 78px;"
+        },
+        {
+          "line": 15,
+          "source": "--detail-width: 360px;"
+        },
+        {
+          "line": 16,
+          "source": "--chrome-height: 50px;"
+        },
+        {
+          "line": 17,
+          "source": "--ui-font: \"Microsoft JhengHei UI\", \"Segoe UI Variable\", \"Segoe UI\", sans-serif;"
+        },
+        {
+          "line": 18,
+          "source": "--data-font: \"Cascadia Mono\", \"SFMono-Regular\", Consolas, monospace;"
+        },
+        {
+          "line": 2017,
+          "source": "--rail-width: 76px;"
+        },
+        {
+          "line": 2018,
+          "source": "--detail-width: 330px;"
+        }
+      ]
+    }
+  },
+  "3baf05728921607d71306c98d43eaad155b0dbc1": {
+    "main.ts": {
+      "sha256": "e03f601a58b423bc27b201ad4073fad0956f2a751e6e3330c77db0a55cab117f",
+      "lines": 1853,
+      "functions": [
+        {
+          "function": "getState",
+          "line": 66
+        },
+        {
+          "function": "getData",
+          "line": 67
+        },
+        {
+          "function": "getChatState",
+          "line": 68
+        },
+        {
+          "function": "getChatHistory",
+          "line": 69
+        },
+        {
+          "function": "getProfile",
+          "line": 70
+        },
+        {
+          "function": "applyProfile",
+          "line": 71
+        },
+        {
+          "function": "getHistories",
+          "line": 72
+        },
+        {
+          "function": "createHistory",
+          "line": 73
+        },
+        {
+          "function": "selectHistory",
+          "line": 74
+        },
+        {
+          "function": "deleteHistory",
+          "line": 75
+        },
+        {
+          "function": "getMemories",
+          "line": 76
+        },
+        {
+          "function": "memoryAction",
+          "line": 77
+        },
+        {
+          "function": "getTools",
+          "line": 78
+        },
+        {
+          "function": "sendText",
+          "line": 79
+        },
+        {
+          "function": "refreshMail",
+          "line": 80
+        },
+        {
+          "function": "getMailMessage",
+          "line": 81
+        },
+        {
+          "function": "control",
+          "line": 82
+        },
+        {
+          "function": "button",
+          "line": 109
+        },
+        {
+          "function": "toBoolean",
+          "line": 116
+        },
+        {
+          "function": "normalizeMode",
+          "line": 121
+        },
+        {
+          "function": "isBusyState",
+          "line": 125
+        },
+        {
+          "function": "messageRoleLabel",
+          "line": 129
+        },
+        {
+          "function": "messageRoleClass",
+          "line": 136
+        },
+        {
+          "function": "fileExtension",
+          "line": 143
+        },
+        {
+          "function": "classifyFile",
+          "line": 151
+        },
+        {
+          "function": "attachmentLimit",
+          "line": 163
+        },
+        {
+          "function": "readFileAsDataUrl",
+          "line": 171
+        },
+        {
+          "function": "formatFileSize",
+          "line": 180
+        },
+        {
+          "function": "constructor",
+          "line": 212
+        },
+        {
+          "function": "renderShell",
+          "line": 223
+        },
+        {
+          "function": "bindShell",
+          "line": 271
+        },
+        {
+          "function": "refreshAll",
+          "line": 285
+        },
+        {
+          "function": "refreshHistory",
+          "line": 305
+        },
+        {
+          "function": "refreshMemories",
+          "line": 314
+        },
+        {
+          "function": "scheduleHistoryRefresh",
+          "line": 322
+        },
+        {
+          "function": "onRuntimeState",
+          "line": 330
+        },
+        {
+          "function": "onBriefingData",
+          "line": 337
+        },
+        {
+          "function": "onChatState",
+          "line": 343
+        },
+        {
+          "function": "setMode",
+          "line": 374
+        },
+        {
+          "function": "setHistoryOpen",
+          "line": 383
+        },
+        {
+          "function": "renderHistoryDrawer",
+          "line": 389
+        },
+        {
+          "function": "historyRow",
+          "line": 448
+        },
+        {
+          "function": "applyHistoryPayload",
+          "line": 463
+        },
+        {
+          "function": "createNewHistory",
+          "line": 481
+        },
+        {
+          "function": "selectHistory",
+          "line": 495
+        },
+        {
+          "function": "deleteHistory",
+          "line": 513
+        },
+        {
+          "function": "renderChrome",
+          "line": 524
+        },
+        {
+          "function": "renderActiveView",
+          "line": 565
+        },
+        {
+          "function": "viewRoot",
+          "line": 572
+        },
+        {
+          "function": "renderChat",
+          "line": 578
+        },
+        {
+          "function": "updateChatHeader",
+          "line": 684
+        },
+        {
+          "function": "populateChatControls",
+          "line": 703
+        },
+        {
+          "function": "applyProfilePatch",
+          "line": 760
+        },
+        {
+          "function": "sensorEnabled",
+          "line": 797
+        },
+        {
+          "function": "microphonePaused",
+          "line": 804
+        },
+        {
+          "function": "updateSensorControls",
+          "line": 808
+        },
+        {
+          "function": "handleMicrophonePrimary",
+          "line": 836
+        },
+        {
+          "function": "runMicrophoneAction",
+          "line": 844
+        },
+        {
+          "function": "toggleSensor",
+          "line": 883
+        },
+        {
+          "function": "mergedChatMessages",
+          "line": 910
+        },
+        {
+          "function": "renderChatTranscript",
+          "line": 925
+        },
+        {
+          "function": "renderChatContext",
+          "line": 962
+        },
+        {
+          "function": "updateComposerState",
+          "line": 976
+        },
+        {
+          "function": "setComposerNotice",
+          "line": 996
+        },
+        {
+          "function": "addFiles",
+          "line": 1009
+        },
+        {
+          "function": "renderAttachments",
+          "line": 1036
+        },
+        {
+          "function": "sendCurrentText",
+          "line": 1054
+        },
+        {
+          "function": "stopOutput",
+          "line": 1085
+        },
+        {
+          "function": "renderToday",
+          "line": 1090
+        },
+        {
+          "function": "renderPriorityBlock",
+          "line": 1121
+        },
+        {
+          "function": "renderScheduleBlock",
+          "line": 1149
+        },
+        {
+          "function": "renderSourcesBlock",
+          "line": 1173
+        },
+        {
+          "function": "refreshMail",
+          "line": 1236
+        },
+        {
+          "function": "openDetail",
+          "line": 1248
+        },
+        {
+          "function": "loadMailDetail",
+          "line": 1255
+        },
+        {
+          "function": "closeDetail",
+          "line": 1269
+        },
+        {
+          "function": "renderDetail",
+          "line": 1277
+        },
+        {
+          "function": "bringItemToChat",
+          "line": 1334
+        },
+        {
+          "function": "renderSettings",
+          "line": 1345
+        },
+        {
+          "function": "settingsSelectRow",
+          "line": 1387
+        },
+        {
+          "function": "settingsAssistantGroup",
+          "line": 1411
+        },
+        {
+          "function": "settingsConversationGroup",
+          "line": 1461
+        },
+        {
+          "function": "settingsMemoryGroup",
+          "line": 1487
+        },
+        {
+          "function": "memoryRow",
+          "line": 1526
+        },
+        {
+          "function": "addMemoryFromSettings",
+          "line": 1547
+        },
+        {
+          "function": "runMemoryAction",
+          "line": 1556
+        },
+        {
+          "function": "settingsPerceptionGroup",
+          "line": 1568
+        },
+        {
+          "function": "settingsMicrophoneRow",
+          "line": 1587
+        },
+        {
+          "function": "settingsToolsGroup",
+          "line": 1619
+        },
+        {
+          "function": "settingsGroup",
+          "line": 1647
+        },
+        {
+          "function": "settingToggle",
+          "line": 1656
+        },
+        {
+          "function": "settingsExperienceGroup",
+          "line": 1674
+        },
+        {
+          "function": "settingsPetGroup",
+          "line": 1701
+        },
+        {
+          "function": "applyOutfit",
+          "line": 1740
+        },
+        {
+          "function": "applyExpression",
+          "line": 1756
+        },
+        {
+          "function": "settingsRuntimeGroup",
+          "line": 1777
+        },
+        {
+          "function": "settingsSourceGroup",
+          "line": 1801
+        },
+        {
+          "function": "setPetBoolean",
+          "line": 1821
+        },
+        {
+          "function": "runControl",
+          "line": 1832
+        },
+        {
+          "function": "applyPreferences",
+          "line": 1837
+        },
+        {
+          "function": "showToast",
+          "line": 1842
+        }
+      ],
+      "events": [
+        {
+          "line": 112,
+          "source": "element.addEventListener(\"click\", onClick);"
+        },
+        {
+          "line": 218,
+          "source": "bridge.onState((state) => this.onRuntimeState(state));"
+        },
+        {
+          "line": 219,
+          "source": "bridge.onData((data) => this.onBriefingData(data));"
+        },
+        {
+          "line": 220,
+          "source": "bridge.onChatState((state) => this.onChatState(state));"
+        },
+        {
+          "line": 228,
+          "source": "<div class=\"brand-orbit\" aria-hidden=\"true\">K<span class=\"state-pulse\" data-state-pulse></span></div>"
+        },
+        {
+          "line": 235,
+          "source": "<button class=\"rail-button\" type=\"button\" data-mode=\"chat\" aria-label=\"普通對話\">${ICONS.chat}<span class=\"rail-label\">對話</span></button>"
+        },
+        {
+          "line": 236,
+          "source": "<button class=\"rail-button\" type=\"button\" data-mode=\"today\" aria-label=\"今天與行事曆\">${ICONS.today}<span class=\"rail-label\">今天</span></button>"
+        },
+        {
+          "line": 240,
+          "source": "<div class=\"presence\"><span class=\"presence-dot\" data-presence-dot></span><span class=\"presence-label\" data-presence-label>正在確認連線</span></div>"
+        },
+        {
+          "line": 241,
+          "source": "<button class=\"rail-button\" type=\"button\" data-mode=\"settings\" aria-label=\"設定\">${ICONS.settings}<span class=\"rail-label\">設定</span></button>"
+        },
+        {
+          "line": 247,
+          "source": "<span class=\"chrome-title\" data-chrome-title>Kuro 工作面板</span>"
+        },
+        {
+          "line": 248,
+          "source": "<span class=\"chrome-meta\" data-chrome-meta>LOCAL-FIRST</span>"
+        },
+        {
+          "line": 251,
+          "source": "<div class=\"privacy-indicators\" data-privacy-indicators aria-label=\"感知功能狀態\"></div>"
+        },
+        {
+          "line": 253,
+          "source": "<button class=\"window-button\" type=\"button\" data-window=\"minimize\" aria-label=\"最小化\">${ICONS.minimize}</button>"
+        },
+        {
+          "line": 254,
+          "source": "<button class=\"window-button\" type=\"button\" data-window=\"maximize\" aria-label=\"最大化或還原\">${ICONS.maximize}</button>"
+        },
+        {
+          "line": 255,
+          "source": "<button class=\"window-button close\" type=\"button\" data-window=\"close\" aria-label=\"關閉\">${ICONS.close}</button>"
+        },
+        {
+          "line": 259,
+          "source": "<div class=\"stage\" data-stage>"
+        },
+        {
+          "line": 260,
+          "source": "<button class=\"history-scrim\" type=\"button\" data-history-scrim aria-label=\"關閉對話紀錄\"></button>"
+        },
+        {
+          "line": 261,
+          "source": "<aside class=\"history-drawer\" data-history-drawer aria-label=\"對話紀錄\"></aside>"
+        },
+        {
+          "line": 262,
+          "source": "<main class=\"view-root\" data-view-root></main>"
+        },
+        {
+          "line": 263,
+          "source": "<aside class=\"detail-drawer\" data-detail-drawer aria-label=\"項目詳情\"></aside>"
+        },
+        {
+          "line": 265,
+          "source": "<div class=\"toast\" role=\"status\" aria-live=\"polite\" data-toast></div>"
+        },
+        {
+          "line": 272,
+          "source": "appRoot.querySelectorAll<HTMLButtonElement>(\"[data-mode]\").forEach((element) => {"
+        },
+        {
+          "line": 273,
+          "source": "element.addEventListener(\"click\", () => this.setMode(normalizeMode(element.dataset.mode || \"today\")));"
+        },
+        {
+          "line": 275,
+          "source": "appRoot.querySelector<HTMLButtonElement>(\"[data-window='minimize']\")"
+        },
+        {
+          "line": 276,
+          "source": "?.addEventListener(\"click\", () => bridge.minimizeWindow());"
+        },
+        {
+          "line": 277,
+          "source": "appRoot.querySelector<HTMLButtonElement>(\"[data-window='maximize']\")"
+        },
+        {
+          "line": 278,
+          "source": "?.addEventListener(\"click\", () => bridge.toggleMaximizeWindow());"
+        },
+        {
+          "line": 279,
+          "source": "appRoot.querySelector<HTMLButtonElement>(\"[data-window='close']\")"
+        },
+        {
+          "line": 280,
+          "source": "?.addEventListener(\"click\", () => bridge.closeWindow());"
+        },
+        {
+          "line": 281,
+          "source": "appRoot.querySelector<HTMLButtonElement>(\"[data-history-scrim]\")"
+        },
+        {
+          "line": 282,
+          "source": "?.addEventListener(\"click\", () => this.setHistoryOpen(false));"
+        },
+        {
+          "line": 287,
+          "source": "bridge.getState(),"
+        },
+        {
+          "line": 288,
+          "source": "bridge.getData(),"
+        },
+        {
+          "line": 289,
+          "source": "bridge.getChatState(),"
+        },
+        {
+          "line": 290,
+          "source": "bridge.getProfile(),"
+        },
+        {
+          "line": 291,
+          "source": "bridge.getMemories(),"
+        },
+        {
+          "line": 292,
+          "source": "bridge.getTools()"
+        },
+        {
+          "line": 307,
+          "source": "const result = await bridge.getHistories();"
+        },
+        {
+          "line": 308,
+          "source": "this.history = result?.ok ? result : await bridge.getChatHistory();"
+        },
+        {
+          "line": 316,
+          "source": "this.memories = await bridge.getMemories();"
+        },
+        {
+          "line": 385,
+          "source": "appRoot.querySelector<HTMLElement>(\"[data-stage]\")?.classList.toggle(\"has-history\", this.historyOpen);"
+        },
+        {
+          "line": 390,
+          "source": "const drawer = appRoot.querySelector<HTMLElement>(\"[data-history-drawer]\");"
+        },
+        {
+          "line": 411,
+          "source": "search.addEventListener(\"input\", () => {"
+        },
+        {
+          "line": 415,
+          "source": "const next = appRoot.querySelector<HTMLInputElement>(\"[data-history-drawer] .history-search\");"
+        },
+        {
+          "line": 483,
+          "source": "const result = await bridge.createHistory();"
+        },
+        {
+          "line": 501,
+          "source": "const result = await bridge.selectHistory(historyUid);"
+        },
+        {
+          "line": 514,
+          "source": "const result = await bridge.deleteHistory(record.uid, record.title);"
+        },
+        {
+          "line": 530,
+          "source": "const chromeTitle = appRoot.querySelector<HTMLElement>(\"[data-chrome-title]\");"
+        },
+        {
+          "line": 531,
+          "source": "const chromeMeta = appRoot.querySelector<HTMLElement>(\"[data-chrome-meta]\");"
+        },
+        {
+          "line": 532,
+          "source": "const presenceDot = appRoot.querySelector<HTMLElement>(\"[data-presence-dot]\");"
+        },
+        {
+          "line": 533,
+          "source": "const presenceLabel = appRoot.querySelector<HTMLElement>(\"[data-presence-label]\");"
+        },
+        {
+          "line": 534,
+          "source": "const statePulse = appRoot.querySelector<HTMLElement>(\"[data-state-pulse]\");"
+        },
+        {
+          "line": 535,
+          "source": "const privacy = appRoot.querySelector<HTMLElement>(\"[data-privacy-indicators]\");"
+        },
+        {
+          "line": 558,
+          "source": "appRoot.querySelectorAll<HTMLButtonElement>(\"[data-mode]\").forEach((element) => {"
+        },
+        {
+          "line": 573,
+          "source": "const root = appRoot.querySelector<HTMLElement>(\"[data-view-root]\");"
+        },
+        {
+          "line": 586,
+          "source": "<button class=\"history-toggle\" type=\"button\" data-history-toggle aria-label=\"開啟對話紀錄\">${ICONS.history}</button>"
+        },
+        {
+          "line": 588,
+          "source": "<h1 class=\"chat-title\" data-chat-title>普通對話</h1>"
+        },
+        {
+          "line": 589,
+          "source": "<div class=\"chat-subtitle\" data-chat-subtitle>目前對話</div>"
+        },
+        {
+          "line": 593,
+          "source": "<label class=\"inline-select character-select\"><span>角色</span><select data-character-select aria-label=\"目前角色\"></select></label>"
+        },
+        {
+          "line": 594,
+          "source": "<span class=\"runtime-pill\" data-chat-runtime>正在確認連線</span>"
+        },
+        {
+          "line": 597,
+          "source": "<div class=\"chat-context\" data-chat-context>"
+        },
+        {
+          "line": 598,
+          "source": "<div class=\"chat-context-copy\" data-chat-context-copy></div>"
+        },
+        {
+          "line": 599,
+          "source": "<button class=\"text-button\" type=\"button\" data-clear-context>清除</button>"
+        },
+        {
+          "line": 602,
+          "source": "<div class=\"message-list\" data-message-list aria-live=\"polite\"><div class=\"message-list-inner\" data-message-inner></div></div>"
+        },
+        {
+          "line": 604,
+          "source": "<div class=\"attachment-row\" data-attachment-row></div>"
+        },
+        {
+          "line": 607,
+          "source": "<button class=\"sensor-button\" type=\"button\" data-sensor=\"microphone\" aria-label=\"開啟麥克風\">${ICONS.mic}<span>麥克風</span></button>"
+        },
+        {
+          "line": 608,
+          "source": "<button class=\"sensor-button mic-submit\" type=\"button\" data-mic-action=\"submit\" aria-label=\"完成並送出錄音\" hidden>${ICONS.send}<span>送出錄音</span></button>"
+        },
+        {
+          "line": 609,
+          "source": "<button class=\"sensor-button mic-cancel\" type=\"button\" data-mic-action=\"cancel\" aria-label=\"取消錄音\" hidden>${ICONS.cancel}<span>取消</span></button>"
+        },
+        {
+          "line": 610,
+          "source": "<button class=\"sensor-button\" type=\"button\" data-sensor=\"camera\" aria-label=\"開啟鏡頭\">${ICONS.camera}<span>鏡頭</span></button>"
+        },
+        {
+          "line": 611,
+          "source": "<button class=\"sensor-button\" type=\"button\" data-sensor=\"screen\" aria-label=\"本回合擷取螢幕\">${ICONS.screen}<span>本回合螢幕</span></button>"
+        },
+        {
+          "line": 614,
+          "source": "<label class=\"inline-select\"><span>模型</span><select data-model-select aria-label=\"LLM 模型\"></select></label>"
+        },
+        {
+          "line": 615,
+          "source": "<label class=\"inline-select\"><span>推理</span><select data-thinking-select aria-label=\"推理深度\"></select></label>"
+        },
+        {
+          "line": 619,
+          "source": "<button class=\"composer-button\" type=\"button\" data-attach aria-label=\"加入附件\">${ICONS.attach}</button>"
+        },
+        {
+          "line": 620,
+          "source": "<textarea rows=\"1\" data-composer-input aria-label=\"輸入普通對話\" placeholder=\"問 Kuro，或從今天的項目延伸討論…\"></textarea>"
+        },
+        {
+          "line": 621,
+          "source": "<button class=\"composer-button send\" type=\"button\" data-composer-action aria-label=\"送出訊息\">${ICONS.send}</button>"
+        },
+        {
+          "line": 622,
+          "source": "<input type=\"file\" data-file-input hidden multiple />"
+        },
+        {
+          "line": 624,
+          "source": "<div class=\"composer-foot\"><span data-composer-notice>Enter 送出 · Shift + Enter 換行</span><span data-ai-state>IDLE</span></div>"
+        },
+        {
+          "line": 629,
+          "source": "const input = root.querySelector<HTMLTextAreaElement>(\"[data-composer-input]\");"
+        },
+        {
+          "line": 632,
+          "source": "input.addEventListener(\"input\", () => {"
+        },
+        {
+          "line": 637,
+          "source": "input.addEventListener(\"keydown\", (event) => {"
+        },
+        {
+          "line": 644,
+          "source": "root.querySelector<HTMLButtonElement>(\"[data-attach]\")?.addEventListener(\"click\", () => {"
+        },
+        {
+          "line": 645,
+          "source": "root.querySelector<HTMLInputElement>(\"[data-file-input]\")?.click();"
+        },
+        {
+          "line": 647,
+          "source": "root.querySelector<HTMLInputElement>(\"[data-file-input]\")?.addEventListener(\"change\", (event) => {"
+        },
+        {
+          "line": 651,
+          "source": "root.querySelector<HTMLButtonElement>(\"[data-composer-action]\")?.addEventListener(\"click\", () => {"
+        },
+        {
+          "line": 655,
+          "source": "root.querySelector<HTMLButtonElement>(\"[data-clear-context]\")?.addEventListener(\"click\", () => {"
+        },
+        {
+          "line": 659,
+          "source": "root.querySelector<HTMLButtonElement>(\"[data-history-toggle]\")?.addEventListener(\"click\", async () => {"
+        },
+        {
+          "line": 663,
+          "source": "root.querySelectorAll<HTMLButtonElement>(\"[data-sensor]\").forEach((element) => {"
+        },
+        {
+          "line": 664,
+          "source": "element.addEventListener(\"click\", () => {"
+        },
+        {
+          "line": 670,
+          "source": "root.querySelectorAll<HTMLButtonElement>(\"[data-mic-action]\").forEach((element) => {"
+        },
+        {
+          "line": 671,
+          "source": "element.addEventListener(\"click\", () => {"
+        },
+        {
+          "line": 686,
+          "source": "const titleElement = this.viewRoot().querySelector<HTMLElement>(\"[data-chat-title]\");"
+        },
+        {
+          "line": 687,
+          "source": "const subtitleElement = this.viewRoot().querySelector<HTMLElement>(\"[data-chat-subtitle]\");"
+        },
+        {
+          "line": 688,
+          "source": "const runtimeElement = this.viewRoot().querySelector<HTMLElement>(\"[data-chat-runtime]\");"
+        },
+        {
+          "line": 706,
+          "source": "const character = this.viewRoot().querySelector<HTMLSelectElement>(\"[data-character-select]\");"
+        },
+        {
+          "line": 707,
+          "source": "const model = this.viewRoot().querySelector<HTMLSelectElement>(\"[data-model-select]\");"
+        },
+        {
+          "line": 708,
+          "source": "const thinking = this.viewRoot().querySelector<HTMLSelectElement>(\"[data-thinking-select]\");"
+        },
+        {
+          "line": 724,
+          "source": "character.addEventListener(\"change\", () => this.applyProfilePatch({ character_id: character.value }));"
+        },
+        {
+          "line": 739,
+          "source": "model.addEventListener(\"change\", () => this.applyProfilePatch({ model: model.value }));"
+        },
+        {
+          "line": 756,
+          "source": "thinking.addEventListener(\"change\", () => this.applyProfilePatch({ thinking_power: thinking.value }));"
+        },
+        {
+          "line": 777,
+          "source": "const result = await bridge.applyProfile(payload) as Record<string, unknown> & {"
+        },
+        {
+          "line": 810,
+          "source": "this.viewRoot().querySelectorAll<HTMLButtonElement>(\"[data-sensor]\").forEach((element) => {"
+        },
+        {
+          "line": 830,
+          "source": "this.viewRoot().querySelectorAll<HTMLButtonElement>(\"[data-mic-action]\").forEach((element) => {"
+        },
+        {
+          "line": 848,
+          "source": "const result = await bridge.control(`mic-${action}`, {});"
+        },
+        {
+          "line": 889,
+          "source": "const result = await bridge.control(action, { enabled });"
+        },
+        {
+          "line": 927,
+          "source": "const list = this.viewRoot().querySelector<HTMLElement>(\"[data-message-list]\");"
+        },
+        {
+          "line": 928,
+          "source": "const inner = this.viewRoot().querySelector<HTMLElement>(\"[data-message-inner]\");"
+        },
+        {
+          "line": 964,
+          "source": "const context = this.viewRoot().querySelector<HTMLElement>(\"[data-chat-context]\");"
+        },
+        {
+          "line": 965,
+          "source": "const copy = this.viewRoot().querySelector<HTMLElement>(\"[data-chat-context-copy]\");"
+        },
+        {
+          "line": 978,
+          "source": "const action = this.viewRoot().querySelector<HTMLButtonElement>(\"[data-composer-action]\");"
+        },
+        {
+          "line": 979,
+          "source": "const attach = this.viewRoot().querySelector<HTMLButtonElement>(\"[data-attach]\");"
+        },
+        {
+          "line": 980,
+          "source": "const notice = this.viewRoot().querySelector<HTMLElement>(\"[data-composer-notice]\");"
+        },
+        {
+          "line": 981,
+          "source": "const state = this.viewRoot().querySelector<HTMLElement>(\"[data-ai-state]\");"
+        },
+        {
+          "line": 998,
+          "source": "const notice = this.viewRoot().querySelector<HTMLElement>(\"[data-composer-notice]\");"
+        },
+        {
+          "line": 1038,
+          "source": "const row = this.viewRoot().querySelector<HTMLElement>(\"[data-attachment-row]\");"
+        },
+        {
+          "line": 1057,
+          "source": "? this.viewRoot().querySelector<HTMLTextAreaElement>(\"[data-composer-input]\")"
+        },
+        {
+          "line": 1064,
+          "source": "const result = await bridge.sendText(message, this.attachments);"
+        },
+        {
+          "line": 1086,
+          "source": "const result = await bridge.control(\"interrupt\");"
+        },
+        {
+          "line": 1241,
+          "source": "const result = await bridge.refreshMail();"
+        },
+        {
+          "line": 1257,
+          "source": "const result = await bridge.getMailMessage(messageId);"
+        },
+        {
+          "line": 1278,
+          "source": "const stage = appRoot.querySelector<HTMLElement>(\"[data-stage]\");"
+        },
+        {
+          "line": 1279,
+          "source": "const drawer = appRoot.querySelector<HTMLElement>(\"[data-detail-drawer]\");"
+        },
+        {
+          "line": 1339,
+          "source": "const input = this.viewRoot().querySelector<HTMLTextAreaElement>(\"[data-composer-input]\");"
+        },
+        {
+          "line": 1557,
+          "source": "const result = await bridge.memoryAction(action, payload);"
+        },
+        {
+          "line": 1742,
+          "source": "const result = await bridge.control(\"set-outfit\", {"
+        },
+        {
+          "line": 1762,
+          "source": "const result = await bridge.control(\"set-expression\", {"
+        },
+        {
+          "line": 1822,
+          "source": "const result = await bridge.control(action, { enabled });"
+        },
+        {
+          "line": 1833,
+          "source": "const result = await bridge.control(action, payload);"
+        },
+        {
+          "line": 1843,
+          "source": "const toast = appRoot.querySelector<HTMLElement>(\"[data-toast]\");"
+        }
+      ],
+      "selectors": [],
+      "declarations": []
+    },
+    "types.ts": {
+      "sha256": "e2d0dfb1a109b219a50f1116a811b271c5fed7362539a058051e935bd8c6989a",
+      "lines": 277,
+      "functions": [
+        {
+          "function": "refreshMail",
+          "line": 262
+        }
+      ],
+      "events": [],
+      "selectors": [],
+      "declarations": [
+        {
+          "line": 1,
+          "source": "export type WorkMode = \"chat\" | \"today\" | \"settings\";"
+        },
+        {
+          "line": 3,
+          "source": "export interface AttachmentPayload {"
+        },
+        {
+          "line": 11,
+          "source": "export interface ChatState {"
+        },
+        {
+          "line": 30,
+          "source": "export interface HistoryMessage {"
+        },
+        {
+          "line": 36,
+          "source": "export interface ChatHistoryPayload {"
+        },
+        {
+          "line": 49,
+          "source": "export interface HistorySummary {"
+        },
+        {
+          "line": 57,
+          "source": "export interface SelectOption {"
+        },
+        {
+          "line": 66,
+          "source": "export interface ProfileState {"
+        },
+        {
+          "line": 83,
+          "source": "export interface MemoryEntry {"
+        },
+        {
+          "line": 94,
+          "source": "export interface MemoryState {"
+        },
+        {
+          "line": 104,
+          "source": "export interface ToolPolicyEntry {"
+        },
+        {
+          "line": 112,
+          "source": "export interface ToolPolicyState {"
+        },
+        {
+          "line": 122,
+          "source": "export interface RuntimeState {"
+        },
+        {
+          "line": 149,
+          "source": "export interface SourceStatus {"
+        },
+        {
+          "line": 157,
+          "source": "export interface BriefingItem {"
+        },
+        {
+          "line": 184,
+          "source": "export interface BriefingModule {"
+        },
+        {
+          "line": 194,
+          "source": "export interface BriefingSection {"
+        },
+        {
+          "line": 203,
+          "source": "export interface TodaySnapshot {"
+        },
+        {
+          "line": 210,
+          "source": "export interface MailSnapshot {"
+        },
+        {
+          "line": 215,
+          "source": "export interface BriefingSnapshot {"
+        },
+        {
+          "line": 226,
+          "source": "export interface BriefingData {"
+        },
+        {
+          "line": 234,
+          "source": "export interface ViewItem {"
+        },
+        {
+          "line": 247,
+          "source": "export interface WorkPanelBridge {"
+        },
+        {
+          "line": 248,
+          "source": "getState(): Promise<RuntimeState>;"
+        },
+        {
+          "line": 249,
+          "source": "getData(): Promise<BriefingData>;"
+        },
+        {
+          "line": 250,
+          "source": "getChatState(): Promise<ChatState>;"
+        },
+        {
+          "line": 251,
+          "source": "getChatHistory(): Promise<ChatHistoryPayload>;"
+        },
+        {
+          "line": 252,
+          "source": "getProfile(): Promise<ProfileState>;"
+        },
+        {
+          "line": 253,
+          "source": "applyProfile(payload: Record<string, unknown>): Promise<Record<string, unknown>>;"
+        },
+        {
+          "line": 254,
+          "source": "getHistories(historyUid?: string): Promise<ChatHistoryPayload>;"
+        },
+        {
+          "line": 255,
+          "source": "createHistory(): Promise<ChatHistoryPayload>;"
+        },
+        {
+          "line": 256,
+          "source": "selectHistory(historyUid: string): Promise<ChatHistoryPayload>;"
+        },
+        {
+          "line": 257,
+          "source": "deleteHistory(historyUid: string, historyTitle?: string): Promise<ChatHistoryPayload>;"
+        },
+        {
+          "line": 258,
+          "source": "getMemories(): Promise<MemoryState>;"
+        },
+        {
+          "line": 259,
+          "source": "memoryAction(action: string, payload?: Record<string, unknown>): Promise<MemoryState & Record<string, unknown>>;"
+        },
+        {
+          "line": 260,
+          "source": "getTools(): Promise<ToolPolicyState>;"
+        },
+        {
+          "line": 261,
+          "source": "sendText(text: string, attachments: AttachmentPayload[]): Promise<Record<string, unknown>>;"
+        },
+        {
+          "line": 262,
+          "source": "refreshMail(): Promise<Record<string, unknown>>;"
+        },
+        {
+          "line": 263,
+          "source": "getMailMessage(messageId: string): Promise<Record<string, unknown>>;"
+        },
+        {
+          "line": 264,
+          "source": "control(action: string, payload?: Record<string, unknown>): Promise<Record<string, unknown>>;"
+        },
+        {
+          "line": 265,
+          "source": "closeWindow(): void;"
+        },
+        {
+          "line": 266,
+          "source": "minimizeWindow(): void;"
+        },
+        {
+          "line": 267,
+          "source": "toggleMaximizeWindow(): void;"
+        },
+        {
+          "line": 268,
+          "source": "onState(callback: (state: RuntimeState) => void): () => void;"
+        },
+        {
+          "line": 269,
+          "source": "onData(callback: (data: BriefingData) => void): () => void;"
+        },
+        {
+          "line": 270,
+          "source": "onChatState(callback: (state: ChatState) => void): () => void;"
+        }
+      ],
+      "bridge_methods": [
+        {
+          "line": 248,
+          "source": "getState(): Promise<RuntimeState>;",
+          "function": "getState"
+        },
+        {
+          "line": 249,
+          "source": "getData(): Promise<BriefingData>;",
+          "function": "getData"
+        },
+        {
+          "line": 250,
+          "source": "getChatState(): Promise<ChatState>;",
+          "function": "getChatState"
+        },
+        {
+          "line": 251,
+          "source": "getChatHistory(): Promise<ChatHistoryPayload>;",
+          "function": "getChatHistory"
+        },
+        {
+          "line": 252,
+          "source": "getProfile(): Promise<ProfileState>;",
+          "function": "getProfile"
+        },
+        {
+          "line": 253,
+          "source": "applyProfile(payload: Record<string, unknown>): Promise<Record<string, unknown>>;",
+          "function": "applyProfile"
+        },
+        {
+          "line": 254,
+          "source": "getHistories(historyUid?: string): Promise<ChatHistoryPayload>;",
+          "function": "getHistories"
+        },
+        {
+          "line": 255,
+          "source": "createHistory(): Promise<ChatHistoryPayload>;",
+          "function": "createHistory"
+        },
+        {
+          "line": 256,
+          "source": "selectHistory(historyUid: string): Promise<ChatHistoryPayload>;",
+          "function": "selectHistory"
+        },
+        {
+          "line": 257,
+          "source": "deleteHistory(historyUid: string, historyTitle?: string): Promise<ChatHistoryPayload>;",
+          "function": "deleteHistory"
+        },
+        {
+          "line": 258,
+          "source": "getMemories(): Promise<MemoryState>;",
+          "function": "getMemories"
+        },
+        {
+          "line": 259,
+          "source": "memoryAction(action: string, payload?: Record<string, unknown>): Promise<MemoryState & Record<string, unknown>>;",
+          "function": "memoryAction"
+        },
+        {
+          "line": 260,
+          "source": "getTools(): Promise<ToolPolicyState>;",
+          "function": "getTools"
+        },
+        {
+          "line": 261,
+          "source": "sendText(text: string, attachments: AttachmentPayload[]): Promise<Record<string, unknown>>;",
+          "function": "sendText"
+        },
+        {
+          "line": 262,
+          "source": "refreshMail(): Promise<Record<string, unknown>>;",
+          "function": "refreshMail"
+        },
+        {
+          "line": 263,
+          "source": "getMailMessage(messageId: string): Promise<Record<string, unknown>>;",
+          "function": "getMailMessage"
+        },
+        {
+          "line": 264,
+          "source": "control(action: string, payload?: Record<string, unknown>): Promise<Record<string, unknown>>;",
+          "function": "control"
+        },
+        {
+          "line": 265,
+          "source": "closeWindow(): void;",
+          "function": "closeWindow"
+        },
+        {
+          "line": 266,
+          "source": "minimizeWindow(): void;",
+          "function": "minimizeWindow"
+        },
+        {
+          "line": 267,
+          "source": "toggleMaximizeWindow(): void;",
+          "function": "toggleMaximizeWindow"
+        },
+        {
+          "line": 268,
+          "source": "onState(callback: (state: RuntimeState) => void): () => void;",
+          "function": "onState"
+        },
+        {
+          "line": 269,
+          "source": "onData(callback: (data: BriefingData) => void): () => void;",
+          "function": "onData"
+        },
+        {
+          "line": 270,
+          "source": "onChatState(callback: (state: ChatState) => void): () => void;",
+          "function": "onChatState"
+        }
+      ]
+    },
+    "model.ts": {
+      "sha256": "087051ae13d56de2cc4628d8d9342c1efc03615077aa9901602d3638c83bf0c0",
+      "lines": 210,
+      "functions": [
+        {
+          "function": "text",
+          "line": 59
+        },
+        {
+          "function": "sourceLabel",
+          "line": 64
+        },
+        {
+          "function": "levelLabel",
+          "line": 69
+        },
+        {
+          "function": "statusLabel",
+          "line": 74
+        },
+        {
+          "function": "statusTone",
+          "line": 79
+        },
+        {
+          "function": "formatDateLabel",
+          "line": 87
+        },
+        {
+          "function": "formatFullDate",
+          "line": 99
+        },
+        {
+          "function": "normalizeViewItem",
+          "line": 107
+        },
+        {
+          "function": "sectionItems",
+          "line": 131
+        },
+        {
+          "function": "uniqueItems",
+          "line": 147
+        },
+        {
+          "function": "todayItems",
+          "line": 157
+        },
+        {
+          "function": "sourceItems",
+          "line": 167
+        },
+        {
+          "function": "scheduleItems",
+          "line": 185
+        },
+        {
+          "function": "priorityItems",
+          "line": 191
+        },
+        {
+          "function": "sourceCount",
+          "line": 199
+        },
+        {
+          "function": "sourceStatus",
+          "line": 207
+        }
+      ],
+      "events": [],
+      "selectors": [],
+      "declarations": []
+    },
+    "schedule.ts": {
+      "absent": true
+    },
+    "styles.css": {
+      "sha256": "17f826b1445619c61c74bb553d5c17717adfdbaff77785dbf151534d5197ec3d",
+      "lines": 2196,
+      "functions": [],
+      "events": [
+        {
+          "line": 18,
+          "source": "--data-font: \"Cascadia Mono\", \"SFMono-Regular\", Consolas, monospace;"
+        },
+        {
+          "line": 117,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 147,
+          "source": ".state-pulse[data-state=\"thinking\"],"
+        },
+        {
+          "line": 148,
+          "source": ".state-pulse[data-state=\"processing\"],"
+        },
+        {
+          "line": 149,
+          "source": ".state-pulse[data-state=\"loading\"] {"
+        },
+        {
+          "line": 157,
+          "source": ".state-pulse[data-state=\"speaking\"],"
+        },
+        {
+          "line": 158,
+          "source": ".state-pulse[data-state=\"listening\"] {"
+        },
+        {
+          "line": 164,
+          "source": ".state-pulse[data-state=\"offline\"] {"
+        },
+        {
+          "line": 187,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 330,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 560,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 613,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 646,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 750,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 932,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1010,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1040,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1088,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1327,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1358,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1398,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1477,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1534,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1596,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1713,
+          "source": "font-family: var(--data-font);"
+        },
+        {
+          "line": 1880,
+          "source": "font-family: var(--data-font);"
+        }
+      ],
+      "selectors": [
+        {
+          "line": 1,
+          "source": ":root"
+        },
+        {
+          "line": 21,
+          "source": "*"
+        },
+        {
+          "line": 25,
+          "source": "html, body, #app"
+        },
+        {
+          "line": 34,
+          "source": "body"
+        },
+        {
+          "line": 42,
+          "source": "button, textarea, input"
+        },
+        {
+          "line": 48,
+          "source": "button"
+        },
+        {
+          "line": 52,
+          "source": "button:focus-visible, textarea:focus-visible, input:focus-visible"
+        },
+        {
+          "line": 59,
+          "source": "button:disabled"
+        },
+        {
+          "line": 64,
+          "source": "::-webkit-scrollbar"
+        },
+        {
+          "line": 69,
+          "source": "::-webkit-scrollbar-thumb"
+        },
+        {
+          "line": 74,
+          "source": "::-webkit-scrollbar-track"
+        },
+        {
+          "line": 78,
+          "source": ".work-panel"
+        },
+        {
+          "line": 86,
+          "source": ".rail"
+        },
+        {
+          "line": 98,
+          "source": ".brand"
+        },
+        {
+          "line": 107,
+          "source": ".brand-orbit"
+        },
+        {
+          "line": 122,
+          "source": ".brand-orbit::after"
+        },
+        {
+          "line": 134,
+          "source": ".state-pulse"
+        },
+        {
+          "line": 147,
+          "source": ".state-pulse[data-state=\"thinking\"], .state-pulse[data-state=\"processing\"], .state-pulse[data-state=\"loading\"]"
+        },
+        {
+          "line": 157,
+          "source": ".state-pulse[data-state=\"speaking\"], .state-pulse[data-state=\"listening\"]"
+        },
+        {
+          "line": 164,
+          "source": ".state-pulse[data-state=\"offline\"]"
+        },
+        {
+          "line": 168,
+          "source": "@keyframes state-breathe"
+        },
+        {
+          "line": 169,
+          "source": "0%, 100%"
+        },
+        {
+          "line": 170,
+          "source": "50%"
+        },
+        {
+          "line": 173,
+          "source": ".brand-copy"
+        },
+        {
+          "line": 177,
+          "source": ".brand-name"
+        },
+        {
+          "line": 183,
+          "source": ".brand-role"
+        },
+        {
+          "line": 195,
+          "source": ".rail-nav"
+        },
+        {
+          "line": 201,
+          "source": ".rail-spacer"
+        },
+        {
+          "line": 205,
+          "source": ".rail-button"
+        },
+        {
+          "line": 224,
+          "source": ".rail-button:hover"
+        },
+        {
+          "line": 229,
+          "source": ".rail-button.is-active"
+        },
+        {
+          "line": 235,
+          "source": ".rail-button svg"
+        },
+        {
+          "line": 243,
+          "source": ".rail-button.is-active svg"
+        },
+        {
+          "line": 247,
+          "source": ".rail-label"
+        },
+        {
+          "line": 255,
+          "source": ".rail-footer"
+        },
+        {
+          "line": 263,
+          "source": ".presence"
+        },
+        {
+          "line": 274,
+          "source": ".presence-dot"
+        },
+        {
+          "line": 282,
+          "source": ".presence-dot.is-online"
+        },
+        {
+          "line": 287,
+          "source": ".presence-label"
+        },
+        {
+          "line": 291,
+          "source": ".workspace"
+        },
+        {
+          "line": 299,
+          "source": ".chrome"
+        },
+        {
+          "line": 312,
+          "source": ".chrome-context"
+        },
+        {
+          "line": 319,
+          "source": ".chrome-title"
+        },
+        {
+          "line": 327,
+          "source": ".chrome-meta"
+        },
+        {
+          "line": 336,
+          "source": ".window-actions"
+        },
+        {
+          "line": 342,
+          "source": ".chrome-right"
+        },
+        {
+          "line": 350,
+          "source": ".privacy-indicators"
+        },
+        {
+          "line": 357,
+          "source": ".privacy-chip"
+        },
+        {
+          "line": 370,
+          "source": ".window-button"
+        },
+        {
+          "line": 381,
+          "source": ".window-button:hover"
+        },
+        {
+          "line": 386,
+          "source": ".window-button.close:hover"
+        },
+        {
+          "line": 391,
+          "source": ".window-button svg"
+        },
+        {
+          "line": 399,
+          "source": ".stage"
+        },
+        {
+          "line": 409,
+          "source": ".stage.has-detail"
+        },
+        {
+          "line": 413,
+          "source": ".history-scrim"
+        },
+        {
+          "line": 424,
+          "source": ".history-drawer"
+        },
+        {
+          "line": 441,
+          "source": ".stage.has-history .history-scrim"
+        },
+        {
+          "line": 446,
+          "source": ".stage.has-history .history-drawer"
+        },
+        {
+          "line": 450,
+          "source": ".history-drawer-header"
+        },
+        {
+          "line": 458,
+          "source": ".history-drawer-title"
+        },
+        {
+          "line": 465,
+          "source": ".history-drawer-header p"
+        },
+        {
+          "line": 472,
+          "source": ".history-drawer-actions"
+        },
+        {
+          "line": 479,
+          "source": ".history-drawer-actions .primary-button"
+        },
+        {
+          "line": 484,
+          "source": ".history-search"
+        },
+        {
+          "line": 496,
+          "source": ".history-search:focus"
+        },
+        {
+          "line": 501,
+          "source": ".history-list"
+        },
+        {
+          "line": 507,
+          "source": ".history-row"
+        },
+        {
+          "line": 516,
+          "source": ".history-row.is-active"
+        },
+        {
+          "line": 521,
+          "source": ".history-open"
+        },
+        {
+          "line": 532,
+          "source": ".history-open:hover, .history-delete:hover"
+        },
+        {
+          "line": 537,
+          "source": ".history-title, .history-preview, .history-meta"
+        },
+        {
+          "line": 545,
+          "source": ".history-title"
+        },
+        {
+          "line": 551,
+          "source": ".history-preview"
+        },
+        {
+          "line": 557,
+          "source": ".history-meta"
+        },
+        {
+          "line": 564,
+          "source": ".history-delete"
+        },
+        {
+          "line": 575,
+          "source": ".history-delete svg"
+        },
+        {
+          "line": 580,
+          "source": ".history-empty"
+        },
+        {
+          "line": 591,
+          "source": ".history-empty strong"
+        },
+        {
+          "line": 596,
+          "source": ".view-root"
+        },
+        {
+          "line": 603,
+          "source": ".view-frame"
+        },
+        {
+          "line": 610,
+          "source": ".section-kicker"
+        },
+        {
+          "line": 619,
+          "source": ".section-title"
+        },
+        {
+          "line": 628,
+          "source": ".section-description"
+        },
+        {
+          "line": 636,
+          "source": ".section-heading-row"
+        },
+        {
+          "line": 644,
+          "source": ".mono-meta"
+        },
+        {
+          "line": 650,
+          "source": ".primary-button, .quiet-button, .icon-button, .source-filter, .text-button"
+        },
+        {
+          "line": 660,
+          "source": ".primary-button"
+        },
+        {
+          "line": 668,
+          "source": ".primary-button:hover"
+        },
+        {
+          "line": 672,
+          "source": ".quiet-button"
+        },
+        {
+          "line": 680,
+          "source": ".quiet-button:hover"
+        },
+        {
+          "line": 685,
+          "source": ".quiet-button.is-danger"
+        },
+        {
+          "line": 690,
+          "source": ".text-button"
+        },
+        {
+          "line": 696,
+          "source": ".text-button:hover"
+        },
+        {
+          "line": 701,
+          "source": ".empty-state"
+        },
+        {
+          "line": 711,
+          "source": ".empty-state strong"
+        },
+        {
+          "line": 718,
+          "source": ".detail-drawer"
+        },
+        {
+          "line": 729,
+          "source": ".stage.has-detail .detail-drawer"
+        },
+        {
+          "line": 734,
+          "source": ".detail-scroll"
+        },
+        {
+          "line": 740,
+          "source": ".detail-topline"
+        },
+        {
+          "line": 748,
+          "source": ".detail-eyebrow"
+        },
+        {
+          "line": 756,
+          "source": ".icon-button"
+        },
+        {
+          "line": 765,
+          "source": ".icon-button:hover"
+        },
+        {
+          "line": 770,
+          "source": ".detail-title"
+        },
+        {
+          "line": 778,
+          "source": ".detail-meta-list"
+        },
+        {
+          "line": 789,
+          "source": ".detail-meta-list dt"
+        },
+        {
+          "line": 793,
+          "source": ".detail-meta-list dd"
+        },
+        {
+          "line": 799,
+          "source": ".detail-copy"
+        },
+        {
+          "line": 805,
+          "source": ".detail-note"
+        },
+        {
+          "line": 814,
+          "source": ".detail-actions"
+        },
+        {
+          "line": 822,
+          "source": ".chat-frame"
+        },
+        {
+          "line": 830,
+          "source": ".chat-header"
+        },
+        {
+          "line": 835,
+          "source": ".chat-heading-row"
+        },
+        {
+          "line": 842,
+          "source": ".chat-title-cluster, .chat-header-actions"
+        },
+        {
+          "line": 850,
+          "source": ".history-toggle"
+        },
+        {
+          "line": 863,
+          "source": ".history-toggle:hover"
+        },
+        {
+          "line": 868,
+          "source": ".history-toggle svg"
+        },
+        {
+          "line": 873,
+          "source": ".history-toggle svg, .history-delete svg, .sensor-button svg"
+        },
+        {
+          "line": 883,
+          "source": ".inline-select"
+        },
+        {
+          "line": 892,
+          "source": ".inline-select select"
+        },
+        {
+          "line": 904,
+          "source": ".inline-select select:focus"
+        },
+        {
+          "line": 908,
+          "source": ".chat-title"
+        },
+        {
+          "line": 915,
+          "source": ".chat-subtitle"
+        },
+        {
+          "line": 921,
+          "source": ".runtime-pill, .status-pill, .level-pill"
+        },
+        {
+          "line": 937,
+          "source": ".runtime-pill::before, .status-pill::before"
+        },
+        {
+          "line": 946,
+          "source": ".runtime-pill.is-online::before, .status-pill.tone-good::before"
+        },
+        {
+          "line": 951,
+          "source": ".status-pill.tone-warn::before"
+        },
+        {
+          "line": 955,
+          "source": ".status-pill.tone-bad::before"
+        },
+        {
+          "line": 959,
+          "source": ".chat-context"
+        },
+        {
+          "line": 970,
+          "source": ".chat-context.is-visible"
+        },
+        {
+          "line": 974,
+          "source": ".chat-context-copy"
+        },
+        {
+          "line": 980,
+          "source": ".chat-context-copy strong"
+        },
+        {
+          "line": 984,
+          "source": ".message-list"
+        },
+        {
+          "line": 991,
+          "source": ".message-list-inner"
+        },
+        {
+          "line": 996,
+          "source": ".message"
+        },
+        {
+          "line": 1004,
+          "source": ".message:first-child"
+        },
+        {
+          "line": 1008,
+          "source": ".message-role"
+        },
+        {
+          "line": 1016,
+          "source": ".message.is-assistant .message-role"
+        },
+        {
+          "line": 1020,
+          "source": ".message.is-event .message-role"
+        },
+        {
+          "line": 1024,
+          "source": ".message-copy"
+        },
+        {
+          "line": 1033,
+          "source": ".message.is-user .message-copy"
+        },
+        {
+          "line": 1037,
+          "source": ".message-time"
+        },
+        {
+          "line": 1044,
+          "source": ".typing-line"
+        },
+        {
+          "line": 1051,
+          "source": ".typing-line i"
+        },
+        {
+          "line": 1059,
+          "source": ".typing-line i:nth-child(2)"
+        },
+        {
+          "line": 1063,
+          "source": ".typing-line i:nth-child(3)"
+        },
+        {
+          "line": 1067,
+          "source": "@keyframes thinking"
+        },
+        {
+          "line": 1068,
+          "source": "0%, 100%"
+        },
+        {
+          "line": 1069,
+          "source": "50%"
+        },
+        {
+          "line": 1072,
+          "source": ".chat-empty"
+        },
+        {
+          "line": 1079,
+          "source": ".chat-empty-mark"
+        },
+        {
+          "line": 1091,
+          "source": ".chat-empty h2"
+        },
+        {
+          "line": 1097,
+          "source": ".chat-empty p"
+        },
+        {
+          "line": 1104,
+          "source": ".composer-wrap"
+        },
+        {
+          "line": 1109,
+          "source": ".conversation-controls"
+        },
+        {
+          "line": 1117,
+          "source": ".sensor-controls, .response-controls"
+        },
+        {
+          "line": 1125,
+          "source": ".sensor-button"
+        },
+        {
+          "line": 1139,
+          "source": ".sensor-button:hover"
+        },
+        {
+          "line": 1144,
+          "source": ".sensor-button.is-on"
+        },
+        {
+          "line": 1150,
+          "source": ".sensor-button.is-paused"
+        },
+        {
+          "line": 1156,
+          "source": ".sensor-button.mic-submit"
+        },
+        {
+          "line": 1162,
+          "source": ".sensor-button.mic-cancel"
+        },
+        {
+          "line": 1166,
+          "source": ".sensor-button:disabled"
+        },
+        {
+          "line": 1171,
+          "source": ".sensor-button svg"
+        },
+        {
+          "line": 1176,
+          "source": ".sensor-button[hidden]"
+        },
+        {
+          "line": 1180,
+          "source": ".attachment-row"
+        },
+        {
+          "line": 1188,
+          "source": ".attachment-row:empty"
+        },
+        {
+          "line": 1192,
+          "source": ".attachment-chip"
+        },
+        {
+          "line": 1204,
+          "source": ".attachment-chip span"
+        },
+        {
+          "line": 1210,
+          "source": ".attachment-chip button"
+        },
+        {
+          "line": 1217,
+          "source": ".composer"
+        },
+        {
+          "line": 1228,
+          "source": ".composer:focus-within"
+        },
+        {
+          "line": 1232,
+          "source": ".composer-button"
+        },
+        {
+          "line": 1244,
+          "source": ".composer-button:hover"
+        },
+        {
+          "line": 1249,
+          "source": ".composer-button.send"
+        },
+        {
+          "line": 1254,
+          "source": ".composer-button.stop"
+        },
+        {
+          "line": 1259,
+          "source": ".composer-button svg"
+        },
+        {
+          "line": 1267,
+          "source": ".composer textarea"
+        },
+        {
+          "line": 1280,
+          "source": ".composer textarea::placeholder"
+        },
+        {
+          "line": 1284,
+          "source": ".composer-foot"
+        },
+        {
+          "line": 1293,
+          "source": ".composer-notice.is-error"
+        },
+        {
+          "line": 1298,
+          "source": ".today-frame"
+        },
+        {
+          "line": 1302,
+          "source": ".today-question"
+        },
+        {
+          "line": 1311,
+          "source": ".today-question em"
+        },
+        {
+          "line": 1316,
+          "source": ".today-summary"
+        },
+        {
+          "line": 1325,
+          "source": ".today-summary strong"
+        },
+        {
+          "line": 1331,
+          "source": ".today-primary"
+        },
+        {
+          "line": 1338,
+          "source": ".block-heading"
+        },
+        {
+          "line": 1349,
+          "source": ".block-heading h2"
+        },
+        {
+          "line": 1356,
+          "source": ".block-heading span"
+        },
+        {
+          "line": 1362,
+          "source": ".priority-list"
+        },
+        {
+          "line": 1366,
+          "source": ".priority-item"
+        },
+        {
+          "line": 1381,
+          "source": ".priority-item::before"
+        },
+        {
+          "line": 1391,
+          "source": ".priority-item:hover::before, .priority-item.is-selected::before"
+        },
+        {
+          "line": 1396,
+          "source": ".priority-source"
+        },
+        {
+          "line": 1404,
+          "source": ".priority-title"
+        },
+        {
+          "line": 1410,
+          "source": ".priority-meta"
+        },
+        {
+          "line": 1416,
+          "source": ".level-pill"
+        },
+        {
+          "line": 1423,
+          "source": ".level-pill.level-urgent, .level-pill.level-must"
+        },
+        {
+          "line": 1429,
+          "source": ".level-pill.level-focus, .level-pill.level-watch"
+        },
+        {
+          "line": 1435,
+          "source": ".schedule"
+        },
+        {
+          "line": 1441,
+          "source": ".schedule::before"
+        },
+        {
+          "line": 1451,
+          "source": ".schedule-item"
+        },
+        {
+          "line": 1463,
+          "source": ".schedule-item::before"
+        },
+        {
+          "line": 1475,
+          "source": ".schedule-time"
+        },
+        {
+          "line": 1481,
+          "source": ".schedule-title"
+        },
+        {
+          "line": 1488,
+          "source": ".schedule-meta"
+        },
+        {
+          "line": 1494,
+          "source": ".schedule-empty"
+        },
+        {
+          "line": 1501,
+          "source": ".sources-block"
+        },
+        {
+          "line": 1505,
+          "source": ".source-filters"
+        },
+        {
+          "line": 1512,
+          "source": ".source-filter"
+        },
+        {
+          "line": 1522,
+          "source": ".source-filter:hover"
+        },
+        {
+          "line": 1526,
+          "source": ".source-filter.is-active"
+        },
+        {
+          "line": 1531,
+          "source": ".source-filter small"
+        },
+        {
+          "line": 1538,
+          "source": ".source-status-line"
+        },
+        {
+          "line": 1550,
+          "source": ".source-status-copy"
+        },
+        {
+          "line": 1557,
+          "source": ".source-list"
+        },
+        {
+          "line": 1564,
+          "source": ".source-item"
+        },
+        {
+          "line": 1578,
+          "source": ".source-item:hover .source-item-title"
+        },
+        {
+          "line": 1582,
+          "source": ".source-item-title"
+        },
+        {
+          "line": 1588,
+          "source": ".source-item-meta"
+        },
+        {
+          "line": 1594,
+          "source": ".source-item-arrow"
+        },
+        {
+          "line": 1600,
+          "source": ".settings-grid"
+        },
+        {
+          "line": 1607,
+          "source": ".settings-column"
+        },
+        {
+          "line": 1613,
+          "source": ".settings-group"
+        },
+        {
+          "line": 1617,
+          "source": ".settings-group-header"
+        },
+        {
+          "line": 1625,
+          "source": ".settings-group-header h2"
+        },
+        {
+          "line": 1631,
+          "source": ".settings-group-header span"
+        },
+        {
+          "line": 1636,
+          "source": ".setting-row"
+        },
+        {
+          "line": 1645,
+          "source": ".setting-copy strong"
+        },
+        {
+          "line": 1651,
+          "source": ".setting-copy span"
+        },
+        {
+          "line": 1659,
+          "source": ".switch"
+        },
+        {
+          "line": 1670,
+          "source": ".switch::after"
+        },
+        {
+          "line": 1682,
+          "source": ".switch.is-on"
+        },
+        {
+          "line": 1686,
+          "source": ".switch.is-on::after"
+        },
+        {
+          "line": 1691,
+          "source": ".diagnostic-list"
+        },
+        {
+          "line": 1695,
+          "source": ".diagnostic-row"
+        },
+        {
+          "line": 1704,
+          "source": ".diagnostic-row dt"
+        },
+        {
+          "line": 1708,
+          "source": ".diagnostic-row dd"
+        },
+        {
+          "line": 1718,
+          "source": ".settings-actions"
+        },
+        {
+          "line": 1725,
+          "source": ".settings-shell"
+        },
+        {
+          "line": 1732,
+          "source": ".settings-nav"
+        },
+        {
+          "line": 1738,
+          "source": ".settings-nav-item"
+        },
+        {
+          "line": 1751,
+          "source": ".settings-nav-item strong"
+        },
+        {
+          "line": 1757,
+          "source": ".settings-nav-item span"
+        },
+        {
+          "line": 1762,
+          "source": ".settings-nav-item:hover"
+        },
+        {
+          "line": 1766,
+          "source": ".settings-nav-item.is-active"
+        },
+        {
+          "line": 1772,
+          "source": ".settings-nav-item.is-active strong"
+        },
+        {
+          "line": 1776,
+          "source": ".settings-content"
+        },
+        {
+          "line": 1783,
+          "source": ".setting-row-select"
+        },
+        {
+          "line": 1787,
+          "source": ".settings-select"
+        },
+        {
+          "line": 1799,
+          "source": ".settings-select:focus"
+        },
+        {
+          "line": 1803,
+          "source": ".settings-select:disabled"
+        },
+        {
+          "line": 1807,
+          "source": ".settings-note"
+        },
+        {
+          "line": 1816,
+          "source": ".microphone-setting-row"
+        },
+        {
+          "line": 1820,
+          "source": ".microphone-setting-actions"
+        },
+        {
+          "line": 1828,
+          "source": ".memory-add"
+        },
+        {
+          "line": 1837,
+          "source": ".memory-input"
+        },
+        {
+          "line": 1850,
+          "source": ".memory-input:focus"
+        },
+        {
+          "line": 1854,
+          "source": ".memory-list, .tool-list"
+        },
+        {
+          "line": 1859,
+          "source": ".memory-row, .tool-row"
+        },
+        {
+          "line": 1865,
+          "source": ".memory-row-top, .memory-actions, .tool-row"
+        },
+        {
+          "line": 1873,
+          "source": ".memory-row-top, .tool-row"
+        },
+        {
+          "line": 1878,
+          "source": ".memory-meta"
+        },
+        {
+          "line": 1884,
+          "source": ".memory-content"
+        },
+        {
+          "line": 1892,
+          "source": ".memory-actions"
+        },
+        {
+          "line": 1897,
+          "source": ".text-button.is-danger"
+        },
+        {
+          "line": 1901,
+          "source": ".tool-policy-summary"
+        },
+        {
+          "line": 1910,
+          "source": ".tool-policy-summary strong"
+        },
+        {
+          "line": 1915,
+          "source": ".tool-policy-summary span, .tool-copy span"
+        },
+        {
+          "line": 1922,
+          "source": ".tool-copy"
+        },
+        {
+          "line": 1928,
+          "source": ".tool-copy strong"
+        },
+        {
+          "line": 1933,
+          "source": ".toast"
+        },
+        {
+          "line": 1951,
+          "source": ".toast.is-visible"
+        },
+        {
+          "line": 1956,
+          "source": ".toast.is-error"
+        },
+        {
+          "line": 1961,
+          "source": ".is-compact .priority-item, .is-compact .source-item, .is-compact .setting-row"
+        },
+        {
+          "line": 1969,
+          "source": ".is-compact .message"
+        },
+        {
+          "line": 1973,
+          "source": ".reduce-motion *, .reduce-motion *::before, .reduce-motion *::after"
+        },
+        {
+          "line": 1982,
+          "source": "@media (max-width: 1080px)"
+        },
+        {
+          "line": 1983,
+          "source": ":root"
+        },
+        {
+          "line": 1988,
+          "source": ".rail"
+        },
+        {
+          "line": 1993,
+          "source": ".brand"
+        },
+        {
+          "line": 1999,
+          "source": ".brand-copy, .rail-label, .presence-label"
+        },
+        {
+          "line": 2005,
+          "source": ".rail-button"
+        },
+        {
+          "line": 2011,
+          "source": ".presence"
+        },
+        {
+          "line": 2016,
+          "source": ".view-frame"
+        },
+        {
+          "line": 2021,
+          "source": ".today-primary"
+        },
+        {
+          "line": 2025,
+          "source": ".source-list"
+        },
+        {
+          "line": 2029,
+          "source": ".settings-shell"
+        },
+        {
+          "line": 2034,
+          "source": ".chat-header-actions .character-select span, .conversation-controls .inline-select span"
+        },
+        {
+          "line": 2040,
+          "source": "@media (max-width: 900px)"
+        },
+        {
+          "line": 2041,
+          "source": ".stage, .stage.has-detail"
+        },
+        {
+          "line": 2046,
+          "source": ".detail-drawer"
+        },
+        {
+          "line": 2059,
+          "source": ".stage.has-detail .detail-drawer"
+        },
+        {
+          "line": 2063,
+          "source": ".today-primary, .settings-grid"
+        },
+        {
+          "line": 2068,
+          "source": ".today-primary"
+        },
+        {
+          "line": 2072,
+          "source": ".settings-shell"
+        },
+        {
+          "line": 2077,
+          "source": ".settings-nav"
+        },
+        {
+          "line": 2083,
+          "source": ".settings-nav-item"
+        },
+        {
+          "line": 2089,
+          "source": ".settings-nav-item.is-active"
+        },
+        {
+          "line": 2093,
+          "source": ".chat-heading-row, .conversation-controls"
+        },
+        {
+          "line": 2099,
+          "source": ".chat-header-actions, .conversation-controls, .sensor-controls, .response-controls"
+        },
+        {
+          "line": 2106,
+          "source": ".inline-select"
+        },
+        {
+          "line": 2110,
+          "source": ".inline-select select"
+        },
+        {
+          "line": 2116,
+          "source": "@media (max-width: 650px)"
+        },
+        {
+          "line": 2117,
+          "source": ".privacy-chip"
+        },
+        {
+          "line": 2127,
+          "source": ".view-frame, .chat-header"
+        },
+        {
+          "line": 2133,
+          "source": ".composer-wrap"
+        },
+        {
+          "line": 2137,
+          "source": ".sensor-button span"
+        },
+        {
+          "line": 2141,
+          "source": ".sensor-button"
+        },
+        {
+          "line": 2147,
+          "source": ".setting-row-select, .memory-add, .microphone-setting-row"
+        },
+        {
+          "line": 2153,
+          "source": ".microphone-setting-actions"
+        },
+        {
+          "line": 2159,
+          "source": "@media (max-height: 650px)"
+        },
+        {
+          "line": 2160,
+          "source": ".rail"
+        },
+        {
+          "line": 2164,
+          "source": ".brand"
+        },
+        {
+          "line": 2168,
+          "source": ".rail-button"
+        },
+        {
+          "line": 2172,
+          "source": ".view-frame"
+        },
+        {
+          "line": 2176,
+          "source": ".chat-header"
+        },
+        {
+          "line": 2181,
+          "source": ".message-list"
+        },
+        {
+          "line": 2187,
+          "source": "@media (prefers-reduced-motion: reduce)"
+        },
+        {
+          "line": 2188,
+          "source": "*, *::before, *::after"
+        }
+      ],
+      "declarations": [],
+      "root_tokens": [
+        {
+          "line": 3,
+          "source": "--ink: #101319;"
+        },
+        {
+          "line": 4,
+          "source": "--deep: #181d26;"
+        },
+        {
+          "line": 5,
+          "source": "--paper: #e7eaf0;"
+        },
+        {
+          "line": 6,
+          "source": "--muted: #929bad;"
+        },
+        {
+          "line": 7,
+          "source": "--line: #303846;"
+        },
+        {
+          "line": 8,
+          "source": "--moon: #87a0ce;"
+        },
+        {
+          "line": 9,
+          "source": "--iris: #65b3a6;"
+        },
+        {
+          "line": 10,
+          "source": "--good: #65b3a6;"
+        },
+        {
+          "line": 11,
+          "source": "--warn: #d0a660;"
+        },
+        {
+          "line": 12,
+          "source": "--bad: #c77e78;"
+        },
+        {
+          "line": 13,
+          "source": "--quiet: #7e8898;"
+        },
+        {
+          "line": 14,
+          "source": "--rail-width: 78px;"
+        },
+        {
+          "line": 15,
+          "source": "--detail-width: 360px;"
+        },
+        {
+          "line": 16,
+          "source": "--chrome-height: 50px;"
+        },
+        {
+          "line": 17,
+          "source": "--ui-font: \"Microsoft JhengHei UI\", \"Segoe UI Variable\", \"Segoe UI\", sans-serif;"
+        },
+        {
+          "line": 18,
+          "source": "--data-font: \"Cascadia Mono\", \"SFMono-Regular\", Consolas, monospace;"
+        },
+        {
+          "line": 1984,
+          "source": "--rail-width: 76px;"
+        },
+        {
+          "line": 1985,
+          "source": "--detail-width: 330px;"
+        }
+      ]
+    }
+  }
+}

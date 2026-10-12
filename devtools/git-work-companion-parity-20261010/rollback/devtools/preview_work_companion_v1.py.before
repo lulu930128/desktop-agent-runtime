@@ -1,0 +1,150 @@
+"""Opt-in synthetic Qt preview; never starts or imports the formal launcher.
+
+python -B devtools/preview_work_companion_v1.py --page chat
+python -B devtools/preview_work_companion_v1.py --page today --snapshot output.png
+Snapshot mode is offscreen and exits; ordinary mode is a disposable QWidget.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import sys
+
+# Keep the preview's own imports from producing workspace bytecode.
+sys.dont_write_bytecode = True
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(description="Work Companion V1 — SYNTHETIC / no services")
+    result.add_argument("--page", choices=("chat", "today", "settings"), default="chat")
+    result.add_argument("--state", choices=("idle", "loading", "partial", "error", "disabled", "empty"), default="idle")
+    result.add_argument("--section", choices=("assistant", "conversation", "perception", "tools", "appearance", "advanced"),
+                        default="assistant")
+    result.add_argument("--drawer", choices=("history", "detail"))
+    result.add_argument("--width", type=int, default=1280)
+    result.add_argument("--height", type=int, default=720)
+    result.add_argument("--scale", type=float, choices=(1.0, 1.25, 1.5, 2.0), default=1.0)
+    result.add_argument("--snapshot", type=Path, help="Write one synthetic PNG then exit; refuses overwrite")
+    return result
+
+
+def configure_preview_font(application) -> str | None:
+    """Use installed Windows fonts, or the existing bundled font offscreen.
+
+    Font loading belongs to this opt-in host, never the presentation QWidget.
+    Return a QSS override only when system fonts are unavailable.
+    """
+    from PySide6.QtGui import QFont, QFontDatabase, QFontMetrics
+    families = QFontDatabase.families()
+    if not families and os.name == "nt":
+        # The offscreen plugin can expose an empty database. Register existing
+        # OS fonts in this process only; no installation or machine changes.
+        font_dir = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
+        for filename in ("msjh.ttc", "msjhbd.ttc", "segoeui.ttf", "consola.ttf"):
+            QFontDatabase.addApplicationFont(str(font_dir / filename))
+        families = QFontDatabase.families()
+    selected = next((name for name in ("Microsoft JhengHei UI", "Microsoft JhengHei", "Segoe UI")
+                     if name in families), None)
+    fallback = None
+    if selected is None:
+        font_path = ROOT / "kuro_launcher/NaikaiFont-Regular.ttf"
+        font_id = QFontDatabase.addApplicationFont(str(font_path))
+        loaded = QFontDatabase.applicationFontFamilies(font_id)
+        if font_id < 0 or not loaded:
+            raise RuntimeError("No usable local preview font; bundled font could not be loaded")
+        selected = fallback = loaded[0]
+    font = QFont(selected)
+    font.setPixelSize(14)
+    metrics = QFontMetrics(font)
+    if not all(metrics.inFont(character) for character in "Kuro設定"):
+        raise RuntimeError("Local preview font is missing required glyphs")
+    application.setFont(font)
+    return fallback
+
+
+def main(argv=None) -> int:
+    arguments = parser()
+    args = arguments.parse_args(argv)
+    if not 960 <= args.width <= 1920 or not 600 <= args.height <= 1200:
+        arguments.error("preview dimensions must be within 960..1920 x 600..1200 logical pixels")
+    if args.drawer == "history" and args.page != "chat":
+        arguments.error("--drawer history requires --page chat")
+    if args.drawer == "detail" and args.page != "today":
+        arguments.error("--drawer detail requires --page today")
+    if args.snapshot:
+        if args.snapshot.suffix.lower() != ".png":
+            arguments.error("--snapshot requires a .png path")
+        if args.snapshot.exists():
+            arguments.error("snapshot already exists; choose a new path (no overwrite)")
+        if not args.snapshot.parent.is_dir():
+            arguments.error("snapshot parent directory must already exist")
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    os.environ["QT_SCALE_FACTOR"] = str(args.scale)
+    # Qt is imported only after selecting this process's platform and scale.
+    from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QTimer
+    from PySide6.QtWidgets import QApplication
+    from kuro_launcher.qt_work_companion_view import WorkCompanionView
+    from devtools.work_companion_synthetic import SyntheticPreviewModel, TODAY
+
+    application = QApplication(["work-companion-v1-preview"])
+    application.setApplicationName("Work Companion V1 — SYNTHETIC PREVIEW")
+    # This application belongs only to the opt-in devtool, never the formal Qt owner.
+    try:
+        fallback_family = configure_preview_font(application)
+    except RuntimeError as exc:
+        print(f"PREVIEW_FONT_FAILED: {exc}", file=sys.stderr, flush=True)
+        return 1
+    view = WorkCompanionView(font_family=fallback_family)
+    model = SyntheticPreviewModel(view)
+    view.setWindowTitle("Kuro Work Companion — DEMO / PREVIEW（無服務連線）")
+    view.resize(args.width, args.height)
+    view.set_page(args.page)
+    model.set_state(args.state)
+    view.select_settings_section(args.section)
+    view.show()
+
+    def ready():
+        if args.drawer == "history":
+            view.toggle_history()
+        elif args.drawer == "detail":
+            view.show_today_detail(TODAY[0])
+        if not args.snapshot:
+            return
+        try:
+            pixmap = view.grab()
+            if pixmap.isNull():
+                raise RuntimeError("Qt returned a null widget capture")
+            data = QByteArray()
+            buffer = QBuffer(data)
+            buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+            if not pixmap.save(buffer, "PNG"):
+                raise RuntimeError("Qt could not encode the widget capture")
+            buffer.close()
+            # Exclusive create prevents clobbering user data, including a late race.
+            with args.snapshot.open("xb") as output:
+                output.write(bytes(data))
+            print(json.dumps({
+                "mode": "SYNTHETIC_PREVIEW", "page": args.page, "state": args.state,
+                "platform": application.platformName(), "snapshot": str(args.snapshot),
+                "logical_size": [view.width(), view.height()],
+                "physical_size": [pixmap.width(), pixmap.height()],
+                "device_pixel_ratio": pixmap.devicePixelRatio(),
+                "geometry": view.geometry_snapshot(),
+            }, ensure_ascii=False), flush=True)
+            application.exit(0)
+        except (OSError, RuntimeError) as exc:
+            print(f"PREVIEW_SNAPSHOT_FAILED: {exc}", file=sys.stderr, flush=True)
+            application.exit(1)
+
+    # A bounded event-loop settle allows layouts/fonts to finish; no services run.
+    QTimer.singleShot(120, ready)
+    return application.exec()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

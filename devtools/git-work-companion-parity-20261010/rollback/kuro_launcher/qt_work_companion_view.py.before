@@ -1,0 +1,783 @@
+"""Reusable Widgets presentation only. No controller, services, fixtures or IO.
+
+The host supplies immutable display data and handles intent signals. Navigation,
+focus and drawer visibility are view state. Nothing here establishes connectivity.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from PySide6.QtCore import QPoint, QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QIcon, QKeyEvent, QPainter, QPainterPath, QPen, QPixmap, QTextOption
+from PySide6.QtWidgets import (
+    QComboBox, QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton,
+    QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
+)
+
+from .qt_work_companion_theme import TOKENS, work_companion_qss
+
+
+@dataclass(frozen=True)
+class Message:
+    speaker: str
+    time: str
+    text: str
+
+
+@dataclass(frozen=True)
+class HistoryEntry:
+    key: str
+    title: str
+    subtitle: str
+
+
+@dataclass(frozen=True)
+class TodayItem:
+    key: str
+    title: str
+    summary: str
+    status: str
+    source: str
+    observed_at: str
+    reason: str
+    next_step: str
+    detail: str
+
+
+@dataclass(frozen=True)
+class SettingField:
+    key: str
+    title: str
+    description: str
+    options: tuple[str, ...]
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
+class SettingSection:
+    key: str
+    title: str
+    subtitle: str
+    owner_label: str
+    fields: tuple[SettingField, ...]
+
+
+STATE_LABELS = {
+    "idle": "一般畫面",
+    "loading": "載入中",
+    "partial": "資料不完整",
+    "error": "發生錯誤",
+    "disabled": "操作停用",
+    "empty": "沒有內容",
+}
+STATE_NOTICES = {
+    "idle": "",
+    "loading": "LOADING · 正在示範等待狀態；沒有發出任何請求。",
+    "partial": "PARTIAL · 示範資料不完整；保留可讀內容，缺少的部分不補造。",
+    "error": "ERROR · 示範讀取失敗；原有內容仍保留。可切回「一般畫面」重試預覽。",
+    "disabled": "DISABLED · 此情境的操作已停用；仍可切換頁面及閱讀內容。",
+    "empty": "EMPTY · 目前沒有示範內容。可切回「一般畫面」重新查看。",
+}
+
+
+def label(text: str, role: str = "", *, wrap: bool = False) -> QLabel:
+    result = QLabel(text)
+    result.setTextFormat(Qt.TextFormat.PlainText)
+    result.setProperty("role", role)
+    result.setWordWrap(wrap)
+    result.setMinimumWidth(0)
+    return result
+
+
+def box(parent: QWidget, *, horizontal: bool = False, margins=(0, 0, 0, 0), spacing=0):
+    layout = QHBoxLayout(parent) if horizontal else QVBoxLayout(parent)
+    layout.setContentsMargins(*margins)
+    layout.setSpacing(spacing)
+    return layout
+
+
+def clear_layout(layout):
+    while layout.count():
+        item = layout.takeAt(0)
+        if item.widget():
+            item.widget().hide()
+            item.widget().deleteLater()
+        elif item.layout():
+            clear_layout(item.layout())
+
+
+def polish(widget: QWidget):
+    widget.style().unpolish(widget)
+    widget.style().polish(widget)
+    widget.update()
+
+
+def icon(name: str, color: str = TOKENS.muted) -> QIcon:
+    """Small local vector strokes, rendered at 2x; no assets or remote fonts."""
+    pixmap = QPixmap(40, 40)
+    pixmap.setDevicePixelRatio(2)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(QPen(QColor(color), 1.35, Qt.PenStyle.SolidLine,
+                        Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    path = QPainterPath()
+    if name == "chat":
+        path.moveTo(4, 4); path.lineTo(16, 4); path.lineTo(16, 13)
+        path.lineTo(9, 13); path.lineTo(5, 17); path.lineTo(5, 13); path.lineTo(4, 13)
+        path.closeSubpath()
+    elif name == "today":
+        painter.drawRoundedRect(QRectF(3, 5, 14, 12), 1, 1)
+        painter.drawLine(3, 9, 17, 9)
+        painter.drawLine(7, 3, 7, 7); painter.drawLine(13, 3, 13, 7)
+        painter.drawLine(7, 12, 9, 12); painter.drawLine(11, 12, 13, 12)
+    elif name == "settings":
+        for x, y in ((5, 7), (10, 13), (15, 8)):
+            painter.drawLine(x, 3, x, 17)
+            painter.drawEllipse(QRectF(x - 2, y - 2, 4, 4))
+    elif name == "history":
+        painter.drawArc(QRectF(3, 3, 14, 14), -60 * 16, 300 * 16)
+        painter.drawLine(3, 3, 3, 8); painter.drawLine(3, 8, 7, 8)
+        painter.drawLine(10, 6, 10, 10); painter.drawLine(10, 10, 13, 12)
+    elif name == "attach":
+        path.moveTo(7, 14); path.lineTo(13, 8)
+        path.cubicTo(15, 5, 12, 3, 10, 5); path.lineTo(4, 11)
+        path.cubicTo(0, 16, 6, 20, 10, 16); path.lineTo(16, 10)
+    elif name == "close":
+        painter.drawLine(5, 5, 15, 15); painter.drawLine(15, 5, 5, 15)
+    painter.drawPath(path)
+    painter.end()
+    return QIcon(pixmap)
+
+
+def button(text: str, name: str, role: str = "", icon_name: str = "") -> QPushButton:
+    result = QPushButton(text)
+    result.setObjectName(name)
+    result.setProperty("role", role)
+    result.setCursor(Qt.CursorShape.PointingHandCursor)
+    result.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+    if icon_name:
+        result.setIcon(icon(icon_name))
+        result.setIconSize(QSize(20, 20))
+    return result
+
+
+def scroll_area(content: QWidget) -> QScrollArea:
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    scroll.setFrameShape(QFrame.Shape.NoFrame)
+    scroll.setWidget(content)
+    return scroll
+
+
+class ComposerEdit(QPlainTextEdit):
+    submit_requested = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self._composing = False
+        self.setAccessibleName("預覽訊息輸入")
+        self.setPlaceholderText("問 Kuro，或從今天的項目延伸討論…")
+        self.setMinimumHeight(44)
+        self.setMaximumHeight(92)
+        self.setTabChangesFocus(True)
+        self.textChanged.connect(self._fit_height)
+        self._fit_height()
+
+    def _fit_height(self):
+        lines = self.document().documentLayout().documentSize().height()
+        self.setFixedHeight(min(92, max(44, round(lines * self.fontMetrics().lineSpacing() + 12))))
+
+    def inputMethodEvent(self, event):
+        self._composing = bool(event.preeditString())
+        super().inputMethodEvent(event)
+
+    def keyPressEvent(self, event: QKeyEvent):
+        if (event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+                and not event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+                and not self._composing):
+            if not event.isAutoRepeat():
+                self.submit_requested.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
+class MessageText(QPlainTextEdit):
+    """Plain, selectable text with intrinsic height and safe long-word wrapping."""
+
+    def __init__(self, text: str):
+        super().__init__()
+        self.setProperty("role", "messageBody")
+        self.setReadOnly(True)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+        self.document().setDocumentMargin(0)
+        self.document().documentLayout().documentSizeChanged.connect(self._fit_height)
+        self.setPlainText(text)
+        self._fit_height()
+
+    def _fit_height(self, *_):
+        lines = self.document().documentLayout().documentSize().height()
+        height = max(1, round(lines * self.fontMetrics().lineSpacing()) + 4)
+        if height != self.height():
+            self.setFixedHeight(height)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._fit_height()
+
+    def minimumSizeHint(self):
+        return QSize(0, self.height())
+
+    def sizeHint(self):
+        return QSize(400, self.height())
+
+
+class ChoiceCombo(QComboBox):
+    """Native combo interactions with a consistent, asset-free dropdown mark."""
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(QColor(TOKENS.muted if self.isEnabled() else TOKENS.quiet), 1.2))
+        x, y = self.width() - 16, self.height() // 2
+        painter.drawLine(x - 3, y - 1, x, y + 2)
+        painter.drawLine(x, y + 2, x + 3, y - 1)
+        painter.end()
+
+
+class WorkCompanionView(QWidget):
+    """Host-independent display surface; the V1 devtool is its only current host."""
+
+    page_changed = Signal(str)
+    send_requested = Signal(str)
+    stop_requested = Signal()
+    history_selected = Signal(str)
+    today_selected = Signal(str)
+    setting_changed = Signal(str, str, str)
+    settings_reset_requested = Signal(str)
+    attachment_requested = Signal()
+    demo_state_requested = Signal(str)
+
+    def __init__(self, parent: QWidget | None = None, *, font_family: str | None = None):
+        super().__init__(parent)
+        self.setObjectName("WorkCompanionView")
+        self.setMinimumSize(960, 600)
+        self.setStyleSheet(work_companion_qss(font_family))
+        self.page = "chat"
+        self.ui_state = "idle"
+        self.busy = False
+        self.drawer_kind = ""
+        self._drawer_focus = None
+        self._sections: tuple[SettingSection, ...] = ()
+        self._setting_values: dict[tuple[str, str], str] = {}
+        self.setting_combos: dict[str, QComboBox] = {}
+        self.setting_section = ""
+        self.history_buttons: dict[str, QPushButton] = {}
+        self.today_buttons: dict[str, QPushButton] = {}
+        self.message_rows: list[QFrame] = []
+        self._follow_tail = False
+        root = box(self, horizontal=True)
+        self.rail = QWidget()
+        self.rail.setObjectName("Rail")
+        self._build_rail()
+        root.addWidget(self.rail)
+        self.workspace = QWidget()
+        self.workspace.setMinimumWidth(0)
+        workspace_layout = box(self.workspace)
+        root.addWidget(self.workspace, 1)
+        self._build_chrome(workspace_layout)
+        self.state_notice = label("", wrap=True)
+        self.state_notice.setObjectName("StateNotice")
+        workspace_layout.addWidget(self.state_notice)
+        self.pages = QStackedWidget()
+        workspace_layout.addWidget(self.pages, 1)
+        self.pages.addWidget(self._build_chat())
+        self.pages.addWidget(self._build_today())
+        self.pages.addWidget(self._build_settings())
+        self._build_drawer()
+        self.set_page("chat")
+        self.set_state("idle")
+
+    def _build_rail(self):
+        rail_layout = box(self.rail, margins=(14, 25, 14, 18), spacing=10)
+        self.brand_mark = label("K", "brandMark")
+        self.brand_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.brand_mark.setFixedSize(38, 38)
+        self.brand = label("Kuro", "brand")
+        self.brand_caption = label("WORK COMPANION", "caption")
+        rail_layout.addWidget(self.brand_mark, 0, Qt.AlignmentFlag.AlignHCenter)
+        rail_layout.addWidget(self.brand)
+        rail_layout.addWidget(self.brand_caption)
+        rail_layout.addSpacing(24)
+        self.nav_buttons = {}
+        for key, title in (("chat", "普通對話"), ("today", "今天")):
+            nav = button(title, f"Nav_{key}", "nav", key)
+            nav.setCheckable(True)
+            nav.setMinimumHeight(44)
+            nav.setAccessibleName(title)
+            nav.clicked.connect(lambda checked=False, page=key: self.set_page(page))
+            self.nav_buttons[key] = nav
+            rail_layout.addWidget(nav)
+        rail_layout.addStretch()
+        self.rail_status = label("DEMO · 僅本機預覽", "caption", wrap=True)
+        rail_layout.addWidget(self.rail_status)
+        nav = button("設定", "Nav_settings", "nav", "settings")
+        nav.setCheckable(True)
+        nav.setMinimumHeight(44)
+        nav.setAccessibleName("設定")
+        nav.clicked.connect(lambda: self.set_page("settings"))
+        self.nav_buttons["settings"] = nav
+        rail_layout.addWidget(nav)
+
+    def _build_chrome(self, layout):
+        self.chrome = QWidget()
+        self.chrome.setObjectName("Chrome")
+        row = box(self.chrome, horizontal=True, margins=(27, 0, 22, 0), spacing=14)
+        self.chrome_title = label("WORK COMPANION", "caption")
+        row.addWidget(self.chrome_title)
+        row.addStretch()
+        badge = label("DEMO / PREVIEW")
+        badge.setObjectName("PreviewBadge")
+        badge.setFixedHeight(25)
+        row.addWidget(badge)
+        self.state_picker = ChoiceCombo()
+        self.state_picker.setObjectName("StatePicker")
+        self.state_picker.setAccessibleName("示範畫面狀態")
+        self.state_picker.setToolTip("只改變合成預覽，不代表服務狀態")
+        for key, title in STATE_LABELS.items():
+            self.state_picker.addItem("情境 · " + title, key)
+        self.state_picker.setFixedWidth(164)
+        self.state_picker.currentIndexChanged.connect(
+            lambda: self.demo_state_requested.emit(self.state_picker.currentData()))
+        row.addWidget(self.state_picker)
+        layout.addWidget(self.chrome)
+
+    def _build_chat(self) -> QWidget:
+        page = QWidget()
+        layout = box(page)
+        header = QFrame()
+        header.setObjectName("ChatHeader")
+        header.setFixedHeight(TOKENS.chat_header)
+        heading = box(header, horizontal=True, margins=(38, 18, 38, 18), spacing=16)
+        self.history_toggle = button("", "HistoryToggle", "icon", "history")
+        self.history_toggle.setFixedSize(38, 38)
+        self.history_toggle.setAccessibleName("開啟示範對話紀錄")
+        self.history_toggle.setToolTip("對話紀錄")
+        self.history_toggle.clicked.connect(self.toggle_history)
+        heading.addWidget(self.history_toggle)
+        titles = QWidget()
+        title_layout = box(titles, spacing=5)
+        self.chat_title = label("普通對話", "title")
+        title_layout.addWidget(self.chat_title)
+        title_layout.addWidget(label("把想法說清楚，留一點空間慢慢整理。", "muted"))
+        heading.addWidget(titles, 1)
+        heading.addWidget(label("SYNTHETIC\n不連線 · 不保存", "caption"))
+        layout.addWidget(header)
+        stage = QWidget()
+        # Center the 760px text measure. The speaker gutter sits to its left.
+        stage_layout = box(stage, horizontal=True, margins=(38, 10, 38 + TOKENS.speaker_gutter, 18))
+        self.message_column = QWidget()
+        self.message_column.setObjectName("MessageColumn")
+        self.message_column.setMaximumWidth(TOKENS.message_width + TOKENS.speaker_gutter)
+        self.message_column.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.messages_layout = box(self.message_column)
+        stage_layout.addStretch()
+        stage_layout.addWidget(self.message_column, 100)
+        stage_layout.addStretch()
+        self.messages_scroll = scroll_area(stage)
+        scrollbar = self.messages_scroll.verticalScrollBar()
+        scrollbar.rangeChanged.connect(
+            lambda minimum, maximum: scrollbar.setValue(maximum) if self._follow_tail else None)
+        scrollbar.actionTriggered.connect(self._stop_following_tail)
+        scrollbar.sliderPressed.connect(self._stop_following_tail)
+        layout.addWidget(self.messages_scroll, 1)
+        composer_row = QWidget()
+        composer_outer = box(composer_row, horizontal=True, margins=(38, 0, 38, 28))
+        self.composer_column = QWidget()
+        self.composer_column.setMaximumWidth(TOKENS.composer_width)
+        self.composer_column.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        composer_layout = box(self.composer_column, spacing=9)
+        self.composer_notice = label("SYNTHETIC · 請使用中性示範文字，內容僅留在這次預覽。", "caption", wrap=True)
+        composer_layout.addWidget(self.composer_notice)
+        self.composer = QFrame()
+        self.composer.setObjectName("Composer")
+        controls = box(self.composer, horizontal=True, margins=(10, 7, 10, 7), spacing=10)
+        self.attach_button = button("", "AttachButton", "icon", "attach")
+        self.attach_button.setFixedSize(36, 38)
+        self.attach_button.setAccessibleName("加入合成附件")
+        self.attach_button.setToolTip("加入示範附件，不讀取檔案")
+        self.attach_button.clicked.connect(self.attachment_requested.emit)
+        controls.addWidget(self.attach_button, 0, Qt.AlignmentFlag.AlignBottom)
+        self.composer_edit = ComposerEdit()
+        self.composer_edit.submit_requested.connect(self._submit)
+        self.composer_edit.textChanged.connect(self._update_composer)
+        controls.addWidget(self.composer_edit, 1)
+        self.send_button = button("送出 ↑", "SendButton")
+        self.send_button.setFixedSize(80, 38)
+        self.send_button.clicked.connect(self._activate_send)
+        controls.addWidget(self.send_button, 0, Qt.AlignmentFlag.AlignBottom)
+        composer_layout.addWidget(self.composer)
+        footer = QWidget()
+        footer_layout = box(footer, horizontal=True)
+        footer_layout.addWidget(label("Enter 送出 · Shift + Enter 換行", "caption"))
+        footer_layout.addStretch()
+        self.chat_state = label("PREVIEW / IDLE", "caption")
+        footer_layout.addWidget(self.chat_state)
+        composer_layout.addWidget(footer)
+        composer_outer.addStretch()
+        composer_outer.addWidget(self.composer_column, 100)
+        composer_outer.addStretch()
+        layout.addWidget(composer_row)
+        return page
+
+    def _build_today(self) -> QWidget:
+        page = QWidget()
+        layout = box(page, margins=(52, 32, 50, 26), spacing=12)
+        layout.addWidget(label("YOUR DAY, AT A GLANCE", "caption"))
+        layout.addWidget(label("今天", "title"))
+        layout.addWidget(label("先看重點，再決定要往哪裡走。以下皆為匿名示範。", "muted"))
+        content = QWidget()
+        self.today_layout = box(content)
+        self.today_scroll = scroll_area(content)
+        layout.addWidget(self.today_scroll, 1)
+        layout.addWidget(label("SYNTHETIC · 固定樣本日期 2026-01-01 / Asia/Taipei · 無來源連線", "caption", wrap=True))
+        return page
+
+    def _build_settings(self) -> QWidget:
+        page = QWidget()
+        layout = box(page, margins=(TOKENS.settings_margin, 32, 50, 24), spacing=10)
+        layout.addWidget(label("CONTROL & PRIVACY", "caption"))
+        layout.addWidget(label("設定", "title"))
+        layout.addSpacing(22)
+        shell = QWidget()
+        shell_layout = box(shell, horizontal=True, spacing=TOKENS.settings_gap)
+        self.settings_nav = QWidget()
+        self.settings_nav.setFixedWidth(TOKENS.settings_navigation)
+        self.settings_nav_layout = box(self.settings_nav, spacing=4)
+        shell_layout.addWidget(self.settings_nav)
+        self.settings_content = QWidget()
+        content_layout = box(self.settings_content, spacing=16)
+        title_row = QWidget()
+        title_layout = box(title_row, horizontal=True, spacing=12)
+        self.settings_title = label("", "sectionTitle")
+        self.settings_owner = label("", "caption")
+        title_layout.addWidget(self.settings_title)
+        title_layout.addStretch()
+        title_layout.addWidget(self.settings_owner)
+        content_layout.addWidget(title_row)
+        self.settings_description = label("", "muted", wrap=True)
+        content_layout.addWidget(self.settings_description)
+        fields = QWidget()
+        self.settings_fields_layout = box(fields)
+        content_layout.addWidget(scroll_area(fields), 1)
+        self.settings_note = label("DEMO · 選擇僅留在本次預覽，關閉即還原。", "muted", wrap=True)
+        content_layout.addWidget(self.settings_note)
+        self.reset_settings_button = button("還原本頁示範值", "ResetSettings", "primary")
+        self.reset_settings_button.clicked.connect(
+            lambda: self.settings_reset_requested.emit(self.setting_section))
+        content_layout.addWidget(self.reset_settings_button, 0, Qt.AlignmentFlag.AlignLeft)
+        shell_layout.addWidget(self.settings_content, 1)
+        layout.addWidget(shell, 1)
+        return page
+
+    def _build_drawer(self):
+        self.drawer = QFrame(self.workspace)
+        self.drawer.setObjectName("Drawer")
+        drawer_layout = box(self.drawer, margins=(22, 20, 22, 24), spacing=16)
+        heading = QWidget()
+        row = box(heading, horizontal=True)
+        self.drawer_title = label("", "sectionTitle")
+        row.addWidget(self.drawer_title, 1)
+        self.drawer_close = button("", "DrawerClose", "icon", "close")
+        self.drawer_close.setAccessibleName("關閉詳細面板")
+        self.drawer_close.setFixedSize(32, 32)
+        self.drawer_close.clicked.connect(self.close_drawer)
+        row.addWidget(self.drawer_close)
+        drawer_layout.addWidget(heading)
+        drawer_layout.addWidget(label("SYNTHETIC / 僅供預覽", "caption"))
+        content = QWidget()
+        self.drawer_body = box(content, spacing=14)
+        drawer_layout.addWidget(scroll_area(content), 1)
+        self.drawer.hide()
+
+    def set_page(self, page: str):
+        if page not in ("chat", "today", "settings"):
+            raise ValueError(f"Unknown page: {page}")
+        self.close_drawer()
+        self.page = page
+        settings = page == "settings"
+        self.setProperty("mode", page)
+        self.rail.setFixedWidth(TOKENS.settings_rail if settings else TOKENS.chat_rail)
+        self.chrome.setFixedHeight(TOKENS.settings_chrome if settings else TOKENS.chat_chrome)
+        self.brand_mark.setVisible(settings)
+        self.brand.setVisible(not settings)
+        self.brand_caption.setVisible(not settings)
+        self.rail_status.setText("DEMO" if settings else "DEMO · 僅本機預覽")
+        for key, title in (("chat", "普通對話"), ("today", "今天"), ("settings", "設定")):
+            nav = self.nav_buttons[key]
+            nav.setText("" if settings else title)
+            nav.setToolTip(title)
+            nav.setChecked(key == page)
+        self.pages.setCurrentIndex(("chat", "today", "settings").index(page))
+        self.chrome_title.setText("WORK COMPANION  /  " + {"chat": "對話", "today": "今天", "settings": "設定"}[page])
+        # Ancestor property selectors must be refreshed after a mode switch.
+        for widget in (self, *self.findChildren(QWidget)):
+            polish(widget)
+        self.page_changed.emit(page)
+
+    def _stop_following_tail(self, *_):
+        self._follow_tail = False
+
+    def set_messages(self, messages: tuple[Message, ...] | list[Message], *, follow_tail: bool = False):
+        self._follow_tail = follow_tail
+        clear_layout(self.messages_layout)
+        self.message_rows = []
+        if not messages:
+            self.messages_layout.addWidget(label("開始一段示範對話", "sectionTitle"))
+            self.messages_layout.addWidget(label("輸入文字即可預覽一個回合；不會呼叫模型。", "muted", wrap=True))
+        for message in messages:
+            turn = QFrame()
+            turn.setProperty("role", "turn")
+            row = box(turn, horizontal=True, margins=(0, 17, 0, 21), spacing=15)
+            speaker = label(message.speaker, "speaker")
+            speaker.setProperty("assistant", message.speaker == "KURO")
+            speaker.setFixedWidth(54)
+            row.addWidget(speaker, 0, Qt.AlignmentFlag.AlignTop)
+            body = QWidget()
+            body_layout = box(body, spacing=9)
+            body_layout.addWidget(label(message.time + "  ·  DEMO", "caption"))
+            text = MessageText(message.text)
+            body_layout.addWidget(text)
+            row.addWidget(body, 1)
+            self.messages_layout.addWidget(turn)
+            self.message_rows.append(turn)
+        self.messages_layout.addStretch()
+        scrollbar = self.messages_scroll.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum() if follow_tail else 0)
+
+    def set_history(self, entries: tuple[HistoryEntry, ...], selected: str):
+        self._history = entries
+        self._selected_history = selected
+        if self.drawer_kind == "history":
+            self._render_history()
+
+    def _render_history(self):
+        clear_layout(self.drawer_body)
+        self.history_buttons = {}
+        for entry in getattr(self, "_history", ()):
+            item = button(entry.title + "\n" + entry.subtitle, f"History_{entry.key}", "history")
+            item.setCheckable(True)
+            item.setChecked(entry.key == self._selected_history)
+            item.clicked.connect(lambda checked=False, key=entry.key: self._select_history(key))
+            self.drawer_body.addWidget(item)
+            self.history_buttons[entry.key] = item
+        self.drawer_body.addStretch()
+
+    def _select_history(self, key: str):
+        self.close_drawer()
+        self.history_selected.emit(key)
+
+    def toggle_history(self):
+        if self.drawer_kind == "history":
+            self.close_drawer()
+            return
+        self._render_history()
+        self._open_drawer("history", "對話紀錄", self.history_toggle)
+
+    def set_today(self, items: tuple[TodayItem, ...]):
+        clear_layout(self.today_layout)
+        self.today_buttons = {}
+        if not items:
+            self.today_layout.addWidget(label("目前沒有示範事項", "sectionTitle"))
+        for item in items:
+            frame = QFrame()
+            frame.setProperty("role", "todayRow")
+            row = box(frame, horizontal=True, margins=(0, 24, 0, 24), spacing=24)
+            copy = QWidget()
+            copy_layout = box(copy, spacing=9)
+            copy_layout.addWidget(label(item.source + "  /  " + item.status, "caption"))
+            copy_layout.addWidget(label(item.title, "sectionTitle", wrap=True))
+            copy_layout.addWidget(label(item.summary, "muted", wrap=True))
+            row.addWidget(copy, 1)
+            action = button("查看詳情  →", f"Today_{item.key}")
+            action.clicked.connect(lambda checked=False, key=item.key: self.today_selected.emit(key))
+            row.addWidget(action)
+            self.today_buttons[item.key] = action
+            self.today_layout.addWidget(frame)
+        self.today_layout.addStretch()
+
+    def show_today_detail(self, item: TodayItem):
+        clear_layout(self.drawer_body)
+        for text, role in (
+            (item.title, "sectionTitle"), (item.status, "caption"),
+            (item.detail, "body"), ("為什麼值得注意", "sectionTitle"),
+            (item.reason, "muted"), ("下一步", "sectionTitle"),
+            (item.next_step, "body"), ("來源與時間", "sectionTitle"),
+            (item.source + "\n" + item.observed_at, "caption"),
+            ("此面板只展開合成資料，沒有可執行的外部動作。", "muted"),
+        ):
+            self.drawer_body.addWidget(label(text, role, wrap=True))
+        self.drawer_body.addStretch()
+        self._open_drawer("today", "事項詳情", self.today_buttons.get(item.key))
+
+    def _open_drawer(self, kind: str, title: str, focus: QWidget | None):
+        self.drawer_kind = kind
+        self._drawer_focus = focus
+        self.drawer_title.setText(title)
+        self._position_drawer()
+        self.drawer.show()
+        self.drawer.raise_()
+        self.drawer_close.setFocus()
+
+    def close_drawer(self):
+        if not hasattr(self, "drawer"):
+            return
+        self.drawer.hide()
+        self.drawer_kind = ""
+        if self._drawer_focus and self._drawer_focus.isVisible():
+            self._drawer_focus.setFocus()
+        self._drawer_focus = None
+
+    def _position_drawer(self):
+        width = min(TOKENS.drawer_width, self.workspace.width())
+        top = self.chrome.height()
+        self.drawer.setGeometry(self.workspace.width() - width, top,
+                                width, max(0, self.workspace.height() - top))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "drawer"):
+            self._position_drawer()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape and self.drawer_kind:
+            self.close_drawer()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
+
+    def set_settings(self, sections: tuple[SettingSection, ...],
+                     values: dict[tuple[str, str], str]):
+        self._sections = sections
+        self._setting_values = dict(values)
+        clear_layout(self.settings_nav_layout)
+        self.section_buttons = {}
+        for section in sections:
+            nav = button(section.title + "\n" + section.subtitle, f"Section_{section.key}", "subnav")
+            nav.setCheckable(True)
+            nav.setMinimumHeight(62)
+            nav.clicked.connect(lambda checked=False, key=section.key: self.select_settings_section(key))
+            self.settings_nav_layout.addWidget(nav)
+            self.section_buttons[section.key] = nav
+        self.settings_nav_layout.addStretch()
+        if sections:
+            keys = [section.key for section in sections]
+            self.select_settings_section(self.setting_section if self.setting_section in keys else keys[0])
+
+    def select_settings_section(self, key: str):
+        section = next((entry for entry in self._sections if entry.key == key), None)
+        if section is None:
+            raise ValueError(f"Unknown settings section: {key}")
+        self.setting_section = key
+        for name, nav in self.section_buttons.items():
+            nav.setChecked(name == key)
+        self.settings_title.setText(section.title + "設定")
+        self.settings_owner.setText(section.owner_label)
+        self.settings_description.setText("以下為合成選項；變更只影響此預覽，不會套用到 Kuro。")
+        clear_layout(self.settings_fields_layout)
+        self.setting_combos = {}
+        for field in section.fields:
+            frame = QFrame()
+            frame.setProperty("role", "settingRow")
+            row = box(frame, horizontal=True, margins=(0, 17, 0, 17), spacing=22)
+            copy = QWidget()
+            text_layout = box(copy, spacing=5)
+            text_layout.addWidget(label(field.title))
+            text_layout.addWidget(label(field.description, "muted", wrap=True))
+            row.addWidget(copy, 1)
+            combo = ChoiceCombo()
+            combo.setObjectName(f"Setting_{key}_{field.key}")
+            combo.setAccessibleName(field.title + "（示範）")
+            combo.setFixedWidth(220)
+            combo.addItems(field.options)
+            combo.setCurrentText(self._setting_values.get((key, field.key), field.options[0]))
+            combo.setProperty("fieldEnabled", field.enabled)
+            combo.setEnabled(field.enabled and self.ui_state not in ("disabled", "loading"))
+            combo.currentTextChanged.connect(
+                lambda value, section_key=key, field_key=field.key:
+                self._change_setting(section_key, field_key, value))
+            row.addWidget(combo)
+            self.settings_fields_layout.addWidget(frame)
+            self.setting_combos[field.key] = combo
+        self.settings_fields_layout.addStretch()
+
+    def _change_setting(self, section: str, field: str, value: str):
+        self._setting_values[section, field] = value
+        self.settings_note.setText("DEMO · 已更改預覽選項，尚未且不會寫入正式設定。")
+        self.setting_changed.emit(section, field, value)
+
+    def set_state(self, state: str):
+        if state not in STATE_LABELS:
+            raise ValueError(f"Unknown UI state: {state}")
+        self.ui_state = state
+        self.state_picker.blockSignals(True)
+        self.state_picker.setCurrentIndex(self.state_picker.findData(state))
+        self.state_picker.blockSignals(False)
+        self.state_notice.setText(STATE_NOTICES[state])
+        self.state_notice.setProperty("state", state)
+        self.state_notice.setVisible(state != "idle")
+        polish(self.state_notice)
+        for combo in self.setting_combos.values():
+            combo.setEnabled(bool(combo.property("fieldEnabled")) and state not in ("disabled", "loading"))
+        self.reset_settings_button.setEnabled(state not in ("disabled", "loading"))
+        self._update_composer()
+
+    def set_busy(self, busy: bool):
+        self.busy = busy
+        self._update_composer()
+
+    def _update_composer(self):
+        enabled = self.ui_state not in ("disabled", "loading") and not self.busy
+        self.composer_edit.setEnabled(enabled)
+        self.attach_button.setEnabled(enabled)
+        self.send_button.setText("停止 ■" if self.busy else "送出 ↑")
+        self.send_button.setAccessibleName("停止示範回覆" if self.busy else "送出預覽訊息")
+        self.send_button.setProperty("busy", self.busy)
+        self.send_button.setEnabled(self.busy or (enabled and bool(self.composer_edit.toPlainText().strip())))
+        self.chat_state.setText("PREVIEW / " + ("GENERATING" if self.busy else self.ui_state.upper()))
+        polish(self.send_button)
+
+    def _activate_send(self):
+        if self.busy:
+            self.stop_requested.emit()
+        else:
+            self._submit()
+
+    def _submit(self):
+        text = self.composer_edit.toPlainText().strip()
+        if text and not self.busy and self.ui_state not in ("disabled", "loading"):
+            self.send_requested.emit(text)
+
+    def geometry_snapshot(self) -> dict[str, dict[str, int]]:
+        """Inspectable logical pixel geometry, without screenshots or filesystem IO."""
+        result = {}
+        for name, widget in (
+            ("rail", self.rail), ("chrome", self.chrome),
+            ("transcript", self.message_column), ("composer", self.composer),
+            ("settings_nav", self.settings_nav), ("settings_content", self.settings_content),
+            ("drawer", self.drawer),
+        ):
+            pos = widget.mapTo(self, QPoint(0, 0))
+            result[name] = dict(x=pos.x(), y=pos.y(), width=widget.width(), height=widget.height())
+        if self.message_rows:
+            body = self.message_rows[0].findChild(MessageText)
+            pos = body.mapTo(self, QPoint(0, 0))
+            result["messages"] = dict(x=pos.x(), y=pos.y(), width=body.width(), height=body.height())
+        return result

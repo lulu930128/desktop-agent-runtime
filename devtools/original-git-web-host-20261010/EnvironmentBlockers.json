@@ -1,0 +1,33 @@
+{
+  "dependencyInstall": {
+    "attempts": 2,
+    "command": "uv pip install --python devtools/original-git-web-host-20261010/.venv/Scripts/python.exe PySide6==6.11.1 Pillow playwright",
+    "exits": [
+      1,
+      1
+    ],
+    "error": "Failed to fetch pypi.org; socket access denied (os error 10013)",
+    "secondAttempt": "require_escalated allowed but same OS socket denial",
+    "officialEnvironmentChanged": false
+  },
+  "browserTool": {
+    "error": "node_repl kernel exited unexpectedly; windows sandbox failed: Restricted read-only access requires the elevated Windows sandbox backend",
+    "status": "BLOCKED"
+  },
+  "planAppend": {
+    "attempts": [
+      "guarded append",
+      "apply_patch localized append"
+    ],
+    "error": "Permission denied / Failed to write file",
+    "concurrentCheckpointObserved": true,
+    "finalPlanSha256": "b05d0dac96b640523597e0914bc718bbee8136e9cb7ed65c723c1c2090dd291f",
+    "action": "preserved; no further append"
+  },
+  "parity": {
+    "screenshots": 0,
+    "geometry": "UNVERIFIED",
+    "pixelDiff": "UNVERIFIED",
+    "windowsDesktop": "UNVERIFIED"
+  }
+}

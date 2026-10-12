@@ -1,0 +1,19 @@
+test_central_outage_does_not_block_llm_spawn (test_runtime_capabilities.LifecycleTests) ... ok
+test_concurrent_start_is_coalesced (test_runtime_capabilities.LifecycleTests) ... ok
+test_failures_cool_down_and_manual_retry_resets_budget (test_runtime_capabilities.LifecycleTests) ... ok
+test_model_path_must_stay_in_canonical_root (test_runtime_capabilities.LifecycleTests) ... ok
+test_recovery_budget_does_not_reset_on_short_success (test_runtime_capabilities.LifecycleTests) ... ok
+test_source_revision_reports_pending_adoption (test_runtime_capabilities.LifecycleTests) ... ok
+test_silent_turn_delivers_text_and_never_waits_for_playback (test_runtime_capabilities.SpeechFallbackTests) ... [32m2026-10-10 04:19:24.089[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.conversations.tts_manager[0m:[36mspeak[0m:[36m124[0m - [34m[1m🏃Queuing TTS task for: '''Hello''' (by fixture)[0m
+Executing <Task pending name='Task-1' coro=<IsolatedAsyncioTestCase._asyncioLoopRunner() running at C:\project\desktop-agent-runtime\envs\kuro-llm310\lib\unittest\async_case.py:101> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\project\desktop-agent-runtime\envs\kuro-llm310\lib\asyncio\base_events.py:429> created at C:\project\desktop-agent-runtime\envs\kuro-llm310\lib\unittest\async_case.py:117> took 0.203 seconds
+[32m2026-10-10 04:19:24.092[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.conversations.tts_manager[0m:[36m_generate_audio[0m:[36m239[0m - [34m[1m🏃Generating audio for '''Hello'''...[0m
+[32m2026-10-10 04:19:24.094[0m | [1mINFO    [0m | [36mopen_llm_vtuber.conversations.conversation_utils[0m:[36msend_conversation_end_signal[0m:[36m3387[0m - [1m😎👍✅ Conversation Chain 😊 completed![0m
+ok
+test_voice_outage_opens_circuit_without_resending_text (test_runtime_capabilities.SpeechFallbackTests) ... [32m2026-10-10 04:19:24.159[0m | [33m[1mWARNING [0m | [36mopen_llm_vtuber.tts.gpt_sovits_tts[0m:[36m_central_failure[0m:[36m170[0m - [33m[1mCentral voice unavailable: reason=offline phase=discovery voice=fixture elapsed_s=0.000 http_status=None cooldown_s=5[0m
+[32m2026-10-10 04:19:24.159[0m | [34m[1mDEBUG   [0m | [36mopen_llm_vtuber.tts.gpt_sovits_tts[0m:[36m_generate_central_audio[0m:[36m103[0m - [34m[1mCentral voice skipped: failure cooldown; voice=fixture[0m
+ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.379s
+
+OK

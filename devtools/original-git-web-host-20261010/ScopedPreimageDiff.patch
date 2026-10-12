@@ -1,0 +1,595 @@
+--- preimage/tests/test_g8_runtime.py
++++ candidate/tests/test_g8_runtime.py
+@@ -209,6 +209,15 @@
+                 if relative in excluded:
+                     continue
+                 source = path.read_text(encoding="utf-8-sig")
++                if relative == "kuro_launcher/qt_web_host.py":
++                    # W2 preserves the archived HTML filename in an opt-in Qt
++                    # custom scheme. Exempt only these two exact path literals;
++                    # every other legacy consumer/port token is still forbidden.
++                    self.assertEqual(source.count('"/work-panel.html"'), 2)
++                    self.assertIn('ORIGIN = "kuro-work://app"', source)
++                    source = source.replace('"/work-panel.html"', '"/candidate-entry.html"')
++                    for entry in ("launcher_qt.py", "kuro_launcher/qt_app.py"):
++                        self.assertNotIn("qt_web_host", (ROOT/entry).read_text(encoding="utf-8-sig"))
+                 matches.extend((relative, term) for term in forbidden if term in source)
+         self.assertEqual(matches, [])
+         self.assertFalse(hasattr(QtLauncherController, "ensure_work_panel"))
+--- preimage/devtools/original-git-web-host-20261010/capture_parity.py
++++ candidate/devtools/original-git-web-host-20261010/capture_parity.py
+@@ -160,6 +160,12 @@
+                         qt = json.loads((output / (stem + "-qt.json")).read_text(encoding="utf-8"))
+                         validate_capture(output / (stem + "-qt.png"), width, height, mode, args.scale)
+                         verify_context(baseline, qt["geometry"], smoke["tokens"])
++                        if mode == "today":
++                            for measured in (baseline, qt["geometry"]):
++                                coverage = measured.get("deepCoverage", {})
++                                if (not coverage.get("today") or not coverage.get("required")
++                                        or any(count < 1 for count in coverage["required"].values())):
++                                    raise RuntimeError("Today deep geometry missing required DOM nodes; W1 FAIL")
+                         a = Image.open(output / (stem + "-baseline.png")).convert("RGB")
+                         b = Image.open(output / (stem + "-qt.png")).convert("RGB")
+                         if a.size != b.size:
+--- preimage/devtools/original-git-web-host-20261010/geometry.js
++++ candidate/devtools/original-git-web-host-20261010/geometry.js
+@@ -13,12 +13,31 @@
+   // Names mirror the original styles.css :root; values must come from the page.
+   const tokenNames = ["--ink", "--deep", "--paper", "--muted", "--line", "--moon", "--iris", "--good", "--warn", "--bad", "--quiet", "--rail-width", "--detail-width", "--chrome-height", "--ui-font", "--data-font"];
+   const tokens = Object.fromEntries(tokenNames.map(key => [key, css.getPropertyValue(key).trim()]));
++  // Read-only deep layout evidence. Never normalize fonts, dates, margins or pixels.
++  const properties = ["fontFamily", "fontSize", "fontWeight", "fontStyle", "lineHeight", "letterSpacing", "whiteSpace", "width", "minWidth", "maxWidth", "height", "boxSizing", "marginTop", "marginBottom", "paddingTop", "paddingBottom", "borderTopWidth", "borderBottomWidth", "display", "alignItems", "gap", "appearance"];
++  const deepSelectors = [".today-frame", ".today-frame > header", ".today-frame > header > .section-kicker", ".today-frame > header > .today-question", ".today-frame > header > .today-summary", ".today-primary > section > .block-heading", ".today-primary", ".priority-list", ".priority-item", ".empty-state", ".block-heading", ".local-schedule", ".schedule-toolbar", '.schedule-toolbar input[type="date"]'];
++  const deepGeometry = Object.fromEntries(deepSelectors.map(selector => [selector,
++    Array.from(document.querySelectorAll(selector)).map(node => {
++      const rect = node.getBoundingClientRect(), computed = getComputedStyle(node);
++      const range = document.createRange(); range.selectNodeContents(node);
++      const textRects = Array.from(range.getClientRects()).map(r => ({x:r.x,y:r.y,width:r.width,height:r.height}));
++      return {tag: node.tagName, text: node.textContent, value: node.value ?? null,
++        rect: {x:rect.x,y:rect.y,width:rect.width,height:rect.height,bottom:rect.bottom},
++        css: Object.fromEntries(properties.map(p => [p, computed[p]])), textRects,
++        clientWidth:node.clientWidth, scrollWidth:node.scrollWidth, offsetWidth:node.offsetWidth,
++        parent:node.parentElement?.className ?? null};
++    })]));
++  const fontChecks = typeof document.fonts.check === "function"
++    ? Object.fromEntries(["Segoe UI", "Microsoft JhengHei", "Noto Sans TC", "Arial", "monospace"].map(f => [f, document.fonts.check(`14px "${f}"`, "今天星期六 0123456789")])) : {};
+   return {ready: !!document.querySelector(".work-panel") && document.body.innerText.includes("SYNTHETIC"),
+     viewport: {width: innerWidth, height: innerHeight, devicePixelRatio},
+     screen: {width: screen.width, height: screen.height, colorDepth: screen.colorDepth},
+     userAgent: navigator.userAgent, language: navigator.language,
+     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+-    fontStatus: document.fonts.status, tokens, geometry,
++    fontStatus: document.fonts.status, tokens, geometry, deepGeometry, fontChecks,
++    deepCoverage: {today: deepGeometry[".today-frame"].length > 0,
++      required: Object.fromEntries([".today-frame > header", ".today-frame > header > .section-kicker", ".today-frame > header > .today-question", ".today-frame > header > .today-summary", ".today-primary > section > .block-heading", ".priority-list", ".local-schedule", '.schedule-toolbar input[type="date"]'].map(s => [s, deepGeometry[s].length]))},
++    intl: {date: new Intl.DateTimeFormat("zh-TW", {month:"long",day:"numeric",weekday:"long",timeZone:"UTC"}).format(new Date("2026-10-10T12:00:00Z")), resolved: Intl.DateTimeFormat().resolvedOptions()},
+     categories: Array.from(document.querySelectorAll(".settings-nav-item strong")).map(node => node.textContent),
+     overflow: {width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight}};
+ })())
+--- preimage/kuro_core/schedule_api.py
++++ candidate/kuro_core/schedule_api.py
+@@ -1,147 +1,154 @@
+-"""Schedule capability: persistence lease, worker and Schedule-only routes."""
+-from __future__ import annotations
+-
+-import logging
+-import os
+-import threading
+-from datetime import datetime, timedelta, timezone
+-from pathlib import Path
+-
+-from .api_server import ApiConflict
+-from .schedule_contract import ScheduleConflict, prepare_item, zone, day
+-from .schedule_notifications import ScheduleNotifications
+-from .schedule_store import ScheduleStore
+-from .storage import KuroCoreStore, SCHEMA_VERSION
+-
+-LOG = logging.getLogger(__name__)
+-
+-
+-class ScheduleCapability:
+-    def __init__(self, db_path, *, default_timezone="UTC"):
+-        self.store = ScheduleStore(db_path)
+-        self.timezone = str(zone(default_timezone))
+-        self.notifications = ScheduleNotifications(self.store, self.timezone)
+-        self.stop_event = threading.Event()
+-        self.worker = None
+-        self.materialization = "pending"
+-        self.notification_status = "pending"
+-        self._lease = None
+-        try:
+-            lock_path = Path(str(self.store.path) + ".service.lock")
+-            lock_path.parent.mkdir(parents=True, exist_ok=True)
+-            self._lease = lock_path.open("a+b")
+-            if lock_path.stat().st_size == 0:
+-                self._lease.write(b"0")
+-                self._lease.flush()
+-            self._lease.seek(0)
+-            if os.name == "nt":
+-                import msvcrt
+-                msvcrt.locking(self._lease.fileno(), msvcrt.LK_NBLCK, 1)
+-            else:
+-                import fcntl
+-                fcntl.flock(self._lease.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+-            KuroCoreStore(db_path).initialize()
+-        except Exception:
+-            if self._lease:
+-                self._lease.close()
+-            raise
+-
+-    def start(self):
+-        if self.worker:
+-            return
+-        self.worker = threading.Thread(target=self._materialize, daemon=True)
+-        self.worker.start()
+-
+-    def stop(self):
+-        self.stop_event.set()
+-        if self.worker:
+-            self.worker.join(timeout=12)
+-            if self.worker.is_alive():
+-                raise RuntimeError("Materialization did not stop; retain the database lease")
+-        if self._lease:
+-            self._lease.close()
+-            self._lease = None
+-
+-    def _materialize(self):
+-        while not self.stop_event.is_set():
+-            try:
+-                horizon = (datetime.now(timezone.utc).date()+timedelta(days=10)).isoformat()
+-                result = self.store.advance(horizon)
+-                self.materialization = "complete" if result["complete"] else "incomplete"
+-                self.notifications.tick()
+-                self.notification_status = "running"
+-            except Exception:
+-                self.materialization = "failed"
+-                self.notification_status = "failed"
+-                LOG.exception("Core schedule materialization failed")
+-            self.stop_event.wait(5)
+-
+-    def status(self):
+-        return {"contract": "kuro.core.schedule.v1", "schema": SCHEMA_VERSION,
+-                "materialization": self.materialization,
+-                "notificationScheduler": self.notification_status,
+-                "timezone": self.timezone,
+-                "today": datetime.now(zone(self.timezone)).date().isoformat()}
+-
+-    def register_routes(self, api):
+-        for route, handler in {
+-            "notifications": lambda query: self.notifications.read(),
+-            "view": self._view,
+-            "item": self._item,
+-        }.items():
+-            api.register("GET", f"/v1/schedule/{route}", handler)
+-        for route, handler in {
+-            "mutate": self._mutate,
+-            "prepare": self._prepare,
+-            "notification-action": self._notification_action,
+-            "materialize": self._advance,
+-        }.items():
+-            api.register("POST", f"/v1/schedule/{route}", handler)
+-
+-    def _view(self, query):
+-        if set(query)-{"start", "end", "timezone", "limit", "offset"}:
+-            raise ValueError("Unknown view fields")
+-        start_date = query.get("start", datetime.now(zone(self.timezone)).date().isoformat())
+-        return self.store.view(start_date, query.get("end", (day(start_date)+timedelta(days=1)).isoformat()),
+-                               query.get("timezone", self.timezone),
+-                               limit=int(query.get("limit", "200")), offset=int(query.get("offset", "0")))
+-
+-    def _item(self, query):
+-        if set(query) != {"id"}:
+-            raise LookupError("Unknown route")
+-        return self.store.get(query["id"])
+-
+-    def _mutate(self, payload):
+-        try:
+-            result = self.store.mutate(payload)
+-        except ScheduleConflict as exc:
+-            raise ApiConflict(str(exc)) from exc
+-        try:
+-            self.store.advance((datetime.now(timezone.utc).date()+timedelta(days=10)).isoformat())
+-            self.notifications.tick()
+-        except Exception:
+-            self.materialization = "failed"
+-            self.notification_status = "failed"
+-            result = {**result, "projection": "pending"}
+-            LOG.exception("Schedule saved; projection retry pending")
+-        return result
+-
+-    def _prepare(self, payload):
+-        if set(payload) != {"item"}:
+-            raise LookupError("Unknown route")
+-        return {"item": prepare_item(payload["item"])}
+-
+-    def _notification_action(self, payload):
+-        try:
+-            result = self.notifications.action(payload)
+-            self.notifications.tick()
+-            return result
+-        except ScheduleConflict as exc:
+-            raise ApiConflict(str(exc)) from exc
+-
+-    def _advance(self, payload):
+-        if set(payload) != {"through"}:
+-            raise ValueError("through required")
+-        if day(payload["through"]) > datetime.now(timezone.utc).date()+timedelta(days=367):
+-            raise ValueError("Materialization horizon exceeds one year")
+-        return self.store.advance(payload["through"])
++"""Schedule capability: persistence lease, worker and Schedule-only routes."""
++from __future__ import annotations
++
++import logging
++import os
++import threading
++from datetime import datetime, timedelta, timezone
++from pathlib import Path
++
++from .api_server import ApiConflict
++from .schedule_contract import ScheduleConflict, prepare_item, zone, day
++from .schedule_notifications import ScheduleNotifications
++from .schedule_store import ScheduleStore
++from .storage import KuroCoreStore, SCHEMA_VERSION
++
++LOG = logging.getLogger(__name__)
++
++
++class ScheduleCapability:
++    def __init__(self, db_path, *, default_timezone="UTC"):
++        self.store = ScheduleStore(db_path)
++        self.timezone = str(zone(default_timezone))
++        self.notifications = ScheduleNotifications(self.store, self.timezone)
++        self.stop_event = threading.Event()
++        self.worker = None
++        self.materialization = "pending"
++        self.notification_status = "pending"
++        self._lease = None
++        try:
++            lock_path = Path(str(self.store.path) + ".service.lock")
++            lock_path.parent.mkdir(parents=True, exist_ok=True)
++            self._lease = lock_path.open("a+b")
++            if lock_path.stat().st_size == 0:
++                self._lease.write(b"0")
++                self._lease.flush()
++            self._lease.seek(0)
++            if os.name == "nt":
++                import msvcrt
++                msvcrt.locking(self._lease.fileno(), msvcrt.LK_NBLCK, 1)
++            else:
++                import fcntl
++                fcntl.flock(self._lease.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
++            KuroCoreStore(db_path).initialize()
++        except Exception:
++            if self._lease:
++                self._lease.close()
++            raise
++
++    def start(self):
++        if self.worker:
++            return
++        self.worker = threading.Thread(target=self._materialize, daemon=True)
++        self.worker.start()
++
++    def stop(self):
++        self.stop_event.set()
++        if self.worker:
++            self.worker.join(timeout=12)
++            if self.worker.is_alive():
++                raise RuntimeError("Materialization did not stop; retain the database lease")
++        if self._lease:
++            self._lease.close()
++            self._lease = None
++
++    def _materialize(self):
++        while not self.stop_event.is_set():
++            try:
++                horizon = (datetime.now(timezone.utc).date()+timedelta(days=10)).isoformat()
++                result = self.store.advance(horizon)
++                self.materialization = "complete" if result["complete"] else "incomplete"
++                self.notifications.tick()
++                self.notification_status = "running"
++            except Exception:
++                self.materialization = "failed"
++                self.notification_status = "failed"
++                LOG.exception("Core schedule materialization failed")
++            self.stop_event.wait(5)
++
++    def status(self):
++        return {"contract": "kuro.core.schedule.v1", "schema": SCHEMA_VERSION,
++                "materialization": self.materialization,
++                "notificationScheduler": self.notification_status,
++                "timezone": self.timezone,
++                "today": datetime.now(zone(self.timezone)).date().isoformat()}
++
++    def register_routes(self, api):
++        for route, handler in {
++            "notifications": lambda query: self.notifications.read(),
++            "view": self._view,
++            "item": self._item,
++        }.items():
++            api.register("GET", f"/v1/schedule/{route}", handler)
++        for route, handler in {
++            "mutate": self._mutate,
++            "prepare": self._prepare,
++            "notification-action": self._notification_action,
++            "notification-command": self._notification_command,
++            "materialize": self._advance,
++        }.items():
++            api.register("POST", f"/v1/schedule/{route}", handler)
++
++    def _view(self, query):
++        if set(query)-{"start", "end", "timezone", "limit", "offset"}:
++            raise ValueError("Unknown view fields")
++        start_date = query.get("start", datetime.now(zone(self.timezone)).date().isoformat())
++        return self.store.view(start_date, query.get("end", (day(start_date)+timedelta(days=1)).isoformat()),
++                               query.get("timezone", self.timezone),
++                               limit=int(query.get("limit", "200")), offset=int(query.get("offset", "0")))
++
++    def _item(self, query):
++        if set(query) != {"id"}:
++            raise LookupError("Unknown route")
++        return self.store.get(query["id"])
++
++    def _mutate(self, payload):
++        try:
++            result = self.store.mutate(payload)
++        except ScheduleConflict as exc:
++            raise ApiConflict(str(exc)) from exc
++        try:
++            self.store.advance((datetime.now(timezone.utc).date()+timedelta(days=10)).isoformat())
++            self.notifications.tick()
++        except Exception:
++            self.materialization = "failed"
++            self.notification_status = "failed"
++            result = {**result, "projection": "pending"}
++            LOG.exception("Schedule saved; projection retry pending")
++        return result
++
++    def _prepare(self, payload):
++        if set(payload) != {"item"}:
++            raise LookupError("Unknown route")
++        return {"item": prepare_item(payload["item"])}
++
++    def _notification_action(self, payload):
++        try:
++            result = self.notifications.action(payload)
++            self.notifications.tick()
++            return result
++        except ScheduleConflict as exc:
++            raise ApiConflict(str(exc)) from exc
++
++    def _notification_command(self, payload):
++        try:
++            return self.notifications.command(payload)
++        except ScheduleConflict as exc:
++            raise ApiConflict(str(exc)) from exc
++
++    def _advance(self, payload):
++        if set(payload) != {"through"}:
++            raise ValueError("through required")
++        if day(payload["through"]) > datetime.now(timezone.utc).date()+timedelta(days=367):
++            raise ValueError("Materialization horizon exceeds one year")
++        return self.store.advance(payload["through"])
+--- preimage/kuro_core/schedule_notifications.py
++++ candidate/kuro_core/schedule_notifications.py
+@@ -13,6 +13,7 @@
+ from .schedule_store import encoded
+ 
+ UTC = timezone.utc
++CONSUMER_COMMAND_CONTRACT = "kuro.core.notification-command.v1"
+ 
+ 
+ def migrate_notifications(path):
+@@ -140,12 +141,66 @@
+ 
+     def read(self):
+         with self.store.connect() as conn:
++            conn.execute("BEGIN")
+             rows = conn.execute("SELECT * FROM schedule_notification_deliveries WHERE state NOT IN ('cancelled','dismissed','pending') ORDER BY due_at DESC,id LIMIT 101").fetchall()
+-            return {"preferences":self._preferences(conn),"hasMore":len(rows)>100,"items":[
+-                {"id":r["id"],"scheduleId":r["item_id"],"occurrenceDate":r["original_date"],"title":r["title"],"state":r["state"],"dueAt":r["due_at"],"channel":r["channel"]} for r in rows[:100]]}
++            preferences = self._preferences(conn)
++            return {"consumerWriteContract": CONSUMER_COMMAND_CONTRACT,
++                "preferencesRevision": self._revision(preferences),
++                "preferences":preferences,"hasMore":len(rows)>100,"items":[
++                {"id":r["id"],"scheduleId":r["item_id"],"occurrenceDate":r["original_date"],"title":r["title"],"state":r["state"],"dueAt":r["due_at"],"channel":r["channel"],
++                 "revision":self._delivery_revision(conn,r)} for r in rows[:100]]}
++
++    @staticmethod
++    def _revision(value):
++        return hashlib.sha256(encoded(value).encode()).hexdigest()
++
++    def _delivery_revision(self, conn, row):
++        item = conn.execute("SELECT revision,cancelled FROM schedule_items WHERE id=?", (row["item_id"],)).fetchone()
++        # An opaque content revision; lease tokens are never returned to Web UI.
++        return self._revision({"delivery":dict(row), "item":dict(item) if item else None})
++
++    def command(self, payload, *, now=None):
++        """Versioned consumer writes, atomically fenced with existing Core receipts.
++
++        Delivery claim/authorize/ack remain on action(), owned by QtScheduleDelivery.
++        No new table, schema migration, worker, automatic refresh or notifier.
++        """
++        if not isinstance(payload, dict) or set(payload) != {"command", "expectedRevision", "idempotencyKey"}:
++            raise ValueError("Invalid notification command")
++        command = payload["command"]
++        self._validate_action(command)
++        if command["action"] not in {"dismiss", "snooze", "preferences"}:
++            raise PermissionError("Consumer cannot deliver notifications")
++        revision = text(payload["expectedRevision"], "expectedRevision", 64)
++        if len(revision) != 64 or any(c not in "0123456789abcdef" for c in revision):
++            raise ValueError("Invalid notification revision")
++        key = "notification:" + text(payload["idempotencyKey"], "idempotencyKey", 160)
++        digest = self._revision(payload)
++        now = aware(now).astimezone(UTC) if now else datetime.now(UTC)
++        with self.store.connect(write=True) as conn:
++            replay = conn.execute("SELECT digest,response FROM schedule_mutations WHERE key=?", (key,)).fetchone()
++            if replay:
++                if replay["digest"] != digest: raise ScheduleConflict("Idempotency key reused with different notification command")
++                return json.loads(replay["response"])
++            if command["action"] == "preferences":
++                current = self._revision(self._preferences(conn))
++            else:
++                row = conn.execute("SELECT * FROM schedule_notification_deliveries WHERE id=?", (text(command.get("id"), "id", 100),)).fetchone()
++                if row is None: raise LookupError("Notification not found")
++                current = self._delivery_revision(conn, row)
++            if current != revision: raise ScheduleConflict("Notification or preference revision changed")
++            result = self._action_on_connection(command, now, conn)
++            conn.execute("INSERT INTO schedule_mutations(key,digest,response) VALUES(?,?,?)", (key,digest,encoded(result)))
++            return result
+ 
+     def action(self, payload, *, now=None):
+         now = aware(now).astimezone(UTC) if now else datetime.now(UTC)
++        self._validate_action(payload)
++        with self.store.connect(write=True) as conn:
++            return self._action_on_connection(payload, now, conn)
++
++    @staticmethod
++    def _validate_action(payload):
+         if not isinstance(payload,dict):
+             raise ValueError("Notification action must be an object")
+         action = payload.get("action")
+@@ -155,58 +210,60 @@
+             raise ValueError("Invalid notification action fields")
+         if action in {"dismiss","snooze","preferences"} and payload.get("confirmed") is not True:
+             raise PermissionError("Confirmation required")
+-        with self.store.connect(write=True) as conn:
+-            if action == "preferences":
+-                p = payload["preferences"]
+-                if not isinstance(p,dict) or set(p) != {"timezone","quietEnabled","quietStart","quietEnd"} or type(p["quietEnabled"]) is not bool:
+-                    raise ValueError("Invalid preferences")
+-                zone(p["timezone"])
+-                clock_value(p["quietStart"]); clock_value(p["quietEnd"])
+-                if p["quietStart"] == p["quietEnd"]:
+-                    raise ValueError("Quiet start and end must differ")
+-                conn.execute("INSERT INTO schedule_preferences VALUES(1,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", (encoded(p),))
+-                self._audit(conn,"preferences","updated",now)
+-                return {"preferences":p}
+-            if action == "claim":
+-                if self._quiet(now,self._preferences(conn)):
+-                    return {"delivery":None}
+-                for row in conn.execute("SELECT * FROM schedule_notification_deliveries WHERE state='ready' AND channel='desktop' ORDER BY due_at,id LIMIT 100").fetchall():
+-                    if not self._active(conn,row,now) or not row["due_at"] or not timedelta(0) <= now-aware(row["due_at"]) <= timedelta(minutes=30):
+-                        continue
+-                    token = uuid.uuid4().hex
+-                    conn.execute("UPDATE schedule_notification_deliveries SET state='claimed',lease_token=?,lease_until=?,updated_at=? WHERE id=?",(token,(now+timedelta(seconds=20)).isoformat(),now.isoformat(),row["id"]))
+-                    self._audit(conn,row["id"],"claimed",now)
+-                    return {"delivery":{"id":row["id"],"leaseToken":token}}
++
++    def _action_on_connection(self, payload, now, conn):
++        action = payload["action"]
++        if action == "preferences":
++            p = payload["preferences"]
++            if not isinstance(p,dict) or set(p) != {"timezone","quietEnabled","quietStart","quietEnd"} or type(p["quietEnabled"]) is not bool:
++                raise ValueError("Invalid preferences")
++            zone(p["timezone"])
++            clock_value(p["quietStart"]); clock_value(p["quietEnd"])
++            if p["quietStart"] == p["quietEnd"]:
++                raise ValueError("Quiet start and end must differ")
++            conn.execute("INSERT INTO schedule_preferences VALUES(1,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", (encoded(p),))
++            self._audit(conn,"preferences","updated",now)
++            return {"preferences":p}
++        if action == "claim":
++            if self._quiet(now,self._preferences(conn)):
+                 return {"delivery":None}
+-            row = conn.execute("SELECT * FROM schedule_notification_deliveries WHERE id=?", (text(payload.get("id"),"id",100),)).fetchone()
+-            if not row:
+-                raise LookupError("Notification not found")
+-            if action in {"authorize","ack"}:
+-                if payload["leaseToken"] != row["lease_token"] or not row["lease_until"] or aware(row["lease_until"]) <= now:
+-                    raise ScheduleConflict("Delivery lease expired")
+-                required = "claimed" if action == "authorize" else "dispatching"
+-                if row["state"] != required:
+-                    if action == "ack" and row["state"] == payload.get("result"):
+-                        return {"state":row["state"]}
+-                    raise ScheduleConflict("Delivery state changed")
+-                if action == "authorize":
+-                    if not self._active(conn,row,now) or self._quiet(now,self._preferences(conn)) or now-aware(row["due_at"]) > timedelta(minutes=30):
+-                        raise ScheduleConflict("Reminder no longer eligible")
+-                    target = "dispatching"
+-                else:
+-                    target = payload["result"]
+-                    if target not in {"delivered","failed","unknown"}:
+-                        raise ValueError("Invalid delivery result")
+-            elif action == "dismiss":
+-                target = "dismissed"
++            for row in conn.execute("SELECT * FROM schedule_notification_deliveries WHERE state='ready' AND channel='desktop' ORDER BY due_at,id LIMIT 100").fetchall():
++                if not self._active(conn,row,now) or not row["due_at"] or not timedelta(0) <= now-aware(row["due_at"]) <= timedelta(minutes=30):
++                    continue
++                token = uuid.uuid4().hex
++                conn.execute("UPDATE schedule_notification_deliveries SET state='claimed',lease_token=?,lease_until=?,updated_at=? WHERE id=?",(token,(now+timedelta(seconds=20)).isoformat(),now.isoformat(),row["id"]))
++                self._audit(conn,row["id"],"claimed",now)
++                return {"delivery":{"id":row["id"],"leaseToken":token}}
++            return {"delivery":None}
++        row = conn.execute("SELECT * FROM schedule_notification_deliveries WHERE id=?", (text(payload.get("id"),"id",100),)).fetchone()
++        if not row:
++            raise LookupError("Notification not found")
++        if action in {"authorize","ack"}:
++            if payload["leaseToken"] != row["lease_token"] or not row["lease_until"] or aware(row["lease_until"]) <= now:
++                raise ScheduleConflict("Delivery lease expired")
++            required = "claimed" if action == "authorize" else "dispatching"
++            if row["state"] != required:
++                if action == "ack" and row["state"] == payload.get("result"):
++                    return {"state":row["state"]}
++                raise ScheduleConflict("Delivery state changed")
++            if action == "authorize":
++                if not self._active(conn,row,now) or self._quiet(now,self._preferences(conn)) or now-aware(row["due_at"]) > timedelta(minutes=30):
++                    raise ScheduleConflict("Reminder no longer eligible")
++                target = "dispatching"
+             else:
+-                if not self._active(conn,row,now) or row["state"] in {"dispatching","claimed","cancelled"}:
+-                    raise ScheduleConflict("Reminder cannot be snoozed")
+-                until = aware(payload["until"]).astimezone(UTC)
+-                if not now < until <= now+timedelta(days=7):
+-                    raise ValueError("Snooze must be in the next seven days")
+-                conn.execute("UPDATE schedule_notification_deliveries SET due_at=?,snooze_until=? WHERE id=?", (until.isoformat(),until.isoformat(),row["id"]))
+-                target = "snoozed"
+-            conn.execute("UPDATE schedule_notification_deliveries SET state=?,updated_at=? WHERE id=?", (target,now.isoformat(),row["id"]))
+-            self._audit(conn,row["id"],target,now)
+-            return {"state":target, **({"title":row["title"],"dueAt":row["due_at"]} if action=="authorize" else {})}
++                target = payload["result"]
++                if target not in {"delivered","failed","unknown"}:
++                    raise ValueError("Invalid delivery result")
++        elif action == "dismiss":
++            target = "dismissed"
++        else:
++            if not self._active(conn,row,now) or row["state"] in {"dispatching","claimed","cancelled"}:
++                raise ScheduleConflict("Reminder cannot be snoozed")
++            until = aware(payload["until"]).astimezone(UTC)
++            if not now < until <= now+timedelta(days=7):
++                raise ValueError("Snooze must be in the next seven days")
++            conn.execute("UPDATE schedule_notification_deliveries SET due_at=?,snooze_until=? WHERE id=?", (until.isoformat(),until.isoformat(),row["id"]))
++            target = "snoozed"
++        conn.execute("UPDATE schedule_notification_deliveries SET state=?,updated_at=? WHERE id=?", (target,now.isoformat(),row["id"]))
++        self._audit(conn,row["id"],target,now)
++        return {"state":target, **({"title":row["title"],"dueAt":row["due_at"]} if action=="authorize" else {})}
+--- preimage/kuro_launcher/qt_controller.py
++++ candidate/kuro_launcher/qt_controller.py
+@@ -592,7 +592,7 @@
+             / "long_term.json"
+         )
+ 
+-    def read_memory_records(self) -> tuple[MemoryRecord, ...]:
++    def read_memory_records(self, *, strict: bool = False) -> tuple[MemoryRecord, ...]:
+         character = self.selected_character()
+         if not character or not character.conf_uid:
+             return ()
+@@ -600,6 +600,8 @@
+             ensure_character_memory_root(self.cfg.open_llm_dir)
+             entries = list_character_memories(character.conf_uid, enabled_only=False)
+         except Exception as exc:
++            if strict:
++                raise RuntimeError("Memory owner read failed") from exc
+             self.log(f"[{log_ts()}] 角色記憶讀取失敗：{exc}")
+             return ()
+         return self._memory_records_from_entries(entries)
+@@ -1321,6 +1323,9 @@
+ 
+     def schedule_notification_action(self, payload: dict) -> dict:
+         return self._core_request("/v1/schedule/notification-action", payload)
++
++    def schedule_notification_command(self, payload: dict) -> dict:
++        return self._core_request("/v1/schedule/notification-command", payload)
+ 
+     def materialize_schedule(self, through: str) -> dict:
+         return self._core_request("/v1/schedule/materialize", {"through": through})

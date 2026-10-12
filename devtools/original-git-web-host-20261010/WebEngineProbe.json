@@ -1,0 +1,53 @@
+[
+  {
+    "label": "official-read-only-import",
+    "exit": 0,
+    "result": {
+      "python": "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+      "version": "3.10.12 | packaged by conda-forge | (main, Jun 23 2023, 22:34:57) [MSC v.1936 64 bit (AMD64)]",
+      "modules": {
+        "PySide6": {
+          "import": true,
+          "file": "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\lib\\site-packages\\PySide6\\__init__.py",
+          "version": "6.11.1"
+        },
+        "PySide6.QtWebChannel": {
+          "import": false,
+          "error": "No module named 'PySide6.QtWebChannel'"
+        },
+        "PySide6.QtWebEngineWidgets": {
+          "import": false,
+          "error": "No module named 'PySide6.QtWebEngineWidgets'"
+        }
+      }
+    }
+  },
+  {
+    "label": "isolated-env",
+    "exit": 0,
+    "result": {
+      "python": "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010\\.venv\\Scripts\\python.exe",
+      "version": "3.13.9 | packaged by Anaconda, Inc. | (main, Oct 21 2025, 19:09:58) [MSC v.1929 64 bit (AMD64)]",
+      "modules": {
+        "PySide6": {
+          "import": false,
+          "error": "No module named 'PySide6'"
+        },
+        "PySide6.QtWebChannel": {
+          "import": false,
+          "error": "No module named 'PySide6'"
+        },
+        "PySide6.QtWebEngineWidgets": {
+          "import": false,
+          "error": "No module named 'PySide6'"
+        }
+      }
+    }
+  },
+  {
+    "label": "isolated-host-capture",
+    "exit": 2,
+    "stdout": "{\"gate\": \"WEBENGINE\", \"status\": \"BLOCKED\", \"error\": \"No module named 'PySide6'\", \"python\": \"C:\\\\project\\\\desktop-agent-runtime\\\\devtools\\\\original-git-web-host-20261010\\\\.venv\\\\Scripts\\\\python.exe\"}\n",
+    "stderr": ""
+  }
+]

@@ -1,0 +1,650 @@
+{
+  "classification": "SYNTHETIC_PREVIEW_SOURCE_ONLY",
+  "test_command": "$env:KURO_V1_VERIFY_BASELINE='1'; .\\envs\\kuro-llm310\\python.exe -B -m unittest discover -s tests -p test_v1_work_companion_view.py -v",
+  "tests": {
+    "chunk_id": "55a9a1",
+    "wall_time_seconds": 5.6198815,
+    "exit_code": 0,
+    "original_token_count": 482,
+    "output": "test_existing_source_and_g7_deleted_paths_are_unchanged (test_v1_work_companion_view.IntegrityTests) ... ok\r\ntest_formal_entrypoints_do_not_import_preview (test_v1_work_companion_view.IntegrityTests) ... ok\r\ntest_presentation_and_fixtures_have_strict_import_boundary (test_v1_work_companion_view.IntegrityTests) ... ok\r\ntest_snapshot_cli_high_dpi_and_no_clobber (test_v1_work_companion_view.IntegrityTests) ... ok\r\ntest_actions_have_no_python_file_network_or_process_side_effects (test_v1_work_companion_view.ViewTests) ... ok\r\ntest_all_pages_fit_1120_1280_and_1440 (test_v1_work_companion_view.ViewTests) ... ok\r\ntest_all_six_settings_sections_change_and_retain_local_values (test_v1_work_companion_view.ViewTests) ... ok\r\ntest_chat_geometry_and_native_pixels_match_baseline (test_v1_work_companion_view.ViewTests) ... ok\r\ntest_enter_shift_enter_blank_and_stop (test_v1_work_companion_view.ViewTests) ... ok\r\ntest_history_overlay_is_optional_and_does_not_shrink_transcript (test_v1_work_companion_view.ViewTests) ... ok\r\ntest_ime_preedit_return_does_not_submit (test_v1_work_companion_view.ViewTests) ... ok\r\ntest_navigation_and_settings_geometry (test_v1_work_companion_view.ViewTests) ... ok\r\ntest_real_preview_timer_completes_and_scrolls_new_turn_into_view (test_v1_work_companion_view.ViewTests) ... ok\r\ntest_reply_completion_and_history_switch_cancel_stale_reply (test_v1_work_companion_view.ViewTests) ... ok\r\ntest_state_change_cancels_pending_and_empty_send_starts_empty_thread (test_v1_work_companion_view.ViewTests) ... ok\r\ntest_state_matrix_is_explicit_and_recovers (test_v1_work_companion_view.ViewTests) ... ok\r\ntest_today_detail_preserves_source_time_and_partial (test_v1_work_companion_view.ViewTests) ... ok\r\ntest_untrusted_text_is_plain_and_long_lines_wrap (test_v1_work_companion_view.ViewTests) ... ok\r\n\r\n----------------------------------------------------------------------\r\nRan 18 tests in 5.354s\r\n\r\nOK\r\n"
+  },
+  "captures": [
+    {
+      "command": [
+        "envs/kuro-llm310/python.exe",
+        "-B",
+        "devtools/preview_work_companion_v1.py",
+        "--page",
+        "chat",
+        "--snapshot",
+        "devtools/work-companion-ui-v0-v1-20261010/previews/chat.png"
+      ],
+      "exit": 0,
+      "stdout": {
+        "mode": "SYNTHETIC_PREVIEW",
+        "page": "chat",
+        "state": "idle",
+        "platform": "offscreen",
+        "snapshot": "devtools\\work-companion-ui-v0-v1-20261010\\previews\\chat.png",
+        "logical_size": [
+          1280,
+          720
+        ],
+        "physical_size": [
+          1280,
+          720
+        ],
+        "device_pixel_ratio": 1,
+        "geometry": {
+          "rail": {
+            "x": 0,
+            "y": 0,
+            "width": 180,
+            "height": 720
+          },
+          "chrome": {
+            "x": 180,
+            "y": 0,
+            "width": 1100,
+            "height": 48
+          },
+          "transcript": {
+            "x": 281,
+            "y": 161,
+            "width": 829,
+            "height": 407
+          },
+          "composer": {
+            "x": 320,
+            "y": 609,
+            "width": 820,
+            "height": 60
+          },
+          "settings_nav": {
+            "x": 232,
+            "y": 165,
+            "width": 226,
+            "height": 339
+          },
+          "settings_content": {
+            "x": 500,
+            "y": 165,
+            "width": 270,
+            "height": 339
+          },
+          "drawer": {
+            "x": 960,
+            "y": 48,
+            "width": 320,
+            "height": 672
+          },
+          "messages": {
+            "x": 350,
+            "y": 199,
+            "width": 760,
+            "height": 23
+          }
+        }
+      }
+    },
+    {
+      "command": [
+        "envs/kuro-llm310/python.exe",
+        "-B",
+        "devtools/preview_work_companion_v1.py",
+        "--page",
+        "settings",
+        "--snapshot",
+        "devtools/work-companion-ui-v0-v1-20261010/previews/settings.png"
+      ],
+      "exit": 0,
+      "stdout": {
+        "mode": "SYNTHETIC_PREVIEW",
+        "page": "settings",
+        "state": "idle",
+        "platform": "offscreen",
+        "snapshot": "devtools\\work-companion-ui-v0-v1-20261010\\previews\\settings.png",
+        "logical_size": [
+          1280,
+          720
+        ],
+        "physical_size": [
+          1280,
+          720
+        ],
+        "device_pixel_ratio": 1,
+        "geometry": {
+          "rail": {
+            "x": 0,
+            "y": 0,
+            "width": 73,
+            "height": 720
+          },
+          "chrome": {
+            "x": 73,
+            "y": 0,
+            "width": 1207,
+            "height": 52
+          },
+          "transcript": {
+            "x": 111,
+            "y": 165,
+            "width": 495,
+            "height": 366
+          },
+          "composer": {
+            "x": 111,
+            "y": 421,
+            "width": 564,
+            "height": 60
+          },
+          "settings_nav": {
+            "x": 125,
+            "y": 169,
+            "width": 226,
+            "height": 527
+          },
+          "settings_content": {
+            "x": 393,
+            "y": 169,
+            "width": 837,
+            "height": 527
+          },
+          "drawer": {
+            "x": 960,
+            "y": 52,
+            "width": 320,
+            "height": 668
+          },
+          "messages": {
+            "x": 180,
+            "y": 203,
+            "width": 426,
+            "height": 23
+          }
+        }
+      }
+    },
+    {
+      "command": [
+        "envs/kuro-llm310/python.exe",
+        "-B",
+        "devtools/preview_work_companion_v1.py",
+        "--page",
+        "today",
+        "--snapshot",
+        "devtools/work-companion-ui-v0-v1-20261010/previews/today.png"
+      ],
+      "exit": 0,
+      "stdout": {
+        "mode": "SYNTHETIC_PREVIEW",
+        "page": "today",
+        "state": "idle",
+        "platform": "offscreen",
+        "snapshot": "devtools\\work-companion-ui-v0-v1-20261010\\previews\\today.png",
+        "logical_size": [
+          1280,
+          720
+        ],
+        "physical_size": [
+          1280,
+          720
+        ],
+        "device_pixel_ratio": 1,
+        "geometry": {
+          "rail": {
+            "x": 0,
+            "y": 0,
+            "width": 180,
+            "height": 720
+          },
+          "chrome": {
+            "x": 180,
+            "y": 0,
+            "width": 1100,
+            "height": 48
+          },
+          "transcript": {
+            "x": 218,
+            "y": 161,
+            "width": 495,
+            "height": 366
+          },
+          "composer": {
+            "x": 218,
+            "y": 417,
+            "width": 564,
+            "height": 60
+          },
+          "settings_nav": {
+            "x": 232,
+            "y": 165,
+            "width": 226,
+            "height": 339
+          },
+          "settings_content": {
+            "x": 500,
+            "y": 165,
+            "width": 270,
+            "height": 339
+          },
+          "drawer": {
+            "x": 960,
+            "y": 48,
+            "width": 320,
+            "height": 672
+          },
+          "messages": {
+            "x": 287,
+            "y": 199,
+            "width": 426,
+            "height": 23
+          }
+        }
+      }
+    },
+    {
+      "command": [
+        "envs/kuro-llm310/python.exe",
+        "-B",
+        "devtools/preview_work_companion_v1.py",
+        "--page",
+        "settings",
+        "--width",
+        "1120",
+        "--snapshot",
+        "devtools/work-companion-ui-v0-v1-20261010/previews/settings-1120.png"
+      ],
+      "exit": 0,
+      "stdout": {
+        "mode": "SYNTHETIC_PREVIEW",
+        "page": "settings",
+        "state": "idle",
+        "platform": "offscreen",
+        "snapshot": "devtools\\work-companion-ui-v0-v1-20261010\\previews\\settings-1120.png",
+        "logical_size": [
+          1120,
+          720
+        ],
+        "physical_size": [
+          1120,
+          720
+        ],
+        "device_pixel_ratio": 1,
+        "geometry": {
+          "rail": {
+            "x": 0,
+            "y": 0,
+            "width": 73,
+            "height": 720
+          },
+          "chrome": {
+            "x": 73,
+            "y": 0,
+            "width": 1047,
+            "height": 52
+          },
+          "transcript": {
+            "x": 111,
+            "y": 165,
+            "width": 495,
+            "height": 366
+          },
+          "composer": {
+            "x": 111,
+            "y": 421,
+            "width": 564,
+            "height": 60
+          },
+          "settings_nav": {
+            "x": 125,
+            "y": 169,
+            "width": 226,
+            "height": 527
+          },
+          "settings_content": {
+            "x": 393,
+            "y": 169,
+            "width": 677,
+            "height": 527
+          },
+          "drawer": {
+            "x": 800,
+            "y": 52,
+            "width": 320,
+            "height": 668
+          },
+          "messages": {
+            "x": 180,
+            "y": 203,
+            "width": 426,
+            "height": 23
+          }
+        }
+      }
+    },
+    {
+      "command": [
+        "envs/kuro-llm310/python.exe",
+        "-B",
+        "devtools/preview_work_companion_v1.py",
+        "--page",
+        "chat",
+        "--scale",
+        "2",
+        "--snapshot",
+        "devtools/work-companion-ui-v0-v1-20261010/previews/chat-2x.png"
+      ],
+      "exit": 0,
+      "stdout": {
+        "mode": "SYNTHETIC_PREVIEW",
+        "page": "chat",
+        "state": "idle",
+        "platform": "offscreen",
+        "snapshot": "devtools\\work-companion-ui-v0-v1-20261010\\previews\\chat-2x.png",
+        "logical_size": [
+          1280,
+          720
+        ],
+        "physical_size": [
+          2560,
+          1440
+        ],
+        "device_pixel_ratio": 2,
+        "geometry": {
+          "rail": {
+            "x": 0,
+            "y": 0,
+            "width": 180,
+            "height": 720
+          },
+          "chrome": {
+            "x": 180,
+            "y": 0,
+            "width": 1100,
+            "height": 48
+          },
+          "transcript": {
+            "x": 281,
+            "y": 161,
+            "width": 829,
+            "height": 407
+          },
+          "composer": {
+            "x": 320,
+            "y": 609,
+            "width": 820,
+            "height": 60
+          },
+          "settings_nav": {
+            "x": 232,
+            "y": 165,
+            "width": 226,
+            "height": 339
+          },
+          "settings_content": {
+            "x": 500,
+            "y": 165,
+            "width": 270,
+            "height": 339
+          },
+          "drawer": {
+            "x": 960,
+            "y": 48,
+            "width": 320,
+            "height": 672
+          },
+          "messages": {
+            "x": 350,
+            "y": 199,
+            "width": 760,
+            "height": 23
+          }
+        }
+      }
+    },
+    {
+      "command": [
+        "envs/kuro-llm310/python.exe",
+        "-B",
+        "devtools/preview_work_companion_v1.py",
+        "--page",
+        "chat",
+        "--drawer",
+        "history",
+        "--snapshot",
+        "devtools/work-companion-ui-v0-v1-20261010/previews/chat-history.png"
+      ],
+      "exit": 0,
+      "stdout": {
+        "mode": "SYNTHETIC_PREVIEW",
+        "page": "chat",
+        "state": "idle",
+        "platform": "offscreen",
+        "snapshot": "devtools\\work-companion-ui-v0-v1-20261010\\previews\\chat-history.png",
+        "logical_size": [
+          1280,
+          720
+        ],
+        "physical_size": [
+          1280,
+          720
+        ],
+        "device_pixel_ratio": 1,
+        "geometry": {
+          "rail": {
+            "x": 0,
+            "y": 0,
+            "width": 180,
+            "height": 720
+          },
+          "chrome": {
+            "x": 180,
+            "y": 0,
+            "width": 1100,
+            "height": 48
+          },
+          "transcript": {
+            "x": 281,
+            "y": 161,
+            "width": 829,
+            "height": 407
+          },
+          "composer": {
+            "x": 320,
+            "y": 609,
+            "width": 820,
+            "height": 60
+          },
+          "settings_nav": {
+            "x": 232,
+            "y": 165,
+            "width": 226,
+            "height": 339
+          },
+          "settings_content": {
+            "x": 500,
+            "y": 165,
+            "width": 270,
+            "height": 339
+          },
+          "drawer": {
+            "x": 960,
+            "y": 48,
+            "width": 320,
+            "height": 672
+          },
+          "messages": {
+            "x": 350,
+            "y": 199,
+            "width": 760,
+            "height": 23
+          }
+        }
+      }
+    },
+    {
+      "command": [
+        "envs/kuro-llm310/python.exe",
+        "-B",
+        "devtools/preview_work_companion_v1.py",
+        "--page",
+        "today",
+        "--drawer",
+        "detail",
+        "--snapshot",
+        "devtools/work-companion-ui-v0-v1-20261010/previews/today-detail.png"
+      ],
+      "exit": 0,
+      "stdout": {
+        "mode": "SYNTHETIC_PREVIEW",
+        "page": "today",
+        "state": "idle",
+        "platform": "offscreen",
+        "snapshot": "devtools\\work-companion-ui-v0-v1-20261010\\previews\\today-detail.png",
+        "logical_size": [
+          1280,
+          720
+        ],
+        "physical_size": [
+          1280,
+          720
+        ],
+        "device_pixel_ratio": 1,
+        "geometry": {
+          "rail": {
+            "x": 0,
+            "y": 0,
+            "width": 180,
+            "height": 720
+          },
+          "chrome": {
+            "x": 180,
+            "y": 0,
+            "width": 1100,
+            "height": 48
+          },
+          "transcript": {
+            "x": 218,
+            "y": 161,
+            "width": 495,
+            "height": 366
+          },
+          "composer": {
+            "x": 218,
+            "y": 417,
+            "width": 564,
+            "height": 60
+          },
+          "settings_nav": {
+            "x": 232,
+            "y": 165,
+            "width": 226,
+            "height": 339
+          },
+          "settings_content": {
+            "x": 500,
+            "y": 165,
+            "width": 270,
+            "height": 339
+          },
+          "drawer": {
+            "x": 960,
+            "y": 48,
+            "width": 320,
+            "height": 672
+          },
+          "messages": {
+            "x": 287,
+            "y": 199,
+            "width": 426,
+            "height": 23
+          }
+        }
+      }
+    },
+    {
+      "command": [
+        "envs/kuro-llm310/python.exe",
+        "-B",
+        "devtools/preview_work_companion_v1.py",
+        "--page",
+        "chat",
+        "--state",
+        "error",
+        "--snapshot",
+        "devtools/work-companion-ui-v0-v1-20261010/previews/chat-error.png"
+      ],
+      "exit": 0,
+      "stdout": {
+        "mode": "SYNTHETIC_PREVIEW",
+        "page": "chat",
+        "state": "error",
+        "platform": "offscreen",
+        "snapshot": "devtools\\work-companion-ui-v0-v1-20261010\\previews\\chat-error.png",
+        "logical_size": [
+          1280,
+          720
+        ],
+        "physical_size": [
+          1280,
+          720
+        ],
+        "device_pixel_ratio": 1,
+        "geometry": {
+          "rail": {
+            "x": 0,
+            "y": 0,
+            "width": 180,
+            "height": 720
+          },
+          "chrome": {
+            "x": 180,
+            "y": 0,
+            "width": 1100,
+            "height": 48
+          },
+          "transcript": {
+            "x": 281,
+            "y": 190,
+            "width": 829,
+            "height": 378
+          },
+          "composer": {
+            "x": 320,
+            "y": 609,
+            "width": 820,
+            "height": 60
+          },
+          "settings_nav": {
+            "x": 232,
+            "y": 194,
+            "width": 226,
+            "height": 339
+          },
+          "settings_content": {
+            "x": 500,
+            "y": 194,
+            "width": 270,
+            "height": 339
+          },
+          "drawer": {
+            "x": 960,
+            "y": 48,
+            "width": 320,
+            "height": 672
+          },
+          "messages": {
+            "x": 350,
+            "y": 228,
+            "width": 760,
+            "height": 23
+          }
+        }
+      }
+    }
+  ],
+  "source_ready": true,
+  "product_accepted": false,
+  "v2_wired": false
+}

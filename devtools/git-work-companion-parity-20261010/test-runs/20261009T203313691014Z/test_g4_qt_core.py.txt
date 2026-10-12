@@ -1,0 +1,20 @@
+test_only_legacy_builders_can_request_pet_briefing (test_g4_qt_core.CanonicalPathTests) ... ok
+test_all_schedule_wrappers_delegate_to_core_request (test_g4_qt_core.CoreWrapperTests) ... ok
+test_schedule_queries_are_encoded_without_losing_values (test_g4_qt_core.CoreWrapperTests) ... ok
+test_today_uses_only_today_route_and_checks_contract (test_g4_qt_core.CoreWrapperTests) ... ok
+test_unavailable_conflict_and_invalid_response_fail_explicitly (test_g4_qt_core.CoreWrapperTests) ... ok
+test_chat_menu_has_no_reader_or_briefing_entry_and_keeps_pet_controls (test_g4_qt_core.QtCoreTests) ... ok
+test_core_health_retains_independent_failure_evidence (test_g4_qt_core.QtCoreTests) ... ok
+test_editor_prepare_failure_never_mutates (test_g4_qt_core.QtCoreTests) ... ok
+test_editor_prepares_then_submits_with_stable_retry_key (test_g4_qt_core.QtCoreTests) ... ok
+test_schedule_action_serialization_preserves_revision_and_scope (test_g4_qt_core.QtCoreTests) ... ok
+test_schedule_read_and_unavailable_are_explicit (test_g4_qt_core.QtCoreTests) ... ok
+test_today_healthy_and_degraded_empty_are_distinct (test_g4_qt_core.QtCoreTests) ... ok
+test_today_invalid_contract_is_not_healthy (test_g4_qt_core.QtCoreTests) ... ok
+test_today_unavailable_labels_previous_evidence_and_blocks_draft (test_g4_qt_core.QtCoreTests) ... ok
+test_window_construction_nav_settings_and_refresh_without_pet (test_g4_qt_core.QtCoreTests) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.590s
+
+OK

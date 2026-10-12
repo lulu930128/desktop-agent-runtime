@@ -9,14 +9,16 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 from preview_protocol import FRONTEND, PreviewProtocol
+from w1_geometry_diagnostics import measurement_stable, viewport_diagnosis
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--view", choices=["chat", "settings", "today"], default="chat")
+    parser.add_argument("--view", choices=["chat", "settings", "today", "history"], default="chat")
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--capture", type=Path)
@@ -44,7 +46,7 @@ def main() -> int:
         from PySide6.QtWebChannel import QWebChannel
         from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineSettings, QWebEngineUrlRequestInterceptor
         from PySide6.QtWebEngineWidgets import QWebEngineView
-    except ImportError as exc:
+    except (ImportError, PermissionError) as exc:
         print(json.dumps({"gate": "WEBENGINE", "status": "BLOCKED", "error": str(exc), "python": sys.executable}))
         return 2
 
@@ -86,7 +88,40 @@ def main() -> int:
 
     app = QApplication([])
     app.setApplicationName("Kuro-SYNTHETIC-WebEngine-proof")
-    view = QWebEngineView()
+    started = time.monotonic()
+    timeline = []
+
+    def rect(value):
+        return {"x": value.x(), "y": value.y(), "width": value.width(), "height": value.height()}
+
+    def snapshot(label):
+        screen = view.screen()
+        handle = view.windowHandle()
+        row = {"event": label, "elapsedMs": round((time.monotonic()-started)*1000, 3),
+               "geometry": rect(view.geometry()), "frameGeometry": rect(view.frameGeometry()),
+               "widgetSize": {"width": view.width(), "height": view.height()},
+               "visible": view.isVisible(), "widgetDpr": view.devicePixelRatioF(),
+               "screen": {"name": screen.name(), "geometry": rect(screen.geometry()),
+                          "availableGeometry": rect(screen.availableGeometry()),
+                          "logicalDpi": screen.logicalDotsPerInch(), "physicalDpi": screen.physicalDotsPerInch(),
+                          "dpr": screen.devicePixelRatio()}}
+        if handle:
+            margins = handle.frameMargins()
+            row.update(winId=int(view.winId()), windowGeometry=rect(handle.geometry()),
+                       windowFrameGeometry=rect(handle.frameGeometry()), windowDpr=handle.devicePixelRatio(),
+                       frameMargins={k: getattr(margins, k)() for k in ("left", "top", "right", "bottom")})
+        timeline.append(row)
+        return row
+
+    class CaptureView(QWebEngineView):
+        def resizeEvent(self, event):
+            super().resizeEvent(event)
+            # Initial construction can precede assignment of the view binding.
+            if view is not None:
+                snapshot("resizeEvent")
+
+    view = None
+    view = CaptureView()
     profile = QWebEngineProfile(view)  # unnamed: off-the-record, no private profile reuse
     interceptor = Requests(profile)
     profile.setUrlRequestInterceptor(interceptor)
@@ -107,45 +142,109 @@ def main() -> int:
               "python": sys.executable, "view": args.view, "offTheRecord": profile.isOffTheRecord(),
               "platform": app.platformName(), "logicalDpi": view.screen().logicalDotsPerInch(),
               "physicalDpi": view.screen().physicalDotsPerInch()}
+    result.update(requestedViewport={"width": args.width, "height": args.height},
+                  hostTimeline=timeline, gateW1="UNVERIFIED", pythonVersion=sys.version,
+                  sizingPolicy="decorated top-level; one post-show resize; no crop/stretch/zoom",
+                  scaleEnvironment={k: os.environ.get(k) for k in ("QT_SCALE_FACTOR", "QT_SCALE_FACTOR_ROUNDING_POLICY")},
+                  nativeIME="UNVERIFIED", securityNegative="UNVERIFIED")
+    finished = False
 
     def finish(code):
+        nonlocal finished
+        if finished:
+            return
+        finished = True
+        result["gateW1"] = "FAIL" if result["status"] == "FAIL" else "UNVERIFIED"
         if args.capture:
             args.capture.parent.mkdir(parents=True, exist_ok=True)
             args.capture.with_suffix(".json").write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
         print(json.dumps(result, ensure_ascii=False), flush=True)
         app.exit(code)
 
+    previous = None
+    samples = 0
+
     def inspect():
+        if finished:
+            return
         # A loaded document alone is not a render or WebChannel pass.
         script = (Path(__file__).parent / "geometry.js").read_text(encoding="utf-8")
         def measured(raw):
+            nonlocal previous, samples
             try:
                 result["geometry"] = json.loads(raw)
+                samples += 1
+                geometry = result["geometry"]
+                stable = measurement_stable(previous, geometry, args.view)
+                previous = geometry
+                result["stableSamples"] = samples
+                sample = snapshot("DOM-measurement")
+                sample["jsViewport"] = geometry["viewport"]
+                if not stable and samples < 8:
+                    QTimer.singleShot(200, inspect)
+                    return
                 result["bridgeRequests"] = port.requests
-                ok = result["geometry"]["ready"] and port.requests >= 6
+                result["viewportDiagnosis"] = viewport_diagnosis((args.width, args.height), geometry["viewport"], sample)
+                ok = geometry["ready"] and port.requests >= 6 and stable and result["viewportDiagnosis"]["exact"]
+                if args.view == "history":
+                    drawer = geometry["geometry"].get(".history-drawer") or {}
+                    ok = ok and drawer.get("width", 0) > 0 and drawer.get("display") != "none" and geometry.get("history", {}).get("opened") is True
                 result["status"] = "PASS" if ok else "FAIL"
-                if args.capture and ok:
+                if not ok:
+                    result["error"] = "viewport/readiness/stability/history mismatch; inspect raw evidence"
+                # Even a 711px failure gets its real unmodified widget capture.
+                if args.capture and geometry["ready"]:
                     args.capture.parent.mkdir(parents=True, exist_ok=True)
                     if not view.grab().save(str(args.capture)):
                         result["status"] = "FAIL"
                         result["error"] = "screenshot_write_failed"
                         ok = False
-                finish(0 if ok else 1)
+                def typography_measured(value):
+                    try:
+                        result["typography"] = json.loads(value)
+                    except (ValueError, TypeError) as exc:
+                        result.update(status="FAIL", error="typography: " + str(exc))
+                    finish(0 if result["status"] == "PASS" else 1)
+                page.runJavaScript((task_root / "typography.js").read_text(encoding="utf-8"), typography_measured)
             except (ValueError, KeyError, TypeError) as exc:
                 result.update(status="FAIL", error=str(exc)); finish(1)
         page.runJavaScript(script, measured)
 
     def loaded(ok):
+        snapshot("loadFinished")
         if not ok:
             result.update(status="FAIL", error="load_failed"); finish(1)
         elif args.capture:
-            QTimer.singleShot(1500, inspect)
+            # Promise completion uses a marker; runJavaScript does not await JS promises.
+            page.runJavaScript("document.fonts.ready.then(() => requestAnimationFrame(() => requestAnimationFrame(() => {window.__w1FontsReady = true})))")
+            wait_ready()
+
+    def wait_ready():
+        if finished:
+            return
+        def ready(value):
+            if not value:
+                QTimer.singleShot(100, wait_ready)
+            elif args.view == "history":
+                page.runJavaScript("document.querySelector('[data-history-toggle]')?.click()")
+                QTimer.singleShot(400, inspect)
+            else:
+                inspect()
+        page.runJavaScript("window.__w1FontsReady === true && !!document.querySelector('.work-panel') && document.body.innerText.includes('SYNTHETIC')", ready)
     page.loadFinished.connect(loaded)
     if args.capture:
         QTimer.singleShot(20000, lambda: (result.update(status="BLOCKED", error="render_timeout"), finish(2)))
-    url = QUrl.fromLocalFile(str(entry)); url.setQuery("view=" + args.view)
+    url = QUrl.fromLocalFile(str(entry)); url.setQuery("view=" + ("chat" if args.view == "history" else args.view))
     view.load(url)
+    snapshot("before-show")
     view.show()
+    snapshot("after-show")
+
+    def resize_after_show():
+        snapshot("before-post-show-resize")
+        view.resize(args.width, args.height)
+        snapshot("after-post-show-resize")
+    QTimer.singleShot(0, resize_after_show)
     code = app.exec()
     # Page must be destroyed before its profile.
     view.close()

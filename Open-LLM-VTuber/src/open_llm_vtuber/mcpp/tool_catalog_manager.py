@@ -484,7 +484,7 @@ class ToolCatalog:
                 reasons.append("market questions use OMI first")
         elif category_id == "mail":
             if intent.needs_mail:
-                if tool_name == "mail.update_briefing":
+                if tool_name == "mail.refresh":
                     score += 22
                     reasons.append("mail dashboard refresh")
                     if intent.needs_dashboard_update:

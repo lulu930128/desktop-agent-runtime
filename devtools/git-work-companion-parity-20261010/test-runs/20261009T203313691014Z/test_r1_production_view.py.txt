@@ -1,0 +1,12 @@
+test_actual_main_view_has_exactly_one_visible_history_drawer (test_r1_production_view.ProductionViewTests) ... ok
+test_confirmation_invalidated_by_identity_change (test_r1_production_view.ProductionViewTests) ... ok
+test_delete_cancel_confirmation_then_confirmed_owner_delete (test_r1_production_view.ProductionViewTests) ... ok
+test_empty_error_busy_and_stale_response_are_visible (test_r1_production_view.ProductionViewTests) ... ok
+test_new_history_button_changes_owner_once_and_clears_draft (test_r1_production_view.ProductionViewTests) ... ok
+test_offscreen_screenshot_uses_actual_production_view (test_r1_production_view.ProductionViewTests) ... ok
+test_text_tools_and_stop_use_primary_ws_without_pet (test_r1_production_view.ProductionViewTests) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 2.412s
+
+OK

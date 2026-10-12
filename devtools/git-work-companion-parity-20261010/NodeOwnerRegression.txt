@@ -1,0 +1,28 @@
+✔ canonical Pet URL and init never create history (95.4616ms)
+✔ Pet captures audio for Qt but never sends a conversation trigger (35.4517ms)
+✔ local playback stop never controls the Qt conversation (27.2988ms)
+✔ reconfiguration cannot promote Pet to a controllable frontend (24.9282ms)
+✔ Pet acknowledges only after actual playback queue drains (24.9565ms)
+✔ stale playback timer cannot acknowledge a later turn (21.308ms)
+✔ interrupt resets pending playback without inventing completion (23.4972ms)
+✔ desktop owner qt: execute production startup gates with synthetic effects (3.3797ms)
+✔ desktop owner electron: execute production startup gates with synthetic effects (2.4016ms)
+✔ desktop owner undefined: execute production startup gates with synthetic effects (1.4898ms)
+✔ pet-local status is independent of Launcher and preserves missing/loading/failed/offscreen (21.6219ms)
+✔ real production probe uses only renderer and never reports a Launcher failure (0.6507ms)
+✔ presentation push updates bootstrap before renderer readiness, without a second source (0.7529ms)
+✔ Electron has one BrowserWindow and no non-pet startup/IPC/owner fallback (0.5526ms)
+✔ context menu affects only pet, with no app quit, business, or conversation commands (1.0265ms)
+✔ actual loopback status remains responsive when renderer hangs (392.649ms)
+✔ deleted routes have no consumers or fallback (18.1836ms)
+✔ conversation/business actions are rejected before dispatch (9.4042ms)
+✔ pet commands preserve instance fencing and explicit renderer failure (5.6901ms)
+✔ remote bind is forbidden (0.3729ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 962.7798

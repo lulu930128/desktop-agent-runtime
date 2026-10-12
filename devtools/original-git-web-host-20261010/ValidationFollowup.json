@@ -1,0 +1,56 @@
+[
+  {
+    "name": "test_g8_runtime.py",
+    "command": [
+      "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+      "-B",
+      "-c",
+      "import socket,sys,unittest\noriginal=socket.socket.connect\ndef bounded(self,address):\n if isinstance(address,tuple):\n  host,port=address[:2]\n  if host not in {'127.0.0.1','localhost','::1'} or port in {1188,18890,23456,23567,23568,23569}:\n   raise AssertionError('Live network prohibited in original renderer validation')\n return original(self,address)\nsocket.socket.connect=bounded\nresult=unittest.TextTestRunner(verbosity=1).run(unittest.defaultTestLoader.discover('tests',pattern=sys.argv[1]))\nsys.exit(not result.wasSuccessful())\n",
+      "test_g8_runtime.py"
+    ],
+    "cwd": "C:\\project\\desktop-agent-runtime",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ".\u001b[32m2026-10-10 05:25:36.495\u001b[0m | \u001b[1mINFO    \u001b[0m | \u001b[36mopen_llm_vtuber.websocket_handler\u001b[0m:\u001b[36mhandle_new_connection\u001b[0m:\u001b[36m774\u001b[0m - \u001b[1mConnection established for client qt role=qt-primary\u001b[0m\n..\n----------------------------------------------------------------------\nRan 3 tests in 0.788s\n\nOK\n"
+  },
+  {
+    "name": "preview-bridge",
+    "command": [
+      "node",
+      "--test",
+      "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010\\preview_bridge.test.cjs"
+    ],
+    "cwd": "C:\\project\\desktop-agent-runtime",
+    "exit": 0,
+    "stdout": "✔ read fixture is detached; prototype keys cannot become capabilities (0.5725ms)\n✔ all frontend mutators fail closed without entering native request transport (0.3052ms)\n✔ schedule writes cannot mutate fixture or report success (0.1439ms)\nℹ tests 3\nℹ suites 0\nℹ pass 3\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 200.5757\n",
+    "stderr": ""
+  },
+  {
+    "name": "frontend-typecheck",
+    "command": [
+      "node",
+      "C:\\project\\desktop-agent-runtime\\pet-electron\\node_modules\\typescript\\bin\\tsc",
+      "--project",
+      "tsconfig.json",
+      "--noEmit"
+    ],
+    "cwd": "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010\\frontend",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "name": "frontend-build",
+    "command": [
+      "node",
+      "C:\\project\\desktop-agent-runtime\\pet-electron\\node_modules\\vite\\bin\\vite.js",
+      "build",
+      "--config",
+      "vite.config.mjs"
+    ],
+    "cwd": "C:\\project\\desktop-agent-runtime\\devtools\\original-git-web-host-20261010\\frontend",
+    "exit": 0,
+    "stdout": "vite v8.0.13 building client environment for production...\n\u001b[2K\ntransforming...✓ 13 modules transformed.\nrendering chunks...\ncomputing gzip size...\ndist/qt-preview.html                     0.72 kB │ gzip:  0.43 kB\ndist/work-panel.html                     0.73 kB │ gzip:  0.43 kB\ndist/assets/main-ThBymPWv.css           31.57 kB │ gzip:  7.20 kB\ndist/assets/baseline-CkAhr1hq.js         0.21 kB │ gzip:  0.20 kB │ map:   0.46 kB\ndist/assets/qt-CTxM5aw_.js               1.35 kB │ gzip:  0.72 kB │ map:   3.75 kB\ndist/assets/preview-bridge-DTtRndYE.js   6.13 kB │ gzip:  2.69 kB │ map:   4.89 kB\ndist/assets/main-k32sC9jm.js            78.13 kB │ gzip: 24.10 kB │ map: 187.16 kB\n\n✓ built in 58ms\n",
+    "stderr": ""
+  }
+]

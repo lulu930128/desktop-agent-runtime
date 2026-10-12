@@ -1,0 +1,154 @@
+{
+  "stage": "PRE_DELETE_INVENTORY",
+  "archive": "g7-source-rollback.zip.bak",
+  "files": [
+    {
+      "path": "pet-electron/renderer/src/work-panel/main.ts",
+      "sha256": "9f0b8eb99c7f1e0435b0b85eaf46222edce1215c6cf89dce91be1105d9cdbbc5"
+    },
+    {
+      "path": "pet-electron/renderer/src/work-panel/model.ts",
+      "sha256": "25b91217df1a805160b92f6215878b16f9ee49af7ed10d9a128b7f15093d0792"
+    },
+    {
+      "path": "pet-electron/renderer/src/work-panel/schedule.ts",
+      "sha256": "695bf308ecc1ba010839a3d50703c6696f6e154457c1346874f8fd3a57f66e99"
+    },
+    {
+      "path": "pet-electron/renderer/src/work-panel/styles.css",
+      "sha256": "d6c5bbf9bd49609300f8675061b4acbf4639d3dd08940cf70b79b4054715020f"
+    },
+    {
+      "path": "pet-electron/renderer/src/work-panel/types.ts",
+      "sha256": "c06528df69736b5338911b793e6c0fc83ba702e61c6505742ff12b60b1949e52"
+    },
+    {
+      "path": "pet-electron/renderer/work-panel.html",
+      "sha256": "35f01f7e3f8cd449e81a7ec6d119cfe88d996f96c72415537fa0f1385dc74acb"
+    },
+    {
+      "path": "pet-electron/src/reader-window.html",
+      "sha256": "96d1d99f24a053a9be2925f8b8bdaa27e1f42b424cedaa738dfb6bf1e0ada624"
+    },
+    {
+      "path": "pet-electron/src/reader-preload.js",
+      "sha256": "ef4d0f3098db827308e82d5571be5c68dd5108ef5746786555da26c2d09ba6a7"
+    },
+    {
+      "path": "pet-electron/src/briefing-window.html",
+      "sha256": "17507d1d3e06a3450351bf5ffadc5cb479a1cb91678b819d9b409335d28f0c43"
+    },
+    {
+      "path": "pet-electron/src/briefing-preload.js",
+      "sha256": "e6314e5442bc283fce1b459b4505723eff8b6167a2a81640e0d3d3025cbf8ce2"
+    },
+    {
+      "path": "pet-electron/src/main-process/briefing-store.js",
+      "sha256": "0d241f5513dd317a75d294f3e7fe70e00a06555b75129c10bbdb1436029f1a39"
+    },
+    {
+      "path": "pet-electron/src/main-process/today-classifier.js",
+      "sha256": "1b324f3edffe82d8fbcdc5fa11501e9220ce6148e144cfcc351c387128833929"
+    },
+    {
+      "path": "pet-electron/src/main-process/study-briefing.js",
+      "sha256": "6896d38d5c2324fe910f22884151d1e3be86f2786cd2e425c86c3a3f34e05ea4"
+    },
+    {
+      "path": "pet-electron/src/main-process/mail-briefing-service.js",
+      "sha256": "83bd6ae12b39acaefb4fa8f352ddb123b426674ebfa9d1149b13fee910fd4b5b"
+    },
+    {
+      "path": "pet-electron/src/main-process/schedule-notifications.js",
+      "sha256": "0f1af379bd5c2457681b85b3a54e93de38dd9d899f0109b4e9282b465da51f10"
+    },
+    {
+      "path": "pet-electron/src/main-process/core-client.js",
+      "sha256": "ab5835ff9c40d547f447a46dc09dc87f38c7da741d54c617c1ac10bc999468b7"
+    },
+    {
+      "path": "pet-electron/src/main-process/reader-attachments.js",
+      "sha256": "e65915d10ad6cdf383de8cafff682d506bf6323f261d5b4901d0dc392dd66f34"
+    },
+    {
+      "path": "pet-electron/src/main-process/work-panel-window.js",
+      "sha256": "c7bbfd8ad7e0e6e2453487cb5c3379f5688173f744a18a6d62d651ab7e536cb0"
+    },
+    {
+      "path": "kuro_launcher/work_panel_activation.py",
+      "sha256": "32c733da8ec1365caef569089eab89643c3d77ef520aed4bd2a5aa627be49efb"
+    },
+    {
+      "path": "kuro_launcher/work_panel_api.py",
+      "sha256": "1cb45877cab1d9ca7094ee4a0bb166b4f889267c2005d6d39643dcdb92286a50"
+    },
+    {
+      "path": "kuro_launcher/work_panel_recovery.py",
+      "sha256": "56c663efa0a040bb0dbd7562964f4c15054b7677fe406e5804589186e4907959"
+    },
+    {
+      "path": "kuro_core/legacy_briefing_adapter.py",
+      "sha256": "1b78e4ea66eed799edd8bd6a178606523f532e227d2f2b105ad6e78a50d70018"
+    },
+    {
+      "path": "tests/core_client.test.cjs",
+      "sha256": "81a13a119a5367dde150257b097604f8d1c8e33ebacf1295b7d75a02f5513332"
+    },
+    {
+      "path": "tests/mail_poller_owner.test.cjs",
+      "sha256": "c6eeb9519ea196a753dafb6698347a0752c8982675733a2d2bcbce5ef36bd9b7"
+    },
+    {
+      "path": "tests/schedule_cutover.test.cjs",
+      "sha256": "c0b319aa22b87414ecb5bcf668dd46acf82210d58db733c1da1981b2b2a3b550"
+    },
+    {
+      "path": "tests/schedule_notifications.test.cjs",
+      "sha256": "ce1e625d6096a478b42b6135eb0d428567b9d5aeede35f9456c652bbaa33234f"
+    },
+    {
+      "path": "tests/schedule_renderer_smoke.cjs",
+      "sha256": "8df36b444b5d3c890f4c9f936dd92643d1b220ca590892efef1cd5f56488f034"
+    },
+    {
+      "path": "tests/work_panel_window.test.cjs",
+      "sha256": "abae4d36f71646d8c50718ffda749bb35e3a7e68f1c53bdd396e782e233f978b"
+    },
+    {
+      "path": "tests/work_panel_process_smoke.py",
+      "sha256": "eaf3af94af1bebcabd8b7dfea3c5b7f5fe61357a0dd1e2ba4361b999ba5865c1"
+    },
+    {
+      "path": "tests/work_panel_process_fixture.cjs",
+      "sha256": "012274078b4c46feeac39bb04ac6c94ae8029c82176d8b00b60140c000c616ee"
+    },
+    {
+      "path": "tests/work_panel_electron_smoke.cjs",
+      "sha256": "b5291dba96694e85b44c98a8523f4acbd37a933e49a090a9356a470c525ae250"
+    },
+    {
+      "path": "tests/test_work_panel_api.py",
+      "sha256": "d474737efecfab08bc70af127d55d6b1fae1386fd1542c6b8fe5b8f9972a5bce"
+    },
+    {
+      "path": "tests/test_work_panel_activation.py",
+      "sha256": "273d8f288c40ef2edd57fe357926ce42aae37f8ca10b99eaa9316b9714ade592"
+    },
+    {
+      "path": "tests/test_mcp_m0_launcher_policy.py",
+      "sha256": "96c70a40349f39f774ff959fd3f867baeb10d01a1dfd3d98d22a5369a48693e4"
+    },
+    {
+      "path": "Open-LLM-VTuber/local_mcp/mail_briefing_poller.py",
+      "sha256": "192627df1f37c80f617d91d099f86b54ffdf14b37fac3ea367f8c6caec8750cf"
+    }
+  ],
+  "externalConsumersBeforeCut": [
+    "Qt controller and app dead WorkPanel/Briefing methods",
+    "Mail producer POST /briefing/snapshot and daily_brief GET /briefing fallback",
+    "Core shadow probe /briefing HTTP fetch",
+    "Launcher poller old filename and Pet control env",
+    "legacy tests and config launcher_control:23568"
+  ],
+  "deletionCondition": "No production import/require/route/HTML/preload/IPC/config/fallback/bridge consumer outside this manifest remains. Historical docs retained."
+}

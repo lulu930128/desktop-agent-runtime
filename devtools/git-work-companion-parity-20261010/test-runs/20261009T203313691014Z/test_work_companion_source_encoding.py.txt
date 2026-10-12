@@ -1,0 +1,8 @@
+test_reported_history_chat_regressions_have_readable_copy (test_work_companion_source_encoding.SourceEncodingTests) ... ok
+test_ui_sources_are_strict_utf8_and_valid_python (test_work_companion_source_encoding.SourceEncodingTests) ... ok
+test_ui_string_literals_have_no_lossy_question_mark_runs (test_work_companion_source_encoding.SourceEncodingTests) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.122s
+
+OK

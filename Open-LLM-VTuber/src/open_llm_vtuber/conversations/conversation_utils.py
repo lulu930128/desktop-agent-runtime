@@ -3335,7 +3335,9 @@ async def finalize_conversation_turn(
     if tts_manager.audio_output_count:
         try:
             response = await asyncio.wait_for(
-                message_handler.wait_for_response(
+                websocket_send.wait_for_playback()
+                if callable(getattr(type(websocket_send), "wait_for_playback", None))
+                else message_handler.wait_for_response(
                     client_uid, "frontend-playback-complete"
                 ),
                 timeout=30,

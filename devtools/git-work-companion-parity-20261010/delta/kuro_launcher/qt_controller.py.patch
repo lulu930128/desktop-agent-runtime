@@ -1,0 +1,169 @@
+--- before/kuro_launcher/qt_controller.py
++++ after/kuro_launcher/qt_controller.py
+@@ -152,6 +152,9 @@
+     current_expression_id: str = ""
+     current_expression_label: str = ""
+     live2d_inspector_overlay_enabled: bool = False
++    mic_paused: bool = False
++    force_ignore_mouse: bool = False
++    capture_available: bool = False
+ 
+ 
+ @dataclass(frozen=True)
+@@ -648,11 +651,12 @@
+             )
+         return tuple(records)
+ 
+-    def _selected_memory_record(self, entry_id: str) -> MemoryRecord:
++    def _selected_memory_record(self, entry_id: str, character=None) -> MemoryRecord:
+         entry_id = (entry_id or "").strip()
+         if not entry_id:
+             raise ValueError("請先選擇一條記憶。")
+-        for record in self.read_memory_records():
++        records = self._read_memory_records_for(character) if character else self.read_memory_records()
++        for record in records:
+             if record.entry_id == entry_id:
+                 return record
+         raise ValueError("找不到這條記憶。")
+@@ -665,13 +669,21 @@
+         except Exception as exc:
+             self.log(f"[{log_ts()}] 角色記憶 prompt 暫未刷新：{exc}")
+ 
+-    def add_memory(self, content: str) -> bool:
++    def _memory_character(self, expected_conf_uid=None):
+         character = self.selected_character()
++        if expected_conf_uid is not None and (not character or character.conf_uid != expected_conf_uid):
++            raise ValueError("角色已切換；記憶確認已失效，請重新讀取。")
++        return character
++
++    def add_memory(self, content: str, *, expected_conf_uid: str | None = None) -> bool:
++        character = self._memory_character(expected_conf_uid)
+         if not character or not character.conf_uid:
+             raise ValueError("請先選擇角色。")
+         content = (content or "").strip()
+         if not content:
+             raise ValueError("記憶內容不可空白。")
++        if len(content) > 260:
++            raise ValueError("目前記憶服務每筆最多 260 字；請縮短內容，避免截斷。")
+ 
+         ensure_character_memory_root(self.cfg.open_llm_dir)
+         changed = add_character_memory(
+@@ -686,11 +698,12 @@
+             self.log(f"[{log_ts()}] 角色記憶未新增，可能是重複內容或包含敏感資料。")
+         return changed
+ 
+-    def set_memory_status(self, entry_id: str, status: str, *, expected_digest: str | None = None) -> bool:
+-        character = self.selected_character()
++    def set_memory_status(self, entry_id: str, status: str, *, expected_digest: str | None = None,
++                          expected_conf_uid: str | None = None) -> bool:
++        character = self._memory_character(expected_conf_uid)
+         if not character or not character.conf_uid:
+             raise ValueError("請先選擇角色。")
+-        record = self._selected_memory_record(entry_id)
++        record = self._selected_memory_record(entry_id, character)
+         ensure_character_memory_root(self.cfg.open_llm_dir)
+         changed = update_character_memory_status(character.conf_uid, record.entry_id, status, expected_digest=expected_digest or record.content_digest)
+         if changed:
+@@ -710,24 +723,27 @@
+     def reject_memory(self, entry_id: str) -> bool:
+         return self.set_memory_status(entry_id, "disabled")
+ 
+-    def delete_memory(self, entry_id: str) -> bool:
+-        character = self.selected_character()
++    def delete_memory(self, entry_id: str, *, expected_conf_uid: str | None = None,
++                      expected_digest: str | None = None) -> bool:
++        character = self._memory_character(expected_conf_uid)
+         if not character or not character.conf_uid:
+             raise ValueError("請先選擇角色。")
+-        record = self._selected_memory_record(entry_id)
++        record = self._selected_memory_record(entry_id, character)
+         ensure_character_memory_root(self.cfg.open_llm_dir)
+-        changed = delete_character_memory(character.conf_uid, record.entry_id)
++        changed = delete_character_memory(character.conf_uid, record.entry_id,
++                                          expected_digest=expected_digest or record.content_digest)
+         if changed:
+             self.log(f"[{log_ts()}] 已刪除角色記憶：{compact_history_text(record.content, 48)}")
+             self._maybe_refresh_memory_prompt()
+         return changed
+ 
+-    def compact_memory(self) -> dict:
+-        character = self.selected_character()
++    def compact_memory(self, *, expected_conf_uid: str | None = None,
++                       expected_digests: dict[str, str] | None = None) -> dict:
++        character = self._memory_character(expected_conf_uid)
+         if not character or not character.conf_uid:
+             raise ValueError("請先選擇角色。")
+         ensure_character_memory_root(self.cfg.open_llm_dir)
+-        changed, removed_count = compact_character_memories(character.conf_uid)
++        changed, removed_count = compact_character_memories(character.conf_uid, expected_digests=expected_digests)
+         if changed:
+             self._maybe_refresh_memory_prompt()
+         self.log(f"[{log_ts()}] 角色記憶已整理，合併/移除 {removed_count} 條。")
+@@ -1172,6 +1188,31 @@
+         self.log(f"[{log_ts()}] 已要求 runtime 刷新角色記憶 prompt。")
+         return result
+ 
++    def read_tool_policy_summary(self) -> dict:
++        """Stored policy projection only; never discover/execute tools or claim adoption."""
++        from open_llm_vtuber.mcpp.tool_policy_manager import ToolPolicy
++        path = Path(os.environ.get("KURO_TOOL_POLICY_PATH") or self.cfg.open_llm_dir / "tool_policy.json")
++        if path.stat().st_size > 2 * 1024 * 1024:
++            raise ValueError("Tool policy exceeds the bounded display size.")
++        raw = json.loads(path.read_text(encoding="utf-8-sig"))
++        if not isinstance(raw, dict):
++            raise ValueError("Tool policy must be an object.")
++        policy = ToolPolicy(raw)
++        if not policy.valid:
++            raise ValueError("Invalid tool policy configuration.")
++        records = []
++        for name, config in sorted(policy.tools.items()):
++            decision = policy.check(name, {})
++            config = config if isinstance(config, dict) else {}
++            records.append({"name": name, "category": config.get("category", ""),
++                "mode": config.get("mode", policy.default_mode), "allowed": decision.allowed,
++                "reason": decision.reason, "reason_code": decision.reason_code})
++        return {"default_mode": policy.default_mode, "tools": records,
++                "confirmation_available": False, "runtime_adoption": "UNVERIFIED", "digest": policy.digest}
++
++    def read_companion_diagnostics(self) -> dict:
++        return self.lifecycle.snapshot()
++
+     def read_runtime_status(self) -> RuntimeStatus:
+         bridge = port_is_open(self.cfg.bridge_host, self.cfg.bridge_port, 0.1)
+         tts = port_is_open(self.cfg.tts_host, self.cfg.tts_port, 0.1)
+@@ -1189,15 +1230,19 @@
+         current_expression_id = ""
+         current_expression_label = ""
+         live2d_inspector_overlay_enabled = False
++        mic_paused = force_ignore_mouse = capture_available = False
+ 
+         try:
+             with self._pet_lifecycle_lock:
+                 self._reconcile_tracked_pet_process()
+                 status = self._read_pet_shell_status(timeout=0.8)
+             pet_shell = True
++            force_ignore_mouse = bool(status.get("forceIgnoreMouse"))
+             pet_mode = str(status.get("mode") or "")
+             renderer = status.get("renderer") or {}
+             if isinstance(renderer, dict):
++                capture_available = renderer.get("available") is not False and "micEnabled" in renderer
++                mic_paused = bool(renderer.get("micPaused"))
+                 ws_connected = bool(renderer.get("wsConnected"))
+                 ai_state = str(renderer.get("aiState") or "")
+                 conf_name = str(renderer.get("confName") or "")
+@@ -1229,6 +1274,7 @@
+             current_expression_id=current_expression_id,
+             current_expression_label=current_expression_label,
+             live2d_inspector_overlay_enabled=live2d_inspector_overlay_enabled,
++            mic_paused=mic_paused, force_ignore_mouse=force_ignore_mouse, capture_available=capture_available,
+         )
+ 
+     def _core_request(self, route: str, payload: dict | None = None) -> dict:
+@@ -2089,6 +2135,7 @@
+             "toggle-screen",
+             "set-game-mode",
+             "set-live2d-inspector",
++            "set-force-ignore-mouse",
+         }
+         if action not in allowed:
+             raise ValueError(f"Unsupported pet toggle action: {action}")

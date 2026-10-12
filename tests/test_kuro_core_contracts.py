@@ -10,7 +10,6 @@ from kuro_core import (
     FreshnessStatus,
     Observation,
 )
-from kuro_core.legacy_briefing_adapter import source_status_observations
 
 
 UTC = timezone.utc
@@ -82,31 +81,6 @@ class KuroCoreContractTests(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "immutable"):
             observation.details["eventCount"] = 1
 
-    def test_legacy_connected_status_becomes_stale_without_losing_connection(self) -> None:
-        observed_at = datetime(2026, 8, 23, 8, 0, tzinfo=UTC)
-        received_at = observed_at + timedelta(hours=3)
-        observations = source_status_observations(
-            {
-                "snapshot": {
-                    "date": "2026-08-23",
-                    "updatedAt": observed_at.isoformat(),
-                    "sourceStatus": [
-                        {
-                            "id": "study",
-                            "status": "connected",
-                            "updatedAt": observed_at.isoformat(),
-                        }
-                    ],
-                }
-            },
-            received_at=received_at,
-            default_ttl_seconds=3600,
-        )
-
-        self.assertEqual(len(observations), 1)
-        observation = observations[0]
-        self.assertEqual(observation.connection, ConnectionStatus.CONNECTED)
-        self.assertEqual(observation.data_status(as_of=received_at), DataStatus.STALE)
 
     def test_naive_timestamps_are_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "include a timezone"):
@@ -124,18 +98,6 @@ class KuroCoreContractTests(unittest.TestCase):
                 idempotency_key="study:naive",
             )
 
-    def test_legacy_ttl_rejects_boolean_values(self) -> None:
-        now = datetime(2026, 8, 23, 12, 0, tzinfo=UTC)
-        with self.assertRaisesRegex(TypeError, "must be an integer"):
-            source_status_observations(
-                {
-                    "sourceStatus": [
-                        {"id": "study", "status": "connected", "updatedAt": now.isoformat()}
-                    ]
-                },
-                received_at=now,
-                ttl_by_source={"study": True},
-            )
 
     def test_observation_details_reject_sensitive_fields(self) -> None:
         now = datetime(2026, 8, 23, 12, 0, tzinfo=UTC)

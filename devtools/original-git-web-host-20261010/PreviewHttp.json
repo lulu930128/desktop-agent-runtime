@@ -1,0 +1,22 @@
+{
+  "bind": "127.0.0.1",
+  "ephemeralPort": 61040,
+  "checks": [
+    {
+      "path": "work-panel.html",
+      "status": 200,
+      "sha256": "75e45491817387053801aabb2e895e5884a61c5e61dc55a28c03becab02f91a0",
+      "cspPresent": true,
+      "moduleEntryPresent": true
+    },
+    {
+      "path": "qt-preview.html",
+      "status": 200,
+      "sha256": "9d0021e75347e4402389221b539dd448cc126cc5c98ccc6cba2e2a0364402401",
+      "cspPresent": true,
+      "moduleEntryPresent": true
+    }
+  ],
+  "serverStopped": true,
+  "render": "UNVERIFIED"
+}

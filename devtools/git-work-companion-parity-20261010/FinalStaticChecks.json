@@ -1,0 +1,20 @@
+{
+  "source_sha256": "ed64840c85023ef647a229f481404f427ee29d2a2b102b83ff3e65100de4d262",
+  "assignment_owners": [
+    {
+      "method": "__init__",
+      "line": 155
+    }
+  ],
+  "reviewer": "PENDING",
+  "docs_utf8_and_links": [
+    "EncodingFix.md",
+    "GitWorkCompanionParityMatrix.md",
+    "Plan.md",
+    "Progress.md",
+    "Prompt.md",
+    "R1DispatchFix.md",
+    "ReviewerHandoff.md",
+    "Rollback.md"
+  ]
+}

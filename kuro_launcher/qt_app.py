@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import base64
 import datetime
 import mimetypes
@@ -8,10 +10,14 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, QSettings, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPixmap
 from PySide6.QtWidgets import (
+    QApplication,
+    QSystemTrayIcon,
+    QStyle,
     QComboBox,
+    QCheckBox,
     QDialog,
     QFileDialog,
     QFrame,
@@ -39,17 +45,16 @@ from PySide6.QtWidgets import (
 
 from .config import AppConfig
 from .qt_chat_client import QtRuntimeChatClient
+from .qt_work_companion_view import ComposerEdit, WorkCompanionView, transcript_html
+from .qt_notifications import QtScheduleDelivery
+from .qt_core_pages import MAIN_NAV_KEYS, SETTINGS_LABELS, TodayPage, SchedulePage, CoreHealthPage
 from .qt_controller import (
-    BriefingSection,
-    BriefingSummary,
     PreviewAsset,
     QtLauncherController,
     RuntimeStatus,
 )
 from .records import HistoryRecord
 from .utils import log_ts
-from .work_panel_activation import record_activation
-from .work_panel_recovery import WorkPanelRecoveryDialog
 
 
 BRIEFING_NAV = [
@@ -81,7 +86,7 @@ MEMORY_STATUS_LABELS = {
 }
 
 MAX_CHAT_ATTACHMENTS = 6
-MAX_CHAT_ATTACHMENT_BYTES = 24 * 1024 * 1024
+CHAT_ATTACHMENT_LIMIT_MIB = {"image": 8, "audio": 12, "archive": 24, "file": 16, "text": 4, "code": 4}
 
 
 class KuroQtLauncherWindow(QMainWindow):
@@ -90,25 +95,31 @@ class KuroQtLauncherWindow(QMainWindow):
     log_signal = Signal(str)
     restart_requested = Signal()
 
-    def __init__(self, cfg: AppConfig, *, open_work_panel_on_start: bool = False):
+    def __init__(self, cfg: AppConfig, *, web_bundle=None):
         super().__init__()
+        self._web_mode = web_bundle is not None
+        self.work_web_candidate = None
+        self._lifecycle_tasks = set()
+        self.explicit_quitting = False
+        self._cleanup_done = False
+        self.tray = None
         self.cfg = cfg
-        self.open_work_panel_on_start = bool(open_work_panel_on_start)
-        self.work_panel_activation_inflight = False
-        self.work_panel_activation_pending = False
-        self.work_panel_pending_request = None
-        self.work_panel_recovery_dialog = None
-        self.work_panel_has_been_revealed = False
-        self.work_panel_last_revealed_instance_id = ""
         self.controller = QtLauncherController(cfg, self._append_log_threadsafe)
         self.controller.request_restart = self.restart_requested.emit
         self.restart_requested.connect(self._restart_launcher)
+        self.chat_client = QtRuntimeChatClient(self)
+        self.chat_auto_connect_paused = False
+        self.startup_auto_start_fired = False
+        self.last_status = None
+        if self._web_mode:
+            self._init_web_presentation(web_bundle)
+            return
+        self.ui_preferences = QSettings(QSettings.Format.IniFormat, QSettings.Scope.UserScope,
+                                         "Kuro", "WorkCompanion")
         self.nav_buttons: dict[str, QPushButton] = {}
         self.nav_base_labels: dict[str, str] = {}
         self.service_labels: dict[str, QLabel] = {}
         self.prompt_boxes: dict[str, QPlainTextEdit] = {}
-        self.briefing_sections: dict[str, BriefingSection] = {}
-        self.selected_briefing_key = "overview"
         self.selected_history_uid = ""
         self.pending_history_uid = ""
         self.pending_force_new_history = False
@@ -126,29 +137,17 @@ class KuroQtLauncherWindow(QMainWindow):
         self.startup_auto_start_fired = False
         self.last_status: RuntimeStatus | None = None
         self.pet_toggle_buttons: dict[str, QPushButton] = {}
-        self.main_nav_keys = {"chat", "briefing"}
-        self.configure_nav_keys = {"profile", "pet", "chat_memory", "briefing_settings"}
+        self.main_nav_keys = set(MAIN_NAV_KEYS)
+        self.configure_nav_keys = {"profile", "pet", "chat_memory"}
         self.system_nav_keys = {"runtime", "settings"}
         self.settings_nav_keys = self.configure_nav_keys | self.system_nav_keys
-        self.stack_order = ["chat", "briefing"]
-        self.settings_order = [
-            "general",
-            "appearance",
-            "conversation",
-            "briefing",
-            "advanced",
-        ]
-        self.settings_labels = {
-            "general": "General",
-            "appearance": "Appearance",
-            "conversation": "Conversation",
-            "briefing": "Briefing",
-            "advanced": "Advanced",
-        }
+        self.stack_order = list(MAIN_NAV_KEYS)
+        self.settings_order = list(SETTINGS_LABELS)
+        self.settings_labels = dict(SETTINGS_LABELS)
         self.settings_dialog_buttons: dict[str, QPushButton] = {}
-        self.briefing_total_count = 0
         self.app_font_stack, self.editor_font_stack = self._load_font_stacks()
-        self.chat_client = QtRuntimeChatClient(self)
+        self.chat_client.message_received.connect(self._on_chat_protocol_message)
+        self.chat_client.history_operation_changed.connect(self._history_controls_changed)
         self.chat_live_blocks: list[tuple[str, str, str]] = []
         self.chat_base_transcript = ""
         self.chat_attachments: list[dict] = []
@@ -160,24 +159,161 @@ class KuroQtLauncherWindow(QMainWindow):
         self.preview_refresh_pending = False
         self.preview_status_signature = ""
 
-        self.setWindowTitle("Kuro Desktop Console")
+        self.setWindowTitle("Kuro Work Companion")
         self.resize(1380, 860)
         self.setMinimumSize(1120, 720)
         self._build_ui()
         self._wire_signals()
+        self._create_tray()
+        self._start_notification_delivery()
         self._refresh_profile_controls()
         self._refresh_workspace_data()
         self._append_log(f"[{log_ts()}] Qt launcher ready.")
 
         self.status_timer = QTimer(self)
         self.status_timer.timeout.connect(self.refresh_status)
+        self.status_timer.timeout.connect(self.chat_client.expire_history_request)
+        self.status_timer.timeout.connect(self._refresh_core_pages)
+        self.status_timer.timeout.connect(self._ensure_desktop_entry)
         self.status_timer.start(2500)
         self.runtime_timer = QTimer(self)
         self.runtime_timer.timeout.connect(lambda: self._run_task('runtime-reconcile', self.controller.reconcile_runtime, quiet=True))
         self.runtime_timer.start(10000)
         self.refresh_status()
-        self.refresh_briefing()
+        self.today_page.refresh()
         self._schedule_startup_auto_start()
+
+    def _init_web_presentation(self, bundle) -> None:
+        """Same native owner, with no Widget presentation objects or observers."""
+        from .qt_web_host import create_existing_window_host
+        self.setWindowTitle("Kuro Work Companion")
+        self.resize(1380, 860)
+        self.setMinimumSize(760, 540)
+        self.setCentralWidget(create_existing_window_host(self, bundle))
+        self.task_finished.connect(self._on_web_task_finished)
+        self.task_failed.connect(self._on_web_task_failed)
+        self.log_signal.connect(self._append_log)
+        self.chat_client.error_occurred.connect(self._append_log)
+        self.chat_client.log_event.connect(self._append_log)
+        self._create_tray()
+        self._start_notification_delivery()
+        self.status_timer = QTimer(self)
+        self.status_timer.timeout.connect(self.work_web_candidate.owner_port.refresh_status)
+        self.status_timer.timeout.connect(self.work_web_candidate.owner_port.refresh_data)
+        self.status_timer.timeout.connect(self.chat_client.expire_history_request)
+        self.status_timer.timeout.connect(self._ensure_desktop_entry)
+        self.status_timer.start(2500)
+        self.runtime_timer = QTimer(self)
+        self.runtime_timer.timeout.connect(lambda: self._run_task("runtime-reconcile", self.controller.reconcile_runtime, quiet=True))
+        self.runtime_timer.start(10000)
+        # Original renderer owns its initial getState/getData. No duplicate
+        # profile/history/Memory/Today initialization or hidden Widget fallback.
+        self._schedule_startup_auto_start()
+
+    def _apply_lifecycle_status(self, status) -> None:
+        if self._cleanup_done: return
+        self.last_status = status
+        self._maybe_auto_connect_chat(status)
+
+    def _start_notification_delivery(self) -> None:
+        self.schedule_delivery = QtScheduleDelivery(self.controller, self.tray, self._append_log, self)
+        self.schedule_delivery.start()
+
+    def _run_web_task(self, name, fn) -> None:
+        if self._cleanup_done or name in self._lifecycle_tasks: return
+        if name == "runtime-reconcile" and "start-profile" in self._lifecycle_tasks: return
+        self._lifecycle_tasks.add(name)
+        def work():
+            try: return {"ok": True, "value": fn()}
+            except Exception: return {"ok": False, "error": "lifecycle_operation_failed"}
+        def done(result):
+            if self._cleanup_done: return
+            if result.get("ok"): self.task_finished.emit(name, result["value"])
+            else: self.task_failed.emit(name, result.get("error", "lifecycle_operation_failed"))
+        self.work_web_candidate.owner_port.run_worker(work, done)
+
+    def _submit_web_profile(self, work, done) -> None:
+        if self._cleanup_done or self._lifecycle_tasks:
+            done({"ok": False, "error": "lifecycle_busy", "retry": False})
+            return
+        self._lifecycle_tasks.add("start-profile")
+        def complete(result):
+            self._lifecycle_tasks.discard("start-profile")
+            if self._cleanup_done: return
+            done(result)
+            self.refresh_status()
+        self.work_web_candidate.owner_port.run_worker(work, complete)
+
+    def _on_web_task_finished(self, name, result) -> None:
+        if self._cleanup_done: return
+        self._lifecycle_tasks.discard(name)
+        if name != "runtime-reconcile": self.refresh_status()
+
+    def _on_web_task_failed(self, name, message) -> None:
+        if self._cleanup_done: return
+        self._lifecycle_tasks.discard(name)
+        self._set_action_status(message, error=True)
+        if name == "start-profile": self.reveal()
+
+    def reveal(self) -> None:
+        if self.explicit_quitting:
+            return
+        self.showNormal()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def _create_tray(self) -> None:
+        self.tray = QSystemTrayIcon(self)
+        self.tray.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
+        self.tray.setToolTip("Kuro")
+        menu = QMenu(self)
+        menu.addAction("Show Kuro", self.reveal)
+        menu.addAction("Quit Kuro", self.quit_application)
+        self.tray.setContextMenu(menu)
+        app_menu = self.menuBar().addMenu("Kuro")
+        app_menu.addAction("Restart Kuro", self._confirm_restart_launcher)
+        app_menu.addAction("Quit Kuro", self.quit_application)
+        self.tray.activated.connect(self._tray_activated)
+        self.tray.messageClicked.connect(self.reveal)
+        self.tray.show()
+
+    def _tray_activated(self, reason) -> None:
+        if reason in (QSystemTrayIcon.ActivationReason.Trigger,
+                      QSystemTrayIcon.ActivationReason.DoubleClick):
+            self.reveal()
+
+    def cleanup(self) -> None:
+        if self._cleanup_done:
+            return
+        self.explicit_quitting = True
+        self._cleanup_done = True
+        if self.work_web_candidate is not None:
+            self.work_web_candidate.shutdown_candidate()
+        for name in ("status_timer", "runtime_timer", "schedule_delivery", "activation_timer"):
+            resource = getattr(self, name, None)
+            if resource is not None:
+                resource.stop()
+        for label, operation in (
+            ("history", lambda: None if self._web_mode else self._discard_auto_empty_history_if_safe("__close__")),
+            ("chat", self.chat_client.disconnect),
+            ("runtime", self.controller.close),
+        ):
+            try:
+                operation()
+            except Exception as exc:
+                self._append_log(f"Quit cleanup {label} failed: {type(exc).__name__}")
+        if self.tray is not None:
+            self.tray.hide()
+
+    def _ensure_desktop_entry(self) -> None:
+        if not self.explicit_quitting and not QSystemTrayIcon.isSystemTrayAvailable():
+            if not self.isVisible():
+                self.reveal()
+
+    def quit_application(self) -> None:
+        self.cleanup()
+        QApplication.instance().quit()
 
     def _wire_signals(self) -> None:
         self.task_finished.connect(self._on_task_finished)
@@ -243,40 +379,34 @@ class KuroQtLauncherWindow(QMainWindow):
         return ", ".join(quoted)
 
     def _build_ui(self) -> None:
-        self.setStyleSheet(
-            APP_STYLE.replace("__APP_FONT_STACK__", self.app_font_stack).replace(
-                "__EDITOR_FONT_STACK__",
-                self.editor_font_stack,
-            )
-        )
-        root = QWidget()
-        shell = QHBoxLayout(root)
-        shell.setContentsMargins(0, 0, 0, 0)
-        shell.setSpacing(0)
+        self.setStyleSheet(APP_STYLE.replace("__APP_FONT_STACK__", self.app_font_stack)
+                           .replace("__EDITOR_FONT_STACK__", self.editor_font_stack))
+        self.chat_page = self._build_chat_page()
+        self.today_page = TodayPage(self.controller, self)
+        self.schedule_page = SchedulePage(self.controller, self)
+        self.settings_surface = self._build_settings_surface()
+        self.work_companion = WorkCompanionView(
+            chat=self.chat_page, today=self.today_page, schedule=self.schedule_page,
+            settings=self.settings_surface)
+        self.chat_host = self.work_companion
+        self.work_companion.return_focus = self.history_toggle
+        self.stack = self.work_companion.stack
+        self.nav_buttons = self.work_companion.nav_buttons
+        self.settings_entry_button = self.nav_buttons["settings"]
+        self.history_drawer = self.work_companion.history_drawer
+        self.history_list = self.history_drawer.list
+        self.history_drawer.selected.connect(self._request_history_selection)
+        self.history_drawer.create_requested.connect(self._create_chat_history)
+        self.history_drawer.delete_requested.connect(self._delete_history_by_uid)
+        self.history_drawer.refresh_requested.connect(self._refresh_history_list)
+        self.work_companion.page_changed.connect(self._set_page)
+        self.today_page.summary_changed.connect(self.sidebar_today_status.setText)
+        self.today_page.context_requested.connect(self._use_today_context)
+        self.today_page.schedule_requested.connect(lambda: self._set_page("schedule"))
+        self.setCentralWidget(self.work_companion)
+        self._history_controls_changed()
 
-        sidebar = QFrame()
-        sidebar.setObjectName("Sidebar")
-        sidebar.setFixedWidth(244)
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(16, 16, 16, 16)
-        sidebar_layout.setSpacing(8)
-
-        brand = QLabel("Kuro")
-        brand.setObjectName("Brand")
-        subtitle = QLabel("Desktop Console")
-        subtitle.setObjectName("BrandSub")
-        sidebar_layout.addWidget(brand)
-        sidebar_layout.addWidget(subtitle)
-        sidebar_layout.addSpacing(10)
-
-        main_label = QLabel("Console")
-        main_label.setObjectName("NavGroup")
-        self.main_nav_label = main_label
-        sidebar_layout.addWidget(self.main_nav_label)
-        self._add_nav_button(sidebar_layout, "chat", "Chat")
-        self._add_nav_button(sidebar_layout, "briefing", "Briefing")
-
-        sidebar_layout.addStretch()
+    def _build_status_panels(self, sidebar_layout) -> None:
         self.sidebar_update_panel = QFrame()
         self.sidebar_update_panel.setObjectName("SidebarPanel")
         sidebar_update_layout = QVBoxLayout(self.sidebar_update_panel)
@@ -296,10 +426,10 @@ class KuroQtLauncherWindow(QMainWindow):
         self.sidebar_action_status.setObjectName("SidebarActionStatus")
         self.sidebar_action_status.setWordWrap(True)
         sidebar_update_body_layout.addWidget(self.sidebar_action_status)
-        self.sidebar_briefing_status = QLabel("Briefing pending")
-        self.sidebar_briefing_status.setObjectName("SidebarStatusDetail")
-        self.sidebar_briefing_status.setWordWrap(True)
-        sidebar_update_body_layout.addWidget(self.sidebar_briefing_status)
+        self.sidebar_today_status = QLabel("Today 尚未讀取")
+        self.sidebar_today_status.setObjectName("SidebarStatusDetail")
+        self.sidebar_today_status.setWordWrap(True)
+        sidebar_update_body_layout.addWidget(self.sidebar_today_status)
         self.sidebar_pet_snapshot_status = QLabel("Pet status pending")
         self.sidebar_pet_snapshot_status.setObjectName("SidebarStatusDetail")
         self.sidebar_pet_snapshot_status.setWordWrap(True)
@@ -336,34 +466,7 @@ class KuroQtLauncherWindow(QMainWindow):
         sidebar_status_layout.addWidget(self.sidebar_services_body)
         sidebar_layout.addWidget(self.sidebar_status_panel)
 
-        self.settings_entry_button = QPushButton("⚙  Settings")
-        self.settings_entry_button.setObjectName("NavButton")
-        self.settings_entry_button.setProperty("settingsNav", True)
-        self.settings_entry_button.setCheckable(True)
-        self.settings_entry_button.clicked.connect(lambda _checked=False: self._open_settings_dialog())
-        sidebar_layout.addWidget(self.settings_entry_button)
 
-        self.stack = QStackedWidget()
-        self.chat_page = self._build_chat_page()
-        self.stack.addWidget(self.chat_page)
-        self.stack.addWidget(self._build_briefing_page())
-        self.settings_dialog = self._build_settings_dialog()
-
-        shell.addWidget(sidebar)
-        shell.addWidget(self.stack, 1)
-        self.setCentralWidget(root)
-        self._set_page("chat")
-
-    def _add_nav_button(self, layout: QVBoxLayout, key: str, label: str) -> None:
-        button = QPushButton(label)
-        button.setObjectName("NavButton")
-        if key == "settings":
-            button.setProperty("settingsNav", True)
-        button.setCheckable(True)
-        button.clicked.connect(lambda _checked=False, page_key=key: self._set_page(page_key))
-        self.nav_buttons[key] = button
-        self.nav_base_labels[key] = label
-        layout.addWidget(button)
 
     def _page(self, title: str, subtitle: str) -> tuple[QWidget, QVBoxLayout]:
         page = QWidget()
@@ -379,28 +482,16 @@ class KuroQtLauncherWindow(QMainWindow):
         layout.addWidget(subtitle_label)
         return page, layout
 
-    def _build_settings_dialog(self) -> QDialog:
-        dialog = QDialog(self)
-        dialog.setObjectName("SettingsDialog")
-        dialog.setWindowTitle("Kuro Settings")
-        dialog.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
-        dialog.setWindowModality(Qt.WindowModality.WindowModal)
-        dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        dialog.setMinimumSize(900, 620)
-        dialog.resize(1040, 700)
-        dialog.finished.connect(lambda _result=0: self.settings_entry_button.setChecked(False))
+    def _build_settings_surface(self) -> QWidget:
+        dialog = QWidget()
+        dialog.setObjectName("CompanionSettings")
 
         outer = QVBoxLayout(dialog)
-        outer.setContentsMargins(18, 18, 18, 18)
+        outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
         frame = QFrame()
         frame.setObjectName("SettingsDialogFrame")
-        shadow = QGraphicsDropShadowEffect(frame)
-        shadow.setBlurRadius(34)
-        shadow.setOffset(0, 12)
-        shadow.setColor(QColor(0, 0, 0, 190))
-        frame.setGraphicsEffect(shadow)
         frame_layout = QVBoxLayout(frame)
         frame_layout.setContentsMargins(0, 0, 0, 0)
         frame_layout.setSpacing(0)
@@ -414,9 +505,9 @@ class KuroQtLauncherWindow(QMainWindow):
         title_box = QVBoxLayout()
         title_box.setContentsMargins(0, 0, 0, 0)
         title_box.setSpacing(3)
-        title = QLabel("Settings")
+        title = QLabel("設定")
         title.setObjectName("SettingsDialogTitle")
-        subtitle = QLabel("Profile、桌寵外觀、對話記憶、Briefing 與進階工具。")
+        subtitle = QLabel("角色、記憶、感知、權限與桌寵；目前生效值由各服務提供。")
         subtitle.setObjectName("SettingsDialogSub")
         subtitle.setWordWrap(True)
         title_box.addWidget(title)
@@ -448,21 +539,13 @@ class KuroQtLauncherWindow(QMainWindow):
 
         self.settings_stack = QStackedWidget()
         self.settings_stack.setObjectName("SettingsDialogStack")
-        self.settings_stack.addWidget(self._build_workspace_page())
-        self.settings_stack.addWidget(self._build_pet_page())
-        self.settings_stack.addWidget(self._build_chat_memory_page())
-        self.settings_stack.addWidget(self._build_briefing_settings_page())
-        self.settings_stack.addWidget(self._build_settings_page())
+        self.core_health_page = CoreHealthPage(self.controller)
+        for builder in (self._build_workspace_page, self._build_chat_memory_page,
+                        self._build_perception_page, self._build_tools_page,
+                        self._build_pet_page, self._build_settings_page):
+            self.settings_stack.addWidget(builder())
         body_layout.addWidget(self.settings_stack, 1)
         frame_layout.addWidget(body, 1)
-
-        foot = QFrame()
-        foot.setObjectName("SettingsDialogFoot")
-        foot_layout = QHBoxLayout(foot)
-        foot_layout.setContentsMargins(16, 12, 16, 12)
-        foot_layout.addStretch()
-        foot_layout.addWidget(self._command_button("關閉", dialog.close))
-        frame_layout.addWidget(foot)
 
         self._set_settings_dialog_page("general")
         return dialog
@@ -477,11 +560,10 @@ class KuroQtLauncherWindow(QMainWindow):
             "memory": "conversation",
             "chat_memory": "conversation",
             "chat-memory": "conversation",
-            "briefing_settings": "briefing",
-            "briefing-sources": "briefing",
-            "briefing-settings": "briefing",
             "settings": "advanced",
             "diagnostics": "advanced",
+            "sources": "advanced",
+            "assistant": "general",
         }
         key = aliases.get(key, key)
         return key if key in self.settings_order else "general"
@@ -495,26 +577,18 @@ class KuroQtLauncherWindow(QMainWindow):
             button.setChecked(button_key == page_key)
         if page_key in {"general", "appearance"}:
             QTimer.singleShot(150, self._request_preview_asset_refresh)
+        elif page_key == "advanced":
+            self.core_health_page.refresh()
+            self._refresh_diagnostics()
+        elif page_key == "tools":
+            self._refresh_tool_policy()
 
     def _open_settings_dialog(self, key: str = "general") -> None:
-        if not hasattr(self, "settings_dialog"):
+        if not hasattr(self, "work_companion"):
             return
         self._set_settings_dialog_page(key)
-        self.settings_entry_button.setChecked(True)
-        if not self.settings_dialog.isVisible():
-            self._center_settings_dialog()
-            self.settings_dialog.show()
-        self.settings_dialog.raise_()
-        self.settings_dialog.activateWindow()
+        self.work_companion.set_page("settings")
 
-    def _center_settings_dialog(self) -> None:
-        parent_geometry = self.geometry()
-        width = min(1080, max(900, int(parent_geometry.width() * 0.82)))
-        height = min(760, max(620, int(parent_geometry.height() * 0.84)))
-        self.settings_dialog.resize(width, height)
-        frame = self.settings_dialog.frameGeometry()
-        frame.moveCenter(parent_geometry.center())
-        self.settings_dialog.move(frame.topLeft())
 
     def _settings_page(self, title: str, subtitle: str) -> tuple[QWidget, QVBoxLayout]:
         page = QWidget()
@@ -618,50 +692,6 @@ class KuroQtLauncherWindow(QMainWindow):
         layout.addWidget(self._build_chat_tab(), 1)
         return page
 
-    def _build_briefing_page(self) -> QWidget:
-        page, layout = self._page(
-            "Kuro Briefing",
-            "同一個桌面主控台內讀取 pet-electron briefing snapshot，資料 pipeline 保持不變。",
-        )
-        self.briefing_meta = QLabel("")
-        self.briefing_meta.setObjectName("MetaText")
-        layout.addWidget(self.briefing_meta)
-
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.setObjectName("ContentSplitter")
-        self.briefing_section_list = QListWidget()
-        self.briefing_section_list.setObjectName("SectionList")
-        self.briefing_section_list.setMinimumWidth(250)
-        self.briefing_section_list.setMaximumWidth(320)
-        self.briefing_section_list.itemClicked.connect(self._on_briefing_section_clicked)
-        splitter.addWidget(self.briefing_section_list)
-
-        self.briefing_detail_scroll = QScrollArea()
-        self.briefing_detail_scroll.setWidgetResizable(True)
-        self.briefing_detail_scroll.setObjectName("DetailScroll")
-        self.briefing_detail_body = QWidget()
-        self.briefing_detail_body.setObjectName("DetailBody")
-        self.briefing_detail_layout = QVBoxLayout(self.briefing_detail_body)
-        self.briefing_detail_layout.setContentsMargins(0, 0, 0, 0)
-        self.briefing_detail_layout.setSpacing(12)
-        self.briefing_detail_scroll.setWidget(self.briefing_detail_body)
-        splitter.addWidget(self.briefing_detail_scroll)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        layout.addWidget(splitter, 1)
-
-        actions = QHBoxLayout()
-        actions.addWidget(
-            self._command_button(
-                "更新每日 Briefing",
-                lambda: self._run_task("refresh-daily-briefing", self.controller.refresh_daily_briefing),
-                role="primary",
-            )
-        )
-        actions.addWidget(self._command_button("重新讀取 Snapshot", self.refresh_briefing))
-        actions.addStretch()
-        layout.addLayout(actions)
-        return page
 
     def _build_workspace_page(self) -> QWidget:
         page, layout = self._settings_page(
@@ -710,6 +740,12 @@ class KuroQtLauncherWindow(QMainWindow):
                 self.thinking_combo,
             )
         )
+        self.model_combo = QComboBox()
+        for model in self.cfg.openai_models:
+            self.model_combo.addItem(model, model)
+        self.model_combo.currentIndexChanged.connect(self._on_model_changed)
+        profile_layout.addWidget(self._settings_row("LLM 模型", "只列出 Launcher 設定允許的模型；套用後才生效。",
+                                                   self.model_combo, wide=True))
         layout.addWidget(profile_section)
 
         actions_section, actions_layout = self._settings_section(
@@ -718,7 +754,7 @@ class KuroQtLauncherWindow(QMainWindow):
         )
         actions_layout.addWidget(
             self._settings_inline_controls(
-                self._command_button("啟動 Profile", self._start_profile, role="primary"),
+                self._command_button("套用助理設定", self._confirm_profile_apply, role="primary"),
                 self._command_button("重新讀取 Profiles", self._reload_profiles),
                 stretch=True,
             )
@@ -747,155 +783,146 @@ class KuroQtLauncherWindow(QMainWindow):
             "對話狀態、初始草稿策略與角色長期記憶。",
         )
         self.chat_settings_status = QLabel(
-            "初始草稿：未聊天不儲存\nRuntime Chat：LLM online 時自動連線\nHistory：第一則訊息送出後才建立正式對話"
+            "Conversation 自動保存訊息；按「新對話」或送出首則訊息時建立對話。"
         )
         self.chat_settings_status.setObjectName("StatusBanner")
         self.chat_settings_status.setWordWrap(True)
         layout.addWidget(self.chat_settings_status)
+        layout.addWidget(self._settings_inline_controls(
+            self._command_button("開啟對話紀錄", self._open_history_from_settings),
+            self._command_button("建立新對話", self._create_history_from_settings)))
 
         memory_section, memory_layout = self._settings_section(
             "Character memory",
-            "直接管理目前角色的 canonical long_term.json；LLM 在線時可同步刷新 runtime 記憶 prompt。",
+            "使用目前角色的記憶服務；新增、狀態修改、刪除與整理都會確認角色及內容。每筆最多 260 字。",
         )
         memory_layout.addWidget(self._build_memory_tab(), 1)
         layout.addWidget(memory_section, 1)
         return page
 
-    def _build_briefing_settings_page(self) -> QWidget:
-        page, layout = self._settings_page(
-            "Briefing",
-            "每日摘要來源狀態、snapshot 重新讀取與手動更新。",
-        )
-        self.briefing_sources_status = QLabel("Briefing source status pending.")
-        self.briefing_sources_status.setObjectName("StatusBanner")
-        self.briefing_sources_status.setWordWrap(True)
-        layout.addWidget(self.briefing_sources_status)
-
-        source_panel, source_layout = self._settings_section(
-            "Source status",
-            "顯示 briefing snapshot 內各來源的資料覆蓋與更新狀態。",
-        )
-        self.briefing_source_list = QListWidget()
-        self.briefing_source_list.setObjectName("SectionList")
-        source_layout.addWidget(self.briefing_source_list, 1)
-
-        actions_panel, actions_layout = self._settings_section(
-            "Maintenance",
-            "這些是資料刷新操作，不影響主頁面目前瀏覽的位置。",
-        )
-        actions_layout.addWidget(
-            self._settings_inline_controls(
-                self._command_button(
-                    "更新每日 Briefing",
-                    lambda: self._run_task("refresh-daily-briefing", self.controller.refresh_daily_briefing),
-                    role="primary",
-                ),
-                self._command_button("重新讀取 Snapshot", self.refresh_briefing),
-                stretch=True,
-            )
-        )
-        layout.addWidget(actions_panel)
-        layout.addWidget(source_panel, 1)
-        return page
 
     def _build_chat_tab(self) -> QWidget:
         page = QWidget()
-        outer = QVBoxLayout(page)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
-
-        content = QHBoxLayout()
-        content.setContentsMargins(0, 0, 0, 0)
-        content.setSpacing(6)
-
-        left_panel = QFrame()
-        left_panel.setObjectName("Panel")
-        left_panel.setFixedWidth(420)
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(12, 12, 12, 12)
-        left_layout.setSpacing(10)
-        history_title = QLabel("Chats")
-        history_title.setObjectName("SectionTitle")
-        left_layout.addWidget(history_title)
-
-        self.history_list = QListWidget()
-        self.history_list.setObjectName("SectionList")
-        self.history_list.setProperty("historyList", True)
-        self.history_list.setMinimumWidth(340)
-        self.history_list.setMaximumWidth(420)
-        self.history_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.history_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.history_list.setTextElideMode(Qt.TextElideMode.ElideRight)
-        self.history_list.itemSelectionChanged.connect(self._on_history_selected)
-        left_layout.addWidget(self.history_list, 1)
-        content.addWidget(left_panel)
-
-        right_panel = QFrame()
-        right_panel.setObjectName("Panel")
-        right_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(12, 12, 12, 12)
-        right_layout.setSpacing(10)
-
-        self.chat_connection_status = QLabel("Runtime Chat 尚未連線。")
+        page.content = QVBoxLayout(page)
+        page.content.setContentsMargins(0, 0, 0, 0)
+        self._chat_history_rows = []
+        self._chat_tool_rows = {}
+        self._history_list_loaded = False
+        self._history_selection_user_requested = False
+        self._profile_applying = False
+        header = QHBoxLayout()
+        self.history_toggle = QPushButton("☰")
+        self.history_toggle.setAccessibleName("開啟對話紀錄")
+        self.history_toggle.clicked.connect(self._toggle_history_drawer)
+        header.addWidget(self.history_toggle)
+        self.chat_title = QLabel("普通對話")
+        self.chat_title.setObjectName("PageTitle")
+        header.addWidget(self.chat_title, 1)
+        assistant_settings = QPushButton("助理設定")
+        assistant_settings.clicked.connect(lambda: self._open_settings_dialog("general"))
+        header.addWidget(assistant_settings)
+        self.chat_identity_label = QLabel("尚未選取對話")
+        self.chat_identity_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.chat_identity_label.setWordWrap(True)
+        page.content.addLayout(header)
+        page.content.addWidget(self.chat_identity_label)
+        self.chat_context = QFrame()
+        context_layout = QHBoxLayout(self.chat_context)
+        self.chat_context_label = QLabel()
+        self.chat_context_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.chat_context_label.setWordWrap(True)
+        context_layout.addWidget(self.chat_context_label, 1)
+        self.clear_chat_context = QPushButton("移除脈絡標記")
+        self.clear_chat_context.setToolTip("移除目前帶入的項目標記；可直接編輯草稿中的參考文字。")
+        self.clear_chat_context.clicked.connect(self.chat_context.hide)
+        context_layout.addWidget(self.clear_chat_context)
+        self.chat_context.hide()
+        page.content.addWidget(self.chat_context)
+        self.chat_connection_status = QLabel("對話服務尚未連線。")
         self.chat_connection_status.setObjectName("StatusBanner")
         self.chat_connection_status.setWordWrap(True)
-        self.chat_connection_status.setVisible(False)
-        right_layout.addWidget(self.chat_connection_status)
-
+        page.content.addWidget(self.chat_connection_status)
         self.history_transcript = QTextEdit()
         self.history_transcript.setObjectName("TranscriptBox")
         self.history_transcript.setReadOnly(True)
-        right_layout.addWidget(self.history_transcript, 1)
-
+        page.content.addWidget(self.history_transcript, 1)
         self.chat_attachment_tray = QFrame()
         self.chat_attachment_tray.setObjectName("AttachmentTray")
         self.chat_attachment_layout = QHBoxLayout(self.chat_attachment_tray)
         self.chat_attachment_layout.setContentsMargins(0, 0, 0, 0)
-        self.chat_attachment_layout.setSpacing(8)
         self.chat_attachment_layout.addStretch()
-        self.chat_attachment_tray.setVisible(False)
-        right_layout.addWidget(self.chat_attachment_tray)
-
+        self.chat_attachment_tray.hide()
+        page.content.addWidget(self.chat_attachment_tray)
         composer = QFrame()
         composer.setObjectName("ComposerPanel")
         composer_layout = QVBoxLayout(composer)
-        composer_layout.setContentsMargins(10, 8, 10, 8)
-        composer_layout.setSpacing(6)
-        self.chat_input = QPlainTextEdit()
+        self.chat_input = ComposerEdit()
+        self.chat_input.setAccessibleName("輸入普通對話")
         self.chat_input.setObjectName("ComposerInput")
-        self.chat_input.setPlaceholderText("輸入要送給目前 runtime 角色的訊息。")
-        self.chat_input.setMaximumHeight(92)
-        composer_layout.addWidget(self.chat_input, 1)
-
-        composer_controls = QFrame()
-        composer_controls.setObjectName("ComposerControls")
-        composer_controls_layout = QHBoxLayout(composer_controls)
-        composer_controls_layout.setContentsMargins(0, 0, 0, 0)
-        composer_controls_layout.setSpacing(8)
-        self.chat_attach_button = QPushButton("+")
-        self.chat_attach_button.setObjectName("ComposerIconButton")
-        self.chat_attach_button.setToolTip("新增附件或開關桌寵功能")
+        self.chat_input.submit_requested.connect(self._send_chat_text)
+        composer_layout.addWidget(self.chat_input)
+        controls = QHBoxLayout()
+        self.chat_attach_button = QPushButton("＋ 附件")
         self.chat_attach_button.clicked.connect(self._show_chat_add_menu)
-        composer_controls_layout.addWidget(self.chat_attach_button)
-        composer_controls_layout.addStretch()
+        controls.addWidget(self.chat_attach_button)
+        controls.addStretch()
         self.chat_thinking_combo = QComboBox()
-        self.chat_thinking_combo.setObjectName("ComposerThinkingCombo")
-        self.chat_thinking_combo.setToolTip("Thinking power")
         self._populate_thinking_combo(self.chat_thinking_combo)
         self.chat_thinking_combo.currentIndexChanged.connect(self._on_thinking_changed)
-        composer_controls_layout.addWidget(self.chat_thinking_combo)
-        self.chat_send_button = QPushButton("✓")
-        self.chat_send_button.setObjectName("ComposerActionButton")
-        self.chat_send_button.setToolTip("送出")
+        controls.addWidget(self.chat_thinking_combo)
+        self.chat_send_button = QPushButton("送出")
         self.chat_send_button.clicked.connect(self._send_or_interrupt_chat)
-        composer_controls_layout.addWidget(self.chat_send_button)
-        composer_layout.addWidget(composer_controls)
-        right_layout.addWidget(composer)
-
-        content.addWidget(right_panel, 1)
-        outer.addLayout(content, 1)
+        controls.addWidget(self.chat_send_button)
+        composer_layout.addLayout(controls)
+        page.content.addWidget(composer)
+        page.content.addWidget(QLabel("Enter 送出 · Shift + Enter 換行"))
         return page
+
+    def _toggle_history_drawer(self) -> None:
+        visible = not self.history_drawer.isVisible()
+        self.chat_host.show_history(visible)
+        if visible:
+            self._refresh_history_list()
+
+    def _history_controls_changed(self, _operation="") -> None:
+        if not hasattr(self, "history_drawer"):
+            return
+        if _operation:
+            self._history_error = ""
+        busy = self.chat_client.history_pending or self._chat_response_active() or self._profile_applying
+        self.history_drawer.set_state(ready=self.chat_client.history_ready, pending=busy,
+                                      error=getattr(self, "_history_error", ""))
+        self._update_chat_send_button()
+
+    def _request_history_selection(self, history_uid: str) -> None:
+        if self._chat_response_active() or self.pending_chat_submit or self._profile_applying:
+            return
+        if history_uid == self.chat_client.current_history_uid:
+            self.chat_host.show_history(False)
+            return
+        if self.chat_client.select_history(history_uid):
+            self._history_selection_user_requested = True
+
+    def _update_chat_identity(self) -> None:
+        if not hasattr(self, "chat_identity_label"):
+            return
+        uid = self.chat_client.current_history_uid
+        record = self.history_records_by_uid.get(uid)
+        title = record.title if record else self.chat_client.current_history_title
+        self.chat_title.setText(title or "普通對話")
+        self.chat_identity_label.setText(
+            f"{self.chat_client.conf_name or self.chat_client.conf_uid or '尚未連線'} · "
+            f"{self.chat_client.active_project_id or '專案未提供'} · {uid or '尚未選取對話'}\n"
+            f"生效模型：{self.chat_client.effective_model or '服務尚未提供'} · "
+            f"推理：{self.chat_client.thinking_power or '服務尚未提供'}")
+        self.chat_identity_label.setToolTip(f"confUid: {self.chat_client.conf_uid}\ncontext: {self.chat_client.context_id}")
+        self.history_drawer.set_records(self.history_records_by_uid.values(), uid)
+        if hasattr(self, "chat_settings_status"):
+            count = (f"{len(self.history_records_by_uid)} 段" if self._history_list_loaded else "尚未完成讀取")
+            if not self.chat_client.history_ready:
+                count += "（服務未就緒）"
+            self.chat_settings_status.setText("Conversation 自動保存訊息；按「新對話」或送出首則訊息時建立對話。\n"
+                f"目前對話：{title or '尚未選取'}\n對話數量：{count}")
 
     def _build_memory_tab(self) -> QWidget:
         page = QWidget()
@@ -1029,6 +1056,9 @@ class KuroQtLauncherWindow(QMainWindow):
                 wide=True,
             )
         )
+        appearance_panel.setProperty("petControlGroup", True)
+        appearance_panel.setEnabled(False)
+        appearance_panel.setToolTip("尚未取得 Pet 的有效狀態。")
         layout.addWidget(appearance_panel)
 
         window_panel, window_layout = self._settings_section(
@@ -1052,6 +1082,18 @@ class KuroQtLauncherWindow(QMainWindow):
                 ),
             )
         )
+        window_layout.addWidget(self._settings_row(
+            "滑鼠穿透", "開啟後整個桌寵層穿透；透明區域原本就不攔截滑鼠。",
+            self._pet_toggle_button("set-force-ignore-mouse", "滑鼠穿透")))
+        window_layout.addWidget(self._settings_inline_controls(
+            self._command_button("顯示桌寵", lambda: self._run_task("pet-show", self.controller.show_pet)),
+            self._command_button("播放待機動作", lambda: self._run_task("pet-idle", lambda:
+                                 self.controller.run_pet_command("play-motion", {"group": "Idle"}))),
+            self._command_button("重置桌寵位置", lambda: self._run_task("pet-reset", lambda:
+                                 self.controller.run_pet_command("reset-pet-position")))))
+        window_panel.setProperty("petControlGroup", True)
+        window_panel.setEnabled(False)
+        window_panel.setToolTip("尚未取得 Pet 的有效狀態。")
         layout.addWidget(window_panel)
         layout.addWidget(preview_panel, 1)
         return page
@@ -1061,6 +1103,23 @@ class KuroQtLauncherWindow(QMainWindow):
             "Advanced",
             "Runtime、工程診斷、prompt preview、paths 與 logs。",
         )
+        self.compact_control = QCheckBox("緊湊顯示")
+        self.compact_control.setChecked(self.ui_preferences.value("compact", False, type=bool))
+        self.compact_control.toggled.connect(self._set_compact_display)
+        layout.addWidget(self.compact_control)
+        reduced = QCheckBox("降低動態效果（目前 Qt 抽屜不播放動畫，固定啟用）")
+        reduced.setChecked(True)
+        reduced.setEnabled(False)
+        layout.addWidget(reduced)
+        self.companion_diagnostics = QPlainTextEdit()
+        self.companion_diagnostics.setReadOnly(True)
+        layout.addWidget(self.companion_diagnostics)
+        layout.addWidget(self._settings_inline_controls(
+            self._command_button("重新讀取診斷", self._refresh_diagnostics),
+            self._command_button("停止目前輸出", self._interrupt_chat),
+            self._command_button("重試啟動對話", lambda: self._confirm_runtime_action("retry-runtime",
+                "重試啟動目前 Launcher profile？可能啟動 Conversation、語音依賴及桌寵。", self.controller.retry_runtime)),
+            self._command_button("重新啟動 Kuro", self._confirm_restart_launcher)))
         runtime_panel, runtime_layout = self._settings_section(
             "Runtime services",
             "服務狀態與 runtime 控制集中在這裡，避免和日常 profile 設定混在一起。",
@@ -1076,7 +1135,9 @@ class KuroQtLauncherWindow(QMainWindow):
         runtime_layout.addWidget(self.runtime_detail)
         runtime_layout.addWidget(
             self._settings_inline_controls(
-                self._command_button("停止 Runtime", lambda: self._run_task("stop-runtime", self.controller.stop_profile), role="danger"),
+                self._command_button("停止對話服務", lambda: self._confirm_runtime_action("stop-runtime",
+                    "停止目前對話服務？桌寵、Qt、Core 與共享中央語音會保留。",
+                    lambda: self.controller.stop_profile(stop_bridge=False, stop_pet=False)), role="danger"),
                 self._command_button("Bridge 開關", lambda: self._run_task("toggle-bridge", self.controller.toggle_bridge)),
                 stretch=True,
             )
@@ -1108,10 +1169,13 @@ class KuroQtLauncherWindow(QMainWindow):
             "Pet shell",
             "只保留 shell 啟動、重載與關閉這類維護操作。",
         )
+        self.pet_reload_button = self._command_button("重新載入角色", self._reload_pet_model)
+        self.pet_reload_button.setEnabled(False)
+        self.pet_reload_button.setToolTip("需要 Pet 提供有效狀態後才能重新載入角色。")
         pet_shell_layout.addWidget(
             self._settings_inline_controls(
                 self._command_button("開桌寵 Shell", lambda: self._run_task("open-pet", self.controller.launch_pet_electron)),
-                self._command_button("重載桌寵前端", lambda: self._run_task("pet-reload", self.controller.reload_pet_frontend)),
+                self.pet_reload_button,
                 self._command_button("關閉桌寵", lambda: self._run_task("pet-close", self.controller.stop_pet_electron), role="danger"),
                 stretch=True,
             )
@@ -1176,7 +1240,124 @@ class KuroQtLauncherWindow(QMainWindow):
             )
         )
         layout.addWidget(log_panel, 1)
+        self.core_health_page.setMinimumHeight(380)
+        layout.addWidget(self.core_health_page)
+        self._build_status_panels(layout)
         return page
+
+    def _set_compact_display(self, enabled: bool) -> None:
+        self.ui_preferences.setValue("compact", bool(enabled))
+        self.ui_preferences.sync()
+        if self.ui_preferences.status() != QSettings.Status.NoError:
+            self._set_action_status("顯示已調整，但本機偏好無法保存。", error=True)
+        self._render_chat_transcript_with_live()
+
+    def _open_history_from_settings(self) -> None:
+        self._set_page("chat")
+        self.chat_host.show_history(True)
+        self._refresh_history_list()
+
+    def _use_today_context(self, context: dict) -> None:
+        if self.pending_chat_submit or self._chat_response_active() or self._profile_applying:
+            self._set_action_status("目前對話仍忙碌；Today 內容尚未帶入。", error=True)
+            return
+        self._set_page("chat")
+        draft = self.chat_input.toPlainText().rstrip()
+        self.chat_input.setPlainText((draft + "\n\n" if draft else "") + "[Core Today 參考]\n" + context["text"])
+        self.chat_context_label.setText(f"目前帶入：{context.get('title') or context['workId']} · {context.get('source') or 'Core'}")
+        self.chat_context.show()
+        self.chat_input.setFocus()
+        self._set_chat_status("Today 內容已帶入草稿，請確認後按送出。")
+
+    def _create_history_from_settings(self) -> None:
+        self._set_page("chat")
+        self._create_chat_history()
+
+    def _build_perception_page(self) -> QWidget:
+        page, layout = self._settings_page("語音與感知", "錄音只有按下「完成並送出」才會建立對話回合。")
+        self.perception_status = QLabel("感知狀態尚未取得；需要 Pet 的擷取能力。")
+        self.perception_status.setWordWrap(True)
+        layout.addWidget(self.perception_status)
+        section, body = self._settings_section("麥克風", "錄音保留在本機，可暫停、繼續或取消。")
+        row = QHBoxLayout()
+        self.microphone_buttons = {}
+        for action, title in (("start", "開始錄音"), ("pause", "暫停"), ("resume", "繼續"),
+                              ("submit", "完成並送出"), ("cancel", "取消")):
+            control = self._command_button(title, lambda action=action: self._microphone_action(action))
+            control.setObjectName("Mic_" + action)
+            control.setEnabled(False)
+            control.setToolTip("尚未取得 Pet 擷取能力狀態。")
+            self.microphone_buttons[action] = control
+            row.addWidget(control)
+        body.addLayout(row)
+        layout.addWidget(section)
+        for action, title, description in (
+            ("toggle-camera", "鏡頭", "啟用後，下次明確送出的訊息可附上鏡頭畫面。"),
+            ("toggle-screen", "本回合螢幕擷取", "只用於下一次送出的訊息，不是持續背景監控。")):
+            control = self._pet_toggle_button(action, title)
+            control.setEnabled(False)
+            control.setToolTip("尚未取得 Pet 擷取能力狀態。")
+            layout.addWidget(self._settings_row(title, description, control))
+        layout.addStretch()
+        return page
+
+    def _build_tools_page(self) -> QWidget:
+        page, layout = self._settings_page("工具與權限", "只呈現已儲存政策；目前 runtime 是否採用，仍需服務確認。")
+        layout.addWidget(self._command_button("重新讀取政策", self._refresh_tool_policy))
+        self.tools_status = QLabel("尚未讀取工具政策。")
+        self.tools_status.setWordWrap(True)
+        layout.addWidget(self.tools_status)
+        self.tools_list = QPlainTextEdit()
+        self.tools_list.setReadOnly(True)
+        self.tools_list.setMinimumHeight(260)
+        layout.addWidget(self.tools_list, 1)
+        unavailable = QPushButton("修改權限（尚未提供）")
+        unavailable.setEnabled(False)
+        unavailable.setToolTip("目前沒有正式的權限寫入／逐次確認 owner，不能從 UI 繞過政策。")
+        layout.addWidget(unavailable)
+        layout.addWidget(QLabel("需要確認的工具保持封鎖；沒有全域自動放行開關。"))
+        return page
+
+    def _refresh_tool_policy(self) -> None:
+        try:
+            payload = self.controller.read_tool_policy_summary()
+            self.tools_status.setText(f"預設模式：{payload['default_mode']} · runtime 採用：未驗證\n"
+                                      "逐次工具確認尚未實作；read_only 仍需執行時參數及能力檢查。")
+            self.tools_list.setPlainText("\n\n".join(
+                f"{item['name']} · {item['category']} · {item['mode']}\n{item['reason']}"
+                for item in payload["tools"]) or "目前沒有已註冊工具。")
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            self.tools_status.setText(f"工具政策未載入：{type(exc).__name__}。請檢查設定後重新讀取。")
+            self.tools_list.clear()
+
+    def _refresh_diagnostics(self) -> None:
+        try:
+            payload = self.controller.read_companion_diagnostics()
+            voice = payload.get("voice") or {}
+            self.companion_diagnostics.setPlainText("\n".join((
+                f"啟動狀態：{payload.get('phase', '尚未提供')}",
+                f"原因：{payload.get('reason') or '—'}",
+                f"語音：{voice.get('state', '尚未提供')} · {voice.get('reason') or '—'}",
+                f"執行版本：{payload.get('sourceRevision', '尚未提供')}",
+                f"需要重新啟動：{payload.get('restartRequired', '尚未提供')}",
+                f"角色：{self.chat_client.conf_uid} · 專案：{self.chat_client.active_project_id}",
+                f"context：{self.chat_client.context_id} · 對話：{self.chat_client.current_history_uid}",
+                f"模型：{self.chat_client.effective_model or '服務尚未提供'} · 推理：{self.chat_client.thinking_power or '服務尚未提供'}")))
+        except (OSError, ValueError, TypeError, AttributeError) as exc:
+            self.companion_diagnostics.setPlainText(f"診斷尚未取得：{type(exc).__name__}")
+
+    def _confirm_runtime_action(self, name: str, description: str, operation) -> None:
+        if QMessageBox.question(self, "確認服務操作", description,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            self._run_task(name, operation)
+
+    def _reload_pet_model(self) -> None:
+        if not getattr(self, "last_status", None) or not self.last_status.pet_shell:
+            self._set_action_status("Pet 尚未就緒；請先開啟桌寵，才能重新載入角色。", error=True)
+            return
+        self._confirm_runtime_action("pet-reload", "重新載入桌寵角色？目前的桌寵播放與感知擷取會中斷。",
+                                     self.controller.reload_pet_frontend)
 
     def _status_card(self, label: str) -> QFrame:
         card = QFrame()
@@ -1235,21 +1416,6 @@ class KuroQtLauncherWindow(QMainWindow):
             self.sidebar_services_expanded,
         )
 
-    def _metric_card(self, title: str, value: str, unit: str = "") -> QFrame:
-        card = QFrame()
-        card.setObjectName("MetricCard")
-        layout = QVBoxLayout(card)
-        title_label = QLabel(title)
-        title_label.setObjectName("CardTitle")
-        value_label = QLabel(value or "-")
-        value_label.setObjectName("MetricValue")
-        unit_label = QLabel(unit)
-        unit_label.setObjectName("MetaText")
-        layout.addWidget(title_label)
-        layout.addWidget(value_label)
-        if unit:
-            layout.addWidget(unit_label)
-        return card
 
     def _command_button(self, label: str, callback: Callable[[], object], *, role: str = "secondary") -> QPushButton:
         button = QPushButton(label)
@@ -1272,51 +1438,30 @@ class KuroQtLauncherWindow(QMainWindow):
         button.setObjectName(object_name)
         button.setCheckable(True)
         button.clicked.connect(
-            lambda checked=False, action=action: self._run_task(
-                f"pet-toggle:{action}",
-                lambda action=action, checked=checked: self.controller.set_pet_toggle(action, checked),
-            )
+            lambda checked=False, action=action: self._set_pet_toggle_from_menu(action, checked)
         )
         self.pet_toggle_buttons[action] = button
         return button
 
     def _set_page(self, key: str) -> None:
-        stack_key = key
-        if key.startswith("briefing:"):
-            stack_key = "briefing"
-            self.selected_briefing_key = key.split(":", 1)[1] or "overview"
-            self._select_briefing_list_item(self.selected_briefing_key)
-            self._render_selected_briefing_section()
-        elif key in self.settings_nav_keys or key in {
+        if key in self.settings_nav_keys or key in {
             "workspace",
             "memory",
             "chat-memory",
-            "briefing-sources",
-            "briefing-settings",
             "diagnostics",
+            "sources",
         }:
             self._open_settings_dialog(key)
             return
 
-        if stack_key not in self.stack_order:
-            stack_key = "chat"
-
-        previous_key = ""
-        if hasattr(self, "stack") and self.stack.currentIndex() >= 0:
-            previous_key = self.stack_order[self.stack.currentIndex()]
-        if previous_key == "chat" and stack_key != "chat":
-            if self._discard_auto_empty_history_if_safe("__leave_chat__", allow_recreate=True):
-                self._show_blank_chat_draft()
-                QTimer.singleShot(250, self._refresh_history_list)
-
-        self.stack.setCurrentIndex(self.stack_order.index(stack_key))
-        for page_key, button in self.nav_buttons.items():
-            button.setVisible(page_key in self.main_nav_keys)
-            checked = page_key == stack_key
-            button.setChecked(checked)
-        self.settings_entry_button.setChecked(False)
+        stack_key = key if key in self.main_nav_keys else "chat"
+        self.work_companion.set_page(stack_key)
         if stack_key == "chat" and self.chat_blank_draft_active:
             QTimer.singleShot(150, self._ensure_auto_empty_chat)
+        elif stack_key == "today":
+            self.today_page.refresh()
+        elif stack_key == "schedule":
+            self.schedule_page.refresh()
 
     def _refresh_profile_controls(self) -> None:
         combos = [
@@ -1327,6 +1472,7 @@ class KuroQtLauncherWindow(QMainWindow):
                 getattr(self, "outfit_combo", None),
                 getattr(self, "thinking_combo", None),
                 getattr(self, "chat_thinking_combo", None),
+                getattr(self, "model_combo", None),
             ]
             if combo is not None
         ]
@@ -1342,6 +1488,7 @@ class KuroQtLauncherWindow(QMainWindow):
         self._set_combo_by_data(self.project_combo, self.controller.selected_project_key)
         self._set_combo_by_data(self.outfit_combo, self.controller.outfit_id)
         self._sync_thinking_combos(self.controller.thinking_power)
+        self._set_combo_by_data(self.model_combo, self.controller.llm_model)
         for combo in combos:
             combo.blockSignals(False)
 
@@ -1367,6 +1514,65 @@ class KuroQtLauncherWindow(QMainWindow):
         self._set_combo_by_data(self.project_combo, self.controller.selected_project_key)
         self._refresh_workspace_data()
 
+    def _on_model_changed(self, _index: int = -1) -> None:
+        self.controller.set_llm_model(str(self.model_combo.currentData() or ""))
+        self._set_action_status("模型選擇尚未套用；按「套用助理設定」後才會切換服務。")
+
+    def _profile_selection(self) -> tuple:
+        return (self.controller.selected_character_key, self.controller.selected_project_key,
+                self.controller.llm_model, self.controller.thinking_power)
+
+    def _confirm_profile_apply(self) -> bool:
+        if self._profile_applying or self._chat_response_active() or self.chat_client.history_pending:
+            self._set_action_status("請先完成目前對話／History 操作，再切換助理。", error=True)
+            return False
+        character, project = self.controller.selected_character(), self.controller.selected_project()
+        if not character or not project:
+            self._set_action_status("請先選擇角色與專案。", error=True)
+            return False
+        selection = self._profile_selection()
+        description = (f"套用助理設定？可能重新載入 Conversation 與語音依賴。\n\n"
+            f"角色：{character.conf_name} ({character.conf_uid})\n專案：{project.display_name}\n"
+            f"模型：{selection[2]}\n推理：{selection[3]}")
+        if QMessageBox.question(self, "套用助理設定", description,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+            return False
+        if selection != self._profile_selection():
+            self._set_action_status("設定已變更，這次確認已失效。", error=True)
+            return False
+        self._profile_target = (character.conf_uid, project.project_id, selection[2], selection[3])
+        self._profile_previous_context = self.chat_client.context_id
+        self._profile_owner_done = False
+        self._profile_apply_token = uuid.uuid4().hex
+        self._set_profile_applying(True)
+        token = self._profile_apply_token
+        self._start_profile()
+        QTimer.singleShot(90000, lambda: self._expire_profile_apply(token))
+        return True
+
+    def _set_profile_applying(self, busy: bool) -> None:
+        self._profile_applying = busy
+        for name in ("character_combo", "project_combo", "model_combo", "thinking_combo", "chat_thinking_combo"):
+            getattr(self, name).setEnabled(not busy)
+        self._history_controls_changed()
+
+    def _reconcile_profile_apply(self) -> None:
+        if not self._profile_applying or not getattr(self, "_profile_owner_done", False):
+            return
+        actual = (self.chat_client.conf_uid, self.chat_client.active_project_id,
+                  self.chat_client.effective_model, self.chat_client.thinking_power)
+        if actual == self._profile_target and self.chat_client.context_id != self._profile_previous_context:
+            self._set_profile_applying(False)
+            self._set_action_status("助理設定已由 Conversation 確認生效。")
+        else:
+            self._set_action_status("Launcher 已回應；仍等待 Conversation 確認角色、專案、模型與推理。")
+
+    def _expire_profile_apply(self, token: str) -> None:
+        if self._profile_applying and token == getattr(self, "_profile_apply_token", ""):
+            self._set_profile_applying(False)
+            self._set_action_status("助理設定的生效狀態未確認；請重新連線／查看診斷，勿視為套用成功。", error=True)
+
     def _on_project_changed(self, _index: int = -1) -> None:
         self.controller.set_selected_project(str(self.project_combo.currentData() or ""))
         self._refresh_workspace_data()
@@ -1379,6 +1585,7 @@ class KuroQtLauncherWindow(QMainWindow):
         combo = self.sender()
         if not isinstance(combo, QComboBox):
             combo = self.thinking_combo
+        previous = self.controller.thinking_power
         self.controller.set_thinking_power(str(combo.currentData() or "normal"))
         for combo_name in ("thinking_combo", "chat_thinking_combo"):
             peer = getattr(self, combo_name, None)
@@ -1388,6 +1595,13 @@ class KuroQtLauncherWindow(QMainWindow):
             self._set_combo_by_data(peer, self.controller.thinking_power)
             peer.blockSignals(False)
         self._update_project_detail()
+        if combo is self.chat_thinking_combo:
+            if not self._confirm_profile_apply():
+                self.controller.set_thinking_power(previous)
+                for peer in (self.thinking_combo, self.chat_thinking_combo):
+                    peer.blockSignals(True)
+                    self._set_combo_by_data(peer, previous)
+                    peer.blockSignals(False)
 
     def _reload_profiles(self) -> None:
         self.controller.reload_profiles()
@@ -1402,9 +1616,11 @@ class KuroQtLauncherWindow(QMainWindow):
         QTimer.singleShot(900, self._run_startup_auto_start)
 
     def _run_startup_auto_start(self) -> None:
+        if self._cleanup_done: return
         if not self.controller.selected_character() or not self.controller.selected_project():
             self._append_log(f"[{log_ts()}] startup_profile 自動啟動略過：角色或專案尚未選定。")
-            self._show_work_panel_recovery("startup profile 缺少角色或專案。")
+            self.reveal()
+            self._set_action_status("startup profile 缺少角色或專案。", error=True)
             return
         character = self.controller.selected_character()
         project = self.controller.selected_project()
@@ -1415,38 +1631,12 @@ class KuroQtLauncherWindow(QMainWindow):
         )
         self._start_profile()
 
-    def request_work_panel_activation(self, source: str = "launcher") -> None:
-        self.work_panel_activation_pending = True
-        request = {"request_id": uuid.uuid4().hex[:12], "source": source}
-        if self.work_panel_pending_request:
-            record_activation("activation-coalesced", self.work_panel_pending_request, self._append_log)
-        self.work_panel_pending_request = request
-        record_activation("activation-request-received", request, self._append_log)
-        if self.work_panel_activation_inflight:
-            return
-        self._run_pending_work_panel_activation()
-
-    def _run_pending_work_panel_activation(self) -> None:
-        if self.work_panel_activation_inflight or not self.work_panel_activation_pending:
-            return
-        self.work_panel_activation_pending = False
-        request = self.work_panel_pending_request
-        self.work_panel_pending_request = None
-        self.work_panel_activation_inflight = True
-        self._run_task(
-            "ensure-work-panel",
-            lambda: self.controller.ensure_work_panel(**request),
-        )
-
-    def _show_work_panel_recovery(self, reason: str, *, allow_retry: bool = True) -> None:
-        # A top-level modeless dialog is usable even when the console is hidden.
-        if self.work_panel_recovery_dialog is None:
-            self.work_panel_recovery_dialog = WorkPanelRecoveryDialog(
-                lambda: self.request_work_panel_activation("recovery-dialog")
-            )
-        self.work_panel_recovery_dialog.reveal(reason, allow_retry=allow_retry)
 
     def _start_profile(self) -> None:
+        if self._web_mode:
+            self.chat_auto_connect_paused = False
+            self._run_task("start-profile", self.controller.start_profile)
+            return
         desired_history_uid = self.pending_history_uid
         force_new_history = self.pending_force_new_history
         self._discard_auto_empty_history_if_safe("__profile_restart__")
@@ -1593,108 +1783,30 @@ class KuroQtLauncherWindow(QMainWindow):
                 header += f"\nsource: {preview.source}"
             box.setPlainText(f"{header}\n\n{preview.content}")
 
-    def _refresh_history_list(self) -> None:
-        previous_uid = self.selected_history_uid
-        current_item = self.history_list.currentItem()
-        if current_item:
-            previous_uid = str(current_item.data(Qt.ItemDataRole.UserRole) or previous_uid)
-
-        records = self.controller.read_history_records()
-        self.history_records_by_uid = {record.uid: record for record in records}
-        target_uid = previous_uid or self.chat_auto_empty_history_uid
-        self.history_list.blockSignals(True)
-        try:
-            self.history_list.clear()
-            self.history_item_action_buttons = {}
-            selected_row = -1
-            for record in records:
-                title_text = record.title or "新對話"
-                item = QListWidgetItem(title_text)
-                item.setData(Qt.ItemDataRole.UserRole, record.uid)
-                item.setToolTip(title_text)
-                self.history_list.addItem(item)
-                widget = self._build_history_item_widget(record)
-                item.setSizeHint(QSize(0, 40))
-                self.history_list.setItemWidget(item, widget)
-                if target_uid and record.uid == target_uid:
-                    selected_row = self.history_list.count() - 1
-            if selected_row >= 0:
-                self.history_list.setCurrentRow(selected_row)
-            else:
-                self.history_list.clearSelection()
-                self.history_list.setCurrentRow(-1)
-        finally:
-            self.history_list.blockSignals(False)
-        if selected_row >= 0:
-            self.selected_history_uid = str(self.history_list.item(selected_row).data(Qt.ItemDataRole.UserRole) or "")
-            self.chat_blank_draft_active = False
-            self._render_history_messages(self.selected_history_uid)
-        else:
-            self._show_blank_chat_draft()
-        self._update_history_item_action_buttons()
-
-    def _on_history_selected(self) -> None:
-        item = self.history_list.currentItem()
-        if not item:
+    def _refresh_history_list(self, records=None) -> None:
+        if records is None:
+            if self.chat_client.connected:
+                self.chat_client.request_history_list()
+            elif hasattr(self, "history_drawer"):
+                self.history_drawer.set_state(ready=False, error="對話服務離線；連線後可重新讀取。")
             return
-        self.chat_blank_draft_active = False
-        self.selected_history_uid = str(item.data(Qt.ItemDataRole.UserRole) or "")
-        self._render_history_messages(self.selected_history_uid)
-        self._update_history_item_action_buttons()
-        self._apply_history_selection_from_click(self.selected_history_uid)
+        self.history_records_by_uid = {record.uid: record for record in records if record.uid}
+        self.history_drawer.set_records(records, self.chat_client.current_history_uid)
+        self._update_chat_identity()
+        self._history_controls_changed()
 
-    def _build_history_item_widget(self, record: HistoryRecord) -> QFrame:
-        row = QFrame()
-        row.setObjectName("HistoryItem")
-        row.setMinimumHeight(40)
-        row.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(0, 0, 8, 0)
-        layout.setSpacing(0)
-        layout.addStretch(1)
 
-        action = QPushButton("...")
-        action.setObjectName("HistoryMoreButton")
-        action.setToolTip("更多")
-        action.setVisible(False)
-        action.setFixedSize(30, 24)
-        action.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        action.clicked.connect(
-            lambda _checked=False, uid=record.uid, button=action: self._show_history_item_menu(uid, button)
-        )
-        layout.addWidget(action, 0, Qt.AlignmentFlag.AlignVCenter)
-        self.history_item_action_buttons[record.uid] = action
-        return row
 
-    def _update_history_item_action_buttons(self) -> None:
-        selected_uid = self.selected_history_uid
-        for uid, button in self.history_item_action_buttons.items():
-            button.setVisible(bool(selected_uid and uid == selected_uid))
 
-    def _show_history_item_menu(self, history_uid: str, button: QPushButton) -> None:
-        history_uid = (history_uid or "").strip()
-        if not history_uid:
-            return
-        self._select_history_item(history_uid)
-        menu = QMenu(self)
-        menu.setObjectName("HistoryItemMenu")
-        delete_action = menu.addAction("刪除")
-        chosen = menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
-        if chosen == delete_action:
-            self._delete_history_by_uid(history_uid)
 
-    def _select_history_item(self, history_uid: str) -> None:
-        for row in range(self.history_list.count()):
-            item = self.history_list.item(row)
-            if str(item.data(Qt.ItemDataRole.UserRole) or "") == history_uid:
-                self.history_list.setCurrentRow(row)
-                return
 
     def _show_blank_chat_draft(self) -> None:
         self.chat_blank_draft_active = True
         self.selected_history_uid = ""
         self.chat_base_transcript = ""
         self.chat_live_blocks = []
+        self._chat_history_rows = []
+        self._chat_tool_rows = {}
         if hasattr(self, "history_list"):
             self.history_list.blockSignals(True)
             try:
@@ -1702,41 +1814,21 @@ class KuroQtLauncherWindow(QMainWindow):
                 self.history_list.setCurrentRow(-1)
             finally:
                 self.history_list.blockSignals(False)
-            self._update_history_item_action_buttons()
         if hasattr(self, "history_transcript"):
             self.history_transcript.clear()
+        if hasattr(self, "chat_context"):
+            self.chat_context.hide()
 
-    def _render_history_messages(self, history_uid: str) -> None:
-        messages = self.controller.read_history_timeline(history_uid)
-        if not messages:
-            self.chat_base_transcript = ""
-            self.chat_live_blocks = []
-            self.history_transcript.clear()
-            return
-        parts = []
-        for message in messages:
-            role = (
-                "User"
-                if message.role == "human"
-                else "Kuro"
-                if message.role in {"ai", "assistant"}
-                else "Event"
-                if message.role == "event"
-                else message.role
-            )
-            parts.append(f"[{message.timestamp or '-'}] {role}\n{message.content}")
-        self.chat_base_transcript = "\n\n".join(parts)
-        self.chat_live_blocks = []
-        self.history_transcript.setPlainText(self.chat_base_transcript)
 
     def _runtime_chat_url(self) -> str:
-        return f"ws://{self.cfg.llm_host}:{self.cfg.llm_port}/client-ws?client_role=launcher-console"
+        return f"ws://{self.cfg.llm_host}:{self.cfg.llm_port}/client-ws?client_role=qt-primary"
 
     def _connect_chat(self, *, auto: bool = False) -> None:
         ws_url = self._runtime_chat_url()
         if not auto:
             self.chat_auto_connect_paused = False
         self.chat_client.connect_to(ws_url)
+        if self._web_mode: return
         prefix = "Runtime Chat auto connecting" if auto else "Runtime Chat connecting"
         self._set_chat_status(f"{prefix}: {ws_url}", error=False)
 
@@ -1750,8 +1842,7 @@ class KuroQtLauncherWindow(QMainWindow):
         if sent:
             self._append_log(f"[{log_ts()}] 已送出 Runtime Chat 中斷。")
         else:
-            self._run_task("pet-interrupt", self.controller.interrupt_pet)
-        self.chat_runtime_state = "interrupted"
+            self._set_chat_status("聊天 WebSocket 尚未連線，中斷未送出。", error=True)
         self._update_chat_send_button()
 
     def _maybe_auto_connect_chat(self, status: RuntimeStatus) -> None:
@@ -1767,18 +1858,18 @@ class KuroQtLauncherWindow(QMainWindow):
         self._connect_chat(auto=True)
 
     def _ensure_auto_empty_chat(self) -> None:
-        if not self.chat_client.connected:
+        if not self.chat_client.history_ready or self.chat_client.history_pending:
             return
-        self.chat_auto_empty_started = True
+        if self.chat_auto_empty_started:
+            return
+        self.chat_auto_empty_started = self.chat_client.request_history_list()
         self.chat_auto_empty_create_pending = False
         if self.chat_blank_draft_active:
             self._set_chat_status("Runtime Chat 已連線。初始草稿尚未儲存；送出第一則訊息後才會建立對話。", error=False)
 
     def _history_is_empty(self, history_uid: str) -> bool:
         record = self.history_records_by_uid.get(history_uid)
-        if record is not None:
-            return bool(record.is_empty)
-        return not self.controller.read_history_messages(history_uid, limit=1)
+        return bool(record is not None and record.is_empty)
 
     def _clear_auto_empty_history_marker(self, *, allow_recreate: bool = False) -> None:
         self.chat_auto_empty_history_uid = ""
@@ -1786,36 +1877,9 @@ class KuroQtLauncherWindow(QMainWindow):
         if allow_recreate:
             self.chat_auto_empty_started = False
 
-    def _discard_auto_empty_history_if_safe(
-        self,
-        next_history_uid: str = "",
-        *,
-        allow_recreate: bool = False,
-    ) -> bool:
-        auto_uid = self.chat_auto_empty_history_uid
-        next_history_uid = (next_history_uid or "").strip()
-        if not auto_uid or auto_uid == next_history_uid:
-            return False
-        if self.chat_auto_empty_create_pending:
-            return False
-        if not self._history_is_empty(auto_uid):
-            self._clear_auto_empty_history_marker(allow_recreate=allow_recreate)
-            self._append_log(f"[{log_ts()}] 暫存空白聊天已有內容，保留：{auto_uid}")
-            return False
-        deleted = False
-        if self.chat_client.connected:
-            deleted = self.chat_client.delete_history(auto_uid)
-            if deleted:
-                self._append_log(f"[{log_ts()}] 已刪除未使用的暫存空白聊天：{auto_uid}")
-        else:
-            try:
-                self.controller.delete_history(auto_uid)
-                deleted = True
-                self._append_log(f"[{log_ts()}] 已刪除未使用的暫存空白聊天：{auto_uid}")
-            except Exception as exc:
-                self._append_log(f"[{log_ts()}] 暫存空白聊天刪除失敗：{auto_uid} / {exc}")
-        self._clear_auto_empty_history_marker(allow_recreate=allow_recreate)
-        return deleted
+    def _discard_auto_empty_history_if_safe(self, next_history_uid: str = "", *, allow_recreate: bool = False) -> bool:
+        # A blank draft is never persisted automatically; deletion always needs a user confirmation.
+        return False
 
     def _release_auto_empty_history_marker(self, history_uid: str = "") -> None:
         auto_uid = self.chat_auto_empty_history_uid
@@ -1835,15 +1899,6 @@ class KuroQtLauncherWindow(QMainWindow):
             return auto_uid
         return ""
 
-    def _apply_history_selection_from_click(self, history_uid: str) -> None:
-        history_uid = (history_uid or "").strip()
-        if not history_uid:
-            return
-        self._discard_auto_empty_history_if_safe(history_uid)
-        if not (self.last_status and self.last_status.llm):
-            self._set_chat_status("已選擇聊天；啟動 Profile 後可同步到桌寵。", error=False)
-            return
-        self._run_task("select-history", lambda uid=history_uid: self.controller.select_history(uid))
 
     def _show_chat_add_menu(self) -> None:
         menu = self._build_chat_add_menu()
@@ -1861,17 +1916,24 @@ class KuroQtLauncherWindow(QMainWindow):
         controls_label.setEnabled(False)
 
         state_by_action = self._chat_menu_toggle_states()
+        recording = bool(self.last_status and self.last_status.mic_enabled)
+        for action, title in (("start", "開始錄音"), ("pause", "暫停錄音"), ("resume", "繼續錄音"),
+                              ("submit", "完成錄音並送出"), ("cancel", "取消錄音")):
+            control = menu.addAction(title)
+            peer = self.microphone_buttons[action]
+            control.setEnabled(peer.isEnabled())
+            control.setToolTip(peer.toolTip())
+            control.triggered.connect(lambda _checked=False, action=action: self._microphone_action(action))
         for label, action_key in [
-            ("Reader", "set-reader-visible"),
-            ("Briefing", "set-briefing-visible"),
-            ("Mic", "mic-toggle"),
             ("Camera", "toggle-camera"),
             ("Screen", "toggle-screen"),
-            ("Browser", "toggle-browser"),
         ]:
             toggle_action = menu.addAction(label)
             toggle_action.setCheckable(True)
             toggle_action.setChecked(bool(state_by_action.get(action_key, False)))
+            available = bool(self.last_status and self.last_status.capture_available)
+            toggle_action.setEnabled(available)
+            toggle_action.setToolTip("" if available else "Pet 擷取能力尚未就緒。")
             toggle_action.triggered.connect(
                 lambda checked=False, action_key=action_key: self._set_pet_toggle_from_menu(
                     action_key,
@@ -1886,7 +1948,7 @@ class KuroQtLauncherWindow(QMainWindow):
         )
         stop_action = menu.addAction("停止輸出")
         stop_action.triggered.connect(
-            lambda _checked=False: self._run_task("pet-interrupt", self.controller.interrupt_pet)
+            lambda _checked=False: self._interrupt_chat()
         )
 
         return menu
@@ -1896,19 +1958,53 @@ class KuroQtLauncherWindow(QMainWindow):
         if status is None:
             return {}
         return {
-            "set-reader-visible": status.reader_visible,
-            "set-briefing-visible": status.briefing_visible,
             "mic-toggle": status.mic_enabled,
             "toggle-camera": status.camera_enabled,
             "toggle-screen": status.screen_enabled,
-            "toggle-browser": status.browser_panel_enabled,
         }
 
     def _set_pet_toggle_from_menu(self, action: str, checked: bool) -> None:
+        if not self.last_status or not self.last_status.pet_shell:
+            self._set_action_status("Pet 尚未連線，操作未送出。", error=True)
+            return
+        if action in {"toggle-camera", "toggle-screen"} and checked:
+            identity = self.chat_client.history_identity()
+            if QMessageBox.question(self, "啟用感知輸入",
+                    "啟用鏡頭／畫面擷取？下次明確送出的訊息可能包含此影像。",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+                self._sync_pet_controls(self.last_status)
+                return
+            if identity != self.chat_client.history_identity():
+                self._set_chat_status("對話已切換，感知確認已失效。", error=True)
+                return
         self._run_task(
             f"pet-toggle:{action}",
             lambda action=action, checked=checked: self.controller.set_pet_toggle(action, checked),
         )
+
+    def _microphone_action(self, action: str) -> None:
+        if action not in self.microphone_buttons or not self.microphone_buttons[action].isEnabled():
+            return
+        if getattr(self, "_mic_command_inflight", False):
+            return
+        identity = self.chat_client.history_identity()
+        if action == "start":
+            if QMessageBox.question(self, "開始錄音", "開始本機錄音？只有按下「完成並送出」才會交給目前對話。",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+                return
+            if identity != self.chat_client.history_identity():
+                self._set_chat_status("角色或對話已切換，錄音未開始。", error=True)
+                return
+            self._capture_identity = identity
+        if action == "submit" and identity != getattr(self, "_capture_identity", None):
+            self._set_chat_status("錄音所屬對話已變更，請取消後重新錄音。", error=True)
+            return
+        self._mic_command_inflight = True
+        for control in self.microphone_buttons.values():
+            control.setEnabled(False)
+        self._run_task("microphone:" + action, lambda: self.controller.run_pet_command("mic-" + action))
 
     def _add_chat_attachments(self) -> None:
         if len(self.chat_attachments) >= MAX_CHAT_ATTACHMENTS:
@@ -1934,12 +2030,9 @@ class KuroQtLauncherWindow(QMainWindow):
             except OSError as exc:
                 skipped.append(f"{path.name}: {exc}")
                 continue
-            if size > MAX_CHAT_ATTACHMENT_BYTES:
-                skipped.append(f"{path.name}: 檔案超過 24 MB")
-                continue
             try:
                 payload = self._build_chat_attachment(path, size)
-            except OSError as exc:
+            except (OSError, ValueError) as exc:
                 skipped.append(f"{path.name}: {exc}")
                 continue
             self.chat_attachments.append(payload)
@@ -1958,12 +2051,23 @@ class KuroQtLauncherWindow(QMainWindow):
             self._render_chat_attachments()
 
     def _build_chat_attachment(self, path: Path, size: int) -> dict:
-        data = base64.b64encode(path.read_bytes()).decode("ascii")
         mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        kind = self._classify_chat_attachment(path, mime_type)
+        limit_mib = CHAT_ATTACHMENT_LIMIT_MIB[kind]
+        limit = limit_mib * 1024 * 1024
+        if size > limit:
+            raise ValueError(f"此類附件上限為 {limit_mib} MiB")
+        with path.open("rb") as stream:
+            raw = stream.read(limit + 1)
+        if len(raw) > limit:
+            raise ValueError(f"此類附件上限為 {limit_mib} MiB")
+        if not raw:
+            raise ValueError("附件內容為空")
+        data = base64.b64encode(raw).decode("ascii")
         return {
-            "kind": self._classify_chat_attachment(path, mime_type),
+            "kind": kind,
             "name": path.name,
-            "size": size,
+            "size": len(raw),
             "mime_type": mime_type,
             "data": f"data:{mime_type};base64,{data}",
         }
@@ -2042,70 +2146,171 @@ class KuroQtLauncherWindow(QMainWindow):
         if not hasattr(self, "chat_send_button"):
             return
         busy = self._chat_response_active()
-        self.chat_send_button.setText("■" if busy else "✓")
+        self.chat_send_button.setText("停止" if busy else "送出")
         self.chat_send_button.setToolTip("中斷這次回覆" if busy else "送出")
-        self.chat_send_button.setEnabled(not bool(self.pending_chat_submit) or busy)
+        self.chat_send_button.setEnabled(busy or (
+            self.chat_client.history_ready and not self.pending_chat_submit
+            and not self.chat_client.history_pending and not getattr(self, "_profile_applying", False)))
         self.chat_send_button.setProperty("busy", busy)
         self.chat_send_button.style().unpolish(self.chat_send_button)
         self.chat_send_button.style().polish(self.chat_send_button)
 
     def _send_chat_text(self) -> None:
+        if (not self.chat_client.history_ready or self.pending_chat_submit or self._chat_response_active() or self.chat_client.history_pending
+                or getattr(self, "_profile_applying", False)):
+            return
         text = self.chat_input.toPlainText().strip()
         attachments = list(self.chat_attachments)
         if not text and not attachments:
             return
+        status = getattr(self, "last_status", None)
+        if status and (status.camera_enabled or status.screen_enabled):
+            self.pending_chat_submit = {"text": text, "attachments": attachments,
+                                        "capture_pending": True,
+                                        "identity": self.chat_client.history_identity(),
+                                        "history_uid": self.chat_client.current_history_uid}
+            self._update_chat_send_button()
+            self._run_task("chat-capture", lambda: self.controller.run_pet_command("capture-input"))
+            return
+        self._queue_chat_submit(text, attachments)
+
+    def _queue_chat_submit(self, text: str, attachments: list[dict], capture: dict | None = None) -> None:
         create_history = bool(self.chat_blank_draft_active and not self.selected_history_uid)
-        if create_history and not (self.last_status and self.last_status.llm):
+        if not self.chat_client.history_ready:
             self._set_chat_status("Runtime Chat 尚未就緒，請先啟動 Profile。", error=True)
             return
         self.pending_chat_submit = {
-            "text": text,
-            "attachments": attachments,
+            "text": text, "attachments": attachments, "capture": capture,
             "auto_empty_history_uid": self._current_auto_empty_history_for_send(),
             "draft_create_history": create_history,
+            "identity": self.chat_client.history_identity(),
         }
         self._update_chat_send_button()
-        self._run_task(
-            "pet-send-text",
-            lambda text=text, attachments=attachments, create_history=create_history: self.controller.send_pet_text_for_chat(
-                text,
-                attachments,
-                create_history=create_history,
-            ),
-        )
+        if create_history:
+            if not self.chat_client.create_history(force_new=True):
+                self.pending_chat_submit = None
+                self._update_chat_send_button()
+            return
+        self._submit_pending_chat()
 
-    def _apply_selected_history(self) -> None:
-        if not self.selected_history_uid:
-            QMessageBox.information(self, "聊天記錄", "請先選擇一段聊天。")
+    def _submit_pending_chat(self) -> None:
+        pending = self.pending_chat_submit
+        if not pending:
             return
-        self._discard_auto_empty_history_if_safe(self.selected_history_uid)
-        if not (self.last_status and self.last_status.llm):
-            self.pending_history_uid = self.selected_history_uid
-            self.pending_force_new_history = False
-            self._append_log(f"[{log_ts()}] 已排程聊天同步，啟動 Profile 後套用：{self.selected_history_uid}")
-            self._set_chat_status("已排程聊天同步，啟動 Profile 後會套用。", error=False)
+        self.pending_chat_submit = None
+        identity = pending.get("identity")
+        current_identity = self.chat_client.history_identity()
+        if identity is not None and (identity[:3] != current_identity[:3]
+                or (not pending.get("draft_create_history") and identity != current_identity)):
+            self._set_chat_status("角色或對話已變更，訊息未送出；草稿仍保留。", error=True)
+            self._update_chat_send_button()
             return
-        self._run_task(
-            "select-history",
-            lambda: self.controller.select_history(self.selected_history_uid),
-        )
+        text, attachments = pending["text"], pending["attachments"]
+        sent = (self.chat_client.send_capture(pending["capture"], attachments)
+                if pending.get("capture") else self.chat_client.send_text(text, attachments))
+        if not sent:
+            self._update_chat_send_button()
+            return
+        self.chat_input.setPlainText("")
+        self.chat_attachments = []
+        self._render_chat_attachments()
+        self.chat_blank_draft_active = False
+        self.chat_runtime_state = "thinking"
+        self._release_auto_empty_history_marker(str(pending.get("auto_empty_history_uid") or ""))
+        self.chat_live_blocks.append(("User", self._chat_timestamp(), self._visible_chat_input_text(text, attachments)))
+        self.chat_live_blocks.append(("Kuro", self._chat_timestamp(), ""))
+        self._render_chat_transcript_with_live()
+        self._update_chat_send_button()
+        self._set_chat_status("已送出到 Runtime，等待回覆。", error=False)
+
+    def _on_chat_protocol_message(self, payload: dict) -> None:
+        kind = payload.get("type")
+        if kind == "history-list":
+            self._history_error = ""
+            self._history_list_loaded = True
+            records = [HistoryRecord(uid=str(item.get("uid") or ""), title=str(item.get("title") or ""),
+                preview=self.controller._normalize_history_message_content(item.get("last_preview") or
+                    item.get("summary_short") or item.get("preview") or
+                    ((item.get("latest_message") or {}).get("content")
+                     if isinstance(item.get("latest_message") or {}, dict) else item.get("latest_message")) or ""),
+                timestamp=str(item.get("timestamp") or ""), is_empty=bool(item.get("is_empty", False)))
+                for item in payload.get("histories", []) if isinstance(item, dict)]
+            self._refresh_history_list(records=records)
+            current = self.chat_client.current_history_uid
+            if current and not self.selected_history_uid and not self._chat_response_active():
+                self.chat_client.select_history(current)
+        elif kind == "history-data":
+            if payload.get("history_uid") != self.chat_client.current_history_uid:
+                return
+            rows = payload.get("timeline")
+            if not isinstance(rows, list):
+                self._on_chat_error("Conversation 未提供正式 timeline，訊息尚未載入。")
+                return
+            self._history_error = ""
+            self._chat_history_rows = [(str(row.get("role") or "event"), str(row.get("timestamp") or ""),
+                self.controller._normalize_history_message_content(row.get("content")))
+                for row in rows if isinstance(row, dict)]
+            self.chat_live_blocks = []
+            self._chat_tool_rows = {}
+            self._render_chat_transcript_with_live()
+            if self._history_selection_user_requested:
+                self.chat_input.clear()
+                self.chat_context.hide()
+                self._clear_chat_attachments()
+                self.chat_host.show_history(False)
+                self._history_selection_user_requested = False
+            self._update_chat_identity()
+            limit = payload.get("timeline_limit")
+            if isinstance(limit, int) and len(rows) >= limit:
+                self._set_chat_status(f"顯示最近 {limit} 則訊息與事件；較早內容尚未提供分頁讀取。", error=False)
+        elif kind == "new-history-created":
+            self._chat_history_rows = []
+            self.chat_live_blocks = []
+            self._chat_tool_rows = {}
+            self.chat_base_transcript = ""
+            self._render_chat_transcript_with_live()
+            if self.pending_chat_submit and self.pending_chat_submit.get("draft_create_history"):
+                self._submit_pending_chat()
+            else:
+                self.chat_input.clear()
+                self._clear_chat_attachments()
+            self.chat_host.show_history(False)
+            self._refresh_history_list()
+        elif kind == "history-deleted":
+            if payload.get("success"):
+                if payload.get("history_uid") == self.selected_history_uid:
+                    self._show_blank_chat_draft()
+                self._refresh_history_list()
+            else:
+                self._on_chat_error("對話刪除未完成，訊息與事件可能只刪除一部分；請重新讀取後確認。")
+        elif kind == "history-error":
+            self._history_selection_user_requested = False
+        elif kind == "tool_call_status":
+            tool_id = str(payload.get("tool_id") or "")
+            if not tool_id:
+                return
+            name = str(payload.get("tool_name") or "工具")
+            state = str(payload.get("status") or "未提供")
+            content = f"{name} · {state}"
+            index = self._chat_tool_rows.get(tool_id)
+            block = ("Event", str(payload.get("timestamp") or ""), content)
+            if index is None:
+                self._chat_tool_rows[tool_id] = len(self.chat_live_blocks)
+                self.chat_live_blocks.append(block)
+            else:
+                self.chat_live_blocks[index] = block
+            self._render_chat_transcript_with_live()
+        self._history_controls_changed()
+
 
     def _create_chat_history(self) -> None:
-        if self.chat_auto_empty_history_uid and self._history_is_empty(self.chat_auto_empty_history_uid):
-            self.selected_history_uid = self.chat_auto_empty_history_uid
-            self._refresh_history_list()
-            self._set_chat_status("目前已在暫存空白對話。", error=False)
+        if (self.pending_chat_submit or self._chat_response_active()
+                or getattr(self, "_profile_applying", False)):
             return
-        if not (self.last_status and self.last_status.llm):
-            self.pending_history_uid = ""
-            self.pending_force_new_history = True
-            self.selected_history_uid = ""
-            self.history_list.clearSelection()
-            self.history_transcript.setPlainText("啟動 Profile 時會建立一段新的聊天。")
-            self._append_log(f"[{log_ts()}] 已排程建立新聊天，啟動 Profile 後套用。")
-            self._set_chat_status("已排程建立新聊天，啟動 Profile 後會套用。", error=False)
+        if not self.chat_client.connected:
+            self._set_chat_status("對話服務尚未連線；新對話未建立。", error=True)
             return
-        self._run_task("create-history", self.controller.create_history)
+        self.chat_client.create_history(force_new=True)
 
     def _clear_pending_history_choice(self) -> None:
         self.pending_history_uid = ""
@@ -2122,7 +2327,11 @@ class KuroQtLauncherWindow(QMainWindow):
 
     def _on_chat_state_changed(self, state: str, connected: bool) -> None:
         self.chat_runtime_state = state
+        if state == "offline":
+            self.pending_chat_submit = None
+            self.chat_auto_empty_started = False
         self._update_chat_send_button()
+        self._history_controls_changed()
         label = {
             "connecting": "Runtime Chat 連線中。",
             "connected": "Runtime Chat 已連線。",
@@ -2135,50 +2344,70 @@ class KuroQtLauncherWindow(QMainWindow):
         if connected and self.chat_client.client_uid:
             label += f" client={self.chat_client.client_uid[:8]}"
         self._set_chat_status(label, error=not connected and state in {"offline"})
+        if hasattr(self, "work_companion"):
+            self.work_companion.runtime_status.setText(label)
         if connected and state == "connected":
             QTimer.singleShot(150, self._ensure_auto_empty_chat)
+        elif connected and state == "idle" and self.chat_client.current_history_uid:
+            QTimer.singleShot(0, lambda: self.chat_client.select_history(self.chat_client.current_history_uid)
+                              if not self.chat_client.history_pending else None)
 
     def _on_chat_client_changed(self, client_uid: str, conf_name: str, conf_uid: str) -> None:
-        suffix = f" · {conf_name or conf_uid or '-'} · client={client_uid[:8] or '-'}"
-        self._set_chat_status(f"Runtime Chat 已連線{suffix}", error=False)
-        QTimer.singleShot(150, self._ensure_auto_empty_chat)
+        self.pending_chat_submit = None
+        self._history_error = ""
+        self._history_selection_user_requested = False
+        self.history_records_by_uid = {}
+        self._history_list_loaded = False
+        self.history_drawer.set_records([], "")
+        self.chat_auto_empty_started = False
+        self._show_blank_chat_draft()
+        self._update_chat_identity()
+        self._history_controls_changed()
+        self._set_chat_status(f"對話已連線 · {conf_name or conf_uid}，正在確認對話紀錄。")
+        self._reconcile_profile_apply()
+        QTimer.singleShot(0, self._ensure_auto_empty_chat)
 
     def _on_chat_error(self, message: str) -> None:
+        self._history_error = message
+        self.pending_chat_submit = None
+        self._update_chat_send_button()
         self._append_log(f"[{log_ts()}] Runtime Chat error: {message}")
         self._set_chat_status(f"Runtime Chat 錯誤：{message}", error=True)
+        if hasattr(self, "history_drawer"):
+            self.history_drawer.set_state(ready=self.chat_client.history_ready, error=message)
 
     def _on_chat_history_changed(self, history_uid: str, _title: str) -> None:
-        if history_uid:
-            self.selected_history_uid = history_uid
-            if self.chat_auto_empty_create_pending:
-                self.chat_auto_empty_history_uid = history_uid
-                self.chat_auto_empty_create_pending = False
-                self._append_log(f"[{log_ts()}] 已標記暫存空白聊天：{history_uid}")
-        self._refresh_history_list()
-        self._refresh_memory_list()
-        self._refresh_prompt_boxes()
+        self.selected_history_uid = history_uid
+        self.chat_blank_draft_active = not bool(history_uid)
+        if not history_uid:
+            self._show_blank_chat_draft()
+        if hasattr(self, "history_drawer"):
+            self._update_chat_identity()
 
     def _on_chat_assistant_text_changed(self, text: str) -> None:
         if not text:
             return
-        self._release_auto_empty_history_marker(self._current_auto_empty_history_for_send())
-        if self.chat_live_blocks and self.chat_live_blocks[-1][0] == "Kuro":
-            role, timestamp, _old = self.chat_live_blocks[-1]
-            self.chat_live_blocks[-1] = (role, timestamp, text)
+        for index in range(len(self.chat_live_blocks) - 1, -1, -1):
+            role, timestamp, _old = self.chat_live_blocks[index]
+            if role == "Kuro":
+                self.chat_live_blocks[index] = (role, timestamp, text)
+                break
+            if role == "User":
+                self.chat_live_blocks.append(("Kuro", self._chat_timestamp(), text))
+                break
         else:
             self.chat_live_blocks.append(("Kuro", self._chat_timestamp(), text))
         self._render_chat_transcript_with_live()
 
     def _render_chat_transcript_with_live(self) -> None:
-        parts: list[str] = []
-        base = self.chat_base_transcript.strip()
-        if base and not base.startswith("這段聊天目前沒有") and not base.startswith("這個角色目前還沒有"):
-            parts.append(base)
-        for role, timestamp, content in self.chat_live_blocks:
-            if not content and role == "Kuro":
-                content = "..."
-            parts.append(f"[{timestamp}] {role}\n{content}")
-        self.history_transcript.setPlainText("\n\n".join(parts) if parts else self.chat_base_transcript)
+        bar = self.history_transcript.verticalScrollBar()
+        near_bottom = bar.maximum() - bar.value() < 120
+        previous = bar.value()
+        rows = list(getattr(self, "_chat_history_rows", []))
+        rows.extend((role, timestamp, content or ("正在整理回覆…" if role == "Kuro" else ""))
+                    for role, timestamp, content in self.chat_live_blocks)
+        self.history_transcript.setHtml(transcript_html(rows, compact=self.compact_control.isChecked()))
+        bar.setValue(bar.maximum() if near_bottom else min(previous, bar.maximum()))
 
     def _chat_timestamp(self) -> str:
         return datetime.datetime.now().strftime("%H:%M:%S")
@@ -2188,6 +2417,9 @@ class KuroQtLauncherWindow(QMainWindow):
         self.memory_list.blockSignals(True)
         self.memory_list.clear()
         records = self.controller.read_memory_records()
+        self.memory_records_by_id = {record.entry_id: record for record in records}
+        character = self.controller.selected_character()
+        self.memory_review_conf_uid = character.conf_uid if character else ""
         selected_row = 0
         for record in records:
             status = MEMORY_STATUS_LABELS.get(record.status, record.status or "未知")
@@ -2243,24 +2475,21 @@ class KuroQtLauncherWindow(QMainWindow):
 
     def _delete_history_by_uid(self, history_uid: str) -> None:
         history_uid = (history_uid or "").strip()
-        if not history_uid:
-            QMessageBox.information(self, "聊天記錄", "請先選擇要刪除的聊天。")
+        if (not history_uid or not self.chat_client.history_ready or self.chat_client.history_pending
+                or self._chat_response_active() or self.pending_chat_submit):
             return
-
+        identity = self.chat_client.history_identity()
         record = self.history_records_by_uid.get(history_uid)
         title = record.title if record else history_uid
-        answer = QMessageBox.question(
-            self,
-            "刪除聊天記錄",
-            f"確定要刪除這段聊天嗎？\n\n{title}",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
+        answer = QMessageBox.question(self, "刪除聊天記錄",
+            f"確定要刪除這段對話及工具事件嗎？無法復原。\n\n{title}\n{history_uid}\n角色：{identity[1]}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         if answer != QMessageBox.StandardButton.Yes:
             return
-        if history_uid == self.chat_auto_empty_history_uid:
-            self._clear_auto_empty_history_marker(allow_recreate=True)
-        self._run_task("delete-history", lambda uid=history_uid: self.controller.delete_history(uid))
+        if identity != self.chat_client.history_identity():
+            self._set_chat_status("角色或對話已切換，刪除確認已失效。", error=True)
+            return
+        self.chat_client.delete_history(history_uid, confirmed=True)
 
     def _selected_memory_entry_id(self) -> str:
         if not hasattr(self, "memory_list"):
@@ -2271,93 +2500,129 @@ class KuroQtLauncherWindow(QMainWindow):
         return str(item.data(Qt.ItemDataRole.UserRole) or "")
 
     def _add_memory_dialog(self) -> None:
+        character = self.controller.selected_character()
+        conf_uid = character.conf_uid if character else ""
         content, ok = QInputDialog.getMultiLineText(
             self,
             "新增角色記憶",
-            "輸入要加入目前角色的長期記憶：",
+            "輸入要加入目前角色的長期記憶（每筆最多 260 字）：",
+            getattr(self, "_memory_draft", ""),
         )
         if not ok:
             return
         content = content.strip()
         if not content:
             return
-        self._run_task("add-memory", lambda text=content: self.controller.add_memory(text))
+        self._memory_draft = content
+        if len(content) > 260:
+            self._set_action_status("記憶未新增：目前服務每筆最多 260 字，請縮短內容。", error=True)
+            return
+        if self._confirm_memory_change(conf_uid, "新增記憶", content):
+            self._run_task("add-memory", lambda: self.controller.add_memory(content, expected_conf_uid=conf_uid))
+
+    def _confirm_memory_change(self, conf_uid: str, title: str, content: str) -> bool:
+        if not conf_uid or self._profile_applying:
+            self._set_action_status("角色尚未選定或正在切換，記憶未變更。", error=True)
+            return False
+        accepted = QMessageBox.question(self, title, f"角色：{conf_uid}\n{title}？\n\n{content}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes
+        character = self.controller.selected_character()
+        if not character or conf_uid != character.conf_uid:
+            self._set_action_status("角色已切換，記憶確認已失效。", error=True)
+            return False
+        return accepted
+
+    def _change_selected_memory(self, action: str, status: str = "") -> None:
+        entry_id = self._selected_memory_entry_id()
+        record = getattr(self, "memory_records_by_id", {}).get(entry_id)
+        if not record or not record.content_digest:
+            self._set_action_status("請重新讀取並選擇具有內容摘要的記憶。", error=True)
+            return
+        conf_uid = self.memory_review_conf_uid
+        if action == "toggle":
+            status = "disabled" if record.status == "active" else "active"
+        title = "刪除記憶（無法復原）" if action == "delete" else f"將記憶設為{MEMORY_STATUS_LABELS[status]}"
+        if not self._confirm_memory_change(conf_uid, title, f"{entry_id}\n{record.content}"):
+            return
+        if action == "delete":
+            operation = lambda: self.controller.delete_memory(entry_id, expected_conf_uid=conf_uid,
+                                                               expected_digest=record.content_digest)
+        else:
+            operation = lambda: self.controller.set_memory_status(entry_id, status,
+                expected_conf_uid=conf_uid, expected_digest=record.content_digest)
+        self._run_task("delete-memory" if action == "delete" else "toggle-memory", operation)
 
     def _toggle_selected_memory(self) -> None:
-        entry_id = self._selected_memory_entry_id()
-        if not entry_id:
-            QMessageBox.information(self, "角色記憶", "請先選擇一條記憶。")
-            return
-        self._run_task("toggle-memory", lambda eid=entry_id: self.controller.toggle_memory(eid))
+        self._change_selected_memory("toggle")
 
     def _approve_selected_memory(self) -> None:
-        entry_id = self._selected_memory_entry_id()
-        if not entry_id:
-            QMessageBox.information(self, "角色記憶", "請先選擇一條記憶。")
-            return
-        self._run_task("approve-memory", lambda eid=entry_id: self.controller.approve_memory(eid))
+        self._change_selected_memory("status", "active")
 
     def _reject_selected_memory(self) -> None:
-        entry_id = self._selected_memory_entry_id()
-        if not entry_id:
-            QMessageBox.information(self, "角色記憶", "請先選擇一條記憶。")
-            return
-        self._run_task("reject-memory", lambda eid=entry_id: self.controller.reject_memory(eid))
+        self._change_selected_memory("status", "disabled")
 
     def _delete_selected_memory(self) -> None:
-        entry_id = self._selected_memory_entry_id()
-        if not entry_id:
-            QMessageBox.information(self, "角色記憶", "請先選擇一條記憶。")
-            return
-        detail = self.memory_detail.toPlainText().strip()
-        answer = QMessageBox.question(
-            self,
-            "刪除角色記憶",
-            f"確定要刪除這條記憶嗎？\n\n{detail[:600]}",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if answer != QMessageBox.StandardButton.Yes:
-            return
-        self._run_task("delete-memory", lambda eid=entry_id: self.controller.delete_memory(eid))
+        self._change_selected_memory("delete")
 
     def _compact_memory(self) -> None:
-        answer = QMessageBox.question(
-            self,
-            "整理角色記憶",
-            "確定要整理目前角色的長期記憶嗎？這會合併或移除重複/過期記憶。",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if answer != QMessageBox.StandardButton.Yes:
+        records = getattr(self, "memory_records_by_id", {})
+        conf_uid = getattr(self, "memory_review_conf_uid", "")
+        digests = {key: record.content_digest for key, record in records.items()}
+        if not all(digests.values()):
+            self._set_action_status("記憶內容摘要不完整，請重新讀取。", error=True)
             return
-        self._run_task("compact-memory", self.controller.compact_memory)
+        if self._confirm_memory_change(conf_uid, "整理角色記憶",
+                f"將檢查目前 {len(records)} 條記憶，合併或移除重複／過期項目。"):
+            self._run_task("compact-memory", lambda: self.controller.compact_memory(
+                expected_conf_uid=conf_uid, expected_digests=digests))
+
+    def _confirm_restart_launcher(self) -> None:
+        if QMessageBox.question(self, "Kuro", "重新啟動 Kuro 與目前的服務？",
+                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            self._restart_launcher()
 
     def _restart_launcher(self) -> None:
+        if self._cleanup_done: return
         import os
         import subprocess
         import sys
         from .utils import windows_hidden_subprocess_kwargs
-        self.status_timer.stop()
-        self.runtime_timer.stop()
-        self.controller.lifecycle.desired_running = False
         log_path = self.cfg.logs_dir / 'launcher-relaunch.log'
         with log_path.open('ab') as output:
             subprocess.Popen([sys.executable, str(self.cfg.root / 'kuro_launcher' / 'relaunch.py'), str(os.getpid())],
                              cwd=self.cfg.root, stdout=output, stderr=output, **windows_hidden_subprocess_kwargs())
-        self.close()
-        # The Work Panel mode keeps the Qt application alive without visible
-        # windows, so closing the hidden console alone does not release its lock.
-        from PySide6.QtWidgets import QApplication
-        QApplication.instance().quit()
+        self.controller.lifecycle.desired_running = False
+        self.quit_application()
 
     def refresh_status(self) -> None:
+        if self._cleanup_done: return
+        if self._web_mode:
+            self.work_web_candidate.owner_port.refresh_status()
+            return
         self._run_task("status", self.controller.read_runtime_status, quiet=True)
 
-    def refresh_briefing(self) -> None:
-        self._run_task("briefing", self.controller.read_briefing_summary, quiet=True)
+    def _refresh_core_pages(self) -> None:
+        """Refresh only visible Core consumers; never use the Pet snapshot."""
+        if self.settings_surface.isVisible():
+            if self.settings_stack.currentIndex() == self.settings_order.index("advanced"):
+                self.core_health_page.refresh()
+            return
+        if not self.isVisible():
+            return
+        page = self.stack.currentWidget()
+        if page is self.today_page:
+            self.today_page.refresh()
+        # Schedule refresh is explicit: periodic reads would reset selection,
+        # pagination or an open editor while the user prepares a command.
+
 
     def _run_task(self, name: str, fn: Callable[[], object], *, quiet: bool = False) -> None:
+        if self._cleanup_done: return
+        if self._web_mode:
+            self._run_web_task(name, fn)
+            return
         if not quiet:
             self._append_log(f"[{log_ts()}] task start: {name}")
             self._set_action_status(f"執行中：{name}")
@@ -2373,28 +2638,49 @@ class KuroQtLauncherWindow(QMainWindow):
         threading.Thread(target=runner, daemon=True).start()
 
     def _on_task_finished(self, name: str, result: object) -> None:
+        if name == "start-profile" and getattr(self, "_profile_applying", False):
+            self._profile_owner_done = True
+            self._reconcile_profile_apply()
+            self.refresh_status()
+            return
+        if name.startswith("microphone:"):
+            self._mic_command_inflight = False
+            media = result.get("result", {}) if isinstance(result, dict) else {}
+            action = name.split(":", 1)[1]
+            if action == "submit":
+                if self.chat_client.history_identity() != getattr(self, "_capture_identity", None):
+                    self._set_chat_status("角色或對話已切換，錄音未送出。", error=True)
+                elif media.get("capture") and not self.pending_chat_submit and not self._chat_response_active():
+                    images = [{**item, "kind": "image"} for item in media.get("images", [])]
+                    self._queue_chat_submit("[語音輸入]", images, media["capture"])
+                else:
+                    self._set_chat_status("沒有可送出的錄音，或目前對話仍忙碌。", error=True)
+            if action in {"submit", "cancel"}:
+                self._capture_identity = None
+            self.perception_status.setText("Pet 已回應；正在重新讀取感知狀態。")
+            self.refresh_status()
+            return
+        if name == "chat-capture":
+            pending = self.pending_chat_submit
+            self.pending_chat_submit = None
+            self._update_chat_send_button()
+            if not pending or not pending.get("capture_pending"):
+                return
+            if (pending["history_uid"] != self.chat_client.current_history_uid
+                    or pending.get("identity") != self.chat_client.history_identity()):
+                self._set_chat_status("對話已切換，擷取內容未送出。", error=True)
+                return
+            media = result.get("result", {}) if isinstance(result, dict) else {}
+            if media.get("ok") is not True:
+                self._set_chat_status("影像擷取失敗，請重試或關閉影像輸入。", error=True)
+                return
+            images = [{**item, "kind": "image"} for item in media.get("images", [])]
+            self._queue_chat_submit(pending["text"], pending["attachments"] + images)
+            return
         if name == 'runtime-reconcile':
             return
-        if name == "ensure-work-panel":
-            self.work_panel_activation_inflight = False
-            if not isinstance(result, dict) or result.get("ok") is not True:
-                self._on_task_failed(name, "WP_INVALID_RESULT：工作面板未回傳成功結果。")
-                return
-            self.work_panel_has_been_revealed = True
-            self._run_task('runtime-reconcile', self.controller.reconcile_runtime, quiet=True)
-            if self.work_panel_recovery_dialog is not None:
-                self.work_panel_recovery_dialog.hide()
-            if self.work_panel_activation_pending:
-                QTimer.singleShot(0, self._run_pending_work_panel_activation)
-            if isinstance(result, dict):
-                self.work_panel_last_revealed_instance_id = str(
-                    result.get("instance_id") or ""
-                ).strip()
         if name == "status" and isinstance(result, RuntimeStatus):
             self._apply_status(result)
-            return
-        if name == "briefing" and isinstance(result, BriefingSummary):
-            self._apply_briefing(result)
             return
         if name == "preview-asset":
             self.preview_refresh_inflight = False
@@ -2404,75 +2690,23 @@ class KuroQtLauncherWindow(QMainWindow):
                 self.preview_refresh_pending = False
                 QTimer.singleShot(250, self._request_preview_asset_refresh)
             return
-        if name == "pet-send-text":
-            pending = self.pending_chat_submit or {}
-            text = str(pending.get("text") or "")
-            attachments = list(pending.get("attachments") or [])
-            auto_empty_history_uid = str(pending.get("auto_empty_history_uid") or "")
-            created_history_uid = ""
-            send_result = result
-            if isinstance(result, dict):
-                history_result = result.get("history") if isinstance(result.get("history"), dict) else {}
-                created_history_uid = str(
-                    result.get("history_uid")
-                    or history_result.get("history_uid")
-                    or ""
-                ).strip()
-                send_result = result.get("send") if isinstance(result.get("send"), dict) else result
-            self.pending_chat_submit = None
-            self._update_chat_send_button()
-            self.chat_input.setPlainText("")
-            self.chat_attachments = []
-            self._render_chat_attachments()
-            self._release_auto_empty_history_marker(auto_empty_history_uid)
-            if created_history_uid:
-                self.selected_history_uid = created_history_uid
-                self.chat_blank_draft_active = False
-                self._clear_auto_empty_history_marker(allow_recreate=False)
-                self._clear_pending_history_choice()
-            self.chat_live_blocks.append(("User", self._chat_timestamp(), self._visible_chat_input_text(text, attachments)))
-            self.chat_live_blocks.append(("Kuro", self._chat_timestamp(), ""))
-            self._render_chat_transcript_with_live()
-            self._set_chat_status("已送出到桌寵，等待回覆。", error=False)
-            if isinstance(send_result, dict):
-                inner = send_result.get("result") if isinstance(send_result.get("result"), dict) else {}
-                warnings = inner.get("warnings") if isinstance(inner, dict) else None
-                if isinstance(warnings, list) and warnings:
-                    QMessageBox.warning(self, "Kuro Desktop Console", "\n".join(str(item) for item in warnings))
-            if created_history_uid:
-                QTimer.singleShot(450, self._refresh_history_list)
-                QTimer.singleShot(1500, self._refresh_history_list)
         self._append_log(f"[{log_ts()}] task done: {name}")
         self._set_action_status(f"已完成：{name}")
         self.refresh_status()
-        if name in {"open-pet", "start-profile", "refresh-daily-briefing"}:
-            self.refresh_briefing()
+        if name in {"open-pet", "start-profile"}:
+            self._refresh_core_pages()
         if name in {"open-pet", "start-profile", "apply-outfit"}:
             QTimer.singleShot(700, self._request_preview_asset_refresh)
             QTimer.singleShot(1800, self._request_preview_asset_refresh)
         if name == "start-profile":
-            pet_instance_id = ""
             if isinstance(result, dict):
                 history_result = result.get("history") if isinstance(result.get("history"), dict) else {}
-                pet_result = result.get("pet") if isinstance(result.get("pet"), dict) else {}
-                pet_instance_id = str(pet_result.get("instance_id") or "").strip()
                 if history_result.get("ok") and not history_result.get("skipped"):
                     history_uid = str(history_result.get("history_uid") or "").strip()
                     if history_uid:
                         self.selected_history_uid = history_uid
                     self._clear_pending_history_choice()
                     self._refresh_history_list()
-            pet_instance_changed = bool(
-                pet_instance_id
-                and pet_instance_id != self.work_panel_last_revealed_instance_id
-            )
-            if self.open_work_panel_on_start and (
-                not self.work_panel_has_been_revealed or pet_instance_changed
-            ):
-                QTimer.singleShot(
-                    150,
-                    lambda: self.request_work_panel_activation("profile-ready-reconcile"),
-                )
         if name in {"select-history", "create-history", "delete-history"}:
             if name in {"select-history", "create-history"}:
                 self._clear_pending_history_choice()
@@ -2490,33 +2724,45 @@ class KuroQtLauncherWindow(QMainWindow):
             "delete-memory",
             "compact-memory",
         }:
+            self._set_action_status("記憶沒有變更；可能是重複內容或已是目前狀態。"
+                                    if result is False else "記憶服務已完成操作。")
+            if name == "add-memory" and result is True:
+                self._memory_draft = ""
             self._refresh_memory_list()
             self._refresh_prompt_boxes()
         if isinstance(result, dict) and result.get("warning"):
             QMessageBox.warning(self, "Kuro Desktop Console", str(result.get("warning")))
 
     def _on_task_failed(self, name: str, message: str) -> None:
+        if name == "start-profile" and getattr(self, "_profile_applying", False):
+            self._set_profile_applying(False)
+        if name.startswith("microphone:"):
+            self._mic_command_inflight = False
+            self.perception_status.setText("錄音操作失敗；尚未送出。請重新讀取狀態或取消。")
+        if name == "chat-capture":
+            self.pending_chat_submit = None
+            self._update_chat_send_button()
         if name == "preview-asset":
             self.preview_refresh_inflight = False
             self.preview_refresh_pending = False
             self._append_log(f"[{log_ts()}] preview refresh failed: {message}")
             return
-        if name == "pet-send-text":
-            self.pending_chat_submit = None
-            self._update_chat_send_button()
-        if name == "ensure-work-panel":
-            self.work_panel_activation_inflight = False
-        if name in {"start-profile", "ensure-work-panel"}:
-            self._show_work_panel_recovery(message, allow_retry=name == "ensure-work-panel")
+        if name == "start-profile":
+            self.reveal()
         self._append_log(f"[{log_ts()}] task failed: {name} / {message}")
         self._set_action_status(f"失敗：{name} / {message}", error=True)
-        if name not in {"start-profile", "ensure-work-panel"}:
+        if name != "start-profile":
             QMessageBox.warning(self, "Kuro Desktop Console", message)
         self.refresh_status()
-        if name == "ensure-work-panel" and self.work_panel_activation_pending:
-            QTimer.singleShot(250, self._run_pending_work_panel_activation)
 
     def _set_action_status(self, text: str, *, error: bool = False) -> None:
+        if self._web_mode:
+            # Project failures without touching retired labels or inventing a
+            # healthy status. Private exception payloads never enter HTML.
+            if self.work_web_candidate is not None:
+                self.work_web_candidate.owner_port.publish("onState", {"ok": False,
+                    "error": "lifecycle_operation_failed" if error else "lifecycle_busy", "retry": False})
+            return
         for label_name in ("workspace_status", "sidebar_action_status"):
             label = getattr(self, label_name, None)
             if label is None:
@@ -2565,7 +2811,6 @@ class KuroQtLauncherWindow(QMainWindow):
                 [
                     f"Pet: {'online' if status.pet_shell else 'offline'} · WS {ws}",
                     f"AI: {status.ai_state or '-'} · profile {status.conf_name or '-'}",
-                    f"Reader {'ON' if status.reader_visible else 'OFF'} · Briefing {'ON' if status.briefing_visible else 'OFF'}",
                 ]
             )
             self.sidebar_pet_snapshot_status.setText(pet_text)
@@ -2579,7 +2824,6 @@ class KuroQtLauncherWindow(QMainWindow):
                     [
                         f"初始草稿：{'active' if self.chat_blank_draft_active else 'formal history selected'}",
                         f"Runtime Chat：{'connected' if self.chat_client.connected else 'offline'} · auto {'paused' if self.chat_auto_connect_paused else 'enabled'}",
-                        f"Current history：{status.current_history_title or status.current_history_uid or '-'}",
                     ]
                 )
             )
@@ -2601,15 +2845,9 @@ class KuroQtLauncherWindow(QMainWindow):
                     f"ws_connected: {status.ws_connected}",
                     f"ai_state: {status.ai_state or '-'}",
                     f"conf_name: {status.conf_name or '-'}",
-                    f"briefing_visible: {status.briefing_visible}",
-                    f"briefing_date: {status.briefing_date or '-'}",
-                    f"briefing_updated_at: {status.briefing_updated_at or '-'}",
                 ]
             )
         )
-        if status.ai_state:
-            self.chat_runtime_state = status.ai_state
-            self._update_chat_send_button()
         self._maybe_auto_connect_chat(status)
         self._sync_pet_controls(status)
         self._maybe_refresh_preview_from_status(status)
@@ -2644,27 +2882,58 @@ class KuroQtLauncherWindow(QMainWindow):
         QTimer.singleShot(350, self._request_preview_asset_refresh)
 
     def _sync_pet_controls(self, status: RuntimeStatus) -> None:
+        self.pet_reload_button.setEnabled(status.pet_shell)
+        self.pet_reload_button.setToolTip("" if status.pet_shell else "需要 Pet 提供有效狀態後才能重新載入角色。")
+        for panel in self.findChildren(QFrame):
+            if panel.property("petControlGroup"):
+                panel.setEnabled(status.pet_shell)
+                panel.setToolTip("" if status.pet_shell else "Pet 尚未提供有效狀態，此操作目前不可用。")
         state_by_action = {
-            "set-reader-visible": status.reader_visible,
-            "set-briefing-visible": status.briefing_visible,
             "mic-toggle": status.mic_enabled,
             "toggle-camera": status.camera_enabled,
             "toggle-screen": status.screen_enabled,
-            "toggle-browser": status.browser_panel_enabled,
             "set-game-mode": status.pet_game_mode,
             "set-live2d-inspector": status.live2d_inspector_overlay_enabled,
+            "set-force-ignore-mouse": status.force_ignore_mouse,
         }
         for action, checked in state_by_action.items():
             button = self.pet_toggle_buttons.get(action)
             if not button:
                 continue
             button.blockSignals(True)
+            available = status.capture_available if action in {"toggle-camera", "toggle-screen"} else status.pet_shell
+            button.setEnabled(available)
+            button.setToolTip("" if available else "Pet 尚未提供此功能的有效狀態。")
             button.setChecked(bool(checked))
             button.setText(self._pet_toggle_label(action, bool(checked)))
             button.setProperty("checkedState", bool(checked))
             button.style().unpolish(button)
             button.style().polish(button)
             button.blockSignals(False)
+        capture_text = (f"麥克風：{'暫停' if status.mic_paused else '錄音中' if status.mic_enabled else '關閉'} · "
+                        f"鏡頭：{'啟用' if status.camera_enabled else '關閉'} · "
+                        f"畫面：{'啟用' if status.screen_enabled else '關閉'}") if status.capture_available else "感知狀態未知：Pet 擷取能力尚未就緒。"
+        self.perception_status.setText(capture_text)
+        self.work_companion.privacy_status.setText(capture_text)
+        busy = (getattr(self, "_mic_command_inflight", False) or self._profile_applying
+                or self.chat_client.history_pending or self._chat_response_active() or bool(self.pending_chat_submit))
+        active = status.mic_enabled
+        for action, control in self.microphone_buttons.items():
+            allowed = status.capture_available and not busy
+            if action == "start":
+                allowed = allowed and not active and self.chat_client.history_ready
+            elif action == "cancel":
+                allowed = status.capture_available and active and not getattr(self, "_mic_command_inflight", False)
+            else:
+                allowed = allowed and active and self.chat_client.history_ready
+                if action == "pause":
+                    allowed = allowed and not status.mic_paused
+                elif action == "resume":
+                    allowed = allowed and status.mic_paused
+                elif action == "submit":
+                    allowed = allowed and getattr(self, "_capture_identity", None) == self.chat_client.history_identity()
+            control.setEnabled(allowed)
+            control.setToolTip("" if allowed else "需要有效的 Pet 擷取狀態、錄音所屬對話及可用的 Qt Chat；可取消後重錄。")
 
         if status.current_expression_id and hasattr(self, "pet_expression_combo"):
             index = self.pet_expression_combo.findData(status.current_expression_id)
@@ -2699,219 +2968,23 @@ class KuroQtLauncherWindow(QMainWindow):
             self.pet_detail.setText(
                 "\n".join(
                     [
-                        f"Visible: Reader {'ON' if status.reader_visible else 'OFF'} · Briefing {'ON' if status.briefing_visible else 'OFF'} · Browser {'ON' if status.browser_panel_enabled else 'OFF'}",
                         f"Input: Mic {'ON' if status.mic_enabled else 'OFF'} · Camera {'ON' if status.camera_enabled else 'OFF'} · Screen {'ON' if status.screen_enabled else 'OFF'}",
                         f"Window: Game mode {'ON' if status.pet_game_mode else 'OFF'} · Inspector {'ON' if status.live2d_inspector_overlay_enabled else 'OFF'}",
-                        f"History: {status.current_history_title or status.current_history_uid or '-'}",
-                        f"Latest user: {self._compact_label_text(status.latest_user_text, 120) or '-'}",
                     ]
                 )
             )
 
     def _pet_toggle_label(self, action: str, checked: bool) -> str:
         base = {
-            "set-reader-visible": "Reader",
-            "set-briefing-visible": "Briefing",
             "mic-toggle": "Mic",
+            "set-force-ignore-mouse": "滑鼠穿透",
             "toggle-camera": "Camera",
             "toggle-screen": "Screen",
-            "toggle-browser": "Browser",
             "set-game-mode": "Game mode",
             "set-live2d-inspector": "Live2D Inspector",
         }.get(action, action)
         return f"{base}  {'ON' if checked else 'OFF'}"
 
-    def _apply_briefing(self, summary: BriefingSummary) -> None:
-        if not summary.ok:
-            self.briefing_meta.setText(f"Briefing offline: {summary.error}")
-            if hasattr(self, "briefing_sources_status"):
-                self.briefing_sources_status.setText(f"Briefing offline: {summary.error}")
-                self.briefing_sources_status.setProperty("error", True)
-                self.briefing_sources_status.setProperty("warning", False)
-                self.briefing_sources_status.style().unpolish(self.briefing_sources_status)
-                self.briefing_sources_status.style().polish(self.briefing_sources_status)
-            if hasattr(self, "briefing_source_list"):
-                self.briefing_source_list.clear()
-                self.briefing_source_list.addItem(QListWidgetItem(str(summary.error or "Briefing offline.")))
-            if hasattr(self, "sidebar_briefing_status"):
-                self.sidebar_briefing_status.setText(f"Briefing offline: {summary.error}")
-                self.sidebar_briefing_status.setProperty("error", True)
-                self.sidebar_briefing_status.setProperty("warning", False)
-                self.sidebar_briefing_status.style().unpolish(self.sidebar_briefing_status)
-                self.sidebar_briefing_status.style().polish(self.sidebar_briefing_status)
-            if hasattr(self, "sidebar_update_toggle") and not bool(self.sidebar_update_toggle.property("error")):
-                if not self.sidebar_update_toggle.text().startswith("更新狀態    執行中"):
-                    self.sidebar_update_toggle.setText("更新狀態    Briefing offline")
-                    self.sidebar_update_toggle.setProperty("warning", True)
-                    self.sidebar_update_toggle.style().unpolish(self.sidebar_update_toggle)
-                    self.sidebar_update_toggle.style().polish(self.sidebar_update_toggle)
-            self.briefing_sections = {}
-            self._clear_layout(self.briefing_detail_layout)
-            return
-
-        self.briefing_sections = {section.key: section for section in summary.sections}
-        stale_text = self._briefing_freshness_text(summary.date)
-        self.briefing_meta.setText(
-            f"{summary.title} · date={summary.date or '-'} · "
-            f"updated={self._format_time(summary.updated_at)} · {stale_text}"
-        )
-        if hasattr(self, "sidebar_briefing_status"):
-            total = sum(count for _key, _label, count in summary.section_counts)
-            briefing_warning = stale_text.startswith("stale") or stale_text == "date unknown"
-            self.sidebar_briefing_status.setText(
-                f"Briefing: {summary.date or '-'} · {stale_text}\nitems: {total} · updated {self._format_time(summary.updated_at)}"
-            )
-            self.sidebar_briefing_status.setProperty("error", False)
-            self.sidebar_briefing_status.setProperty("warning", briefing_warning)
-            self.sidebar_briefing_status.style().unpolish(self.sidebar_briefing_status)
-            self.sidebar_briefing_status.style().polish(self.sidebar_briefing_status)
-            if hasattr(self, "sidebar_update_toggle") and not bool(self.sidebar_update_toggle.property("error")):
-                if not self.sidebar_update_toggle.text().startswith("更新狀態    執行中"):
-                    self.sidebar_update_toggle.setText(
-                        "更新狀態    Briefing stale" if briefing_warning else "更新狀態    Ready"
-                    )
-                    self.sidebar_update_toggle.setProperty("warning", briefing_warning)
-                    self.sidebar_update_toggle.style().unpolish(self.sidebar_update_toggle)
-                    self.sidebar_update_toggle.style().polish(self.sidebar_update_toggle)
-        self._update_briefing_nav_counts(summary)
-        self._refresh_briefing_sources_status(summary, stale_text)
-        self._refresh_briefing_section_list(summary)
-        if self.selected_briefing_key not in self.briefing_sections:
-            self.selected_briefing_key = "overview"
-        self._render_selected_briefing_section()
-
-    def _update_briefing_nav_counts(self, summary: BriefingSummary) -> None:
-        counts = {key: count for key, _label, count in summary.section_counts}
-        total = sum(counts.values())
-        self.briefing_total_count = total
-        button = self.nav_buttons.get("briefing")
-        if not button:
-            return
-        button.setText(f"{self.nav_base_labels.get('briefing', 'Briefing')}    {total}")
-
-    def _refresh_briefing_sources_status(self, summary: BriefingSummary, stale_text: str) -> None:
-        if hasattr(self, "briefing_sources_status"):
-            source_count = len(summary.source_status)
-            total = sum(count for _key, _label, count in summary.section_counts)
-            briefing_warning = stale_text.startswith("stale") or stale_text == "date unknown"
-            self.briefing_sources_status.setText(
-                f"{summary.title or 'Briefing'} · date={summary.date or '-'} · {stale_text} · "
-                f"sources={source_count} · items={total}"
-            )
-            self.briefing_sources_status.setProperty("error", False)
-            self.briefing_sources_status.setProperty("warning", briefing_warning)
-            self.briefing_sources_status.style().unpolish(self.briefing_sources_status)
-            self.briefing_sources_status.style().polish(self.briefing_sources_status)
-
-        if not hasattr(self, "briefing_source_list"):
-            return
-        self.briefing_source_list.clear()
-        if not summary.source_status:
-            item = QListWidgetItem("No source status in current snapshot.")
-            self.briefing_source_list.addItem(item)
-            return
-        for label, status, message in summary.source_status:
-            text = f"{label or '-'}\n{status or '-'}"
-            if message:
-                text += f" · {message}"
-            self.briefing_source_list.addItem(QListWidgetItem(text))
-
-    def _refresh_briefing_section_list(self, summary: BriefingSummary) -> None:
-        self.briefing_section_list.blockSignals(True)
-        self.briefing_section_list.clear()
-        for section in summary.sections:
-            item = QListWidgetItem(f"{section.icon or '·'}  {section.label}\n{section.count} items · {section.subtitle}")
-            item.setData(Qt.ItemDataRole.UserRole, section.key)
-            self.briefing_section_list.addItem(item)
-        self.briefing_section_list.blockSignals(False)
-        self._select_briefing_list_item(self.selected_briefing_key)
-
-    def _select_briefing_list_item(self, section_key: str) -> None:
-        if not hasattr(self, "briefing_section_list"):
-            return
-        for index in range(self.briefing_section_list.count()):
-            item = self.briefing_section_list.item(index)
-            if item and item.data(Qt.ItemDataRole.UserRole) == section_key:
-                self.briefing_section_list.setCurrentRow(index)
-                return
-
-    def _on_briefing_section_clicked(self, item: QListWidgetItem) -> None:
-        self.selected_briefing_key = str(item.data(Qt.ItemDataRole.UserRole) or "overview")
-        self._set_page(f"briefing:{self.selected_briefing_key}")
-
-    def _render_selected_briefing_section(self) -> None:
-        if not hasattr(self, "briefing_detail_layout"):
-            return
-        section = self.briefing_sections.get(self.selected_briefing_key)
-        self._clear_layout(self.briefing_detail_layout)
-        if not section:
-            empty = QLabel("等待 briefing snapshot。")
-            empty.setObjectName("MetaText")
-            self.briefing_detail_layout.addWidget(empty)
-            self.briefing_detail_layout.addStretch()
-            return
-
-        header = QFrame()
-        header.setObjectName("Panel")
-        header_layout = QVBoxLayout(header)
-        title = QLabel(f"{section.label}  ·  {section.count} items")
-        title.setObjectName("SectionTitle")
-        subtitle = QLabel(section.subtitle or section.key)
-        subtitle.setObjectName("MetaText")
-        subtitle.setWordWrap(True)
-        header_layout.addWidget(title)
-        header_layout.addWidget(subtitle)
-        self.briefing_detail_layout.addWidget(header)
-
-        if section.modules:
-            for module in section.modules:
-                card = QFrame()
-                card.setObjectName("Panel")
-                card_layout = QVBoxLayout(card)
-                module_head = QHBoxLayout()
-                module_title = QLabel(module.title or module.module_id or "Module")
-                module_title.setObjectName("CardTitle")
-                module_head.addWidget(module_title)
-                module_head.addStretch()
-                if module.tag:
-                    tag = QLabel(module.tag)
-                    tag.setObjectName("Tag")
-                    module_head.addWidget(tag)
-                card_layout.addLayout(module_head)
-                if module.value:
-                    card_layout.addWidget(self._metric_card(module.title or "Total", module.value, module.unit))
-                for item in module.items:
-                    row = QLabel(f"• {item.text}\n  {item.meta}")
-                    row.setObjectName("BriefingItem")
-                    row.setWordWrap(True)
-                    card_layout.addWidget(row)
-                self.briefing_detail_layout.addWidget(card)
-        else:
-            empty = QLabel("這個 section 目前沒有 modules。")
-            empty.setObjectName("MetaText")
-            self.briefing_detail_layout.addWidget(empty)
-        self.briefing_detail_layout.addStretch()
-
-    def _briefing_freshness_text(self, date_text: str) -> str:
-        if not date_text:
-            return "date unknown"
-        try:
-            snapshot_date = datetime.date.fromisoformat(date_text[:10])
-        except ValueError:
-            return "date unparsed"
-        today = datetime.datetime.now().date()
-        age_days = (today - snapshot_date).days
-        if age_days <= 0:
-            return "fresh today"
-        return f"stale {age_days} day(s)"
-
-    def _format_time(self, value: str) -> str:
-        if not value:
-            return "-"
-        try:
-            return datetime.datetime.fromisoformat(value.replace("Z", "+00:00")).strftime("%Y-%m-%d %H:%M")
-        except ValueError:
-            return value
 
     def _compact_label_text(self, value: str, limit: int) -> str:
         text = " ".join(str(value or "").replace("\r", " ").replace("\n", " ").split())
@@ -2933,6 +3006,11 @@ class KuroQtLauncherWindow(QMainWindow):
         self.log_signal.emit(text)
 
     def _append_log(self, text: str) -> None:
+        if self._web_mode:
+            # Formal stdout is the existing launcher.combined.log tee. Keep
+            # diagnostics local; never expose callback text to the renderer.
+            print(f"[{log_ts()}] {text}", flush=True)
+            return
         if not hasattr(self, "log_box"):
             return
         self.log_box.append(text)
@@ -2943,19 +3021,16 @@ class KuroQtLauncherWindow(QMainWindow):
             self._render_preview_pixmap()
 
     def closeEvent(self, event) -> None:
-        try:
-            self._discard_auto_empty_history_if_safe("__close__")
-        except Exception:
-            pass
-        try:
-            self.chat_client.disconnect()
-        except Exception:
-            pass
-        try:
-            self.controller.close()
-        except Exception:
-            pass
-        event.accept()
+        if getattr(self, "explicit_quitting", False):
+            self.cleanup()
+            event.accept()
+            return
+        event.ignore()
+        if self.tray is not None and self.tray.isVisible() and QSystemTrayIcon.isSystemTrayAvailable():
+            self.hide()
+        else:
+            self.reveal()
+            self._set_action_status("System tray unavailable; Kuro remains visible. Use Quit Kuro to exit.", error=True)
 
 
 APP_STYLE = """
@@ -3255,12 +3330,6 @@ QComboBox QAbstractItemView {
     border-radius: 6px;
     padding: 4px 8px;
     font-weight: 800;
-}
-#BriefingItem {
-    background: #111722;
-    border: 1px solid #252d3b;
-    border-radius: 6px;
-    padding: 10px;
 }
 #CommandButton {
     background: #151b25;
