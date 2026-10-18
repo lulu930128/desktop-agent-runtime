@@ -14,7 +14,9 @@ METHODS = frozenset(("schedule", "getState", "getData", "getChatState", "getChat
     "getProfile", "applyProfile", "getHistories", "createHistory", "selectHistory",
     "deleteHistory", "getMemories", "memoryAction", "getTools", "sendText",
     "refreshMail", "getMailMessage", "control", "closeWindow", "minimizeWindow",
-    "toggleMaximizeWindow"))
+    "toggleMaximizeWindow", "getWindowState", "startWindowMove", "startWindowResize"))
+WINDOW_EDGES = frozenset(("top", "bottom", "left", "right",
+                         "top-left", "top-right", "bottom-left", "bottom-right"))
 IDENTITY_KEYS = {"actor", "history", "context", "client", "revision"}
 MAX_BYTES = 12 * 1024 * 1024
 
@@ -71,6 +73,11 @@ def validate(method, p):
     """Return whether a command changes state (separate from native confirmation)."""
     if method not in METHODS:
         raise Rejected("unsupported_method")
+    if method == "startWindowResize":
+        object_fields(p, {"edge"}, {"edge"})
+        if not isinstance(p["edge"], str) or p["edge"] not in WINDOW_EDGES:
+            raise Rejected("invalid_window_edge")
+        return False
     if method in {"applyProfile"}:
         object_fields(p, {"character_id", "project_id", "model", "thinking_power"},
                       {"character_id", "project_id", "model", "thinking_power"})

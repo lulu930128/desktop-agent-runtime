@@ -161,6 +161,9 @@ class QtOwnerAdapter:
         if method in {"getChatState", "getChatHistory"}:
             done(self.chat_state() if method == "getChatState" else self._history_result())
             return
+        if method in {"getWindowState", "startWindowMove", "startWindowResize"}:
+            done(self.window_action(method, p))
+            return
         if method in {"closeWindow", "minimizeWindow", "toggleMaximizeWindow"}:
             self.window_action(method)
             done({"ok": True})

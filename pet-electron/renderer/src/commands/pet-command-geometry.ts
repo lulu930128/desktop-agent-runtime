@@ -34,10 +34,13 @@ export function applyPetGeometryCommand(
   }
 
   if (payload.type === "pet-host-set") {
-    const hostRevision = Number(payload.transformRevision);
+    const hostRevision = payload.transformRevision;
+    const bounds = payload.petHostBounds;
     if (
       !Number.isSafeInteger(hostRevision) ||
-      hostRevision !== renderer.getTransformRevision()
+      hostRevision < 0 || hostRevision !== renderer.getTransformRevision() ||
+      !bounds || ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite) ||
+      bounds.width <= 0 || bounds.height <= 0
     ) {
       return { handled: true, transformAccepted: false, hostAccepted: false };
     }

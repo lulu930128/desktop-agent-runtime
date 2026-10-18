@@ -35,7 +35,11 @@ class DryRunTests(unittest.TestCase):
         app = (ROOT/"kuro_launcher/qt_app.py").read_text(encoding="utf-8")
         self.assertIn("self.work_companion = WorkCompanionView(", app)
         self.assertIsInstance(RELEASE_PIN, OwnerBundlePin)
-        self.assertEqual(RELEASE_PIN.fingerprint, 'dc7ad8b776312ab6c40102591d2bbe822707af44c776032cb041ae2bbfa2402e')
+        # W7 versions the active source pin. Historical W6 native SHA/pin
+        # assertions remain in test_qt_web_release_candidate, unchanged.
+        self.assertEqual(RELEASE_PIN.fingerprint, builder.fingerprint(builder.lineage()))
+        from kuro_launcher.qt_web_release import VerifiedOwnerBundle
+        VerifiedOwnerBundle.load(ROOT/'assets/qt-owner'/RELEASE_PIN.fingerprint, RELEASE_PIN)
         with patch('kuro_launcher.qt_web_release.RELEASE_PIN', None):
             self.assertIsNone(prepare_owner_presentation(ROOT))
         self.assertNotIn("qt_web_host", (ROOT/"桌寵啟動器.vbs").read_text(encoding="utf-8-sig"))

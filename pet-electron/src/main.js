@@ -11,12 +11,14 @@ const {
 } = require("electron");
 const { protocol, net } = require('electron');
 const { normalizePresentation, registerModelProtocol } = require('./main-process/local-model');
-const { repairPlacement, modelIsVisible } = require('./main-process/pet-visibility');
+const { repairPlacement } = require('./main-process/pet-visibility');
 const { withTimeout, petCapability } = require('./main-process/pet-status');
 protocol.registerSchemesAsPrivileged([{ scheme: 'kuro-model', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
 let localPresentation = null;
 let modelRequestedAt = Date.now();
 let runtimeCapabilities = { pet: { state: 'loading', responsive: false } };
+let latestPetCapabilityInspector = null;
+let latestPetCapabilityObservedAt = 0;
 let capabilityRefreshPending = false;
 let petPlacementRecoveryReason = 'startup';
 
@@ -25,8 +27,10 @@ async function refreshRuntimeCapabilities() {
   capabilityRefreshPending = true;
   try {
     const inspector = await withTimeout(readLive2DInspectorSnapshot(), 600, null);
+    latestPetCapabilityInspector = inspector;
+    latestPetCapabilityObservedAt = Date.now();
     runtimeCapabilities = { pet: petCapability(inspector, localPresentation,
-      Date.now() - modelRequestedAt, getAllDisplays(), modelIsVisible) };
+      Date.now() - modelRequestedAt, getAllDisplays(), readNativeContentBounds(mainWindow), isPetNativeWindowVisible()) };
   } finally { capabilityRefreshPending = false; }
 }
 
@@ -57,6 +61,8 @@ const { resolvePetMousePolicy } = require("./main-process/pet-mouse-policy");
 const { resolvePetWindowPolicy } = require("./main-process/pet-window-policy");
 const {
   canMutateFixedPetShell,
+  readNativeContentBounds,
+  reconcileFixedPetShell,
   resolveFixedDesktopShellBounds
 } = require("./main-process/pet-fixed-shell");
 
@@ -119,6 +125,8 @@ let petHostShrinkTimer = null;
 let pendingPetHostShrinkBounds = null;
 let currentPetHostBounds = null;
 let currentFixedPetShellBounds = null;
+let fixedPetShellReconciliation = { state: "unknown", actualBounds: null, fallbackAttempted: false };
+let pendingFixedPetShellTopology = false;
 let fixedPetShellBoundsWriteCount = 0;
 let fixedPetShellBoundsRejectedCount = 0;
 let lastFixedPetShellBoundsWriteReason = null;
@@ -237,10 +245,50 @@ function rebuildFixedPetShellBounds() {
 }
 
 function getFixedPetShellBounds() {
-  if (!currentFixedPetShellBounds) {
-    return rebuildFixedPetShellBounds();
+  return currentFixedPetShellBounds
+    ? { ...currentFixedPetShellBounds }
+    : resolveFixedDesktopShellBounds(getAllDisplays());
+}
+
+function isPetNativeWindowVisible() {
+  try {
+    return Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized());
+  } catch {
+    return false;
   }
-  return { ...currentFixedPetShellBounds };
+}
+
+function observePetCapability() {
+  const inspector = Date.now() - latestPetCapabilityObservedAt <= 6000
+    && latestPetCapabilityInspector?.transformRevision === petTransformState?.revision
+    ? latestPetCapabilityInspector : null;
+  return petCapability(inspector, localPresentation, Date.now() - modelRequestedAt,
+    getAllDisplays(), readNativeContentBounds(mainWindow), isPetNativeWindowVisible());
+}
+
+function reconcilePetNativeShell(reason) {
+  if (!PET_FIXED_DESKTOP_SHELL || !mainWindow || mainWindow.isDestroyed()) return;
+  if (isPetInteractionActive()) {
+    pendingFixedPetShellTopology = true;
+    return;
+  }
+  pendingFixedPetShellTopology = false;
+  rebuildFixedPetShellBounds();
+  fixedPetShellReconciliation = reconcileFixedPetShell({
+    window: mainWindow,
+    displays: getAllDisplays(),
+    anchor: ensurePetTransformState().anchor,
+    reason,
+    applyBounds: applyMainWindowBounds
+  });
+  petLog("fixed-pet-shell-readback", { reason, ...fixedPetShellReconciliation });
+  broadcastPetHostState();
+}
+
+function flushPendingFixedPetShellTopology() {
+  if (pendingFixedPetShellTopology && !isPetInteractionActive()) {
+    reconcilePetNativeShell("display-topology");
+  }
 }
 
 function getPetHostSizingMode() {
@@ -272,7 +320,7 @@ function getVirtualWorkAreaBounds() {
 
 function getPetHostBounds() {
   if (PET_FIXED_DESKTOP_SHELL) {
-    return getFixedPetShellBounds();
+    return readNativeContentBounds(mainWindow);
   }
   if (!currentPetHostBounds) {
     currentPetHostBounds = { ...getFallbackPetLayout().hostBounds };
@@ -312,7 +360,10 @@ function applyMainWindowBounds(bounds, reason) {
     mainWindow.setBounds(normalized, false);
   }
   if (PET_FIXED_DESKTOP_SHELL && appState.mode === "pet") {
-    fixedPetShellBoundsWriteCount += unchanged ? 0 : 1;
+    const actual = mainWindow.getBounds();
+    const changed = actual.x !== current.x || actual.y !== current.y
+      || actual.width !== current.width || actual.height !== current.height;
+    fixedPetShellBoundsWriteCount += changed ? 1 : 0;
     lastFixedPetShellBoundsWriteReason = String(reason || "unspecified");
   }
   return !unchanged;
@@ -450,7 +501,7 @@ function buildPetHostStatePayload(type = "pet-host-set") {
     petHostMode: PET_HOST_MODE,
     petHostSizing: getPetHostSizingMode(),
     petFixedDesktopShell: PET_FIXED_DESKTOP_SHELL,
-    petShellBounds: PET_FIXED_DESKTOP_SHELL ? getFixedPetShellBounds() : null,
+    petShellBounds: PET_FIXED_DESKTOP_SHELL ? getPetHostBounds() : null,
     petHostBounds: getPetHostBounds(),
     petModelScreenBounds: latestPetModelScreenBounds
       ? { ...latestPetModelScreenBounds }
@@ -504,6 +555,7 @@ function shouldFreezeCurrentPetHostRelocation() {
 
 function setPetDragInteractionActive(active) {
   petInteractionState.dragActive = Boolean(active);
+  flushPendingFixedPetShellTopology();
 }
 
 function markPetZoomInteractionActive() {
@@ -515,6 +567,7 @@ function markPetZoomInteractionActive() {
   petInteractionZoomTimer = setTimeout(() => {
     petInteractionZoomTimer = null;
     petInteractionState.zoomActive = false;
+    flushPendingFixedPetShellTopology();
   }, PET_INTERACTION_ZOOM_IDLE_MS);
   petInteractionZoomTimer.unref?.();
 }
@@ -606,7 +659,7 @@ function handlePetModelEnvelope(payload) {
   latestPetModelScreenBounds = modelScreenBounds;
   // Envelope heartbeats are observations, not permission to move the pet.
   // Recover once after startup/topology changes, before any user positioning.
-  if (petPlacementRecoveryReason && !isPetInteractionActive()) {
+  if (!PET_FIXED_DESKTOP_SHELL && petPlacementRecoveryReason && !isPetInteractionActive()) {
     const reason = petPlacementRecoveryReason;
     petPlacementRecoveryReason = '';
     const repaired = repairPlacement(transform.anchor, getAllDisplays(), modelScreenBounds);
@@ -752,6 +805,7 @@ function failClosedPetInteraction(reason) {
     petLog("pet-interaction-fail-closed", { reason });
   }
   applyIgnoreMouseState();
+  flushPendingFixedPetShellTopology();
 }
 
 function startPetInteractionLeaseWatchdog() {
@@ -1456,7 +1510,8 @@ function refreshLayoutForDisplayTopology(reason = "display-metrics-changed") {
   }
 
   if (PET_FIXED_DESKTOP_SHELL && appState.mode === "pet") {
-    rebuildFixedPetShellBounds();
+    reconcilePetNativeShell("display-topology");
+    return;
   }
   const targetBounds = resolveTargetBoundsForMode(appState.mode);
   applyMainWindowBounds(
@@ -1590,7 +1645,7 @@ function startControlServer() {
     readLive2DInspectorSnapshot,
     captureLive2DPreview,
     getShellStatus: () => ({
-      capabilities: runtimeCapabilities,
+      capabilities: { pet: observePetCapability() },
       service: CONTROL_SERVICE,
       protocolVersion: CONTROL_PROTOCOL_VERSION,
       pid: process.pid,
@@ -1615,6 +1670,7 @@ function startControlServer() {
       petHostSizing: getPetHostSizingMode(),
       petFixedDesktopShell: PET_FIXED_DESKTOP_SHELL,
       petFixedShellBounds: PET_FIXED_DESKTOP_SHELL ? getFixedPetShellBounds() : null,
+      petFixedShellReconciliation: { ...fixedPetShellReconciliation },
       petFixedShellBoundsWriteCount: fixedPetShellBoundsWriteCount,
       petFixedShellBoundsRejectedCount: fixedPetShellBoundsRejectedCount,
       petLastFixedShellBoundsWriteReason: lastFixedPetShellBoundsWriteReason,
@@ -1632,9 +1688,9 @@ function startControlServer() {
       petHostRelocationAppliedCount,
       petLastHostRelocationSuppressedReason: lastPetHostRelocationSuppressedReason,
       petLastHostRelocationAppliedReason: lastPetHostRelocationAppliedReason,
-      petTransformRevision: ensurePetTransformState().revision,
+      petTransformRevision: petTransformState?.revision ?? null,
       petEnvelopeTransformRevision: latestPetEnvelopeRevision || null,
-      petZoomScale: ensurePetTransformState().zoomScale,
+      petZoomScale: petTransformState?.zoomScale ?? null,
       petHostBounds: getPetHostBounds(),
       petModelScreenBounds: latestPetModelScreenBounds
         ? { ...latestPetModelScreenBounds }
@@ -1653,7 +1709,7 @@ function startControlServer() {
       petModelEnvelopeContainedByNativeShell:
         PET_FIXED_DESKTOP_SHELL && latestPetModelScreenBounds
           ? hostContainsBounds(
-              getFixedPetShellBounds(),
+              readNativeContentBounds(mainWindow),
               {
                 x: latestPetModelScreenBounds.left,
                 y: latestPetModelScreenBounds.top,
@@ -1662,14 +1718,11 @@ function startControlServer() {
               }
             )
           : null,
-      petAnchor: ensurePetTransformState().anchor,
+      petAnchor: petTransformState ? { ...petTransformState.anchor } : null,
       bounds: mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : null,
       nativeWindowBounds:
         mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : null,
-      nativeContentBounds:
-        mainWindow && !mainWindow.isDestroyed()
-          ? mainWindow.getContentBounds()
-          : null,
+      nativeContentBounds: readNativeContentBounds(mainWindow),
     }),
     handleControlAction,
     applyRendererBackendConfig,
@@ -1724,6 +1777,7 @@ function createWindow() {
 
   mainWindow.setMenuBarVisibility(false);
   applyPetWindow();
+  reconcilePetNativeShell("startup");
   scheduleTaskbarPolicyRefresh();
   mainWindow.on("show", () => {
     scheduleTaskbarPolicyRefresh();
@@ -1747,6 +1801,9 @@ function createWindow() {
   });
 
   mainWindow.on("move", () => {
+    if (PET_FIXED_DESKTOP_SHELL && mainWindow && !mainWindow.isDestroyed()) {
+      broadcastPetHostState();
+    }
     if (
       mainWindow &&
       !mainWindow.isDestroyed() &&
@@ -1757,6 +1814,9 @@ function createWindow() {
   });
 
   mainWindow.on("resize", () => {
+    if (PET_FIXED_DESKTOP_SHELL && mainWindow && !mainWindow.isDestroyed()) {
+      broadcastPetHostState();
+    }
     if (
       mainWindow &&
       !mainWindow.isDestroyed() &&
@@ -1884,7 +1944,7 @@ function registerIpc() {
       petTransformRevision: transform.revision,
       petHostMode: PET_HOST_MODE,
       petFixedDesktopShell: PET_FIXED_DESKTOP_SHELL,
-      petShellBounds: PET_FIXED_DESKTOP_SHELL ? getFixedPetShellBounds() : null,
+      petShellBounds: PET_FIXED_DESKTOP_SHELL ? getPetHostBounds() : null,
       petHostBounds: getPetHostBounds(),
       petAnchor: transform.anchor,
       cursorScreenPoint: screen.getCursorScreenPoint(),
@@ -2144,4 +2204,3 @@ if (!singleInstanceLock) {
     stopPetInteractionLeaseWatchdog();
   });
 }
-

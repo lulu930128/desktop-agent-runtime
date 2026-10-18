@@ -43,6 +43,61 @@ test('IME Enter never submits; regular and Shift Enter remain original behavior'
   assert.equal(isImeSubmit({key:'Enter',isComposing:false,keyCode:13},false),false);
 });
 
+test('W7 resize uses CSS viewport bounds for all edges/corners and rejects maximized/invalid geometry', () => {
+  const {windowResizeEdge: edge}=load('owner-presentation');
+  for (const [x,y,want] of [[0,50,'left'],[99,50,'right'],[50,0,'top'],[50,99,'bottom'],
+    [0,0,'top-left'],[99,0,'top-right'],[0,99,'bottom-left'],[99,99,'bottom-right']]) {
+    assert.equal(edge(x,y,100,100,false),want);
+    assert.equal(edge(x,y,100,100,true),null);
+  }
+  for(const [x,y,w,h] of [[6,6,100,100],[93,93,100,100],[-1,0,100,100],[100,0,100,100],[0,100,100,100],[NaN,0,100,100],[0,0,Infinity,100],[0,0,0,100]])
+    assert.equal(edge(x,y,w,h,false),null);
+});
+
+test('W7 trusted header presses, double-click, controls and rail share exactly one transport', async () => {
+  const previous={document:global.document,window:global.window,Element:global.Element};
+  const listeners={}, events={}, calls=[];
+  class Target {
+    constructor(kind) { this.kind=kind; }
+    closest(selector) {
+      if(selector==='.chrome') return this.kind==='header' ? this : null;
+      if(selector==='.rail') return this.kind==='rail' ? this : null;
+      return selector.includes(this.kind) && !['header','rail','content'].includes(this.kind) ? this : null;
+    }
+  }
+  global.Element=Target;
+  global.document={documentElement:{style:{},dataset:{}},addEventListener:(name,fn)=>listeners[name]=fn};
+  global.window={innerWidth:1000,innerHeight:700,addEventListener:(name,fn)=>listeners[name]=fn};
+  const transport={on:(name,fn)=>events[name]=fn,call:async(method,payload)=>{
+    calls.push([method,payload]); return {ok:true,maximized:false,doubleClickInterval:400,startDragDistance:10};
+  }};
+  try {
+    load('owner-presentation').installWindowGestures(transport);
+    await Promise.resolve(); calls.length=0;
+    const press=(kind='header',patch={})=>{
+      const event={isTrusted:true,pointerType:'mouse',isPrimary:true,button:0,buttons:1,target:new Target(kind),
+        clientX:500,clientY:25,screenX:600,screenY:100,timeStamp:1000,
+        preventDefault(){this.prevented=true;},stopImmediatePropagation(){this.stopped=true;},...patch};
+      listeners.pointerdown(event);return event;
+    };
+    const first=press(); assert.ok(first.prevented && first.stopped);
+    press('header',{timeStamp:1200});
+    assert.deepEqual(calls.map(x=>x[0]),['startWindowMove','toggleMaximizeWindow']);
+    calls.length=0;
+    for(const kind of ['button','input','textarea','select','a','label','[contenteditable]','.privacy-indicators','.window-actions','rail','content'])
+      assert.equal(press(kind).prevented,undefined);
+    for(const patch of [{isTrusted:false},{button:2},{buttons:3},{pointerType:'touch'},{isPrimary:false},{ctrlKey:true}]) press('header',patch);
+    assert.equal(calls.length,0);
+    press('button',{clientX:0}); assert.equal(calls.length,0);
+    press('content',{clientX:0,clientY:0});
+    assert.deepEqual(calls,[['startWindowResize',{edge:'top-left'}]]);
+    calls.length=0; events.onWindowState({maximized:true});
+    press('content',{clientX:0}); assert.equal(calls.length,0);
+    press(); listeners.blur(); press('header',{timeStamp:1200});
+    assert.deepEqual(calls.map(x=>x[0]),['startWindowMove','startWindowMove']);
+  } finally {Object.assign(global,previous);}
+});
+
 test('presentation preferences cannot store arbitrary content or survive a new view', () => {
   const {presentationPreferences, installPresentationPreferences}=load('owner-preferences');
   const store=presentationPreferences();

@@ -102,7 +102,7 @@ class DesktopTests(unittest.TestCase):
             w._create_tray()
         tray.assert_called_once_with(w)
         menu = w.tray.setContextMenu.call_args.args[0]
-        self.assertEqual([a.text() for a in menu.actions()], ["Show Kuro", "Quit Kuro"])
+        self.assertEqual([a.text() for a in menu.actions()], ["Show Kuro", "Restart Kuro", "Quit Kuro"])
         w.hide()
         menu.actions()[0].trigger()
         self.assertTrue(w.isVisible())
@@ -110,7 +110,7 @@ class DesktopTests(unittest.TestCase):
         w.tray.messageClicked.connect.call_args.args[0]()
         self.assertTrue(w.isVisible())
         with patch.object(QApplication, "instance") as app:
-            menu.actions()[1].trigger()
+            menu.actions()[2].trigger()
             app.return_value.quit.assert_called_once()
 
     def test_restart_native_confirmation_cancel_and_accept(self):

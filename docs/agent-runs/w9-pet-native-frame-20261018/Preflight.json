@@ -1,0 +1,136 @@
+{
+  "head": "74b372f9c48a16c7deb129faf835970b6b1c2a05",
+  "dirty": [
+    {
+      "status": " M",
+      "path": "devtools/original-git-web-host-20261010/frontend/src/owner-bridge.ts",
+      "sha256": "3761b9a9ebc14652230116062d779f9fb15c420a41853604f34504418118d874"
+    },
+    {
+      "status": " M",
+      "path": "devtools/original-git-web-host-20261010/frontend/src/owner-presentation.ts",
+      "sha256": "cd6aed78af2d5b36c327e12abee3cdb32b9a4f6f69c598391201f32f6ef4b52a"
+    },
+    {
+      "status": " M",
+      "path": "devtools/original-git-web-host-20261010/validate_candidate.py",
+      "sha256": "0b6caf7be9ea7da2f3a72db624e01c6bfb542f61ea38fe1e9cbbc9f3539b2fd3"
+    },
+    {
+      "status": " M",
+      "path": "kuro_launcher/qt_app.py",
+      "sha256": "00487ea9021c9af010cc33551b694425247517330cf02e8cb80e5c1643fc392c"
+    },
+    {
+      "status": " M",
+      "path": "kuro_launcher/qt_web_adapter.py",
+      "sha256": "3811bca7d741e247b380580f1847851863ec4a56786adbbc9959423774a739ad"
+    },
+    {
+      "status": " M",
+      "path": "kuro_launcher/qt_web_host.py",
+      "sha256": "c012de7ee9c5afa3baf31b0fee1c73ce9776f6dc28d6e3ef976b1810599ecac9"
+    },
+    {
+      "status": " M",
+      "path": "kuro_launcher/qt_web_protocol.py",
+      "sha256": "4850ecc3b291b6a186451cc59cadde5cc355c268fde21849afb1cc26e5143c82"
+    },
+    {
+      "status": " M",
+      "path": "kuro_launcher/qt_web_release.py",
+      "sha256": "5ba89d3ee1ee860e71ea135072c949a180f55ec0392054575e0561b1c4208e2a"
+    },
+    {
+      "status": " M",
+      "path": "tests/qt_web_frontend.test.cjs",
+      "sha256": "1aab3cb1dacbb416c3e31535219f6f6a034c0b91e384b85dd19b3c32021bd3f9"
+    },
+    {
+      "status": " M",
+      "path": "tests/test_g5_desktop.py",
+      "sha256": "a1f37dd6917fb0cd408f0c29cc13ad611be6fe5d7edce2e70b441c325b91b829"
+    },
+    {
+      "status": " M",
+      "path": "tests/test_g8_runtime.py",
+      "sha256": "86bef80e6805e5213f34e2eb4a088efee0a3b8c995d18417e1d29e1998b1a8e8"
+    },
+    {
+      "status": " M",
+      "path": "tests/test_qt_web_w6.py",
+      "sha256": "a562138ceb7aaf60d5e4075de000d47f2b261a0f774a48d6a88982526c53b5a9"
+    },
+    {
+      "status": "??",
+      "path": "devtools/original-git-web-host-20261010/W7WindowChromeCheckpoint-20261012.md",
+      "sha256": "e100df8b5d817f57a3399e75b70305a8a98ab9d9a2fc441ff5998e5a93a16877"
+    },
+    {
+      "status": "??",
+      "path": "devtools/original-git-web-host-20261010/W8DesktopCheckpoint-20261017.md",
+      "sha256": "2477351a0bbceef3780e99312e22d29fae3b0ca964366d16869988f4a9d3cf19"
+    },
+    {
+      "status": "??",
+      "path": "devtools/original-git-web-host-20261010/W8QtSources-20261017.json",
+      "sha256": "00c42ea19cb571d8bdb4612325d1c5e56a658f538da95b904c78908732550946"
+    },
+    {
+      "status": "??",
+      "path": "devtools/original-git-web-host-20261010/validate_w8_qt.py",
+      "sha256": "1e18a3fa2c78e24ac721ac62f275783520fe578b3be0f65cfd484394805b0f50"
+    },
+    {
+      "status": "??",
+      "path": "devtools/original-git-web-host-20261010/w7_window_chrome_gate.py",
+      "sha256": "d436853332d39ec5c20f069f6511dece95017f3327fe88fe7616a1b72d69b4a8"
+    },
+    {
+      "status": "??",
+      "path": "devtools/original-git-web-host-20261010/w8_qt_tray_gate.py",
+      "sha256": "bcbfde8bd29eaea1f7f60abab45f25d037e141d470eb631b3d5792aaeb3134b9"
+    },
+    {
+      "status": "??",
+      "path": "kuro_launcher/qt_branding.py",
+      "sha256": "10fdd978ba21ed026b10bdde6dc137dcf3e1656b055cf77366727d7ed0e276c0"
+    },
+    {
+      "status": "??",
+      "path": "tests/test_qt_web_w8.py",
+      "sha256": "7e1fc044cc3315adc6f5105864268f282b6b3411c5740c9757104a4725119bdc"
+    },
+    {
+      "status": "??",
+      "path": "tests/test_qt_web_window_chrome.py",
+      "sha256": "0113a56b504dfce177f5b1820446f8d55a0cfbb136e9c3036ad17d3003cd6971"
+    }
+  ],
+  "targets": [
+    {
+      "path": "pet-electron/src/main.js",
+      "sha256": "b0408812b977721641612dc3e0f09cfb92139d352af50b7cd734920f4b351ef3"
+    },
+    {
+      "path": "pet-electron/src/main-process/pet-fixed-shell.js",
+      "sha256": "72e52c92d22dcc3f8cd46cf4fc129a531064a2c238a0858550a6af5742c4e47a"
+    },
+    {
+      "path": "pet-electron/src/main-process/pet-status.js",
+      "sha256": "5e7671be7b28a4510cdcf9828a4115ac0d69b50bb13f1f0916dec5483c29f6f8"
+    },
+    {
+      "path": "pet-electron/renderer/src/live2d/pet-render-surface-controller.ts",
+      "sha256": "50c7841a66a332def2c7b17956aa16b3d3d811ef65604fa9448aeeebf1c4be9b"
+    },
+    {
+      "path": "pet-electron/renderer/src/main.ts",
+      "sha256": "77d1c3bbf364ac15e10283e4ebcb5fb3416516afda70f1f10b63e2ef259216dc"
+    },
+    {
+      "path": "pet-electron/renderer/src/commands/pet-command-geometry.ts",
+      "sha256": "9c4118a7a7722854b910725c3469515e62a129bf6ce9dc2ac8f495a4199e6528"
+    }
+  ]
+}

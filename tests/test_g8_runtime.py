@@ -217,10 +217,10 @@ class G8RuntimeTests(unittest.TestCase):
                     if relative.endswith("qt_web_host.py"):
                         self.assertIn('ORIGIN = "kuro-work://app"', source)
                     source = source.replace('"/work-panel.html"', '"/candidate-entry.html"')
-                    from kuro_launcher.qt_web_release import RELEASE_PIN
+                    from kuro_launcher.qt_web_release import RELEASE_PIN, VerifiedOwnerBundle
                     self.assertIsNotNone(RELEASE_PIN)
-                    self.assertEqual(RELEASE_PIN.fingerprint,
-                        'dc7ad8b776312ab6c40102591d2bbe822707af44c776032cb041ae2bbfa2402e')
+                    # Versioned owner bundles retain the same no-legacy boundary.
+                    VerifiedOwnerBundle.load(ROOT/'assets/qt-owner'/RELEASE_PIN.fingerprint, RELEASE_PIN)
                 matches.extend((relative, term) for term in forbidden if term in source)
         self.assertEqual(matches, [])
         self.assertFalse(hasattr(QtLauncherController, "ensure_work_panel"))

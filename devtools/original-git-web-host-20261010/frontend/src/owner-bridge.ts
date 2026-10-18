@@ -97,7 +97,7 @@ export class OwnerTransport {
   private event(raw: string): void {
     let event: any;
     try { event = JSON.parse(raw); } catch { return; }
-    if (event?.contract !== contract || !validIdentity(event.identity) || !["onState", "onData", "onChatState"].includes(event.name)) return;
+    if (event?.contract !== contract || !validIdentity(event.identity) || !["onState", "onData", "onChatState", "onWindowState"].includes(event.name)) return;
     if (this.identity && event.identity.revision < this.identity.revision) return;
     this.adoptIdentity(event.identity);
     if (event.name === "onData") {

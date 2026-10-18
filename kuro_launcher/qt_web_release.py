@@ -1,7 +1,7 @@
 """Source-pinned Web assets. No receipt, environment flag or renderer grants adoption.
 
-RELEASE_PIN remains None until the exact existing-window native release gate.
-Disposable harnesses verify a build pin explicitly and use the same host path.
+The W7 source pin selects the signed owner bundle; it does not assert native
+gesture acceptance. Setting it to None retains the explicit Widgets rollback.
 """
 from __future__ import annotations
 
@@ -22,10 +22,10 @@ class OwnerBundlePin:
 
 
 RELEASE_PIN = OwnerBundlePin(
-    fingerprint='dc7ad8b776312ab6c40102591d2bbe822707af44c776032cb041ae2bbfa2402e',
-    manifest_sha256='c2920dff0455acfdbee2fcb9ae0a0f42cd1aa6c9d6b1690d54da5e377b765bed',
-    public_key='0155b171027785abc70b0afcbba2e746fc49c7fb06b2cff705844acb2ca5da7b',
-    signature='868e58bc3c994baf9f8d6d6e7661af4d8c01b479c9f925e9c2e2ad93e1b71d31bef33ef848153e8b8a49b161869566395c469491b6cb62fba8d98715bbd18b04',
+    fingerprint='8ba8ea29313601f944f760b901410efb8fc92bc801199d3b0b72ba22b7fa9b14',
+    manifest_sha256='425eff86d0426df19aa16e5142658f12f95504955037d623a16ebd633a230630',
+    public_key='10733638989cee0420da1ba31b550d192dca6f91676d25524e079c40b77cb5f5',
+    signature='c6aa35146177156cc7ef03aa2a1a9535e60c5f58a23a72ca612cd38faeada2fc5027ad287cd644e93e981c1746812bfe81636d791c17c1ba9303883d8e89e208',
 )
 
 @dataclass(frozen=True)
@@ -64,7 +64,7 @@ class VerifiedOwnerBundle:
 
 
 def prepare_owner_presentation(root):
-    """Called before QApplication; safe Widgets default imports no Addons."""
+    """Called before QApplication; explicit Widgets rollback imports no Addons."""
     if RELEASE_PIN is None: return None
     from .qt_web_host import register_candidate_scheme
     bundle = VerifiedOwnerBundle.load(Path(root) / "assets/qt-owner" / RELEASE_PIN.fingerprint, RELEASE_PIN)

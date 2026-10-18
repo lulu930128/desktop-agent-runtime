@@ -1,10 +1,81 @@
 import type { OwnerTransport } from "./owner-bridge";
 
+type WindowEdge = "top" | "bottom" | "left" | "right" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
+const windowControls = "button, input, textarea, select, option, a, label, [contenteditable]:not([contenteditable='false']), [role='button'], [role='slider'], [role='dialog'], .window-actions, .privacy-indicators, [data-privacy-indicators]";
+
+// CSS viewport coordinates, not physical pixels: Qt/Chromium owns DPI scaling.
+export function windowResizeEdge(x: number, y: number, width: number, height: number, maximized: boolean): WindowEdge | null {
+  if (maximized || ![x, y, width, height].every(Number.isFinite) || width < 12 || height < 12 || x < 0 || y < 0 || x >= width || y >= height) return null;
+  const horizontal = x < 6 ? "left" : x >= width - 6 ? "right" : "";
+  const vertical = y < 6 ? "top" : y >= height - 6 ? "bottom" : "";
+  return (vertical && horizontal ? `${vertical}-${horizontal}` : vertical || horizontal || null) as WindowEdge | null;
+}
+
+export function windowGestureTarget(target: Element): "blocked" | "header" | "content" {
+  if (target.closest(windowControls)) return "blocked";
+  return target.closest(".chrome") && !target.closest(".rail") ? "header" : "content";
+}
+
+export function installWindowGestures(transport: OwnerTransport): void {
+  let maximized = true; // No resize until the owner supplies authoritative state.
+  let doubleClickInterval = 0;
+  let startDragDistance = 0;
+  let previous: {time: number; x: number; y: number} | null = null;
+  const root = document.documentElement;
+  const setState = (value: any) => {
+    if (typeof value?.maximized === "boolean") maximized = value.maximized;
+    if (maximized) root.style.cursor = "";
+  };
+  transport.on("onWindowState", setState);
+  void transport.call("getWindowState").then(value => {
+    if (!value.ok) return;
+    setState(value);
+    doubleClickInterval = value.doubleClickInterval;
+    startDragDistance = value.startDragDistance;
+  });
+  const invoke = (method: string, payload = {}) => {
+    void transport.call(method, payload).then(value => {
+      // Keep native refusal inspectable; never retry a late mouse gesture.
+      if (value.ok) delete root.dataset.ownerWindowError;
+      else root.dataset.ownerWindowError = String(value.error || "window_gesture_failed");
+    });
+  };
+  document.addEventListener("pointerdown", event => {
+    if (!event.isTrusted || event.pointerType !== "mouse" || !event.isPrimary || event.button !== 0 || event.buttons !== 1
+        || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !(event.target instanceof Element)) return;
+    const target = windowGestureTarget(event.target);
+    if (target === "blocked") { previous = null; return; }
+    const edge = windowResizeEdge(event.clientX, event.clientY, window.innerWidth, window.innerHeight, maximized);
+    if (edge) {
+      previous = null;
+      event.preventDefault(); event.stopImmediatePropagation();
+      invoke("startWindowResize", {edge});
+    } else if (target === "header") {
+      event.preventDefault(); event.stopImmediatePropagation();
+      // Native move may consume mouseup/click. Recognize the second press
+      // using the OS interval/distance instead of depending on DOM dblclick.
+      const doubleClick = previous && event.timeStamp - previous.time >= 0 && event.timeStamp - previous.time <= doubleClickInterval
+        && Math.abs(event.screenX - previous.x) < startDragDistance && Math.abs(event.screenY - previous.y) < startDragDistance;
+      previous = doubleClick ? null : {time: event.timeStamp, x: event.screenX, y: event.screenY};
+      invoke(doubleClick ? "toggleMaximizeWindow" : "startWindowMove");
+    } else previous = null;
+  }, true);
+  document.addEventListener("pointermove", event => {
+    const edge = event.target instanceof Element && windowGestureTarget(event.target) !== "blocked"
+      ? windowResizeEdge(event.clientX, event.clientY, window.innerWidth, window.innerHeight, maximized) : null;
+    const cursors = {top: "ns-resize", bottom: "ns-resize", left: "ew-resize", right: "ew-resize",
+      "top-left": "nwse-resize", "bottom-right": "nwse-resize", "top-right": "nesw-resize", "bottom-left": "nesw-resize"};
+    root.style.cursor = edge ? cursors[edge] : "";
+  }, true);
+  window.addEventListener("blur", () => { previous = null; root.style.cursor = ""; });
+}
+
 export function isImeSubmit(event: Pick<KeyboardEvent, "key" | "isComposing" | "keyCode">, composing: boolean): boolean {
   return event.key === "Enter" && (event.isComposing || composing || event.keyCode === 229);
 }
 
 export function installPresentationGuards(transport: OwnerTransport): void {
+  installWindowGestures(transport);
   let composing = false;
   document.addEventListener("compositionstart", () => { composing = true; }, true);
   document.addEventListener("compositionend", () => { composing = false; }, true);

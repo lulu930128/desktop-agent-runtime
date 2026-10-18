@@ -10,12 +10,11 @@ import uuid
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QSize, Qt, QTimer, QSettings, Signal
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer, QSettings, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QSystemTrayIcon,
-    QStyle,
     QComboBox,
     QCheckBox,
     QDialog,
@@ -44,6 +43,7 @@ from PySide6.QtWidgets import (
 )
 
 from .config import AppConfig
+from .qt_branding import load_kuro_icon
 from .qt_chat_client import QtRuntimeChatClient
 from .qt_work_companion_view import ComposerEdit, WorkCompanionView, transcript_html
 from .qt_notifications import QtScheduleDelivery
@@ -97,6 +97,9 @@ class KuroQtLauncherWindow(QMainWindow):
 
     def __init__(self, cfg: AppConfig, *, web_bundle=None):
         super().__init__()
+        icon = load_kuro_icon()
+        QApplication.instance().setWindowIcon(icon)
+        self.setWindowIcon(icon)
         self._web_mode = web_bundle is not None
         self.work_web_candidate = None
         self._lifecycle_tasks = set()
@@ -186,6 +189,9 @@ class KuroQtLauncherWindow(QMainWindow):
     def _init_web_presentation(self, bundle) -> None:
         """Same native owner, with no Widget presentation objects or observers."""
         from .qt_web_host import create_existing_window_host
+        # A parentless Tool suppresses the Windows taskbar/Alt+Tab entry without
+        # adding a second native owner or forcing this window always-on-top.
+        self.setWindowFlags(Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle("Kuro Work Companion")
         self.resize(1380, 860)
         self.setMinimumSize(760, 540)
@@ -265,15 +271,17 @@ class KuroQtLauncherWindow(QMainWindow):
 
     def _create_tray(self) -> None:
         self.tray = QSystemTrayIcon(self)
-        self.tray.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon))
+        self.tray.setIcon(self.windowIcon())
         self.tray.setToolTip("Kuro")
         menu = QMenu(self)
         menu.addAction("Show Kuro", self.reveal)
+        menu.addAction("Restart Kuro", self._confirm_restart_launcher)
         menu.addAction("Quit Kuro", self.quit_application)
         self.tray.setContextMenu(menu)
-        app_menu = self.menuBar().addMenu("Kuro")
-        app_menu.addAction("Restart Kuro", self._confirm_restart_launcher)
-        app_menu.addAction("Quit Kuro", self.quit_application)
+        if not self._web_mode:
+            app_menu = self.menuBar().addMenu("Kuro")
+            app_menu.addAction("Restart Kuro", self._confirm_restart_launcher)
+            app_menu.addAction("Quit Kuro", self.quit_application)
         self.tray.activated.connect(self._tray_activated)
         self.tray.messageClicked.connect(self.reveal)
         self.tray.show()
@@ -3019,6 +3027,20 @@ class KuroQtLauncherWindow(QMainWindow):
         super().resizeEvent(event)
         if getattr(self, "preview_fit_mode", False):
             self._render_preview_pixmap()
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if (event.type() == QEvent.Type.WindowStateChange
+                and getattr(self, "_web_mode", False) and self.isMinimized()
+                and not self.explicit_quitting):
+            # showMinimized() shows again after the state-change event. Defer
+            # until it returns, with this QObject as the callback's lifetime.
+            QTimer.singleShot(0, self, self._hide_minimized_to_tray)
+
+    def _hide_minimized_to_tray(self) -> None:
+        if not self.explicit_quitting and self.isMinimized():
+            # Reuse X-to-tray, including its unavailable-tray recovery.
+            self.close()
 
     def closeEvent(self, event) -> None:
         if getattr(self, "explicit_quitting", False):

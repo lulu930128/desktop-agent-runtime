@@ -54,6 +54,7 @@ export class PetRenderSurfaceController {
   private latestModelBounds: PetModelScreenBounds | null;
   private shrinkTimer: number | null;
   private lastAction: string;
+  private latestTransform: { anchor: PetScreenPoint; revision: number } | null;
 
   public constructor(element: HTMLElement, options: ControllerOptions) {
     this.element = element;
@@ -63,12 +64,17 @@ export class PetRenderSurfaceController {
     this.latestModelBounds = null;
     this.shrinkTimer = null;
     this.lastAction = this.enabled ? "bootstrap" : "legacy-window-surface";
+    this.latestTransform = options.anchorScreenPoint
+      && [options.anchorScreenPoint.x, options.anchorScreenPoint.y].every(Number.isFinite)
+      && Number.isSafeInteger(options.transformRevision) && options.transformRevision >= 0
+      ? { anchor: { ...options.anchorScreenPoint }, revision: options.transformRevision }
+      : null;
     this.applied =
-      this.enabled && this.shellBounds && options.anchorScreenPoint
+      this.enabled && this.shellBounds && this.latestTransform
         ? createInitialPetRenderSurface(
             this.shellBounds,
-            options.anchorScreenPoint,
-            Number(options.transformRevision) || 0
+            this.latestTransform.anchor,
+            this.latestTransform.revision
           )
         : null;
 
@@ -86,16 +92,23 @@ export class PetRenderSurfaceController {
     anchorScreenPoint: PetScreenPoint,
     transformRevision: number
   ): boolean {
-    if (!this.enabled || !this.shellBounds) return false;
+    if (!this.enabled || !anchorScreenPoint
+      || ![anchorScreenPoint.x, anchorScreenPoint.y].every(Number.isFinite)
+      || !Number.isSafeInteger(transformRevision) || transformRevision < 0) return false;
+    if (this.latestTransform && (transformRevision < this.latestTransform.revision
+      || (transformRevision === this.latestTransform.revision
+        && (anchorScreenPoint.x !== this.latestTransform.anchor.x || anchorScreenPoint.y !== this.latestTransform.anchor.y)))) return false;
+    this.latestTransform = { anchor: { ...anchorScreenPoint }, revision: transformRevision };
+    // Retain authoritative transform while native geometry is unknown; do not ACK a surface.
+    if (!this.shellBounds) return false;
     const base = this.pending || this.applied;
-    if (!base || transformRevision < base.transformRevision) return false;
     this.clearShrinkTimer();
-    const next = translatePetRenderSurfaceToAnchor(
+    const next = base ? translatePetRenderSurfaceToAnchor(
       base,
       this.shellBounds,
       anchorScreenPoint,
       transformRevision
-    );
+    ) : createInitialPetRenderSurface(this.shellBounds, anchorScreenPoint, transformRevision);
     if (!next) return false;
     this.pending = next;
     this.lastAction = "transform-translate";
@@ -104,8 +117,11 @@ export class PetRenderSurfaceController {
 
   public scheduleShellBounds(shellBounds: PetScreenRect): boolean {
     if (!this.enabled) return false;
+    if (!shellBounds || ![shellBounds.x, shellBounds.y, shellBounds.width, shellBounds.height].every(Number.isFinite)) return false;
     const normalized = normalizePetScreenRect(shellBounds);
-    const base = this.pending || this.applied;
+    const base = this.pending || this.applied || (normalized && this.latestTransform
+      ? createInitialPetRenderSurface(normalized, this.latestTransform.anchor, this.latestTransform.revision)
+      : null);
     if (!normalized || !base) return false;
     const localBounds = screenRectToShellLocal(base.screenBounds, normalized);
     if (!localBounds) return false;

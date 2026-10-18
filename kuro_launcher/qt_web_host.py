@@ -203,6 +203,13 @@ def _create_host(owner, bundle, *, fixture):
             self.timer = QTimer(self)
             self.timer.timeout.connect(self.broker.expire)
             self.timer.start(250)
+            owner.installEventFilter(self)
+
+        def eventFilter(self, watched, event):
+            from PySide6.QtCore import QEvent
+            if watched is owner and event.type() == QEvent.Type.WindowStateChange:
+                self.publish("onWindowState", {"maximized": owner.isMaximized() or owner.isFullScreen()})
+            return False
 
         @Slot(dict)
         def receive(self, payload):
@@ -287,12 +294,43 @@ def _create_host(owner, bundle, *, fixture):
             audit("confirmation", method=method, accepted=accepted)
             return accepted
 
-        def window_action(self, method):
-            if self.broker.closed: return
+        def window_action(self, method, payload=None):
+            from PySide6.QtWidgets import QApplication
+            from .qt_web_protocol import WINDOW_EDGES
+            if self.broker.closed: return error("bridge_closed")
+            if method == "getWindowState":
+                return {"ok": True, "maximized": owner.isMaximized() or owner.isFullScreen(),
+                        "doubleClickInterval": QApplication.doubleClickInterval(),
+                        "startDragDistance": QApplication.startDragDistance()}
+            if method in {"startWindowMove", "startWindowResize"}:
+                # WebChannel stays on this GUI-thread owner. Never emulate
+                # native gestures with geometry polling or a second window.
+                if (not owner.isVisible() or owner.isMinimized() or owner.isFullScreen()
+                        or QApplication.activeModalWidget() is not None
+                        or QApplication.mouseButtons() != Qt.MouseButton.LeftButton):
+                    return error("window_gesture_unavailable")
+                handle = owner.windowHandle()
+                if handle is None: return error("window_handle_unavailable")
+                if method == "startWindowMove":
+                    accepted = handle.startSystemMove()
+                else:
+                    edge = (payload or {}).get("edge")
+                    if not isinstance(edge, str) or edge not in WINDOW_EDGES:
+                        return error("invalid_window_edge")
+                    if owner.isMaximized(): return error("window_maximized")
+                    edges = {"top": Qt.Edge.TopEdge, "bottom": Qt.Edge.BottomEdge,
+                             "left": Qt.Edge.LeftEdge, "right": Qt.Edge.RightEdge}
+                    flags = Qt.Edge(0)
+                    for part in edge.split("-"): flags |= edges[part]
+                    accepted = handle.startSystemResize(flags)
+                return {"ok": True} if accepted else error("native_window_gesture_unsupported")
             if method == "closeWindow": owner.close()
             elif method == "minimizeWindow": owner.showMinimized()
-            elif owner.isMaximized(): owner.showNormal()
-            else: owner.showMaximized()
+            elif method == "toggleMaximizeWindow":
+                if owner.isMaximized(): owner.showNormal()
+                else: owner.showMaximized()
+            else: return error("unsupported_method")
+            return {"ok": True}
 
         def shutdown(self):
             if self.broker.closed: return

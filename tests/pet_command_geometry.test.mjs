@@ -28,6 +28,46 @@ function createFakeRenderer() {
   };
 }
 
+test("unknown or malformed native frames are not acknowledged or forwarded", () => {
+  const renderer = createFakeRenderer();
+  const before = { ...renderer.expectedHostBounds };
+  let writes = 0;
+  renderer.setExpectedHostBounds = () => { writes += 1; };
+  const valid = { x: -2560, y: -120, width: 2560, height: 1440 };
+  const invalid = [undefined, null, {}, { ...valid, width: 0 }, { ...valid, height: -1 }];
+  for (const field of ["x", "y", "width", "height"]) {
+    for (const value of [NaN, Infinity, -Infinity, undefined, null, "12", false]) {
+      invalid.push({ ...valid, [field]: value });
+    }
+  }
+  for (const petHostBounds of invalid) {
+    assert.deepEqual(applyPetGeometryCommand(renderer, {
+      type: "pet-host-set", transformRevision: 12, petHostBounds
+    }), { handled: true, transformAccepted: false, hostAccepted: false });
+  }
+  assert.equal(writes, 0);
+  assert.deepEqual(renderer.expectedHostBounds, before);
+  assert.deepEqual(renderer.anchor, { x: 1000, y: 1000 });
+  assert.equal(renderer.zoomScale, 1.2);
+});
+
+test("valid negative-origin native frames recover after unknown without scaling DIPs", () => {
+  const renderer = createFakeRenderer();
+  assert.equal(applyPetGeometryCommand(renderer, {
+    type: "pet-host-set", transformRevision: 12, petHostBounds: null
+  }).hostAccepted, false);
+  const bounds = { x: -2560, y: -120, width: 2560, height: 1440 };
+  assert.equal(applyPetGeometryCommand(renderer, {
+    type: "pet-host-set", transformRevision: 12, petHostBounds: bounds, petDisplayScaleFactor: 1.5
+  }).hostAccepted, true);
+  assert.deepEqual(renderer.expectedHostBounds, bounds);
+  for (const transformRevision of [11, 13, -1, 12.5, NaN, Infinity, null, "12", false]) {
+    assert.equal(applyPetGeometryCommand(renderer, {
+      type: "pet-host-set", transformRevision, petHostBounds: bounds
+    }).hostAccepted, false);
+  }
+});
+
 test("host updates cannot mutate canonical anchor or zoom", () => {
   const renderer = createFakeRenderer();
   const before = {
