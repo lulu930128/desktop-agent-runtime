@@ -1,4 +1,4 @@
-"""Git History parity: synthetic runtime/WS/widgets only, no personal state."""
+"""Git History parity: synthetic runtime/WS only, no personal state."""
 import asyncio
 import json
 import os
@@ -12,11 +12,8 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "Open-LLM-VTuber/src"), str(ROOT / "Open-LLM-VTuber")]
 
-from PySide6.QtCore import Qt
-from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QPushButton, QWidget
+from PySide6.QtWidgets import QApplication
 from kuro_launcher.qt_chat_client import QtRuntimeChatClient
-from kuro_launcher.qt_work_companion_view import WorkCompanionView, transcript_html
 from open_llm_vtuber.websocket_handler import WebSocketHandler, PrimaryConversationOutput
 from open_llm_vtuber.chat_history_manager import get_history_timeline
 
@@ -228,39 +225,8 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("conversation_scope", json.loads(pet.send_text.call_args.args[0]))
 
 
-class WidgetTests(unittest.TestCase):
-    def test_drawer_search_preview_active_and_intents(self):
-        page = WorkCompanionView(chat=QWidget(), today=QWidget(), schedule=QWidget(), settings=QWidget())
-        page.resize(1000, 600)
-        page.show()
-        page.show_history(True)
-        drawer = page.history_drawer
-        records = [SimpleNamespace(uid="one", title="First", preview="needle", timestamp="SYNTHETIC", is_empty=False),
-                   SimpleNamespace(uid="two", title="Second", preview="", timestamp="", is_empty=True)]
-        drawer.set_state(ready=True)
-        drawer.set_records(records, "two")
-        drawer.search.setText("needle")
-        self.assertEqual(drawer.list.count(), 1)
-        clicked = []
-        drawer.selected.connect(clicked.append)
-        QTest.mouseClick(drawer.findChild(QPushButton, "HistoryOpen"), Qt.MouseButton.LeftButton)
-        self.assertEqual(clicked, ["one"])
-        drawer.search.setText("no match")
-        self.assertIn("找不到", drawer.status.text())
-        drawer.set_state(ready=True, pending=True)
-        self.assertFalse(drawer.create.isEnabled())
-        drawer.set_state(ready=True, error="fixture error")
-        self.assertEqual(drawer.status.text(), "fixture error")
-        page.show_history(False)
-        self.assertFalse(drawer.isVisible())
-        page.close()
-        page.deleteLater()
+class TimelineTests(unittest.TestCase):
 
-    def test_transcript_is_escaped_and_multiline(self):
-        markup = transcript_html([("User", "now", "<script>\n  indented"), ("event", "", "tool blocked")])
-        self.assertNotIn("<script>", markup)
-        self.assertIn("&lt;script&gt;<br>  indented", markup)
-        self.assertIn("EVENT", markup)
 
     def test_timeline_from_runtime_includes_tool_events(self):
         with patch("open_llm_vtuber.chat_history_manager.get_history", return_value=[

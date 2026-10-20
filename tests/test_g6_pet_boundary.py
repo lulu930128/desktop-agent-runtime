@@ -11,7 +11,6 @@ from unittest.mock import Mock, patch
 import launcher_qt
 from kuro_launcher.qt_chat_client import QtRuntimeChatClient
 from kuro_launcher.qt_controller import QtLauncherController
-from kuro_launcher.qt_app import KuroQtLauncherWindow
 
 
 class CaptureTests(unittest.TestCase):
@@ -54,36 +53,8 @@ class CaptureTests(unittest.TestCase):
         client._ws_app.send.assert_called_once()
         client._ws_app.close.assert_called_once()
 
-    def test_camera_result_for_old_history_is_discarded(self):
-        window = SimpleNamespace(pending_chat_submit=dict(capture_pending=True, history_uid="old"),
-            chat_client=Mock(current_history_uid="new"), _set_chat_status=Mock(),
-            _update_chat_send_button=Mock(), _queue_chat_submit=Mock())
-        KuroQtLauncherWindow._on_task_finished(window, "chat-capture",
-            {"result":{"ok":True,"images":[]}})
-        window._queue_chat_submit.assert_not_called()
-        self.assertIsNone(window.pending_chat_submit)
 
-    def test_mic_result_for_old_history_is_discarded(self):
-        client = Mock()
-        client.history_identity.return_value = ("qt", "role", "context", "new")
-        window = SimpleNamespace(_capture_identity=("qt", "role", "context", "old"), pending_chat_submit=None,
-            chat_client=client, _set_chat_status=Mock(), _queue_chat_submit=Mock(),
-            perception_status=Mock(), refresh_status=Mock())
-        KuroQtLauncherWindow._on_task_finished(window, "microphone:submit",
-            {"result":{"ok":True,"capture":self.capture()}})
-        window._queue_chat_submit.assert_not_called()
 
-    def test_mic_result_is_submitted_via_qt_with_existing_history_binding(self):
-        identity = ("qt", "role", "context", "same")
-        client = Mock()
-        client.history_identity.return_value = identity
-        window = SimpleNamespace(_capture_identity=identity, pending_chat_submit=None,
-            chat_client=client, _queue_chat_submit=Mock(), _chat_response_active=Mock(return_value=False),
-            perception_status=Mock(), refresh_status=Mock())
-        capture = self.capture()
-        KuroQtLauncherWindow._on_task_finished(window, "microphone:submit",
-            {"result":{"ok":True,"capture":capture}})
-        window._queue_chat_submit.assert_called_once_with("[語音輸入]", [], capture)
 
 
 class OwnershipTests(unittest.TestCase):

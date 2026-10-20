@@ -1,7 +1,7 @@
 """Source-pinned Web assets. No receipt, environment flag or renderer grants adoption.
 
-The W7 source pin selects the signed owner bundle; it does not assert native
-gesture acceptance. Setting it to None retains the explicit Widgets rollback.
+The source pin selects the signed owner bundle; it does not assert native
+gesture acceptance. Missing or invalid assets stop startup without a fallback.
 """
 from __future__ import annotations
 
@@ -64,8 +64,9 @@ class VerifiedOwnerBundle:
 
 
 def prepare_owner_presentation(root):
-    """Called before QApplication; explicit Widgets rollback imports no Addons."""
-    if RELEASE_PIN is None: return None
+    """Verify the sole presentation and register its scheme before QApplication."""
+    if not isinstance(RELEASE_PIN, OwnerBundlePin):
+        raise TypeError("Explicit owner bundle pin required")
     from .qt_web_host import register_candidate_scheme
     bundle = VerifiedOwnerBundle.load(Path(root) / "assets/qt-owner" / RELEASE_PIN.fingerprint, RELEASE_PIN)
     register_candidate_scheme()

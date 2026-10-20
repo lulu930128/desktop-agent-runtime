@@ -42,9 +42,6 @@ class LauncherEntrypointTests(unittest.TestCase):
     def test_first_launch_visible_without_auto_start(self):
         self.check_first_launch(False)
 
-    def test_explicit_none_pin_is_widgets_rollback_fixture(self):
-        with patch('kuro_launcher.qt_web_release.RELEASE_PIN', None):
-            self.check_first_launch(False, widgets=True)
 
     def test_invalid_pin_stops_before_application_or_owner(self):
         cfg = SimpleNamespace(root=Path.cwd(), logs_dir=Path.cwd() / 'unused-test-log')
@@ -64,7 +61,7 @@ class LauncherEntrypointTests(unittest.TestCase):
         window.assert_not_called()
         close.assert_called_once_with()
 
-    def check_first_launch(self, auto_start, widgets=False):
+    def check_first_launch(self, auto_start):
         cfg = SimpleNamespace(root=Path.cwd(), logs_dir=Path.cwd() / 'launcher_logs',
                               startup_auto_start=auto_start)
         app = Mock()
@@ -88,12 +85,9 @@ class LauncherEntrypointTests(unittest.TestCase):
         window.assert_called_once()
         self.assertEqual(window.call_args.args, (cfg,))
         bundle = window.call_args.kwargs['web_bundle']
-        if widgets:
-            self.assertIsNone(bundle)
-        else:
-            self.assertIsInstance(bundle, VerifiedOwnerBundle)
-            self.assertEqual(bundle.pin, RELEASE_PIN)
-            self.assertIn('/work-panel.html', bundle.assets)
+        self.assertIsInstance(bundle, VerifiedOwnerBundle)
+        self.assertEqual(bundle.pin, RELEASE_PIN)
+        self.assertIn('/work-panel.html', bundle.assets)
         window.return_value.hide.assert_not_called()
         app.setQuitOnLastWindowClosed.assert_called_once_with(False)
 

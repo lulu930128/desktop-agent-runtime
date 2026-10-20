@@ -1,0 +1,204 @@
+{
+  "profile": "w10-current",
+  "baselineSha256": "899d40171e92f1e3ab3bdea74a7424f556ca80e8ed19cc40cb25417a8e77d969",
+  "nativeAcceptance": false,
+  "productionAdoption": false,
+  "historicalExclusions": {
+    "test_qt_web_w6": "W6 source graph and explicit Widgets rollback checkpoint; W10 replaces both.",
+    "test_qt_web_release_candidate": "W6 exact source SHA/receipt proposal; not a current W10 gate.",
+    "test_qt_web_window_chrome.W7BundleTests": "W7 fixed source SHA; source drift is expected.",
+    "test_qt_web_window_chrome.ChromeWindowTests": "Historical constructor/Widgets rollback fixture.",
+    "test_qt_web_w8": "W8 fixed source SHA/Widgets rollback; current tray/chrome tests ported to W10.",
+    "test_r1_production_view": "Retired Widgets drawer; Web WS CRUD/timeline is in r4_history_transport.",
+    "work_companion_fixture": "Retired private-QSettings Widgets constructor fixture."
+  },
+  "suites": [
+    "test_qt_web_w10",
+    "test_launcher_entrypoint",
+    "test_work_companion_source_encoding",
+    "test_qt_web_candidate",
+    "test_qt_web_transport",
+    "test_qt_web_disposable",
+    "test_qt_web_existing_window",
+    "test_qt_web_security",
+    "test_qt_web_w4_w5",
+    "test_r1_history_parity",
+    "test_r2_settings_parity",
+    "test_r3_today_schedule_parity",
+    "test_r4_history_transport",
+    "test_g3_conversation",
+    "test_g4_qt_core",
+    "test_g5_desktop",
+    "test_g6_pet_boundary",
+    "test_g8_runtime",
+    "test_schedule_core",
+    "test_schedule_notifications",
+    "test_schedule_api",
+    "test_schedule_runtime",
+    "test_web_notification_commands",
+    "test_v1_work_companion_view",
+    "test_qt_web_window_chrome.GestureProtocolTests",
+    "qt_web_frontend"
+  ],
+  "status": "W10_SOURCE_ISOLATED_PASS",
+  "sourceUnchangedDuringRun": true,
+  "tests": 287,
+  "results": [
+    {
+      "suite": "test_qt_web_w10",
+      "exit": 0,
+      "tests": 17,
+      "elapsed_ms": 1062
+    },
+    {
+      "suite": "test_launcher_entrypoint",
+      "exit": 0,
+      "tests": 7,
+      "elapsed_ms": 469
+    },
+    {
+      "suite": "test_work_companion_source_encoding",
+      "exit": 0,
+      "tests": 2,
+      "elapsed_ms": 172
+    },
+    {
+      "suite": "test_qt_web_candidate",
+      "exit": 0,
+      "tests": 41,
+      "elapsed_ms": 218
+    },
+    {
+      "suite": "test_qt_web_transport",
+      "exit": 0,
+      "tests": 2,
+      "elapsed_ms": 1141
+    },
+    {
+      "suite": "test_qt_web_disposable",
+      "exit": 0,
+      "tests": 4,
+      "elapsed_ms": 1453
+    },
+    {
+      "suite": "test_qt_web_existing_window",
+      "exit": 0,
+      "tests": 30,
+      "elapsed_ms": 12313
+    },
+    {
+      "suite": "test_qt_web_security",
+      "exit": 0,
+      "tests": 13,
+      "elapsed_ms": 531
+    },
+    {
+      "suite": "test_qt_web_w4_w5",
+      "exit": 0,
+      "tests": 11,
+      "elapsed_ms": 172
+    },
+    {
+      "suite": "test_r1_history_parity",
+      "exit": 0,
+      "tests": 20,
+      "elapsed_ms": 3797
+    },
+    {
+      "suite": "test_r2_settings_parity",
+      "exit": 0,
+      "tests": 3,
+      "elapsed_ms": 265
+    },
+    {
+      "suite": "test_r3_today_schedule_parity",
+      "exit": 0,
+      "tests": 5,
+      "elapsed_ms": 157
+    },
+    {
+      "suite": "test_r4_history_transport",
+      "exit": 0,
+      "tests": 2,
+      "elapsed_ms": 4968
+    },
+    {
+      "suite": "test_g3_conversation",
+      "exit": 0,
+      "tests": 20,
+      "elapsed_ms": 3813
+    },
+    {
+      "suite": "test_g4_qt_core",
+      "exit": 0,
+      "tests": 5,
+      "elapsed_ms": 265
+    },
+    {
+      "suite": "test_g5_desktop",
+      "exit": 0,
+      "tests": 17,
+      "elapsed_ms": 704
+    },
+    {
+      "suite": "test_g6_pet_boundary",
+      "exit": 0,
+      "tests": 8,
+      "elapsed_ms": 375
+    },
+    {
+      "suite": "test_g8_runtime",
+      "exit": 0,
+      "tests": 3,
+      "elapsed_ms": 6015
+    },
+    {
+      "suite": "test_schedule_core",
+      "exit": 0,
+      "tests": 19,
+      "elapsed_ms": 938
+    },
+    {
+      "suite": "test_schedule_notifications",
+      "exit": 0,
+      "tests": 10,
+      "elapsed_ms": 625
+    },
+    {
+      "suite": "test_schedule_api",
+      "exit": 0,
+      "tests": 6,
+      "elapsed_ms": 4000
+    },
+    {
+      "suite": "test_schedule_runtime",
+      "exit": 0,
+      "tests": 9,
+      "elapsed_ms": 4422
+    },
+    {
+      "suite": "test_web_notification_commands",
+      "exit": 0,
+      "tests": 9,
+      "elapsed_ms": 1156
+    },
+    {
+      "suite": "test_v1_work_companion_view",
+      "exit": 0,
+      "tests": 1,
+      "elapsed_ms": 109
+    },
+    {
+      "suite": "test_qt_web_window_chrome.GestureProtocolTests",
+      "exit": 0,
+      "tests": 3,
+      "elapsed_ms": 250
+    },
+    {
+      "suite": "qt_web_frontend",
+      "exit": 0,
+      "tests": 20,
+      "elapsed_ms": 328
+    }
+  ]
+}

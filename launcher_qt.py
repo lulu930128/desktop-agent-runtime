@@ -255,8 +255,8 @@ def main() -> int:
     _create_qt_activation_event()
 
     from kuro_launcher.qt_web_release import prepare_owner_presentation
-    # Source pin stays None until the exact existing-window native gate. A
-    # receipt or environment variable cannot enable a different presentation.
+    # The signed Git Web bundle is the only desktop presentation. Validate it
+    # before QApplication; failure must never construct a fallback window.
     try:
         web_bundle = prepare_owner_presentation(BASE_DIR)
     except Exception as exc:

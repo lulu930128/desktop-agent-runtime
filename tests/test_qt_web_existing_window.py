@@ -329,12 +329,12 @@ class WiringAndBundleTests(unittest.TestCase):
             and isinstance(n.args[0], ast.Constant) and n.args[0].value == "live2d-unavailable-chat-independent")
         self.assertIn("['presentation']['state']", ast.unparse(check.args[1]))
 
-    def test_web_constructor_returns_before_any_widget_build_or_read(self):
+    def test_web_constructor_has_no_widget_build_or_read(self):
         tree = ast.parse((ROOT / "kuro_launcher/qt_app.py").read_text(encoding="utf-8"))
         cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "KuroQtLauncherWindow")
         methods = {n.name: n for n in cls.body if isinstance(n, ast.FunctionDef)}
-        branch = next(n for n in methods["__init__"].body if isinstance(n, ast.If) and ast.unparse(n.test) == "self._web_mode")
-        self.assertIsInstance(branch.body[-1], ast.Return)
+        self.assertNotIn("_web_mode", ast.unparse(cls))
+        self.assertEqual(methods["__init__"].args.kw_defaults, [None])
         source = ast.unparse(methods["_init_web_presentation"])
         for name in ("WorkCompanionView", "TodayPage", "SchedulePage", "QSettings", "_wire_signals",
                 "_refresh_workspace_data", "_refresh_profile_controls", "_on_chat_protocol_message", "_on_task_finished"):
@@ -342,9 +342,10 @@ class WiringAndBundleTests(unittest.TestCase):
         for name in ("QtLauncherController", "QtRuntimeChatClient", "QtScheduleDelivery", "QSystemTrayIcon"):
             self.assertEqual(sum(isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == name for n in ast.walk(cls)), 1)
 
-    def test_explicit_widgets_rollback_never_requires_build(self):
+    def test_missing_pin_fails_closed_without_fallback(self):
         with patch('kuro_launcher.qt_web_release.RELEASE_PIN', None):
-            self.assertIsNone(prepare_owner_presentation(ROOT / "not-an-asset-root"))
+            with self.assertRaisesRegex(TypeError, "pin required"):
+                prepare_owner_presentation(ROOT / "not-an-asset-root")
 
     def test_formal_pin_missing_assets_fails_closed(self):
         with self.assertRaises(FileNotFoundError):

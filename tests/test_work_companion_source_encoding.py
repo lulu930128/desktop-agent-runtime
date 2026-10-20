@@ -10,9 +10,10 @@ UI_SOURCES = (
     "kuro_launcher/qt_app.py",
     "kuro_launcher/qt_chat_client.py",
     "kuro_launcher/qt_controller.py",
-    "kuro_launcher/qt_work_companion_view.py",
-    "kuro_launcher/qt_work_companion_theme.py",
-    "kuro_launcher/qt_core_pages.py",
+    "kuro_launcher/qt_web_host.py",
+    "kuro_launcher/qt_web_adapter.py",
+    "kuro_launcher/qt_web_protocol.py",
+    "kuro_launcher/qt_web_release.py",
 )
 
 
@@ -33,20 +34,6 @@ class SourceEncodingTests(unittest.TestCase):
                         self.assertIsNone(re.search(r"\?{3,}", node.value),
                                           "Possible lossy shell encoding in UI text")
 
-    def test_reported_history_chat_regressions_have_readable_copy(self):
-        tree = ast.parse((ROOT / "kuro_launcher/qt_app.py").read_text(encoding="utf-8-sig"))
-        methods = {node.name: node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
-        expected = {
-            "_create_chat_history": "對話服務尚未連線；新對話未建立。",
-            "_on_chat_client_changed": "對話已連線 · ",
-            "_render_chat_transcript_with_live": "正在整理回覆…",
-            "_delete_history_by_uid": "刪除聊天記錄",
-        }
-        for method, text in expected.items():
-            with self.subTest(method=method):
-                literals = [node.value for node in ast.walk(methods[method])
-                            if isinstance(node, ast.Constant) and isinstance(node.value, str)]
-                self.assertIn(text, literals)
 
 
 if __name__ == "__main__":

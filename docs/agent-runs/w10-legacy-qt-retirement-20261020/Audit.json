@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "baselineGit": "f4980098b46986d0d0b6ca2ef7fbc538732913bc",
+  "sourceBaselineSha256": "899d40171e92f1e3ab3bdea74a7424f556ca80e8ed19cc40cb25417a8e77d969",
+  "rawPreimagesVerified": 107,
+  "retainedMethods": 30,
+  "missingInternalMethods": [],
+  "negativeSourceDriftRejected": true,
+  "scopedTrackedDiff": true,
+  "indexUnchanged": true,
+  "headUnchanged": true,
+  "nativeAcceptance": false,
+  "productionAdoption": false
+}

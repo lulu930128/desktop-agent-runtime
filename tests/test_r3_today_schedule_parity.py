@@ -1,115 +1,79 @@
-"""Core projections in the actual Work Companion; no provider or live Core IO."""
+"""Current Web/Core parity; no legacy page or private/running Core IO."""
 import copy
-from unittest.mock import patch
+import json
 import unittest
+from unittest.mock import Mock
 
-from work_companion_fixture import APP, ROOT, ProductionWindowFixture
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QMessageBox
-
-
-def projection():
-    return {"contract": "kuro.core.today.v1", "complete": False, "asOf": "2026-10-10T09:00:00+08:00",
-        "timezone": "Asia/Taipei", "limitations": ["source_partial"], "counts": {},
-        "items": [{"workId": "work-1", "title": "SYNTHETIC 待辦", "source": "fixture-source", "level": "focus",
-                   "summary": "確認測試資料", "reasonCodes": ["due_today"], "actionKind": "review",
-                   "evidenceRef": "evidence-1", "stale": False, "partial": True}],
-        "sections": [{"kind": "focus", "itemIds": ["work-1"]}],
-        "sourceStates": [{"integrationId": "fixture-source", "availability": "partial", "freshness": "current",
-                          "connection": "connected", "observedAt": "2026-10-10T08:30:00+08:00", "limitationCount": 1}]}
+from kuro_launcher.qt_web_adapter import QtOwnerAdapter
+from kuro_launcher.qt_web_protocol import CONTRACT, RequestBroker
+from web_candidate_fixtures import ChatFixture, controller_fixture, core_today
 
 
-class CoreViewTests(unittest.TestCase):
+class CoreWebTests(unittest.TestCase):
     def setUp(self):
-        self.fx = ProductionWindowFixture()
-        self.addCleanup(self.fx.close)
-        self.w = self.fx.window
+        self.controller = controller_fixture()
+        self.chat = ChatFixture()
+        self.adapter = QtOwnerAdapter(self.controller, self.chat, lambda w, d: d(w()), window_action=Mock())
+        self.confirm = Mock(return_value=True)
+        self.replies = []
+        self.broker = RequestBroker(self.adapter, self.confirm, self.replies.append)
+        self.addCleanup(self.broker.close)
 
-    def test_today_refresh_retains_selected_work_and_detail(self):
-        page = self.w.today_page
-        data = projection()
-        page.apply(data)
-        page.select_work("work-1")
-        detail = page.detail.toPlainText()
+    def call(self, method, payload=None):
+        self.broker.submit(json.dumps(dict(contract=CONTRACT, id=f"core-{len(self.replies)}",
+            method=method, payload=payload or {}, expected=self.adapter.identity())))
+        return self.replies[-1]["result"]
+
+    def test_today_repeated_reads_preserve_core_order_evidence_and_limitations(self):
+        data = core_today()
         for _ in range(5):
-            page.apply(copy.deepcopy(data))
-        self.assertEqual(page.items.currentItem().data(Qt.ItemDataRole.UserRole)["workId"], "work-1")
-        self.assertEqual(page.detail.toPlainText(), detail)
-        self.assertIn("source_partial", detail)
-        self.assertIn("evidence-1", detail)
-        data["items"][0]["summary"] = "Core 已更新"
-        page.apply(data)
-        self.assertIn("Core 已更新", page.detail.toPlainText())
-        self.assertIn("partial", page.sources.toPlainText())
+            self.controller.read_today.return_value = copy.deepcopy(data)
+            result = self.call("getData")
+            self.assertEqual(result["canonical"], data)
+            self.assertEqual([r["id"] for r in result["snapshot"]["today"]["items"]],
+                             [r["workId"] for r in data["items"]])
+            self.assertIn("synthetic-evidence", result["snapshot"]["today"]["items"][0]["evidence"])
+        self.assertEqual(self.chat.calls, [])
+        self.controller.mutate_schedule.assert_not_called()
 
-    def test_today_context_is_visible_draft_only_and_retains_limitations(self):
-        page = self.w.today_page
-        page.apply(projection())
-        page.select_work("work-1")
-        with patch.object(self.w.chat_client, "send_text") as send:
-            page.use_context()
-        send.assert_not_called()
-        self.assertEqual(self.w.work_companion.page, "chat")
-        self.assertIn("source_partial", self.w.chat_input.toPlainText())
-        self.assertIn("Core Today", self.w.chat_input.toPlainText())
-        self.assertTrue(self.w.chat_context.isVisible())
-        self.assertIn("SYNTHETIC", self.w.chat_context_label.text())
-        self.w.clear_chat_context.click()
-        self.assertFalse(self.w.chat_context.isVisible())
-        self.assertIn("Core Today", self.w.chat_input.toPlainText())
+    def test_invalid_and_offline_today_never_promote_cached_evidence_to_success(self):
+        self.assertTrue(self.call("getData")["ok"])
+        for data in ({}, dict(core_today(), complete="true"), dict(core_today(), items=None)):
+            self.controller.read_today.return_value = data
+            self.assertFalse(self.call("getData")["ok"])
+        self.controller.read_today.side_effect = ConnectionError("SYNTHETIC private detail")
+        result = self.call("getData")
+        self.assertFalse(result["ok"])
+        self.assertNotIn("snapshot", result)
+        self.assertNotIn("private detail", json.dumps(result))
 
-    def test_today_failure_keeps_visible_stale_detail_and_prevents_reenable(self):
-        page = self.w.today_page
-        page.apply(projection())
-        page.select_work("work-1")
-        page.clear_failed("fixture offline")
-        page.show_detail(page.items.currentItem())
-        self.assertFalse(page.context_button.isEnabled())
-        self.assertIn("上次投影", page.status.text())
-        self.assertIn("evidence-1", page.detail.toPlainText())
-        page.apply(projection())
-        self.assertTrue(page.context_button.isEnabled())
+    def test_schedule_scope_revision_and_retry_key_reach_core_unchanged(self):
+        for action in ("update", "complete", "reopen", "skip", "cancel"):
+            for scope in ("this", "future", "all"):
+                command = dict(action=action, id="fixture", expectedRevision=7, scope=scope,
+                    idempotencyKey=f"synthetic-{action}-{scope}", occurrenceDate="2026-10-10")
+                if action == "update":
+                    command["item"] = {"title": "SYNTHETIC"}
+                result = self.call("schedule", {"action": "mutate", "payload": command})
+                self.assertTrue(result["ok"], result)
+                self.controller.mutate_schedule.assert_called_with({**command, "confirmed": True})
 
-    def schedule(self):
-        page = self.w.schedule_page
-        record = {"scheduleId": "schedule-1", "occurrenceDate": "2026-10-10", "revision": 7,
-            "state": "pending", "timeState": "scheduled", "recurring": False,
-            "item": {"title": "SYNTHETIC 行程", "kind": "task", "due": "2026-10-10T10:00", "timezone": "Asia/Taipei"}}
-        result = ({"timezone": "Asia/Taipei"}, {"start": "2026-10-10", "end": "2026-10-17"},
-                  {"contract": "kuro.core.schedule.v1", "items": [record], "coverage": "complete"}, {"items": []})
-        page.apply(result)
-        page.items.setCurrentRow(0)
-        return page, result
+    def test_schedule_cancel_and_core_materialize_do_not_dispatch(self):
+        self.confirm.return_value = False
+        command = dict(action="cancel", id="fixture", expectedRevision=7, scope="this",
+            occurrenceDate="2026-10-10", idempotencyKey="cancel-once")
+        self.assertTrue(self.call("schedule", {"action": "mutate", "payload": command})["cancelled"])
+        result = self.call("schedule", {"action": "materialize", "payload": {"through": "2026-10-17"}})
+        self.assertEqual(result["error"], "materialize_owned_by_core_scheduler")
+        self.controller.mutate_schedule.assert_not_called()
+        self.controller.materialize_schedule.assert_not_called()
 
-    def test_schedule_refresh_preserves_occurrence_and_revision_fenced_command(self):
-        page, result = self.schedule()
-        page.apply(copy.deepcopy(result))
-        self.assertEqual(page.selected()["scheduleId"], "schedule-1")
-        with patch.object(page, "run") as run, patch("kuro_launcher.qt_core_pages.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes):
-            page.mutate("complete")
-            run.call_args.args[0]()
-        command = self.fx.controller.mutate_schedule.call_args.args[0]
-        self.assertEqual(command["expectedRevision"], 7)
-        self.assertEqual(command["occurrenceDate"], "2026-10-10")
-        self.assertTrue(command["confirmed"])
-        self.assertTrue(command["idempotencyKey"])
-
-    def test_schedule_cancellation_and_materialization_need_confirmation(self):
-        page, _ = self.schedule()
-        with patch.object(page, "run") as run, patch("kuro_launcher.qt_core_pages.QMessageBox.question", return_value=QMessageBox.StandardButton.No):
-            page.mutate("cancel")
-            page.advance()
-            run.assert_not_called()
-
-    def test_today_offscreen_screenshot(self):
-        self.w.today_page.apply(projection())
-        self.w.today_page.select_work("work-1")
-        self.w.work_companion.set_page("today")
-        self.w.work_companion.privacy_status.setText("SYNTHETIC FIXTURE · Core projection／無 provider")
-        APP.processEvents()
-        self.assertTrue(self.w.work_companion.grab().save(str(
-            ROOT / "devtools/git-work-companion-parity-20261010/R3-Today-offscreen.png"), "PNG"))
-
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_schedule_prepare_failure_and_offline_reads_remain_explicit(self):
+        self.controller.prepare_schedule.side_effect = ValueError("invalid wall time")
+        self.assertFalse(self.call("schedule", {"action": "prepare", "payload": {"item": {}}})["ok"])
+        self.controller.mutate_schedule.assert_not_called()
+        self.controller.read_schedule_view.side_effect = ConnectionError("offline")
+        result = self.call("schedule", {"action": "view", "payload": {
+            "start": "2026-10-10", "end": "2026-10-17", "timezone": "Asia/Taipei"}})
+        self.assertFalse(result["ok"])
+        self.assertNotIn("items", result)

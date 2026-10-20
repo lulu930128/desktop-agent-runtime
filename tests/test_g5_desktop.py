@@ -27,15 +27,13 @@ class DesktopTests(unittest.TestCase):
         w = self.window
         w.explicit_quitting = False
         w._cleanup_done = False
-        w._web_mode = False
-        w.work_web_candidate = None
+        w.work_web_candidate = Mock()
         w.tray = Mock()
         w.controller = Mock()
         w.chat_client = Mock()
         w.status_timer = Mock()
         w.runtime_timer = Mock()
         w.schedule_delivery = Mock()
-        w._discard_auto_empty_history_if_safe = Mock()
         w._append_log = Mock()
         w._set_action_status = Mock()
 
@@ -71,6 +69,7 @@ class DesktopTests(unittest.TestCase):
     def test_quit_cleanup_once_order_and_explicit_close(self):
         w = self.window
         calls = Mock()
+        calls.attach_mock(w.work_web_candidate.shutdown_candidate, "web")
         calls.attach_mock(w.schedule_delivery.stop, "delivery")
         calls.attach_mock(w.chat_client.disconnect, "disconnect")
         calls.attach_mock(w.controller.close, "controller")
@@ -80,7 +79,7 @@ class DesktopTests(unittest.TestCase):
             w.quit_application()
             w.cleanup()  # aboutToQuit callback
         self.assertEqual([c[0] for c in calls.mock_calls],
-                         ["delivery", "disconnect", "controller", "tray", "quit"])
+                         ["web", "delivery", "disconnect", "controller", "tray", "quit"])
         event = Mock()
         w.closeEvent(event)
         event.accept.assert_called_once()

@@ -1,4 +1,4 @@
-"""Actual production view + real ephemeral WS + canonical history in a temp cwd."""
+"""Web owner + real ephemeral WS + canonical history in a temp cwd."""
 import asyncio
 from contextlib import ExitStack
 import json
@@ -12,12 +12,18 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from websockets.legacy.server import serve
-from work_companion_fixture import APP, ProductionWindowFixture
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QMessageBox, QPushButton
+import launcher_qt  # runtime import bootstrap
+from PySide6.QtCore import QObject
+from PySide6.QtWidgets import QApplication
+from kuro_launcher.qt_chat_client import QtRuntimeChatClient
+from kuro_launcher.qt_web_protocol import CONTRACT
+from test_qt_web_existing_window import actual_port
+from web_candidate_fixtures import controller_fixture
 from open_llm_vtuber.websocket_handler import WebSocketHandler
 from open_llm_vtuber import chat_history_manager as histories
 from open_llm_vtuber.chat_event_manager import store_history_event, read_history_events
+
+APP = QApplication.instance() or QApplication([])
 
 
 class HistoryTransportTests(unittest.TestCase):
@@ -30,7 +36,7 @@ class HistoryTransportTests(unittest.TestCase):
             time.sleep(.005)
         self.fail("Isolated History transport timed out")
 
-    def test_real_main_drawer_crud_and_tool_timeline_through_ws(self):
+    def test_real_web_owner_crud_and_tool_timeline_through_ws(self):
         previous = Path.cwd()
         with tempfile.TemporaryDirectory() as directory, ExitStack() as cleanup:
             os.chdir(directory)
@@ -85,9 +91,25 @@ class HistoryTransportTests(unittest.TestCase):
                 self.assertFalse(thread.is_alive())
             cleanup.callback(stop_server)
             self.assertTrue(ready.wait(3))
-            fx = ProductionWindowFixture()
-            cleanup.callback(fx.close)
-            window, client = fx.window, fx.window.chat_client
+            owner = QObject()
+            owner.controller = controller_fixture()
+            owner.chat_client = client = QtRuntimeChatClient(owner)
+            owner.isVisible = lambda: True
+            port = actual_port(owner, [])
+            cleanup.callback(lambda: port.pool.shutdown(wait=True, cancel_futures=True))
+            cleanup.callback(port.shutdown)
+            replies = []
+            port.wire.response.connect(lambda raw: replies.append(json.loads(raw)))
+            port.broker.confirm = Mock(return_value=True)
+            sequence = 0
+            def call(method, payload=None):
+                nonlocal sequence
+                sequence += 1
+                request_id = f"r4-web-{sequence}"
+                port.wire.submit(json.dumps(dict(contract=CONTRACT, id=request_id,
+                    expected=port.adapter.identity(), method=method, payload=payload or {})))
+                self.until(lambda: any(r["id"] == request_id for r in replies))
+                return next(r["result"] for r in replies if r["id"] == request_id)
             def disconnect():
                 client.disconnect()
                 if client._thread:
@@ -96,53 +118,44 @@ class HistoryTransportTests(unittest.TestCase):
             cleanup.callback(disconnect)
             client.connect_to(f"ws://127.0.0.1:{ports[0]}/client-ws?client_role=qt-primary")
             self.until(lambda: client.history_ready)
-            window.history_toggle.click()
-            drawer = window.history_drawer
-            self.until(lambda: drawer.list.count() == 1 and not client.history_pending)
-            self.assertIn("SYNTHETIC question", drawer.records[0].preview)
-            drawer.search.setText("question")
-            self.assertEqual(drawer.list.count(), 1)
-            drawer.findChild(QPushButton, "HistoryOpen").click()
-            self.until(lambda: "SYNTHETIC tool" in window.history_transcript.toPlainText())
+            listing = call("getHistories")
+            self.assertTrue(listing["ok"], listing)
+            self.assertEqual(len(listing["histories"]), 1)
+            self.assertIn("SYNTHETIC question", listing["histories"][0]["last_preview"])
+            selected = call("selectHistory", {"historyUid": uid})
+            self.assertTrue(selected["ok"], selected)
+            transcript = "\n".join(row["content"] for row in selected["messages"])
+            self.assertIn("SYNTHETIC tool", transcript)
             self.assertEqual(context.history_uid, uid)
             self.assertEqual(client.current_history_uid, uid)
-            self.assertIn("  code", window.history_transcript.toPlainText())
+            self.assertIn("  code", transcript)
             calls = context.agent_engine.set_memory_from_history.call_count
-            client.select_history(uid)
-            self.until(lambda: not client.history_pending)
+            self.assertTrue(call("selectHistory", {"historyUid": uid})["ok"])
             self.assertEqual(context.agent_engine.set_memory_from_history.call_count, calls)
 
-            window.history_toggle.click()
-            self.until(lambda: not client.history_pending)
-            drawer.create.click()
-            self.until(lambda: client.current_history_uid not in {"", uid} and not client.history_pending)
+            self.assertTrue(call("createHistory")["ok"])
             new_uid = client.current_history_uid
             self.assertEqual(len(histories.get_history_list(conf, strict=True)), 2)
-            drawer.search.clear()
-            window.history_toggle.click()
-            self.until(lambda: drawer.list.count() == 2 and not client.history_pending)
-            row = next(drawer.list.item(i) for i in range(drawer.list.count())
-                       if drawer.list.item(i).data(Qt.ItemDataRole.UserRole) == new_uid)
-            delete_button = drawer.list.itemWidget(row).findChild(QPushButton, "DeleteHistory")
-            with patch("kuro_launcher.qt_app.QMessageBox.question", return_value=QMessageBox.StandardButton.No):
-                delete_button.click()
+            self.assertEqual(len(call("getHistories")["histories"]), 2)
+            port.broker.confirm.return_value = False
+            self.assertTrue(call("deleteHistory", {"historyUid": new_uid})["cancelled"])
             self.assertTrue(Path(histories._get_safe_history_path(conf, new_uid)).exists())
-            with patch("kuro_launcher.qt_app.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes):
-                delete_button.click()
+            port.broker.confirm.return_value = True
+            self.assertTrue(call("deleteHistory", {"historyUid": new_uid})["ok"])
             self.until(lambda: not Path(histories._get_safe_history_path(conf, new_uid)).exists()
                        and not client.history_pending)
             self.assertEqual(client.current_history_uid, "")
             self.assertEqual(context.history_uid, None)
             # One malformed file must be an error, never a false empty success.
             Path(histories._get_safe_history_path(conf, "broken")).write_text("{", encoding="utf-8")
-            window._refresh_history_list()
-            self.until(lambda: bool(window._history_error))
-            self.assertIn("history_operation_failed", drawer.status.text())
+            failed = call("getHistories")
+            self.assertFalse(failed["ok"])
+            self.assertEqual(failed["error"], "history_owner_rejected")
             self.assertTrue(any(p["type"] == "create-new-history" and p.get("context_id") for p in received))
             self.assertEqual(sum(p["type"] == "delete-history" for p in received), 1)
             self.assertEqual(errors, [])
-            fx.controller.read_history_records.assert_not_called()
-            fx.controller.read_history_timeline.assert_not_called()
+            owner.controller.read_history_records.assert_not_called()
+            owner.controller.read_history_timeline.assert_not_called()
 
     def test_strict_owner_read_errors_and_event_sidecar_delete(self):
         previous = Path.cwd()

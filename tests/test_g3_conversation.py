@@ -195,78 +195,15 @@ class QtTests(unittest.TestCase):
         self.assertEqual(len(sent["images"]), 1)
         self.assertEqual(len(sent["files"]), 1)
 
-    def window(self, blank=False):
-        window = SimpleNamespace(
-            pending_chat_submit=None, chat_input=Mock(), chat_attachments=[],
-            chat_blank_draft_active=blank, selected_history_uid="" if blank else "fixture",
-            chat_client=Mock(connected=True, history_ready=True, history_pending=False),
-            controller=Mock(), chat_live_blocks=[], chat_runtime_state="idle",
-            _chat_response_active=Mock(return_value=False), _profile_applying=False,
-            chat_host=Mock(), _clear_chat_attachments=Mock(),
-            _refresh_history_list=Mock(), _history_controls_changed=Mock(),
-            _set_chat_status=Mock(), _update_chat_send_button=Mock(),
-            _current_auto_empty_history_for_send=Mock(return_value=""),
-            _render_chat_attachments=Mock(), _release_auto_empty_history_marker=Mock(),
-            _chat_timestamp=Mock(return_value="00:00"), _visible_chat_input_text=Mock(return_value="fixture"),
-            _render_chat_transcript_with_live=Mock(), _append_log=Mock(),
-        )
-        window.chat_input.toPlainText.return_value = "fixture"
-        window.chat_client.history_identity.return_value = ("qt", "role", "context", "fixture")
-        window._submit_pending_chat = lambda: KuroQtLauncherWindow._submit_pending_chat(window)
-        window._queue_chat_submit = lambda *args: KuroQtLauncherWindow._queue_chat_submit(window, *args)
-        return window
 
-    def test_direct_send_no_pet_and_pending_history_exactly_once(self):
-        window = self.window(blank=True)
-        KuroQtLauncherWindow._send_chat_text(window)
-        KuroQtLauncherWindow._send_chat_text(window)
-        window.chat_client.create_history.assert_called_once_with(force_new=True)
-        window.chat_client.send_text.assert_not_called()
-        for _ in range(2):
-            KuroQtLauncherWindow._on_chat_protocol_message(window, {"type": "new-history-created", "history_uid": "fixture"})
-        window.chat_client.send_text.assert_called_once_with("fixture", [])
-        window.controller.send_pet_text_for_chat.assert_not_called()
 
-    def test_direct_send_existing_history_and_failed_send_preserves_input(self):
-        window = self.window()
-        window.chat_client.send_text.return_value = False
-        KuroQtLauncherWindow._send_chat_text(window)
-        window.chat_client.send_text.assert_called_once()
-        window.chat_input.setPlainText.assert_not_called()
-        self.assertIsNone(window.pending_chat_submit)
 
-    def test_interrupt_has_no_electron_fallback(self):
-        window = self.window()
-        window.chat_client.send_interrupt.return_value = False
-        KuroQtLauncherWindow._interrupt_chat(window)
-        window.chat_client.send_interrupt.assert_called_once()
-        window.controller.interrupt_pet.assert_not_called()
 
     def test_primary_url(self):
         window = SimpleNamespace(cfg=SimpleNamespace(llm_host="localhost", llm_port=12345))
         self.assertTrue(KuroQtLauncherWindow._runtime_chat_url(window).endswith("client_role=qt-primary"))
 
-    def test_history_commands_are_direct(self):
-        window = self.window()
-        window.last_status = SimpleNamespace(llm=True)
-        window._discard_auto_empty_history_if_safe = Mock()
-        window.chat_auto_empty_history_uid = ""
-        KuroQtLauncherWindow._request_history_selection(window, "fixture")
-        window.chat_client.select_history.assert_called_once_with("fixture")
-        KuroQtLauncherWindow._create_chat_history(window)
-        window.chat_client.create_history.assert_called_once_with(force_new=True)
-        window.history_records_by_uid = {}
-        from PySide6.QtWidgets import QMessageBox
-        with patch("kuro_launcher.qt_app.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes):
-            KuroQtLauncherWindow._delete_history_by_uid(window, "fixture")
-        window.chat_client.delete_history.assert_called_once_with("fixture", confirmed=True)
-        self.assertEqual(window.controller.mock_calls, [])
 
-    def test_connected_history_refresh_does_not_read_files(self):
-        window = self.window()
-        KuroQtLauncherWindow._refresh_history_list(window)
-        window.chat_client.request_history_list.assert_called_once()
-        self.assertEqual(window.controller.mock_calls, [])
 
     def test_history_listing_does_not_switch_primary(self):
         client = QtRuntimeChatClient()
@@ -288,23 +225,7 @@ class QtTests(unittest.TestCase):
                            **identity, "request_id": client._history_pending["request_id"]}))
         self.assertEqual(observed, ["new"])
 
-    def test_deleted_current_history_returns_to_blank_draft(self):
-        window = self.window()
-        window._show_blank_chat_draft = Mock()
-        window._refresh_history_list = Mock()
-        window._refresh_memory_list = Mock()
-        window._refresh_prompt_boxes = Mock()
-        KuroQtLauncherWindow._on_chat_history_changed(window, "", "")
-        window._show_blank_chat_draft.assert_called_once()
 
-    def test_disconnected_cleanup_cannot_fall_back_to_controller(self):
-        window = self.window()
-        window.chat_client.connected = False
-        window.chat_auto_empty_history_uid = "empty"
-        window.chat_auto_empty_create_pending = False
-        window._history_is_empty = Mock(return_value=True)
-        self.assertFalse(KuroQtLauncherWindow._discard_auto_empty_history_if_safe(window, "next"))
-        self.assertEqual(window.controller.mock_calls, [])
 
 
 if __name__ == "__main__":

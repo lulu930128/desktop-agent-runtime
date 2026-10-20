@@ -1,0 +1,313 @@
+{
+  "baselineGit": "f4980098b46986d0d0b6ca2ef7fbc538732913bc",
+  "preimage": ".tmp/w10-legacy-qt-retirement-20261020/preimage",
+  "removedMethods": [
+    "_wire_signals",
+    "_load_font_stacks",
+    "_font_stack",
+    "_build_ui",
+    "_build_status_panels",
+    "_page",
+    "_build_settings_surface",
+    "_settings_key",
+    "_set_settings_dialog_page",
+    "_open_settings_dialog",
+    "_settings_page",
+    "_settings_section",
+    "_settings_inline_controls",
+    "_settings_row",
+    "_settings_detail_panel",
+    "_build_chat_page",
+    "_build_workspace_page",
+    "_build_chat_memory_page",
+    "_build_chat_tab",
+    "_toggle_history_drawer",
+    "_history_controls_changed",
+    "_request_history_selection",
+    "_update_chat_identity",
+    "_build_memory_tab",
+    "_build_pet_page",
+    "_build_settings_page",
+    "_set_compact_display",
+    "_open_history_from_settings",
+    "_use_today_context",
+    "_create_history_from_settings",
+    "_build_perception_page",
+    "_build_tools_page",
+    "_refresh_tool_policy",
+    "_refresh_diagnostics",
+    "_confirm_runtime_action",
+    "_reload_pet_model",
+    "_status_card",
+    "_sidebar_status_row",
+    "_set_sidebar_panel_expanded",
+    "_toggle_sidebar_update_panel",
+    "_toggle_sidebar_services_panel",
+    "_command_button",
+    "_tool_button",
+    "_pet_toggle_button",
+    "_set_page",
+    "_refresh_profile_controls",
+    "_populate_thinking_combo",
+    "_sync_thinking_combos",
+    "_set_combo_by_data",
+    "_on_character_changed",
+    "_on_model_changed",
+    "_profile_selection",
+    "_confirm_profile_apply",
+    "_set_profile_applying",
+    "_reconcile_profile_apply",
+    "_expire_profile_apply",
+    "_on_project_changed",
+    "_on_outfit_changed",
+    "_on_thinking_changed",
+    "_reload_profiles",
+    "_refresh_workspace_data",
+    "_update_character_detail",
+    "_update_project_detail",
+    "_update_preview_asset",
+    "_request_preview_asset_refresh",
+    "_apply_preview_asset",
+    "_preview_fit",
+    "_preview_actual_size",
+    "_preview_zoom_in",
+    "_preview_zoom_out",
+    "_set_preview_zoom",
+    "_render_preview_pixmap",
+    "_refresh_prompt_boxes",
+    "_refresh_history_list",
+    "_show_blank_chat_draft",
+    "_disconnect_chat",
+    "_interrupt_chat",
+    "_ensure_auto_empty_chat",
+    "_history_is_empty",
+    "_clear_auto_empty_history_marker",
+    "_discard_auto_empty_history_if_safe",
+    "_release_auto_empty_history_marker",
+    "_current_auto_empty_history_for_send",
+    "_show_chat_add_menu",
+    "_build_chat_add_menu",
+    "_chat_menu_toggle_states",
+    "_set_pet_toggle_from_menu",
+    "_microphone_action",
+    "_add_chat_attachments",
+    "_clear_chat_attachments",
+    "_remove_chat_attachment",
+    "_build_chat_attachment",
+    "_classify_chat_attachment",
+    "_render_chat_attachments",
+    "_visible_chat_input_text",
+    "_send_or_interrupt_chat",
+    "_chat_response_active",
+    "_update_chat_send_button",
+    "_send_chat_text",
+    "_queue_chat_submit",
+    "_submit_pending_chat",
+    "_on_chat_protocol_message",
+    "_create_chat_history",
+    "_clear_pending_history_choice",
+    "_set_chat_status",
+    "_on_chat_state_changed",
+    "_on_chat_client_changed",
+    "_on_chat_error",
+    "_on_chat_history_changed",
+    "_on_chat_assistant_text_changed",
+    "_render_chat_transcript_with_live",
+    "_chat_timestamp",
+    "_refresh_memory_list",
+    "_on_memory_selected",
+    "_render_memory_detail",
+    "_delete_selected_history",
+    "_delete_history_by_uid",
+    "_selected_memory_entry_id",
+    "_add_memory_dialog",
+    "_confirm_memory_change",
+    "_change_selected_memory",
+    "_toggle_selected_memory",
+    "_approve_selected_memory",
+    "_reject_selected_memory",
+    "_delete_selected_memory",
+    "_compact_memory",
+    "_refresh_core_pages",
+    "_on_task_finished",
+    "_on_task_failed",
+    "_apply_status",
+    "_maybe_refresh_preview_from_status",
+    "_sync_pet_controls",
+    "_pet_toggle_label",
+    "_compact_label_text",
+    "_clear_layout",
+    "resizeEvent"
+  ],
+  "preservedAst": [
+    {
+      "path": "tests/test_r1_history_parity.py",
+      "cls": "ClientTests",
+      "method": null
+    },
+    {
+      "path": "tests/test_r1_history_parity.py",
+      "cls": "RuntimeTests",
+      "method": null
+    },
+    {
+      "path": "tests/test_g4_qt_core.py",
+      "cls": "CoreWrapperTests",
+      "method": null
+    },
+    {
+      "path": "tests/test_r2_settings_parity.py",
+      "cls": "OwnerTests",
+      "method": null
+    },
+    {
+      "path": "tests/test_r4_history_transport.py",
+      "cls": "HistoryTransportTests",
+      "method": "test_strict_owner_read_errors_and_event_sidecar_delete"
+    }
+  ],
+  "files": [
+    {
+      "path": "devtools/w10-legacy-qt-retirement-20261020/validate.py",
+      "before": null,
+      "after": "a22563ab8ea18a1a33ec1bac02bd55b8656534669a7fed753079d4575109fdc8"
+    },
+    {
+      "path": "kuro_launcher/qt_app.py",
+      "before": "00487ea9021c9af010cc33551b694425247517330cf02e8cb80e5c1643fc392c",
+      "after": "2bb0a0a73c049df5d93a155b8806e8bcc683f9240d4704ed807b993638a9db5c"
+    },
+    {
+      "path": "kuro_launcher/qt_core_pages.py",
+      "before": "4161c1a304d0c3f9fa6bdd3b4429202d11ee13c3005c0a5fdd0b420cead684a6",
+      "after": null
+    },
+    {
+      "path": "kuro_launcher/qt_web_release.py",
+      "before": "5ba89d3ee1ee860e71ea135072c949a180f55ec0392054575e0561b1c4208e2a",
+      "after": "4c5b2360df8ab08af2ec4a68ec605082f7ff23adf9bcec1db3f33fb432696b7a"
+    },
+    {
+      "path": "kuro_launcher/qt_work_companion_theme.py",
+      "before": "55ef7b8632bacc777e36061f98ec07c65baa73b48fea3e2655b784b1e2804635",
+      "after": null
+    },
+    {
+      "path": "kuro_launcher/qt_work_companion_view.py",
+      "before": "9e8e7c4937f83f30bf50aacdf355c02d38f1f2540c17570e83928af8342dd17d",
+      "after": null
+    },
+    {
+      "path": "launcher_qt.py",
+      "before": "518eb86bb9177bd55fc5c0aed797be750a867f18b6ae76ab5e7656d405c4ae6c",
+      "after": "62c8b398dd1c496973770543ad1e1ee5843022e7d07886a81bd9215f9b5869c5"
+    },
+    {
+      "path": "tests/test_g3_conversation.py",
+      "before": "023a85f426e8b1c7062518d510cd7b75bcc1d8cbd1005de58298774c471ef359",
+      "after": "e59fb680d5e0a6727163494615de3db6b61342ed00a541281a7b1a90a6604652"
+    },
+    {
+      "path": "tests/test_g4_qt_core.py",
+      "before": "6e9718c763b9b40169ec22a49b99d12a0c50e8721234877dd936fbd3a2ff46f9",
+      "after": "6e44ba5e122c3af0102b1212429c54afeabc75678c05d08fbe5f5f7d576a6f22"
+    },
+    {
+      "path": "tests/test_g5_desktop.py",
+      "before": "a1f37dd6917fb0cd408f0c29cc13ad611be6fe5d7edce2e70b441c325b91b829",
+      "after": "a8431376e49d2ec9c3d9d1c1badba07521d1cd34aa054ca0d40e256ba29ffeb2"
+    },
+    {
+      "path": "tests/test_g6_pet_boundary.py",
+      "before": "7f16612b6dba7da25f204f7bf60b9da0a026f578363bbca63ec019b2ff7f81ac",
+      "after": "309f250439d33d4e51403b6781e563b0a97ae446291d38e9de5ad11f57f32dce"
+    },
+    {
+      "path": "tests/test_launcher_entrypoint.py",
+      "before": "fc2830c462f1963a4c28d779256d63d5308d30282d1173a74c7b7fe6c29f5480",
+      "after": "ee2bdacb6599c8f051d920f39ccdea8997ab240248451d70140937b4396bdc6c"
+    },
+    {
+      "path": "tests/test_qt_web_existing_window.py",
+      "before": "2b9ec6ab8eccaf056adc75d46b5e4a65a2b13148ec420b3bcc8290a87f1b6830",
+      "after": "ca64df8ed409c78173d82f3e0dc166f7a77c4c949cd25bac3a9abd8776b5db9f"
+    },
+    {
+      "path": "tests/test_qt_web_w10.py",
+      "before": null,
+      "after": "8f4373c4a60f95b031d42d6d8080b778f60925baba79196e58401e3cc4f7d305"
+    },
+    {
+      "path": "tests/test_r1_history_parity.py",
+      "before": "7124c98b7c2ce9ccbfcd1d87ff53097a8aa10e0a3a51620cce6f39c6af50975a",
+      "after": "2b349ab1999f38b67cbeb96d30591b2b836484f1ade05763ac9d26a34f174439"
+    },
+    {
+      "path": "tests/test_r1_production_view.py",
+      "before": "5951fb3d612a2291b3a278695758ca80ca3502fe9bfceb220156c33643363b0f",
+      "after": null
+    },
+    {
+      "path": "tests/test_r2_settings_parity.py",
+      "before": "4ab02b08148dcc3714b26193e09a3968f5e43df8d48259f6e067fabd4f2cdb4b",
+      "after": "5876a768b3d6e5f863d4608967a3884a40c56115858618d537947c08489ce163"
+    },
+    {
+      "path": "tests/test_r3_today_schedule_parity.py",
+      "before": "21358a22952c6e95b230dbd1fb195cbdea7c6667b1b36b454c62c0b64c3a57c1",
+      "after": "62389302797f92376b48736747e8704cecf6dbf8a13764c149e3a269e4e4d9f7"
+    },
+    {
+      "path": "tests/test_r4_history_transport.py",
+      "before": "60734fdbc4609064dc797dc05655d737a55bc42ad48829068b1f8a2fccf13bc1",
+      "after": "cdabfa5b247a8d9cb7590ccc1a1412050bb1672ad5865cc3e6c3c3809c260106"
+    },
+    {
+      "path": "tests/test_v1_work_companion_view.py",
+      "before": "d6ec631cbe1ae6621ccb7645d8ffbe2ba3604a11ad361c7eb1b4268b297332ac",
+      "after": "0b0fcb24f6edb167cbe0965bfc7f96fb8b3d7dbf9da3452377e31a71487b398d"
+    },
+    {
+      "path": "tests/test_work_companion_source_encoding.py",
+      "before": "4eeca8e7877211eb65734ffbe90dd6cdc75010979155830afec5417e94d60fdb",
+      "after": "e3772f561b63149059d21ba5542c594d661bb411ae2e79dae767fdeb0f66d3a7"
+    },
+    {
+      "path": "tests/work_companion_fixture.py",
+      "before": "5b420bb16be4e3f92b00380e426ccfba72a34b3953ce4fbe23384021b4ac6c00",
+      "after": null
+    }
+  ],
+  "retainedMethods": [
+    "__init__",
+    "_append_log",
+    "_append_log_threadsafe",
+    "_apply_lifecycle_status",
+    "_confirm_restart_launcher",
+    "_connect_chat",
+    "_create_tray",
+    "_ensure_desktop_entry",
+    "_hide_minimized_to_tray",
+    "_init_web_presentation",
+    "_maybe_auto_connect_chat",
+    "_on_web_task_failed",
+    "_on_web_task_finished",
+    "_restart_launcher",
+    "_run_startup_auto_start",
+    "_run_task",
+    "_run_web_task",
+    "_runtime_chat_url",
+    "_schedule_startup_auto_start",
+    "_set_action_status",
+    "_start_notification_delivery",
+    "_start_profile",
+    "_submit_web_profile",
+    "_tray_activated",
+    "changeEvent",
+    "cleanup",
+    "closeEvent",
+    "quit_application",
+    "refresh_status",
+    "reveal"
+  ]
+}
