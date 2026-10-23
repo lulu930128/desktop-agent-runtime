@@ -1192,25 +1192,19 @@ class QtLauncherController:
 
     def read_tool_policy_summary(self) -> dict:
         """Stored policy projection only; never discover/execute tools or claim adoption."""
-        from open_llm_vtuber.mcpp.tool_policy_manager import ToolPolicy
-        path = Path(os.environ.get("KURO_TOOL_POLICY_PATH") or self.cfg.open_llm_dir / "tool_policy.json")
-        if path.stat().st_size > 2 * 1024 * 1024:
-            raise ValueError("Tool policy exceeds the bounded display size.")
-        raw = json.loads(path.read_text(encoding="utf-8-sig"))
-        if not isinstance(raw, dict):
-            raise ValueError("Tool policy must be an object.")
-        policy = ToolPolicy(raw)
-        if not policy.valid:
-            raise ValueError("Invalid tool policy configuration.")
-        records = []
-        for name, config in sorted(policy.tools.items()):
-            decision = policy.check(name, {})
-            config = config if isinstance(config, dict) else {}
-            records.append({"name": name, "category": config.get("category", ""),
-                "mode": config.get("mode", policy.default_mode), "allowed": decision.allowed,
-                "reason": decision.reason, "reason_code": decision.reason_code})
-        return {"default_mode": policy.default_mode, "tools": records,
-                "confirmation_available": False, "runtime_adoption": "UNVERIFIED", "digest": policy.digest}
+        return self._tool_policy_settings().read()
+
+    def _tool_policy_settings(self):
+        from .tool_policy_settings import ToolPolicySettings
+        canonical = (self.cfg.open_llm_dir / "tool_policy.json").absolute()
+        override = os.environ.get("KURO_TOOL_POLICY_PATH")
+        if override and Path(override).absolute() != canonical:
+            raise ValueError("tool_policy_noncanonical_owner")
+        return ToolPolicySettings(canonical)
+
+    def update_tool_policy(self, payload):
+        # Only called through the Qt broker after native confirmation.
+        return self._tool_policy_settings().update(payload, confirmed=True)
 
     def read_companion_diagnostics(self) -> dict:
         return self.lifecycle.snapshot()
@@ -1296,6 +1290,25 @@ class QtLauncherController:
     def read_core_status(self) -> dict:
         return self._core_request("/status")
 
+    def read_assistant_settings(self) -> dict:
+        return self._assistant_settings_result(self._core_request("/v1/assistant-settings"))
+
+    def update_assistant_settings(self, settings: dict, expected_revision: str) -> dict:
+        return self._assistant_settings_result(self._core_request("/v1/assistant-settings", {
+            "settings": settings, "expectedRevision": expected_revision, "confirmed": True}))
+
+    @staticmethod
+    def _assistant_settings_result(result: dict) -> dict:
+        from kuro_core.assistant_settings import CONTRACT, validate_settings
+        if result.get("contract") != CONTRACT:
+            raise ValueError("Assistant settings contract mismatch")
+        validate_settings(result.get("settings"))
+        if (not isinstance(result.get("revision"), str) or len(result["revision"]) != 64
+                or type(result.get("persisted")) is not bool or not isinstance(result.get("runtime"), dict)
+                or result["runtime"].get("consumer") != "kuro-core"):
+            raise ValueError("Assistant settings owner response invalid")
+        return result
+
     def read_today(self) -> dict:
         result = self._core_request("/v1/today")
         if result.get("contract") != "kuro.core.today.v1":
@@ -1350,21 +1363,27 @@ class QtLauncherController:
             self.log(f"[{log_ts()}] Bridge 沒有成功上線，請查看 bridge log。")
 
     def toggle_bridge(self) -> None:
-        if port_is_open(self.cfg.bridge_host, self.cfg.bridge_port):
-            self.log(f"[{log_ts()}] 正在停止 Bridge...")
-            self._stop_bridge_impl(kill_external=True)
-            return
-        self.log(f"[{log_ts()}] 正在啟動 Bridge...")
-        self._ensure_bridge_on_start()
+        with self.lifecycle.lock:
+            if self._stop_bridge_impl():
+                self.log(f"[{log_ts()}] 已停止自有 Bridge。")
+                return
+            if port_is_open(self.cfg.bridge_host, self.cfg.bridge_port):
+                raise RuntimeError("Bridge listener is unverified; no owned process to stop.")
+            self.log(f"[{log_ts()}] 正在啟動 Bridge...")
+            self._ensure_bridge_on_start()
 
     def restart_bridge(self) -> None:
-        self.log(f"[{log_ts()}] 正在重啟 Bridge...")
-        self._stop_bridge_impl(kill_external=True)
-        for _ in range(10):
-            if not port_is_open(self.cfg.bridge_host, self.cfg.bridge_port, 0.2):
-                break
-            time.sleep(0.2)
-        self._ensure_bridge_on_start()
+        with self.lifecycle.lock:
+            stopped = self._stop_bridge_impl()
+            if not stopped and port_is_open(self.cfg.bridge_host, self.cfg.bridge_port):
+                raise RuntimeError("Bridge listener is unverified; restart requires an owned process.")
+            for _ in range(10):
+                if not port_is_open(self.cfg.bridge_host, self.cfg.bridge_port, 0.2):
+                    break
+                time.sleep(0.2)
+            if port_is_open(self.cfg.bridge_host, self.cfg.bridge_port):
+                raise RuntimeError("Bridge port remains occupied by an unverified listener.")
+            self._ensure_bridge_on_start()
 
     def translate_debug(self) -> dict:
         if not port_is_open(self.cfg.bridge_host, self.cfg.bridge_port):
@@ -1600,14 +1619,8 @@ class QtLauncherController:
         # above may be stopped; never clear a newly occupied port by PID.
 
         if stop_bridge:
-            bridge_was_running = bool(self.proc_bridge) or port_is_open(
-                self.cfg.bridge_host,
-                self.cfg.bridge_port,
-                0.1,
-            )
-            self._stop_bridge_impl(kill_external=True)
-            if bridge_was_running and not silent:
-                self.log(f"[{log_ts()}] 已停止 Bridge。")
+            if self._stop_bridge_impl() and not silent:
+                self.log(f"[{log_ts()}] 已停止自有 Bridge。")
 
     def _prepare_runtime_profile(
         self,
@@ -2214,20 +2227,21 @@ class QtLauncherController:
         else:
             webbrowser.open(self.cfg.logs_dir.as_uri())
 
-    def _stop_bridge_impl(self, *, kill_external: bool = False) -> None:
-        if self.proc_bridge:
-            try:
-                self.proc_bridge.stop()
-            except Exception:
-                pass
+    def _stop_bridge_impl(self) -> bool:
+        # The held child handle is authority; a listener is never ownership.
+        proc = self.proc_bridge
+        if proc is None:
+            return False
+        if not isinstance(proc, ManagedProc):
+            raise RuntimeError("Bridge has no verified owned ManagedProc.")
+        if proc.popen.poll() is not None:
             self.proc_bridge = None
-        if kill_external:
-            pid = get_listening_pid_windows(self.cfg.bridge_port)
-            if pid:
-                try:
-                    taskkill_tree(pid)
-                except Exception:
-                    pass
+            return False
+        proc.stop()
+        # Keep the handle on failure/timeout; do not claim stop or spawn a duplicate.
+        proc.popen.wait(timeout=4)
+        self.proc_bridge = None
+        return True
 
     def _stop_tts_impl(self, *, kill_external: bool = False) -> None:
         if getattr(self.cfg, "tts_mode", "legacy") == "central":

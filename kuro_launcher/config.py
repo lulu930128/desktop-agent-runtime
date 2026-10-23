@@ -1,10 +1,17 @@
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import yaml
+
+
+def _load_core_hubs(core_cfg):
+    from kuro_core.hub_integration import HUBS, validate_hubs
+    integrations = core_cfg.get('integrations') or {}
+    if not isinstance(integrations, dict): raise ValueError('core.integrations must be a mapping')
+    return validate_hubs({name: integrations[name] for name in HUBS if name in integrations})
 
 
 def _read_yaml(path: Path) -> Dict[str, Any]:
@@ -229,6 +236,7 @@ class AppConfig:
     core_mail_work_max_bytes: int = 2097152
     core_mail_ttl_seconds: int = 1800
     core_mail_max_bytes: int = _CORE_MAIL_DEFAULT_MAX_BYTES
+    core_hubs: dict = field(default_factory=dict)
 
     @property
     def voice_url(self) -> str:
@@ -365,6 +373,7 @@ def load_config(config_path: Path) -> AppConfig:
         core_timezone=str(core_cfg.get("timezone", "UTC")),
         core_port=core_port,
         core_db_path=_resolve_path(str(core_cfg.get("db_path") or "${ROOT}/local_state/core/work.sqlite3"), mapping).resolve(),
+        core_hubs=_load_core_hubs(core_cfg),
         core_study_enabled=core_study_enabled,
         core_study_snapshot_path=core_study_snapshot_path,
         core_study_ttl_seconds=core_study_ttl_seconds,

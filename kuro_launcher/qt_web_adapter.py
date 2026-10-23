@@ -213,11 +213,11 @@ class QtOwnerAdapter:
                 return error(str(exc))
             except Exception:
                 # No exception text / private payload / paths pass into HTML.
-                return error("owner_failed_or_offline", unknown=method in {"applyProfile", "memoryAction", "control"} or method == "schedule" and p["action"] in {"mutate", "notification-action"})
+                return error("owner_failed_or_offline", unknown=method in {"applyProfile", "memoryAction", "control", "updateAssistantSettings"} or method == "schedule" and p["action"] in {"mutate", "notification-action"})
         def complete(result):
             if self.closed or not active(): return
             if expected != self.identity() and method != "applyProfile":
-                done(error("context_changed_during_operation", unknown=method in {"memoryAction", "control"} or method == "schedule" and p["action"] in {"mutate", "notification-action"}))
+                done(error("context_changed_during_operation", unknown=method in {"memoryAction", "control", "updateAssistantSettings"} or method == "schedule" and p["action"] in {"mutate", "notification-action"}))
                 return
             if method == "applyProfile" and result.get("ok"):
                 c = self.controller
@@ -286,7 +286,11 @@ class QtOwnerAdapter:
         c = self.controller
         if method == "getData": return today_projection(c.read_today())
         if method in {"refreshMail", "getMailMessage"}: return error("mail_canonical_contract_unavailable")
+        if method == "getAssistantSettings": return {"ok": True, **c.read_assistant_settings()}
+        if method == "updateAssistantSettings":
+            return {"ok": True, **c.update_assistant_settings(p["settings"], p["expectedRevision"])}
         if method == "getTools": return {"ok": True, **c.read_tool_policy_summary(), "confirmation_available": False}
+        if method == "updateToolPolicy": return {"ok": True, **c.update_tool_policy(p)}
         if method == "getProfile":
             return {"ok": True, "characters": [{"id": row.conf_uid, "name": row.conf_name} for row in c.character_records.values()],
                 "projects": [{"id": row.project_id, "name": row.display_name} for row in c.project_records.values()],

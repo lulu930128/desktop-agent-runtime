@@ -1,0 +1,13 @@
+# Merge these keys into the EXISTING core.integrations mapping only after review.
+# This fragment is documentation, not a second config loader or launch profile.
+# Set only the chosen source's enabled to true to opt in; defaults remain off.
+core:
+  integrations:
+    japanese_study:
+      enabled: false
+      interval_seconds: 300
+      ttl_seconds: 600
+    english_study:
+      enabled: false
+      interval_seconds: 300
+      ttl_seconds: 600

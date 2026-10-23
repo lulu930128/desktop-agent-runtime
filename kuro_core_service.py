@@ -1,5 +1,6 @@
 """Launcher-owned Core entrypoint; no credentials in command-line arguments."""
 import argparse
+import json
 import logging
 import os
 from pathlib import Path
@@ -13,6 +14,7 @@ def main():
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--instance", required=True)
     parser.add_argument("--timezone", default="UTC")
+    parser.add_argument('--hub-sources', type=json.loads, default={})
     parser.add_argument("--study-enabled", action="store_true")
     parser.add_argument("--study-snapshot", type=Path)
     parser.add_argument("--study-ttl-seconds", type=int, default=3600)
@@ -32,7 +34,8 @@ def main():
         study_ttl_seconds=args.study_ttl_seconds, study_max_bytes=args.study_max_bytes,
         mail_enabled=args.mail_enabled, mail_status_path=args.mail_status,
         mail_work_path=args.mail_work, mail_work_max_bytes=args.mail_work_max_bytes,
-        mail_ttl_seconds=args.mail_ttl_seconds, mail_max_bytes=args.mail_max_bytes)
+        mail_ttl_seconds=args.mail_ttl_seconds, mail_max_bytes=args.mail_max_bytes,
+        hubs=args.hub_sources)
     try:
         server.start()
         server.stop_event.wait()

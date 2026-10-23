@@ -108,6 +108,39 @@ export class OwnerTransport {
   }
 }
 
+export function attachmentError(values: any[]): string | null {
+  if (!Array.isArray(values) || values.length > 6) return "attachments_limit";
+  const kinds: Record<string, string> = {"image/png":"image", "image/jpeg":"image", "image/webp":"image",
+    "text/plain":"text", "application/pdf":"binary", "audio/wav":"audio", "audio/x-wav":"audio"};
+  let total = 0;
+  for (const item of values) {
+    if (!item || kinds[item.mime_type] !== item.kind) return "attachment_type_unsupported";
+    if (!Number.isSafeInteger(item.size) || item.size <= 0 || item.size > 4 * 1024 * 1024) return "attachment_size";
+    if (typeof item.data !== "string" || !item.data.startsWith(`data:${item.mime_type};base64,`)) return "attachment_data_url";
+    total += item.size;
+  }
+  return total > 8 * 1024 * 1024 ? "attachments_total_limit" : null;
+}
+
+export function presentationControl(action: string, payload: RecordValue): RecordValue | null {
+  // The immutable renderer sends presentation hints. Only IDs cross to the
+  // canonical owner, which regenerates outfit parameters and expression presets.
+  const keys = Object.keys(payload);
+  if (action === "set-outfit") {
+    if (keys.some(key => !["outfitId", "parameterId", "value"].includes(key))) return null;
+    if (!["normal", "hoodie"].includes(String(payload.outfitId))) return null;
+    if (payload.parameterId !== undefined && payload.parameterId !== "Param10") return null;
+    if (payload.value !== undefined && payload.value !== (payload.outfitId === "hoodie" ? 1 : 0)) return null;
+    return {outfitId: payload.outfitId};
+  }
+  if (action === "set-expression") {
+    if (keys.some(key => !["expressionId", "expressionLabel", "parameters"].includes(key))) return null;
+    if (typeof payload.expressionId !== "string" || !payload.expressionId) return null;
+    return {expressionId: payload.expressionId};
+  }
+  return payload;
+}
+
 export function makeOwnerBridge(t: OwnerTransport): WorkPanelBridge {
   const call = (method: string, payload: RecordValue = {}) => t.call(method, payload);
   let notifications: any = null;
@@ -137,9 +170,15 @@ export function makeOwnerBridge(t: OwnerTransport): WorkPanelBridge {
     createHistory: () => call("createHistory"), selectHistory: historyUid => call("selectHistory", {historyUid}),
     deleteHistory: (historyUid, historyTitle = "") => call("deleteHistory", {historyUid, historyTitle}),
     getMemories: () => call("getMemories"), memoryAction: (action, payload = {}) => call("memoryAction", {action, payload}),
-    getTools: () => call("getTools"), sendText: (text, attachments) => call("sendText", {text, attachments}),
+    getTools: () => call("getTools"), sendText: (text, attachments) => {
+      const rejected = attachmentError(attachments);
+      return rejected ? Promise.resolve(failure(rejected)) : call("sendText", {text, attachments});
+    },
     refreshMail: () => call("refreshMail"), getMailMessage: messageId => call("getMailMessage", {messageId}),
-    control: (action, payload = {}) => call("control", {action, payload}),
+    control: (action, payload = {}) => {
+      const prepared = presentationControl(action, payload);
+      return prepared === null ? Promise.resolve(failure("presentation_payload_invalid")) : call("control", {action, payload: prepared});
+    },
     closeWindow: () => { void call("closeWindow"); }, minimizeWindow: () => { void call("minimizeWindow"); },
     toggleMaximizeWindow: () => { void call("toggleMaximizeWindow"); },
     onState: cb => t.on("onState", cb), onData: cb => t.on("onData", cb), onChatState: cb => t.on("onChatState", cb)

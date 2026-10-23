@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from .mail_adapter import build_mail_status, validate_mail_limits
+from .hub_integration import HubIntegration, validate_hubs
 
 from .study_adapter import (
     DEFAULT_MAX_SNAPSHOT_BYTES, MAX_SNAPSHOT_BYTES, MAX_TTL_SECONDS, build_study_status,
@@ -81,10 +82,16 @@ class MailIntegration:
 class IntegrationRegistry:
     def __init__(self, *, study_enabled=False, study_snapshot_path=None,
                  study_ttl_seconds=3600, study_max_bytes=DEFAULT_MAX_SNAPSHOT_BYTES,
-                 mail_enabled=False, mail_status_path=None, mail_ttl_seconds=1800, mail_max_bytes=65536):
+                 mail_enabled=False, mail_status_path=None, mail_ttl_seconds=1800, mail_max_bytes=65536,
+                 hubs=None):
         validate_study_limits(study_ttl_seconds, study_max_bytes)
         validate_mail_limits(mail_ttl_seconds, mail_max_bytes)
         self.integrations = {}
+        options = validate_hubs(hubs)
+        if study_enabled and any(v['enabled'] for v in options.values()):
+            raise ValueError('Legacy study snapshot and independent Hubs cannot be enabled together')
+        self.readonly_sources = {source: HubIntegration(source, value) for source,value in options.items()}
+        self._hub_turn = 0
         if mail_enabled:
             self.integrations["mail"] = MailIntegration(mail_status_path, mail_ttl_seconds, mail_max_bytes)
         if study_enabled:
@@ -94,7 +101,23 @@ class IntegrationRegistry:
     def register_routes(self, api):
         for name, integration in self.integrations.items():
             api.register("GET", f"/v1/integrations/{name}", integration.read)
+        for name, integration in self.readonly_sources.items():
+            api.register('GET', f'/v1/integrations/{name}', integration.read)
+
+    def background_read(self, stop):
+        # One bounded endpoint per Core-owned transport tick; no domain scheduler.
+        hubs = [v for v in self.readonly_sources.values() if isinstance(v, HubIntegration)]
+        if hubs and not stop.is_set():
+            source = hubs[self._hub_turn % len(hubs)]
+            self._hub_turn += 1
+            source.tick(stop)
+
+    def close(self):
+        for source in self.readonly_sources.values():
+            if isinstance(source, HubIntegration): source.close()
 
     def status(self):
         # Configuration only: startup/readiness never reads a private handoff.
-        return {"contract": "kuro.core.integrations.v1", "configured": sorted(self.integrations)}
+        return {"contract": "kuro.core.integrations.v1", "configured": sorted(self.integrations),
+                'readonlySources': {name: {'enabled': value.options['enabled']}
+                    for name,value in self.readonly_sources.items() if isinstance(value,HubIntegration)}}

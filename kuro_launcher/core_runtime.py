@@ -68,6 +68,9 @@ class CoreRuntime:
             env["KURO_CORE_TOKEN"] = self.token
             command = [_env_python(self.cfg.env_llm), str(self.cfg.root / "kuro_core_service.py"),
                        "--db", str(self.cfg.core_db_path), "--port", str(self.cfg.core_port), "--instance", self.instance, "--timezone", getattr(self.cfg,"core_timezone","UTC")]
+            from kuro_core.hub_integration import validate_hubs
+            hubs = validate_hubs(getattr(self.cfg, 'core_hubs', {}))
+            command.extend(['--hub-sources', json.dumps(hubs, separators=(',', ':'))])
             if getattr(self.cfg, "core_study_enabled", False):
                 study_path = getattr(self.cfg, "core_study_snapshot_path", None)
                 if study_path is None:

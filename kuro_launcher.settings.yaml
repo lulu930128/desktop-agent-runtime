@@ -41,6 +41,15 @@ core:
   timezone: "Asia/Taipei"
   db_path: "${ROOT}/local_state/core/work.sqlite3"
   integrations:
+    japanese_study:
+      # Explicit first-wave opt-in; bounded reads from the existing Hub only.
+      enabled: true
+      interval_seconds: 300
+      ttl_seconds: 600
+    english_study:
+      enabled: true
+      interval_seconds: 300
+      ttl_seconds: 600
     study:
       # Opt in explicitly; enabling does not refresh or ingest the handoff.
       enabled: false
@@ -49,7 +58,7 @@ core:
       max_bytes: 2097152
     mail:
       # Opt in explicitly; share this handoff path with the existing Mail producer.
-      enabled: false
+      enabled: true
       status_path: "${open_llm_vtuber_dir}/private/gmail/mail_status.json"
       work_path: "${open_llm_vtuber_dir}/private/gmail/mail_work.json"
       work_max_bytes: 2097152

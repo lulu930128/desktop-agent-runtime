@@ -88,7 +88,8 @@ class ToolPolicy:
         # A legacy deny remains a deny during an incremental configuration migration.
         if canonical in self.tools and raw != canonical and raw in self.tools:
             legacy_cfg = self.tools[raw]
-            if not isinstance(legacy_cfg, dict) or not mode_decision(legacy_cfg.get("mode", self.default_mode)).allowed:
+            if (not isinstance(legacy_cfg, dict) or legacy_cfg.get("enabled", True) is not True
+                    or not mode_decision(legacy_cfg.get("mode", self.default_mode)).allowed):
                 tool_cfg = legacy_cfg
         if not isinstance(tool_cfg, dict):
             return ToolPolicyDecision(
@@ -100,6 +101,8 @@ class ToolPolicy:
 
         if not _valid_tool_config(tool_cfg):
             return ToolPolicyDecision(False, "blocked", "Invalid tool policy rules.", "invalid_policy_config")
+        if tool_cfg.get("enabled", True) is False:
+            return ToolPolicyDecision(False, "blocked", "Disabled by user setting.", "tool_disabled")
         decision = mode_decision(tool_cfg.get("mode", self.default_mode))
         if not decision.allowed:
             return decision
@@ -336,13 +339,13 @@ def _string_list(value: Any) -> bool:
 
 
 def _valid_tool_config(cfg: dict[str, Any]) -> bool:
-    known = {"mode", "category", "path_args", "url_args", "deny_truthy_args", "deny_values", "max_numeric_args", "allow_hidden", "block_private_urls"}
+    known = {"mode", "enabled", "category", "path_args", "url_args", "deny_truthy_args", "deny_values", "max_numeric_args", "allow_hidden", "block_private_urls"}
     if set(cfg) - known:
         return False
     for key in ("path_args", "url_args", "deny_truthy_args"):
         if key in cfg and not _string_list(cfg[key]):
             return False
-    for key in ("allow_hidden", "block_private_urls"):
+    for key in ("allow_hidden", "block_private_urls", "enabled"):
         if key in cfg and type(cfg[key]) is not bool:
             return False
     if "deny_values" in cfg:

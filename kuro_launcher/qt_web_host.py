@@ -287,7 +287,15 @@ def _create_host(owner, bundle, *, fixture):
             review = {k: v for k, v in payload.items() if not k.startswith("_")}
             if method == "sendText":
                 review["attachments"] = [{k: a[k] for k in ("name", "size", "mime_type")} for a in payload["attachments"]]
-            box.setText(f"{method}\n\n{json.dumps(review, ensure_ascii=False, indent=2)}\n\n僅授權本次內容；逾時不會自動重送。")
+            if method == "updateToolPolicy":
+                from .tool_policy_settings import CATALOG
+                label = CATALOG[payload["name"]][0]
+                action = "啟用" if payload["enabled"] else "停用"
+                box.setText(f"{action}工具：{label}\n\n只變更此工具開關，原權限及參數限制不變。\n"
+                            "儲存後目前對話環境尚未採用；由使用者重啟後仍需驗證。\n"
+                            f"\n診斷識別：{payload['name']}\n版本：{payload['expectedDigest']}\n\n僅授權本次設定；不執行工具。")
+            else:
+                box.setText(f"{method}\n\n{json.dumps(review, ensure_ascii=False, indent=2)}\n\n僅授權本次內容；逾時不會自動重送。")
             box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             box.setDefaultButton(QMessageBox.StandardButton.No)
             accepted = box.exec() == QMessageBox.StandardButton.Yes

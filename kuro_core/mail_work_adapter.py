@@ -83,5 +83,12 @@ def read_mail_work(work_path, status_path, *, received_at, ttl_seconds=1800,
     except HandoffReadError as exc:
         availability = {"missing": AvailabilityStatus.MISSING, "read_failed": AvailabilityStatus.OFFLINE}.get(
             exc.code, AvailabilityStatus.PARTIAL)
+        if observation.availability in (AvailabilityStatus.AUTH_REQUIRED, AvailabilityStatus.OFFLINE):
+            availability = observation.availability
         return WorkEvidenceRead((), degraded(observation, f"mail_work_{exc.code}", availability))
-    return mail_work_evidence(payload, observation, ttl_seconds=ttl_seconds)
+    result = mail_work_evidence(payload, observation, ttl_seconds=ttl_seconds)
+    if observation.availability in (AvailabilityStatus.AUTH_REQUIRED, AvailabilityStatus.OFFLINE):
+        result = WorkEvidenceRead(tuple(replace(e, availability=observation.availability,
+            connection=observation.connection) for e in result.evidence),
+            replace(result.observation, availability=observation.availability, connection=observation.connection))
+    return result

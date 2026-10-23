@@ -99,6 +99,13 @@ def mail_status_observation(payload, *, received_at, ttl_seconds=1800,
                             else AvailabilityStatus.OFFLINE)
         else:
             limitations.append("mail_success_missing_or_invalid")
+    if details.get('lastAttemptOk') is False:
+        if details.get('errorType') == 'auth_required':
+            availability = AvailabilityStatus.AUTH_REQUIRED
+            limitations.append('mail_auth_required')
+        elif details.get('errorType') == 'provider_error':
+            # Transport failure does not erase retained good cache availability.
+            limitations.append('mail_provider_error')
     fingerprint = json.dumps([availability.value, connection.value, isoformat_utc(observed),
                               isoformat_utc(valid_until), details, limitations], sort_keys=True)
     digest = hashlib.sha256(fingerprint.encode()).hexdigest()[:32]

@@ -2,7 +2,7 @@
 // process-local values; native Web Storage remains disabled by the Qt host.
 const allowed: Record<string, ReadonlySet<string>> = {
   "kuro.work-panel.mode": new Set(["chat", "today", "settings"]),
-  "kuro.work-panel.source": new Set(["all", "study", "mail", "stocks", "news", "messages", "notes"]),
+  "kuro.work-panel.source": new Set(["all", "study", "japanese_study", "english_study", "mail", "omi", "stocks", "news", "messages", "notes"]),
   "kuro.work-panel.settings-section": new Set(["assistant", "conversation", "perception", "tools", "pet", "diagnostics"]),
   "kuro.work-panel.compact": new Set(["true", "false"]),
   "kuro.work-panel.reduce-motion": new Set(["true", "false"]),

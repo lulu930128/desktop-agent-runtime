@@ -14,7 +14,8 @@ METHODS = frozenset(("schedule", "getState", "getData", "getChatState", "getChat
     "getProfile", "applyProfile", "getHistories", "createHistory", "selectHistory",
     "deleteHistory", "getMemories", "memoryAction", "getTools", "sendText",
     "refreshMail", "getMailMessage", "control", "closeWindow", "minimizeWindow",
-    "toggleMaximizeWindow", "getWindowState", "startWindowMove", "startWindowResize"))
+    "toggleMaximizeWindow", "getWindowState", "startWindowMove", "startWindowResize",
+    "getAssistantSettings", "updateAssistantSettings", "updateToolPolicy"))
 WINDOW_EDGES = frozenset(("top", "bottom", "left", "right",
                          "top-left", "top-right", "bottom-left", "bottom-right"))
 IDENTITY_KEYS = {"actor", "history", "context", "client", "revision"}
@@ -78,6 +79,17 @@ def validate(method, p):
         if not isinstance(p["edge"], str) or p["edge"] not in WINDOW_EDGES:
             raise Rejected("invalid_window_edge")
         return False
+    if method == "updateAssistantSettings":
+        from kuro_core.assistant_settings import validate_settings
+        object_fields(p, {"settings", "expectedRevision"}, {"settings", "expectedRevision"})
+        validate_settings(p["settings"])
+        if not isinstance(p["expectedRevision"], str) or not re.fullmatch(r"[a-f0-9]{64}", p["expectedRevision"]):
+            raise Rejected("assistant_settings_revision_required")
+        return True
+    if method == "updateToolPolicy":
+        from .tool_policy_settings import validate_change
+        validate_change(p)
+        return True
     if method in {"applyProfile"}:
         object_fields(p, {"character_id", "project_id", "model", "thinking_power"},
                       {"character_id", "project_id", "model", "thinking_power"})
@@ -161,7 +173,7 @@ def validate(method, p):
 
 def requires_confirmation(method, payload):
     # Ordinary chat/create/select use the explicit UI action + downstream policy.
-    return (method in {"deleteHistory", "memoryAction", "applyProfile"}
+    return (method in {"deleteHistory", "memoryAction", "applyProfile", "updateAssistantSettings", "updateToolPolicy"}
             or method == "schedule" and payload.get("action") in {"mutate", "notification-action"}
             or method == "control" and payload.get("action") != "interrupt")
 

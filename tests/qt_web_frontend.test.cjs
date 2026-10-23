@@ -257,3 +257,28 @@ test('notification review expires when owner context changes', async () => {
   const result=await bridge.schedule('notification-action',{action:'dismiss',id:'fixture'});
   assert.equal(result.ok,false);assert.equal(h.sent.length,count);
 });
+
+test('G1 original Pet hints reduce to canonical IDs and never grant extra controls', async () => {
+  const calls=[];
+  const bridge=load('owner-bridge').makeOwnerBridge({call:async(...args)=>{calls.push(args);return {ok:true};},on(){}});
+  await bridge.control('set-outfit',{outfitId:'hoodie',parameterId:'Param10',value:1});
+  await bridge.control('set-expression',{expressionId:'neutral',expressionLabel:'SYNTHETIC',parameters:{arbitrary:999}});
+  assert.deepEqual(calls,[['control',{action:'set-outfit',payload:{outfitId:'hoodie'}}],['control',{action:'set-expression',payload:{expressionId:'neutral'}}]]);
+  for(const payload of [{outfitId:'hoodie',value:0},{outfitId:'hoodie',parameterId:'other'},{outfitId:'normal',unexpected:true}])
+    assert.equal((await bridge.control('set-outfit',payload)).ok,false);
+  assert.equal(calls.length,2);
+});
+
+test('G1 frontend attachment limits agree with native caps before submitting', async () => {
+  const {attachmentError}=load('owner-bridge');
+  const item={kind:'text',mime_type:'text/plain',size:1,data:'data:text/plain;base64,QQ=='};
+  assert.equal(attachmentError([item]),null);
+  assert.equal(attachmentError(Array(7).fill(item)),'attachments_limit');
+  assert.equal(attachmentError([{...item,size:4*1024*1024+1}]),'attachment_size');
+  assert.equal(attachmentError(Array(3).fill({...item,size:3*1024*1024})),'attachments_total_limit');
+  assert.ok(attachmentError([{...item,mime_type:'application/zip'}]));
+  const calls=[];
+  const bridge=load('owner-bridge').makeOwnerBridge({call:async(...args)=>calls.push(args),on(){}});
+  assert.equal((await bridge.sendText('SYNTHETIC',[{...item,size:NaN}])).ok,false);
+  assert.equal(calls.length,0);
+});
