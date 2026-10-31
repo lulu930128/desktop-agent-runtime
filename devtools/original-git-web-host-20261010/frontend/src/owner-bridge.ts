@@ -108,8 +108,59 @@ export class OwnerTransport {
   }
 }
 
+export function createHistoryListReader(t: OwnerTransport, readyTimeout = 30000): (historyUid?: string) => Promise<any> {
+  let inflight: Promise<any> | null = null;
+  let generation = 0;
+  let readiness = "";
+  let wake: (() => void) | null = null;
+  const changed = () => { generation++; wake?.(); };
+  t.on("onIdentityChange", changed);
+  t.on("onChatState", state => {
+    const next = JSON.stringify([state.wsConnected, state.historyReady]);
+    if (next !== readiness) { readiness = next; changed(); }
+  });
+  return (historyUid = "") => {
+    if (inflight) return inflight;
+    const deadline = Date.now() + readyTimeout;
+    t.notify("onHistoryReadState", {state: "loading"});
+    inflight = (async () => {
+      for (;;) {
+        const expected = generation;
+        const result = await t.call("getHistories", {historyUid});
+        // A context/readiness event can precede completion of an older read.
+        // Serialize the next read; never publish the older list or its error.
+        if (expected !== generation) {
+          if (Date.now() >= deadline) throw new Error("history_ready_timeout");
+          continue;
+        }
+        if (result?.ok === true) {
+          if (!Array.isArray(result.histories)) throw new Error("history_list_invalid");
+          t.notify("onHistoryReadState", {state: "ready"});
+          return result;
+        }
+        if (!["conversation_not_ready", "owner_not_ready"].includes(result?.error))
+          throw new Error(result?.error || "history_list_failed");
+        await new Promise<void>((resolve, reject) => {
+          const remaining = deadline - Date.now();
+          if (remaining <= 0) { reject(new Error("history_ready_timeout")); return; }
+          const timer = setTimeout(() => { wake = null; reject(new Error("history_ready_timeout")); }, remaining);
+          wake = () => { clearTimeout(timer); wake = null; resolve(); };
+          if (expected !== generation) wake();
+        });
+      }
+    })().catch(error => {
+      t.notify("onHistoryReadState", {state: "failed"});
+      // The immutable renderer falls back to getChatHistory on ok:false.
+      // Reject instead: a current transcript is never an authoritative list.
+      throw error;
+    }).finally(() => { inflight = null; });
+    return inflight;
+  };
+}
+
 export function makeOwnerBridge(t: OwnerTransport): WorkPanelBridge {
   const call = (method: string, payload: RecordValue = {}) => t.call(method, payload);
+  const getHistories = createHistoryListReader(t);
   let notifications: any = null;
   t.on("onIdentityChange", () => {
     notifications = null;
@@ -133,7 +184,7 @@ export function makeOwnerBridge(t: OwnerTransport): WorkPanelBridge {
     getState: () => call("getState"), getData: () => call("getData"),
     getChatState: () => call("getChatState"), getChatHistory: () => call("getChatHistory"),
     getProfile: () => call("getProfile"), applyProfile: payload => call("applyProfile", payload),
-    getHistories: (historyUid = "") => call("getHistories", {historyUid}),
+    getHistories,
     createHistory: () => call("createHistory"), selectHistory: historyUid => call("selectHistory", {historyUid}),
     deleteHistory: (historyUid, historyTitle = "") => call("deleteHistory", {historyUid, historyTitle}),
     getMemories: () => call("getMemories"), memoryAction: (action, payload = {}) => call("memoryAction", {action, payload}),

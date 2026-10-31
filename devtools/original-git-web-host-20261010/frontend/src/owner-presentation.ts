@@ -76,6 +76,7 @@ export function isImeSubmit(event: Pick<KeyboardEvent, "key" | "isComposing" | "
 
 export function installPresentationGuards(transport: OwnerTransport): void {
   installWindowGestures(transport);
+  const projectHistory = installHistoryListGuards(transport);
   let composing = false;
   document.addEventListener("compositionstart", () => { composing = true; }, true);
   document.addEventListener("compositionend", () => { composing = false; }, true);
@@ -91,6 +92,7 @@ export function installPresentationGuards(transport: OwnerTransport): void {
   transport.on("onChatState", state => { timeline = Array.isArray(state.timeline) ? state.timeline : []; queueMicrotask(project); });
   const unsupported = new Set(["手動更新 Mail", "重試啟動對話", "停止對話服務", "重新啟動 Kuro"]);
   function project(): void {
+    projectHistory();
     for (const node of document.querySelectorAll<HTMLButtonElement>("button")) {
       if (unsupported.has(node.textContent?.trim() || "")) {
         node.disabled = true;
@@ -144,4 +146,62 @@ export function installPresentationGuards(transport: OwnerTransport): void {
     }
   }
   new MutationObserver(() => { project(); }).observe(document.getElementById("app")!, {childList: true, subtree: true});
+}
+
+export function installHistoryListGuards(transport: Pick<OwnerTransport, "on">): () => void {
+  let state = "loading";
+  let reading = false;
+  let ready = false;
+  let opening = false;
+  const project = () => {
+    const header = document.querySelector<HTMLElement>(".chat-header");
+    let progress = header?.querySelector<HTMLElement>("[data-owner-history-progress]");
+    if (header && reading && !progress) {
+      progress = document.createElement("div"); progress.className = "chat-subtitle";
+      progress.dataset.ownerHistoryProgress = "true"; progress.setAttribute("role", "status");
+      progress.textContent = "正在讀取對話紀錄…"; header.appendChild(progress);
+    }
+    if (!reading) progress?.remove();
+    const drawer = document.querySelector<HTMLElement>("[data-history-drawer]");
+    const list = drawer?.querySelector<HTMLElement>(".history-list");
+    if (!drawer || !list) return;
+    drawer.setAttribute("aria-busy", String(state === "loading"));
+    list.hidden = state !== "ready";
+    let status = drawer.querySelector<HTMLElement>("[data-owner-history-status]");
+    if (state === "ready") { status?.remove(); return; }
+    if (!status) {
+      status = document.createElement("div"); status.className = "history-empty";
+      status.dataset.ownerHistoryStatus = "true"; status.setAttribute("role", "status");
+      status.setAttribute("aria-live", "polite"); drawer.appendChild(status);
+    }
+    const copy = state === "loading" ? "正在等待對話服務並讀取紀錄…" : "對話紀錄讀取失敗；請重新開啟側欄再試。";
+    if (status.textContent !== copy) status.textContent = copy;
+  };
+  transport.on("onHistoryReadState", value => {
+    state = value.state; reading = state === "loading";
+    if (!reading) opening = false;
+    queueMicrotask(project);
+  });
+  transport.on("onIdentityChange", () => { ready = false; state = "loading"; queueMicrotask(project); });
+  transport.on("onChatState", value => {
+    const next = value.wsConnected === true && value.historyReady === true;
+    if (!next) { state = "loading"; queueMicrotask(project); }
+    if (next && !ready && !reading) {
+      // Reuse the immutable renderer's existing close/open read handler.
+      // No list data or selection is held by this presentation adapter.
+      queueMicrotask(() => {
+        if (!document.querySelector("[data-stage]")?.classList.contains("has-history")) return;
+        document.querySelector<HTMLButtonElement>("[data-history-drawer] .history-drawer-header .icon-button")?.click();
+        document.querySelector<HTMLButtonElement>("[data-history-toggle]")?.click();
+      });
+    }
+    ready = next;
+  });
+  document.addEventListener("click", event => {
+    if (!(event.target instanceof Element) || !event.target.closest("[data-history-toggle]")) return;
+    if (document.querySelector("[data-stage]")?.classList.contains("has-history")) return;
+    if (opening) { event.preventDefault(); event.stopImmediatePropagation(); }
+    else opening = true;
+  }, true);
+  return project;
 }
