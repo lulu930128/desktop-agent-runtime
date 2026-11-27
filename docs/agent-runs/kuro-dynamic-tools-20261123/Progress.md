@@ -1,12 +1,14 @@
 # Kuro 工具系統交付與驗收
 
+本頁公開工具與權限摘要、隔離工作流結果、DOM 摘要和驗證清單。原始 discovery、Workspace 權限回傳、工作流事件、預覽 HTML、截圖與任務 patch 只留本機。
+
 2026-11-23，工作目錄為 `C:\project\desktop-agent-runtime`。此版已完成程式、隔離驗收與 Qt 工具頁預覽。正式桌寵載入及實際雲端模型操作尚未驗證。
 
 ## 檢視成果
 
-- [開啟工具頁](preview.html) 可展開五個服務、操作權限、不可用原因及 42 筆隔離執行事件。預覽使用 Qt 工具頁的正式元件與本次驗收資料，設定控制項停用。[Qt 截圖](tools-preview.png) 與 [DOM 收據](preview-check.json)
-- [本次程式與測試差異](task.patch) 與 [逐檔 SHA-256](changed-files.json) 以修改前的工作檔內容為基線，包含既有未追蹤設定的局部修改。已在暫存目錄套用 patch，逐檔比對內容。基線分支為 main，HEAD 為 `c2b3e64c27caaec8c2cba5b213444ddce0d79e03`。
-- [五個服務的實際 discovery](inventory.json)、[Codex 連線的 Workspace 權限](workspace-owner.json)、[五條隔離操作的結果](workflows.json)、[驗證收據](validation.json)。
+- 本機工具頁預覽可展開五個服務、操作權限、不可用原因及 42 筆隔離執行事件。預覽使用 Qt 工具頁的正式元件與本次驗收資料，設定控制項停用。歷史 DOM 檢查結果見 [PreviewEvidence.json](PreviewEvidence.json)。
+- 本機 task-only patch 與 [逐檔 SHA-256](changed-files.json) 以修改前的工作檔內容為基線，包含既有未追蹤設定的局部修改。已在暫存目錄套用 patch，逐檔比對內容。基線分支為 main，HEAD 為 `c2b3e64c27caaec8c2cba5b213444ddce0d79e03`。
+- 回歸結果與歷史收據雜湊見 [驗證清單](validation.json)。
 
 ## 工具與權限
 
@@ -23,7 +25,7 @@
 
 Project Workspace 的 `workspace_info` 回報契約 `2026-11-20.1`、`mode=read-only`、`writeCapabilities.enabled=false` 與 `reason=not_configured`。另一個已授權 Codex 連線發現 59 項，其中多出的 6 項為 `create_text_file`、`append_text_file`、`patch_text_file`、`update_json_value`、`make_directory`、`get_write_operation`。Kuro 已支援原 owner 的操作政策環境設定，也已用隔離 grant 驗證編輯。正式 Kuro 程序仍需由操作者提供原 owner 授權給該程序的寫入政策。
 
-`workspace_runtime_status` 與 `mcp_component_diagnostics` 的正式輸出 schema 含重複的 JSON Schema 型別 `["null","null"]`。另外 16 項工具由 owner 標為 `_meta.ui.visibility=["app"]`。逐工具契約片段及錯誤位置在 inventory.json 的 `contract_evidence`。
+`workspace_runtime_status` 與 `mcp_component_diagnostics` 的正式輸出 schema 含重複的 JSON Schema 型別 `["null","null"]`。另外 16 項工具由 owner 標為 `_meta.ui.visibility=["app"]`。逐工具契約片段及錯誤位置留在本機 `inventory.json` 的 `contract_evidence`。
 
 ## 執行路徑
 
@@ -49,7 +51,7 @@ Qt 原始碼已通過 TypeScript、Vite 隔離 build、前端測試及 Qt WebEng
 
 ## 重跑驗證
 
-從 repo 根目錄執行，使用原有環境。工作流在新的暫存目錄建立資料，市場來源及語音發聲端由測試提供。
+從 repo 根目錄執行，使用原有環境及已授權的服務。先產生本機 inventory 和工作流收據，再建置預覽。[驗證清單](validation.json) 中的 artifact hashes 是歷史收據的摘要。工作流在新的暫存目錄建立資料，市場來源及語音發聲端由測試提供。
 
 ```powershell
 $env:PYTHONUTF8 = '1'
@@ -57,6 +59,7 @@ $runDir = 'docs/agent-runs/kuro-dynamic-tools-20261123'
 $env:KURO_TOOL_POLICY_PATH = (Resolve-Path Open-LLM-VTuber/tool_policy.json).Path
 & .\envs\kuro-llm310\python.exe -B "$runDir/verify_workflows.py" --owners C:/GPT_MCPtool --projects C:/project --receipt "$runDir/workflows.json"
 & .\envs\kuro-llm310\python.exe -B "$runDir/inspect_inventory.py" | Set-Content -Encoding utf8NoBOM "$runDir/inventory.json"
+# 以下兩步會在本機產生預覽、截圖及 preview-check.json。
 node "$runDir/build_preview.mjs"
 & .\envs\kuro-llm310\python.exe -B "$runDir/verify_preview.py"
 ```

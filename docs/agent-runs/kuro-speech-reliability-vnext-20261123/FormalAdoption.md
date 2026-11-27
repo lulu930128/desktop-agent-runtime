@@ -1,5 +1,7 @@
 # Kuro Speech VNext 正式桌面驗收
 
+本頁保留正式桌面驗收摘要與變更雜湊。含 runtime 身分的逐輪收據與歷史 patch 只留本機。
+
 2026-11-23，台北時間。從 Windows 通知區的 Kuro 選單執行「重新啟動 Kuro」，由原 Launcher 接手服務。最終版本從同一個正式 Qt 普通對話視窗完成五個回合，中斷後的下一輪也已播完。測後 Pet 回到 idle。
 
 ## 採用身份
@@ -16,7 +18,7 @@
 
 ## 正式 Qt 案例
 
-下表的段數來自實際 Pet renderer 的電子播放事件。完整回合都逐一比對段序、中央成功 WAV 的大小、WS 音訊時長、Pet receipt、Conversation 終態、Qt speech status、Qt Display 原文雜湊及 History 對話。完整 UUID、每段秒數及證據路徑收在 [formal-validation.json](formal-validation.json)。
+下表的段數來自實際 Pet renderer 的電子播放事件。完整回合都逐一比對段序、中央成功 WAV 的大小、WS 音訊時長、Pet receipt、Conversation 終態、Qt speech status、Qt Display 原文雜湊及 History 對話。完整 UUID、每段秒數及證據路徑收在 `formal-validation.json`（僅本機）。
 
 | 案例 | request ID | 實測 |
 | --- | --- | --- |
@@ -36,13 +38,13 @@
 
 17:38 版本的正式 UI 重現了問題。request 8ea7662afb49408ea0ca229c1c4ae4ca 在播放中被停止，Backend 已取消，但 Qt 沒收到可呈現的 speech-status interrupted。停止路徑原先移除了 primary output 並只送 control。修正沿用該 output 傳送帶範圍的語音終態，留到下一輪或斷線，以便接收原輪 Pet 回條。在已結束的 task 上重複停止會直接返回。Qt 與 backend 的關聯紀錄只保存身份、終態、缺段及 Display 雜湊。
 
-回歸通過 170 個 Python 測試、25 個 Node 測試，另加 2 個 Qt 簽章、lineage、錯誤 pin 與資產完整性測試。前輪的 24/24、19/19、16/16 實體 Pet 長篇仍保留在原 validation.json。此輪五案皆使用正式 Qt。這五案沒有呼叫 Domain tool，也沒有在正式服務上強制造成某一段 TTS 故障，因此正式 Qt 顯示 partial 的故障注入及真實工具失敗口述仍未驗證。真人音質、外部喇叭輸出亦未驗證。
+回歸通過 170 個 Python 測試、25 個 Node 測試，另加 2 個 Qt 簽章、lineage、錯誤 pin 與資產完整性測試。前輪的 24/24、19/19、16/16 實體 Pet 長篇仍保留在本機 `validation.json`。此輪五案皆使用正式 Qt。這五案沒有呼叫 Domain tool，也沒有在正式服務上強制造成某一段 TTS 故障，因此正式 Qt 顯示 partial 的故障注入及真實工具失敗口述仍未驗證。真人音質、外部喇叭輸出亦未驗證。
 
 ## 變更與回滾
 
-[formal-task.patch](formal-task.patch) 包含 launcher_qt.py、kuro_launcher/qt_web_adapter.py、websocket_handler.py、single_conversation.py、tests/test_g3_conversation.py 五檔的增量。[formal-changed-files.json](formal-changed-files.json) 保存基於 dirty 工作檔的前後 SHA-256，已在隔離目錄逐 byte 驗證正向及逆向套用。前輪的 [task.patch](task.patch) 與 [changed-files.json](changed-files.json) 仍分開保留。Tool Discovery Job fe1482ef-535a-4ae9-ad7d-ad88acd5d6c4 結案時查得 completed，本輪未更動它的 owner bundle、source pin 或 tool 流程。
+本機 `formal-task.patch` 包含 launcher_qt.py、kuro_launcher/qt_web_adapter.py、websocket_handler.py、single_conversation.py、tests/test_g3_conversation.py 五檔的增量。[formal-changed-files.json](formal-changed-files.json) 保存基於 dirty 工作檔的前後 SHA-256，已在隔離目錄逐 byte 驗證正向及逆向套用。前輪的 本機 `task.patch` 與 [changed-files.json](changed-files.json) 仍分開保留。Tool Discovery Job fe1482ef-535a-4ae9-ad7d-ad88acd5d6c4 結案時查得 completed，本輪未更動它的 owner bundle、source pin 或 tool 流程。
 
-回滾本輪時，先比對五檔後像，再執行以下唯讀檢查。工作檔仍相符時移除 --check 以回退本輪增量，再使用原 Launcher 的「重新啟動 Kuro」。若之後已有其他修改，只移除本輪的相應 hunk。要連前輪語音實作一起回退，接著依原 Progress 的說明檢查前輪 patch 並重建、重載 Pet。保留目前簽署的 Qt 發行與其他工具改動。
+持有原始本機 patch 時，先比對五檔後像，再執行以下唯讀檢查。工作檔仍相符時移除 --check 以回退本輪增量，再使用原 Launcher 的「重新啟動 Kuro」。若之後已有其他修改，只移除本輪的相應 hunk。要連前輪語音實作一起回退，接著依原 Progress 的說明檢查前輪 patch 並重建、重載 Pet。保留目前簽署的 Qt 發行與其他工具改動。
 
 ~~~powershell
 git -c core.autocrlf=false apply --reverse --check docs/agent-runs/kuro-speech-reliability-vnext-20261123/formal-task.patch

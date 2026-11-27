@@ -1,5 +1,7 @@
 # Kuro 真實 API 驗收
 
+本頁保留公開驗收摘要。原始 API 回傳、業務讀回、隔離寫入收據和程序快照只留本機；[驗收清單](verification.json) 記載兩類檔案的歷史雜湊。
+
 2026-11-23 台北時間。本次沿用原專案與 Kuro 的 OpenAI Responses 實作。真實模型成功自行發現並執行跨服務工具。正式後端已讀回新版 inventory；正式 Qt 工具頁、桌寵對話及五項正式服務的完整業務驗收仍未通過封版條件。
 
 ## 真實模型與實際查詢
@@ -13,7 +15,7 @@
 
 執行使用原 BasicMemoryAgent 的 OpenAI 迴圈、原 SDK、ToolManager、ToolExecutor 與真實 MCP。專用無歷史會話設有只允許指定測試檔與公開詞目查詢的測試條件。觀測程式轉送 SDK 的實際請求與串流，未合成回答。本次未使用 Qt 對話框發送測試。Luna 在取得正確 schema 前多次搜尋，是本次實際消耗的一部分。
 
-[原設定 Responses 收據](responses-081808.json) · [現行設定 Responses 收據](responses-082335.json) · [比對過的工具 schema](responses-schemas.json)
+原設定 Responses 收據（僅本機） · 現行設定 Responses 收據（僅本機） · [比對過的工具 schema](responses-schemas.json)
 
 ## 正式來源
 
@@ -25,7 +27,7 @@
 | Listening Audio | 7／7 | 正式 Trainer 健康及契約讀取成功。舊題庫公開列出的四個題組以及 owner 的兩個範例，都未在正式 Listening MCP 取得有效題目，來源回 EXAM_NOT_FOUND。正式 MCP 沒有列舉已建題組的工具，音訊資源模板也未提供 list。 |
 | OMI Search | 63／49 | 正式代號查詢回傳 2330、台積電、TWSE。freshness 一般讀取與明確 cache_only 讀取均在 Kuro 約 30 秒期限到時。診斷程式僅放寬本次接收等待時間，再用相同 cache_only 參數取得服務於 90.313 秒回傳的 tool_error，未取得 freshness。 |
 
-[正式 MCP 清點及呼叫](live-mcp.json) · [業務讀回](business-readback.json) · [Listening 原服務範例](listening-owner-examples.json) · [OMI 快取限定](omi-cache-readback.json) · [OMI 來源終態](omi-owner-wait.json)
+正式 MCP 清點及呼叫（僅本機） · 業務讀回（僅本機） · Listening 原服務範例（僅本機） · OMI 快取限定（僅本機） · OMI 來源終態（僅本機）
 
 ## 寫入與身分
 
@@ -33,10 +35,10 @@
 
 四組獨立資料使用真正的 Workspace owner、日英 Hub、Listening Trainer 與 MCP adapter。執行完成 16 次業務操作，並重讀修改後的檔案、日英 session 與 Listening 的已完成作答。資料放在新建暫存目錄，結束後已清除。本輪未產音，未寫入正式學習或金融資料。
 
-[隔離真實寫入收據](isolated-writes.json) · [Codex connector 身分](workspace-connector.json)
+隔離真實寫入收據（僅本機） · [Codex connector 身分](workspace-connector.json)
 
 ## 正式桌寵
 
 初查三個埠無 listener。16:22 重查時正式 LLM、pet 與 Core 已啟動。16:26 對現有工作階段呼叫 /launcher/tool-inventory 成功，五項連線與呼叫數均可讀回，載入的政策 digest 與磁碟相同。正式 Launcher 指定的 Qt bundle 簽章已核驗；其 owner-presentation.ts 與 CSS 的來源雜湊都與新版不同，編譯後的 JavaScript 也缺少新版呼叫紀錄欄位 call_summary。本輪未更換發行版或重啟正式桌寵。
 
-[程序與連線埠](runtime-status.json) · [正式後端與 Qt bundle 讀回](production-readback.json) · [驗收檔案 SHA-256](verification.json)
+程序與連線埠（僅本機） · 正式後端與 Qt bundle 讀回（僅本機） · [驗收檔案 SHA-256](verification.json)

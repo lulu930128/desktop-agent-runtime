@@ -1,5 +1,7 @@
 # Memory Core／PAOS 受控 HTTP MCP 接入
 
+公開驗證摘要列於下文。原始 live metadata、基線與 Native Qt 收據只留本機；公開驗證 JSON 中引用的歷史收據依此範圍解讀。
+
 ## 範圍與所有權
 
 沿用唯一 ServerRegistry → MCPClient → ToolAdapter／ToolManager → ToolExecutor → ToolPolicy／ToolCatalog。
@@ -24,11 +26,11 @@ Kuro Conversation Runtime 管工具路由與執行政策；Memory Core 管外部
 ## 已確認證據
 
 - 已安裝 Python MCP SDK **1.15.0** 原生支援 `mcp.client.streamable_http.streamablehttp_client`，公開介面提供 `httpx_client_factory`、timeout、SSE read timeout、terminate_on_close。
-- [LiveMetadata.json](LiveMetadata.json)：Memory Core MCP 初始化名 `memory-core-mcp`，29 項 metadata；PAOS 初始化名 `Personal Asset OS`，7 項 metadata。
+- `LiveMetadata.json`（僅本機）：Memory Core MCP 初始化名 `memory-core-mcp`，29 項 metadata；PAOS 初始化名 `Personal Asset OS`，7 項 metadata。
 - 發送 method 僅 initialize／notifications/initialized／tools/list／GET SSE。正式業務 `tools/call=0`；未呼叫 health、memory search／fetch 或資產查詢。
 - Memory Core 限指定 8 項；其餘 21 項即使 annotation 是 readOnlyHint=true，仍不能進 Kuro 工具集。PAOS 限指定 7 項。
 - live metadata 不證明正式 backend token scopes、資料可用性、財務 freshness 或現役 Kuro 採用；本輪不讀取或調整 token scope。
-- [Baseline.json](Baseline.json) 保存 1386 個 Kuro 基線檔案、110 個外部 Python source、95 個既有 bundle 檔案 hash。preimages／測試 log 位於既有 devtools `.runtime/kuro-http-mcp-20261024/`。
+- `Baseline.json`（僅本機） 保存 1386 個 Kuro 基線檔案、110 個外部 Python source、95 個既有 bundle 檔案 hash。preimages／測試 log 位於既有 devtools `.runtime/kuro-http-mcp-20261024/`。
 
 ## 驗證進度
 
@@ -36,14 +38,14 @@ Kuro Conversation Runtime 管工具路由與執行政策；Memory Core 管外部
 
 | 驗證面 | 結果與收據 |
 | --- | --- |
-| 正規 Kuro HTTP client live discovery | 兩個固定 endpoint 都通過原 Registry／MCPClient，完整 schema 與 digest 見 [KuroLiveMetadata.json](KuroLiveMetadata.json)。僅 metadata，無正式 tools/call。 |
+| 正規 Kuro HTTP client live discovery | 兩個固定 endpoint 都通過原 Registry／MCPClient，完整 schema 與 digest 見 `KuroLiveMetadata.json`（僅本機）。僅 metadata，無正式 tools/call。 |
 | 15 個允許工具 | 每項 canonical ID 與 provider alias 各派送一次，共 30 次合成 HTTP tools/call，逐項驗 wire name、參數、原 input/output schema 與 readOnlyHint。 |
 | 拒絕路徑 | 135 次 Executor 拒絕，另有 MCPClient 直接拒絕；含 Memory Core 全部 21 項非白名單、兩來源虛構 admin／trade／reconcile／backup／restore／refresh、每項 disabled toggle。 |
 | transport／schema | 37 個不合法 URL／設定案例；redirect、401、503、錯誤 server identity、readOnlyHint 移除／改 false、destructiveHint=true、input/output digest 變更、無效 output 均 fail closed。 |
 | timeout | 已完成初始化後，合成工具 handler 延遲引發有界 timeout；實際送出恰好 1 次、不 retry，保留 may_have_executed，見 [TimeoutVerification.json](TimeoutVerification.json)。 |
 | STDIO 相容性 | 同一 MCPClient 同時管理 8 個真 STDIO 合成 peer 與 2 個 HTTP peer；HTTP 失敗與成功之後，8 個 STDIO 查詢仍成功，aclose 通過。 |
 | Python regression | [PythonVerification.json](PythonVerification.json)：110/110 PASS，包含前輪完整 targeted module 清單；最後 metadata 順序與額外拒絕案例調整後，[FinalTargeted.json](FinalTargeted.json) 28/28 PASS；timeout 強化另 1/1 PASS。 |
-| Native Qt Settings | [NativeQt.json](NativeQt.json)：186/186 PASS，10 群／75 toggles、122 次真 native dialog（合成自動回答，全部預設 No）、停用／恢復、保存／UI readback；CAS／stale-digest 拒絕亦由既有 Python settings tests 驗證。 |
+| Native Qt Settings | `NativeQt.json`（僅本機）：186/186 PASS，10 群／75 toggles、122 次真 native dialog（合成自動回答，全部預設 No）、停用／恢復、保存／UI readback；CAS／stale-digest 拒絕亦由既有 Python settings tests 驗證。 |
 | Frontend／signed bundle | JS／builder／pin 未改；保留 `1cf2b5951a7a27ee508b185bcfa3d08e353b8e4cae86d76e9b7e6ad3de576ea0`，另程序 VerifiedOwnerBundle.load 驗簽成功。未跑無必要的 Node build。 |
 | 保全與靜態 | [FinalVerification.json](FinalVerification.json)：1386 基線中 1373 byte-exact，13 個指定既有接觸點更新；110 個外部 source 與 95 個既有 bundle 檔案全數 hash 相同。10 個 Python 檔 syntax、UTF-8／JSON 讀回與 git diff --check PASS。 |
 

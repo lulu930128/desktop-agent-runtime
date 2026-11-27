@@ -1,5 +1,7 @@
 # 執行進度
 
+本頁保留公開摘要及隔離 stdio 收據。原始 discovery 與基線只留本機。
+
 狀態：**Source／Config／Policy／STDIO／Schema／Signed bundle／Isolated Qt PASS；現役 Runtime adoption PENDING；實際桌面操作 UNVERIFIED**。
 
 ## 正式接線
@@ -28,7 +30,7 @@
 | 原本地來源 inventory | Web 5、history 1、Mail 9 schema PASS，3 次 fake dispatch；移除舊 OMI Python module import |
 | 外部成品保全 | 37 個 adapter／dist／snapshot 檔案前後 hash 一致；無正式 provider／LLM／私人資料查詢 |
 
-收據：[Discovery.json](Discovery.json)、[StdioAcceptanceFinal.json](StdioAcceptanceFinal.json)、[Baseline.json](Baseline.json)、[Inventory.md](Inventory.md)。初次 fixture outputSchema 與 discovery GET 計數假設失敗已修正；中文 category keywords 經 PowerShell 管線變成問號，已用明確 UTF-8／Unicode 修正並通過中文路由與 native 畫面驗證。失敗日志保留，沒有降低 schema／policy guard。
+收據：`Discovery.json`（僅本機）、[StdioAcceptanceFinal.json](StdioAcceptanceFinal.json)、`Baseline.json`（僅本機）、[Inventory.md](Inventory.md)。初次 fixture outputSchema 與 discovery GET 計數假設失敗已修正；中文 category keywords 經 PowerShell 管線變成問號，已用明確 UTF-8／Unicode 修正並通過中文路由與 native 畫面驗證。失敗日志保留，沒有降低 schema／policy guard。
 
 最後保全結果見 [FinalVerification.json](FinalVerification.json)：1374 個基線檔案中 1345 個 byte-exact，29 個指定接觸點更新；先前 36 個 WIP 檔中 23 個未動，13 個本輪必要接觸點保留原成果並更新契約。原非 OMI policy／registry／catalog 內容逐項比對不變，原 bundle 88 檔全數不變。25 個 Python 檔案 syntax compile、UTF-8 讀回與 `git diff --check` 通過。
 

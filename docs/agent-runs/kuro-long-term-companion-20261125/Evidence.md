@@ -1,5 +1,7 @@
 # 來源與隔離驗收證據
 
+下文保留公開評測摘要與重現步驟。逐題評測輸出、正式來源計數快照及含本機環境的原始收據只留本機。[驗證清單](Verification.json) 同時記錄公開證據與本機收據的歷史雜湊。
+
 原始基準為 main 的 c2b3e64c27caaec8c2cba5b213444ddce0d79e03。11/23 Speech、Tool Discovery、既有 Qt 與其他 WIP 保留在同一工作樹。完整起始 dirty patch 沒有另存；baseline 模型比較使用可由 Git 重建的記憶模組。SourceBaseline.json 記錄正式 owner 所見的 211 個歷史檔、2,047 則訊息，以及角色庫 2 筆 active、4 筆待審；正式模型和已載入的 source revision 未取得。
 
 ## 容量與成本
@@ -51,7 +53,7 @@ $state = Join-Path (Resolve-Path .) ('devtools/original-git-web-host-20261010/.r
 
 混合兩題答「37 歐元」「58 euros」，字串評分要求只回數字而計錯。兩題無來源皆回 UNKNOWN。這八題無法估計自然使用中的錯誤記憶率。模型暖機順序會影響上述累計耗時。另一次先暖機、每題交替先後的串流實測，baseline／混合的請求至首段非空文字 P50 為 3.285／1.773 秒，完成 P50 為 3.541／2.236 秒；這是模型端到客戶端時間，另計查詢與 Qt 呈現。[Streaming.json](Streaming.json)
 
-公開 LoCoMo 固定 revision 3eb6f2c585f5e1699204e3c3bdf7adc5c28cb376、PYTHONHASHSEED=0。10 組對話共 1,986 題，1,977 題可對到 gold 來源。每題最多 4 片段，可引用多個原始 turn。baseline／混合的平均來源 recall 為 9.52%／53.16%，precision 為 3.00%／10.70%，查詢 P95 為 104／52 ms。多跳 281 題的 recall 為 6.24%／19.65%，precision 為 4.80%／10.15%。低精確率與多跳漏失仍會影響實際回答。此測量只對來源評分；資料不含當事人的私人歷史。逐題結果與評分分母保存在 [PublicFinal.json](PublicFinal.json)。[公開語料授權](https://github.com/snap-research/locomo)
+公開 LoCoMo 固定 revision 3eb6f2c585f5e1699204e3c3bdf7adc5c28cb376、PYTHONHASHSEED=0。10 組對話共 1,986 題，1,977 題可對到 gold 來源。每題最多 4 片段，可引用多個原始 turn。baseline／混合的平均來源 recall 為 9.52%／53.16%，precision 為 3.00%／10.70%，查詢 P95 為 104／52 ms。多跳 281 題的 recall 為 6.24%／19.65%，precision 為 4.80%／10.15%。低精確率與多跳漏失仍會影響實際回答。此測量只對來源評分；資料不含當事人的私人歷史。逐題結果與評分分母保存在 `PublicFinal.json`（僅本機）。[公開語料授權](https://github.com/snap-research/locomo)
 
 Formation.json 有 6 個應保存的陳述與 6 個不應自動保存的輸入。人工模式 6 個語意陳述全部進入候選，選定類型且授權的模式形成 6 筆 active，6 個反例均無 active；引述他人偏好的反例仍會由原 heuristic 產生候選。三組各重送整套輸入一次，重複新增均為 0。樣本數不足以估計自然使用中的普遍誤存率。
 

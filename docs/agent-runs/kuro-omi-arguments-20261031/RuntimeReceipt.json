@@ -1,0 +1,12 @@
+﻿{
+    "checked_at":  "2026-10-31T16:01:55.2339997+08:00",
+    "target_processes":  [
+
+                         ],
+    "target_listeners":  [
+
+                         ],
+    "reload_performed":  false,
+    "formal_loaded_identity":  "UNVERIFIED_NO_RUNNING_OWNER",
+    "owner_idle":  "NOT_APPLICABLE_NO_RUNNING_OWNER"
+}

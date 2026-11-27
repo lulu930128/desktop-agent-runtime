@@ -1,5 +1,7 @@
 # 本輪結果
 
+本頁保留公開驗收摘要。原始探針收據與任務 patch 只留本機。
+
 Source Ready；Tests PASS；isolated native MCP 驗證 PASS；LLM E2E UNVERIFIED；正式 Qt runtime 未換版／未重啟。
 
 ## 根因與局部修正
@@ -13,7 +15,7 @@ Source Ready；Tests PASS；isolated native MCP 驗證 PASS；LLM E2E UNVERIFIED
 
 ## 驗證證據
 
-唯一正式摘要收據：[NativeProbe.json](NativeProbe.json)。它保留 identity/digest、參數欄位與型別、狀態、receipt id；沒有 raw arguments、prompt、完整 schema/reply 或詳細 evidence。舊大份收據已原地改寫；Listening 單獨重查後併入摘要，自己的中間收據已移除。
+歷史探針摘要收據為`NativeProbe.json`（僅本機）。它保留 identity/digest、參數欄位與型別、狀態、receipt id；沒有 raw arguments、prompt、完整 schema/reply 或詳細 evidence。舊大份收據已原地改寫；Listening 單獨重查後併入摘要，自己的中間收據已移除。
 
 | 原生工具 | discovery 可見／shared 全量 | readonly 結果 |
 | --- | --- | --- |
@@ -45,4 +47,4 @@ Source Ready；Tests PASS；isolated native MCP 驗證 PASS；LLM E2E UNVERIFIED
 - 因此真模型參數生成與前一輪 root `additionalProperties` Defect 仍為 **UNVERIFIED**，沒有宣稱已修好。canonical schema、policy、native executor 的固定參數探針成功是獨立證據。
 - 正式歷史 loaded identity：`launcher_logs/launcher-qt/2026_10/31/launcher.combined.log` 記錄 13:08:37 使用 `envs/kuro-llm310/python.exe .\run_server.py`；對應 `13-08-36_kuro_01/llm.combined.log:54` 為 PID **70820**。正式 debug log 13:08:59.710 載入 **52** tools。
 - `13:35:14 +08:00` 唯讀 live 快照沒有找到 `launcher_qt.py`／`run_server.py` Python process，23456／23567／23569 也未見 listener。原因未判定；不能以磁碟 source pin 或歷史 PID 冒充目前 loaded identity。該 gate 保留 **UNVERIFIED**。本輪沒有中斷、換版或啟停正式桌寵。
-- 沒有 commit／push。task-only patch 以本輪 preimages 為基準，與 inherited WIP 分開；見 [TaskOnly.diff](TaskOnly.diff)。`mcp_servers.json` 是既有 gitignored 本機設定，patch 仍明確列出它。
+- 沒有 commit／push。task-only patch 以本輪 preimages 為基準，與 inherited WIP 分開；見 `TaskOnly.diff`（僅本機）。`mcp_servers.json` 是既有 gitignored 本機設定，patch 仍明確列出它。

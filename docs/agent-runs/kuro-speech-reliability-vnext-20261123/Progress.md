@@ -1,5 +1,7 @@
 # Kuro 語音 VNext 實作與驗證
 
+本頁保留驗收摘要、重現條件與逐檔雜湊。原始逐段收據與任務 patch 只留本機。
+
 採用 M0 的 C 混合式。正常回合沿用同輪 Display 與 Speech，只有失去語意、缺少關鍵內容或不適合口述的部分需要修稿。詳細／全文朗讀依完成的 Display 順序取材。實體 Pet 已完成長篇播放，正式 Qt 輸入與 History 整條路徑仍待驗證。
 
 ## 修正與責任邊界
@@ -17,7 +19,7 @@
 
 ## 驗證紀錄
 
-[validation.json](validation.json) 收錄 request ID、音檔秒數、逐段事件、缺段與恢復連線回條。實測使用真正的配置、模型、中央 Voice 及執行中的 Pet，透過隔離的 primary sender，並設 skip_history。History、Qt 的來源測試另列。
+`validation.json`（僅本機） 收錄 request ID、音檔秒數、逐段事件、缺段與恢復連線回條。實測使用真正的配置、模型、中央 Voice 及執行中的 Pet，透過隔離的 primary sender，並設 skip_history。History、Qt 的來源測試另列。
 
 | 情境 | 觀測 |
 |---|---|
@@ -65,12 +67,12 @@ Qt 仍選取 2813daee6633259de26c0fb6fdcc22322815dc4e15f801d50425c2fd12b398ab。
 
 ## 共用檔與回滾
 
-[task.patch](task.patch) 含本次產品程式、測試與重現腳本。[changed-files.json](changed-files.json) 列出逐檔前後 SHA-256，前像是本次進場時的 dirty working bytes。patch 在隔離目錄做過正向、逆向逐檔還原。證據、音檔、Settings、模型、Qt pin 與建置輸出不在 patch 內。
+`task.patch`（僅本機） 含本次產品程式、測試與重現腳本。[changed-files.json](changed-files.json) 列出逐檔前後 SHA-256，前像是本次進場時的 dirty working bytes。patch 在隔離目錄做過正向、逆向逐檔還原。證據、音檔、Settings、模型、Qt pin 與建置輸出不在 patch 內。
 
 Tool Discovery 交付的 task.patch 雜湊是 a1fe852615254ecdb5870acdc06aa98b1933c75692acf389dd70ae9714d5ede6。本次查詢時該 Job 容器仍是 running。交集為 kuro_launcher/qt_web_adapter.py 和 frontend/src/owner-presentation.ts，兩者的語音前像都等於 Tool Discovery 的交付後像。交付後其他人再動過的檔案列於 manifest 的 independent_changes_since_delivery。
 
-回滾前核對 manifest 的 after_sha256，再執行 git -c core.autocrlf=false apply --reverse --check docs/agent-runs/kuro-speech-reliability-vnext-20261123/task.patch。內容匹配時可逆向套用；已交疊其他 WIP 的檔案只回退語音 hunk。Pet 從回退後的來源 rebuild，再由原 reload-frontend 載入；本輪前產物也留於 .tmp/speech-vnext-20261123/pet-renderer-before。Backend 由 Launcher 載入回退版本。既有 Qt 簽章選擇器未變更。未 commit 或 push。
+持有原始本機 patch 時，回滾前核對 manifest 的 after_sha256，再執行 git -c core.autocrlf=false apply --reverse --check docs/agent-runs/kuro-speech-reliability-vnext-20261123/task.patch。內容匹配時可逆向套用；已交疊其他 WIP 的檔案只回退語音 hunk。Pet 從回退後的來源 rebuild，再由原 reload-frontend 載入；本輪前產物也留於 .tmp/speech-vnext-20261123/pet-renderer-before。Backend 由 Launcher 載入回退版本。既有 Qt 簽章選擇器未變更。未 commit 或 push。
 
 ## 2026-11-23 正式採用更新
 
-17:47 修正版已由原 Launcher 採用。正式 Qt 五輪驗證完成，含 101.86 秒全文、播放中斷提示、下一輪及 History 重開。最新狀態見 [正式桌面驗收](FormalAdoption.md)、[逐輪收據](formal-validation.json) 與[本輪修復增量](formal-task.patch)。
+17:47 修正版已由原 Launcher 採用。正式 Qt 五輪驗證完成，含 101.86 秒全文、播放中斷提示、下一輪及 History 重開。最新狀態見 [正式桌面驗收](FormalAdoption.md)、逐輪收據（僅本機） 與本輪修復增量（僅本機）。

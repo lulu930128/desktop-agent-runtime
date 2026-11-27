@@ -1,5 +1,7 @@
 # 來源遷移、重建與還原
 
+本頁提供重放方式。原始遷移收據只留本機，公開證據範圍見 [Evidence.md](Evidence.md)。
+
 以下 PowerShell 從此 repo 執行。`$fixtureRoot` 應指向自建的隔離目錄，內含 `chat_history` 與 `memories`。`$restoredRoot` 是尚不存在的新路徑。正式來源、正式啟動設定及私人資料須另選定範圍。
 
 ```powershell
@@ -32,6 +34,6 @@ $env:PYTHONPATH = (Resolve-Path '.\Open-LLM-VTuber\src').Path
 
 ### 已重放的故障與切版後寫入
 
-從 repo 根執行 `& $python -B "$run/migration_replay.py" "$run/recheck-migration.json"`，其中 `$run` 為本任務文件目錄。四個獨立程序寫入 366 個模擬日期、兩角色與兩專案，之後在新根切版、追加資料、破壞衍生索引、重建至另一個根並核對來源 hash。比對 `original_unchanged`、`post_cutover_retained`、`repaired.failed` 與各 scope 數量。已知測量結果見 [Migration.json](Migration.json)。
+從 repo 根執行 `& $python -B "$run/migration_replay.py" "$run/recheck-migration.json"`，其中 `$run` 為本任務文件目錄。四個獨立程序寫入 366 個模擬日期、兩角色與兩專案，之後在新根切版、追加資料、破壞衍生索引、重建至另一個根並核對來源 hash。比對 `original_unchanged`、`post_cutover_retained`、`repaired.failed` 與各 scope 數量。已知測量結果見 `Migration.json`（僅本機）。
 
 若正式採用，明確選擇後續回合的角色、專案、記憶類型（偏好／經歷／目標）與分享範圍；舊歷史需另外選擇角色、專案或 history IDs、是否納入 legacy、只建情節索引或也形成候選／已授權事實。日期需求先由 owner 對應到明確的歷史與回合範圍，CLI 目前提供 history 與 project 選取。核對目標後才由原 Launcher 切版，再記錄正式 Qt 聊天、來源、更正、語音、工具、Live2D 及 Today 讀回。

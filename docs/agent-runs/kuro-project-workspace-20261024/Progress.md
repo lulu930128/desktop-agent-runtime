@@ -1,5 +1,7 @@
 # Kuro Project Workspace 接線交付
 
+公開證據包括獨立複查與隔離驗收收據。原始工作樹基線只留本機。
+
 狀態：**Source／Config／Policy／Schema／Bundle／Isolated Qt PASS；現役 Runtime Pending；Native user session UNVERIFIED**。
 
 ## 正式接線
@@ -34,7 +36,7 @@
 ## 驗證收據
 
 總表：[Validation.json](Validation.json)。正式 STDIO：[StdioFormalReceipt.json](StdioFormalReceipt.json)。
-基線：[Baseline.json](Baseline.json)。獨立複查：[Review.md](Review.md)。
+基線：`Baseline.json`（僅本機）。獨立複查：[Review.md](Review.md)。
 
 | 驗證 | 結果 |
 | --- | --- |

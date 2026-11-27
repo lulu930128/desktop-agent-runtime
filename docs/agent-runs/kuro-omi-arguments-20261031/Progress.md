@@ -1,5 +1,7 @@
 # Kuro OMI arguments 修正與驗收
 
+本頁公開歷史驗收摘要與 [runtime 觀察摘要](RuntimeReceipt.json)。兩筆原始 live 收據及任務 patch 只留本機。
+
 本輪 Source PASS、定點測試 63/63 PASS、真實 gpt-5-mini → 原生 Kuro Agent／ToolManager／ToolExecutor → 共用正式 OMI MCP 的 isolated E2E PASS。正式 Qt／Conversation Runtime 未執行、未 reload，RUNTIME UNVERIFIED；不是產品封版。
 
 ## 修前與修後
@@ -19,9 +21,9 @@ Provider schema digest：`056c7ce9a6dee147c4ca60eb758ec7de2449c3ed5498b27bfa2db9
 
 ## 真實鏈路收據
 
-- [LiveReceipt1.json](LiveReceipt1.json)：第一筆 gpt-5-mini 自然選 `omi_read_market_overview`，探針在 MCP 發送前停止。**HARNESS ERROR**：當時錯用 `omi_ask` schema 驗證 helper，收據中的 schema FAIL 不能當作產品缺陷。正式 adapter `server.py:897` 使用 `_shortcut_input_schema` 明確宣告 helper 自己的根層 market；它是通用 shortcut、預設 TW，不能據此判定 TW-only。本輪未修改它。探針已改為檢查實際選中工具的 schema。
+- `LiveReceipt1.json`（僅本機）：第一筆 gpt-5-mini 自然選 `omi_read_market_overview`，探針在 MCP 發送前停止。**HARNESS ERROR**：當時錯用 `omi_ask` schema 驗證 helper，收據中的 schema FAIL 不能當作產品缺陷。正式 adapter `server.py:897` 使用 `_shortcut_input_schema` 明確宣告 helper 自己的根層 market；它是通用 shortcut、預設 TW，不能據此判定 TW-only。本輪未修改它。探針已改為檢查實際選中工具的 schema。
 - 第一筆不是 API/model error，也沒有被計為成功。其後只強化既有 `omi_ask` descriptor 的首選說明，沒有使用 tool_choice，也沒有移除其他候選工具。
-- [LiveReceipt2.json](LiveReceipt2.json)：同一 exact 問句，UTF-8 code points 已核對，market intent=true。正式 ServiceContext 產生 14,901 字元分層 prompt，使用正式 kuro_01 persona、project/tool/runtime contracts，以及失敗原句之前的 4 則歷史訊息；全文與 arguments 都未保存到收據。
+- `LiveReceipt2.json`（僅本機）：同一 exact 問句，UTF-8 code points 已核對，market intent=true。正式 ServiceContext 產生 14,901 字元分層 prompt，使用正式 kuro_01 persona、project/tool/runtime contracts，以及失敗原句之前的 4 則歷史訊息；全文與 arguments 都未保存到收據。
 - 原生 AgentFactory／BasicMemoryAgent 工具迴圈，自然選 alias `omi-search__omi_ask_bd15278fafcf622c4a96`，canonical `omi-search::omi_ask`。六個正式 OMI route candidates 保留。
 - 模型原始 arguments：provider PASS、canonical PASS；補缺省值後 canonical PASS、Policy allowed=true；cache_only=true、no_refresh=true、zero_external_fetches=true。
 - 真正共用入口 `C:\GPT_MCPtool\OMI_search\server.py`，執行 id `call_FjJDdiHxb1zEZiGNK9SMuDv3`；2026-10-31 15:59:02–15:59:05 +08:00。ToolExecutor `completed`、MCP `succeeded`、`is_error:false`、reason_code 空、`ok:true`、`request_status:completed`、target.market=`US`；實際回傳 40,467 bytes，來源日期包含 `2026-10-30`。
@@ -36,7 +38,7 @@ Provider schema digest：`056c7ce9a6dee147c4ca60eb758ec7de2449c3ed5498b27bfa2db9
 修前基線另外跑到 `test_mcp_m0_omi_path.py` 的 1 個既有 fixture error：它傳 `None` 給目前需要 input.metadata 的 agent.chat。該次共 31 tests，30 PASS／1 ERROR，發生在本輪 source edit 前。它未包含在 63 個 PASS 中，本輪未修改該檔或相關 speech WIP。
 
 - 五個任務程式檔 syntax compile PASS；scoped `git diff --check` PASS。
-- [TaskOnly.diff](TaskOnly.diff) 以本輪三個 dirty source preimages 為基準，僅含下列五檔任務增量；不以 HEAD diff 冒充本輪改動。原始 preimages 位於 ignored `.tmp/omi-arguments-20261031/preimages/`。
+- `TaskOnly.diff`（僅本機） 以本輪三個 dirty source preimages 為基準，僅含下列五檔任務增量；不以 HEAD diff 冒充本輪改動。原始 preimages 位於 ignored `.tmp/omi-arguments-20261031/preimages/`。
 - branch 仍是 main；HEAD `c2b3e64c27caaec8c2cba5b213444ddce0d79e03` 與 index bytes 未變。未 stage、commit、push，未混入 history feature branch。未修改無關 WIP。
 - 成功 replay 載入的三個 runtime source hashes 與最終檔案完全相同，見 Checks.json 的 `live_loaded_sources_match:true`。
 
