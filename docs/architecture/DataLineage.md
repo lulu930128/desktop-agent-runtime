@@ -31,6 +31,8 @@ Qt Schedule → authenticated Core API → ScheduleStore／notifications／audit
 
 History、character memory 與工具政策沿用 Runtime 的 canonical store/manager。Qt 提供既有讀寫管理；Pet status 不包含 history IDs 或 conversation text。舊 Briefing memory candidate store 無 production consumer；既有 private userData 未讀取或刪除。
 
+同一個本機使用者的角色庫、跨角色 user 庫與 project 庫均由 CharacterMemoryRepository 寫入。History 保存原文、角色、專案及 turn 身分。FTS、向量與情節摘要由 ConversationHistoryIndex／SQLiteMemoryIndex 衍生，可從原文重建。外部 Memory Core、Core Today 與專案工具繼續各自持有正式紀錄。新版自動形成授權與部署狀態見 [形成契約](../agent-runs/kuro-long-term-companion-20261125/Contract-v2.md) 與 [實作證據](../agent-runs/kuro-long-term-companion-20261125/Evidence.md)。
+
 ## 保存邊界
 
 Core DB schema 與 rollback 見 [CorePersistence](CorePersistence.md)。Tests 只建立 disposable synthetic DB/handoffs/userData；history、mail body、memory、OAuth、model/voice 素材沒有作本轮測試輸入。歷史 checkpoint 留存，source archive 只含被改 source，不含 private state。

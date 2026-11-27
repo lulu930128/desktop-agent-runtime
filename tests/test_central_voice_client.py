@@ -68,6 +68,22 @@ class CentralVoiceClientTests(unittest.TestCase):
         self.assertEqual(self.post.call_count, 1)
         self.assertEqual(self.post.call_args.kwargs['json']['text'], 'next utterance')
 
+    def test_first_utterance_posts_once_during_same_voice_preload(self):
+        data = health_response(status='busy').json()
+        data.update(capabilities=['model_preload_v1'], preload={'voice': 'kuro', 'state': 'loading'})
+        self.health.return_value = Mock(status_code=200, json=Mock(return_value=data))
+        self.assertEqual(self.engine.generate_audio('first utterance'), self.path)
+        self.post.assert_called_once()
+        self.assertEqual(self.post.call_args.kwargs['json']['text'], 'first utterance')
+        self.assertEqual(self.post.call_args.kwargs['timeout'], (1, 180))
+
+    def test_other_voice_preload_does_not_queue_or_switch(self):
+        data = health_response(status='busy').json()
+        data.update(capabilities=['model_preload_v1'], preload={'voice': 'yuki', 'state': 'loading'})
+        self.health.return_value = Mock(status_code=200, json=Mock(return_value=data))
+        self.assertIsNone(self.engine.generate_audio('first utterance'))
+        self.post.assert_not_called()
+
     def test_post_busy_race_does_not_retry_or_open_circuit(self):
         self.post.side_effect = [Mock(status_code=429), audio_response()]
         self.assertIsNone(self.engine.generate_audio('busy utterance'))

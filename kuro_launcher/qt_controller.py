@@ -308,7 +308,7 @@ class QtLauncherController:
         return self.character_records.get(self.selected_character_key)
 
     def selected_project(self) -> Optional[ProjectDefinition]:
-        return self.project_records.get(self.selected_project_key)
+        return getattr(self, "project_records", {}).get(getattr(self, "selected_project_key", ""))
 
     def set_selected_character(self, key: str) -> None:
         if key in self.character_records:
@@ -592,13 +592,16 @@ class QtLauncherController:
             / "long_term.json"
         )
 
-    def read_memory_records(self, *, strict: bool = False) -> tuple[MemoryRecord, ...]:
+    def _memory_project(self, project_id):
+        return getattr(self.selected_project(), "project_id", "") if project_id is None else project_id
+
+    def read_memory_records(self, *, strict: bool = False, project_id=None) -> tuple[MemoryRecord, ...]:
         character = self.selected_character()
         if not character or not character.conf_uid:
             return ()
         try:
             ensure_character_memory_root(self.cfg.open_llm_dir)
-            entries = list_character_memories(character.conf_uid, enabled_only=False)
+            entries = list_character_memories(character.conf_uid, enabled_only=False, project_id=self._memory_project(project_id))
         except Exception as exc:
             if strict:
                 raise RuntimeError("Memory owner read failed") from exc
@@ -616,12 +619,12 @@ class QtLauncherController:
             lines.append(f"- [{label}] ({record.memory_type}) {record.content}")
         return "\n".join(lines)
 
-    def _read_memory_records_for(self, character: CharacterRecord) -> tuple[MemoryRecord, ...]:
+    def _read_memory_records_for(self, character: CharacterRecord, project_id=None) -> tuple[MemoryRecord, ...]:
         if not character or not character.conf_uid:
             return ()
         try:
             ensure_character_memory_root(self.cfg.open_llm_dir)
-            entries = list_character_memories(character.conf_uid, enabled_only=False)
+            entries = list_character_memories(character.conf_uid, enabled_only=False, project_id=self._memory_project(project_id))
         except Exception:
             return ()
         return self._memory_records_from_entries(entries)
@@ -649,15 +652,19 @@ class QtLauncherController:
                     source=str(entry.get("source") or "unknown"),
                     updated_at=str(entry.get("updated_at") or ""),
                     content_digest=review_digest(entry),
+                    source_turn=str((entry.get("evidence") or {}).get("turn_id") or ""),
+                    source_history_uid=str(entry.get("source_history_uid") or ""),
+                    source_character_id=str((entry.get("evidence") or {}).get("character_id") or ""),
+                    revision=int(entry.get("revision",1)), valid_to=str(entry.get("valid_to") or ""),
                 )
             )
         return tuple(records)
 
-    def _selected_memory_record(self, entry_id: str, character=None) -> MemoryRecord:
+    def _selected_memory_record(self, entry_id: str, character=None, project_id=None) -> MemoryRecord:
         entry_id = (entry_id or "").strip()
         if not entry_id:
             raise ValueError("請先選擇一條記憶。")
-        records = self._read_memory_records_for(character) if character else self.read_memory_records()
+        records = self._read_memory_records_for(character,project_id) if character else self.read_memory_records(project_id=project_id)
         for record in records:
             if record.entry_id == entry_id:
                 return record
@@ -676,6 +683,87 @@ class QtLauncherController:
         if expected_conf_uid is not None and (not character or character.conf_uid != expected_conf_uid):
             raise ValueError("角色已切換；記憶確認已失效，請重新讀取。")
         return character
+
+    def read_memory_source(self, actor, project, body):
+        from open_llm_vtuber.chat_history_manager import read_memory_source
+        character=self._memory_character(actor)
+        record=self._selected_memory_record(body["entry_id"],character,project)
+        if record.content_digest!=body["content_digest"]:
+            raise ValueError("記憶已變更，請重新讀取。")
+        result=read_memory_source(self.cfg.open_llm_dir,record.source_character_id,record.source_history_uid,record.source_turn)
+        if result:
+            origin_project = result.pop("project_id")
+            result["can_open_history"] = actor == record.source_character_id and origin_project == project
+            if not result["can_open_history"]:
+                if record.content not in result["text"]:
+                    result = None
+                else:
+                    result["text"]=record.content
+        return {"ok":True,"source":result}
+
+    def review_memories(self, action, body, actor, project):
+        from open_llm_vtuber.character_memory_manager import revise_character_memory
+        self._memory_character(actor)
+        ensure_character_memory_root(self.cfg.open_llm_dir)
+        if action=="revise":
+            changed=revise_character_memory(actor,project,body["entry_id"],body["content"],expected_digest=body["content_digest"])
+            if changed:
+                self._maybe_refresh_memory_prompt()
+            return {"ok":True,"changed":changed}
+        applied,unresolved=[],[]
+        for item in body["entries"]:
+            try:
+                changed=update_character_memory_status(actor,item["entry_id"],body["status"],project_id=project,
+                                                       expected_digest=item["content_digest"])
+            except (ValueError,OSError):
+                changed=False
+            (applied if changed else unresolved).append(item["entry_id"])
+        if applied:
+            self._maybe_refresh_memory_prompt()
+        return {"ok":True,"applied":len(applied),"unresolved":unresolved}
+
+    def memory_processing_status(self, character, project):
+        from open_llm_vtuber.memory_maintenance import processing_status
+        return processing_status(self.cfg.open_llm_dir, character, project)
+
+    def maintain_memories(self, action, prepared):
+        from open_llm_vtuber.memory_maintenance import backup, restore
+        from .services import _env_python
+        from .utils import windows_hidden_subprocess_kwargs
+        import json
+        import subprocess
+        self._memory_character(prepared["expected_conf_uid"])
+        root = Path(self.cfg.open_llm_dir)
+        if action == "backup":
+            return backup(root, Path(prepared["archive"]))
+        if action == "restore":
+            return restore(Path(prepared["archive"]), Path(prepared["destination"]))
+        # The CLI runs on the same History and Index owners with an isolated cwd.
+        env = dict(os.environ, PYTHONPATH=str(root/"src"), PYTHONIOENCODING="utf-8")
+        cmd = [_env_python(self.cfg.env_llm), "-B", "-m","open_llm_vtuber.memory_maintenance",
+               "backfill",str(root),prepared["expected_conf_uid"],"--project",prepared["expected_project_id"],
+               "--history",prepared["history_uid"],"--apply"]
+        done = subprocess.run(cmd,env=env,cwd=root,capture_output=True,**windows_hidden_subprocess_kwargs())
+        if done.returncode != 0:
+            raise ValueError("無法完成索引，請檢查加工狀態及來源檔案。")
+        result = json.loads(done.stdout)
+        return {k: result[k] for k in ("job_id","sources","failed","remaining")}
+
+    def memory_formation(self, character, project):
+        from open_llm_vtuber.character_memory_repository import CharacterMemoryRepository
+        from open_llm_vtuber.memory_formation import read_policy
+        ensure_character_memory_root(self.cfg.open_llm_dir)
+        rule = read_policy(CharacterMemoryRepository(),character,project)
+        return {"categories":rule["categories"] if rule else [],"scope":rule["scope"] if rule else "character",
+                "digest":review_digest(rule) if rule else "", "project_id":project}
+
+    def configure_memory_formation(self, character, project, body, expected_digest):
+        from open_llm_vtuber.character_memory_repository import CharacterMemoryRepository
+        from open_llm_vtuber.memory_formation import configure_policy
+        self._memory_character(character)
+        ensure_character_memory_root(self.cfg.open_llm_dir)
+        configure_policy(CharacterMemoryRepository(),character,project,expected_digest=expected_digest,**body)
+        return True
 
     def add_memory(self, content: str, *, expected_conf_uid: str | None = None) -> bool:
         character = self._memory_character(expected_conf_uid)
@@ -700,14 +788,14 @@ class QtLauncherController:
             self.log(f"[{log_ts()}] 角色記憶未新增，可能是重複內容或包含敏感資料。")
         return changed
 
-    def set_memory_status(self, entry_id: str, status: str, *, expected_digest: str | None = None,
+    def set_memory_status(self, entry_id: str, status: str, *, expected_digest: str | None = None, project_id=None,
                           expected_conf_uid: str | None = None) -> bool:
         character = self._memory_character(expected_conf_uid)
         if not character or not character.conf_uid:
             raise ValueError("請先選擇角色。")
-        record = self._selected_memory_record(entry_id, character)
+        record = self._selected_memory_record(entry_id, character,project_id)
         ensure_character_memory_root(self.cfg.open_llm_dir)
-        changed = update_character_memory_status(character.conf_uid, record.entry_id, status, expected_digest=expected_digest or record.content_digest)
+        changed = update_character_memory_status(character.conf_uid, record.entry_id, status, project_id=self._memory_project(project_id), expected_digest=expected_digest or record.content_digest)
         if changed:
             label = MEMORY_STATUS_LABELS.get(status, status)
             self.log(f"[{log_ts()}] 已更新角色記憶狀態：{label}")
@@ -725,27 +813,27 @@ class QtLauncherController:
     def reject_memory(self, entry_id: str) -> bool:
         return self.set_memory_status(entry_id, "disabled")
 
-    def delete_memory(self, entry_id: str, *, expected_conf_uid: str | None = None,
+    def delete_memory(self, entry_id: str, *, project_id=None, expected_conf_uid: str | None = None,
                       expected_digest: str | None = None) -> bool:
         character = self._memory_character(expected_conf_uid)
         if not character or not character.conf_uid:
             raise ValueError("請先選擇角色。")
-        record = self._selected_memory_record(entry_id, character)
+        record = self._selected_memory_record(entry_id, character,project_id)
         ensure_character_memory_root(self.cfg.open_llm_dir)
-        changed = delete_character_memory(character.conf_uid, record.entry_id,
+        changed = delete_character_memory(character.conf_uid, record.entry_id, project_id=self._memory_project(project_id),
                                           expected_digest=expected_digest or record.content_digest)
         if changed:
             self.log(f"[{log_ts()}] 已刪除角色記憶：{compact_history_text(record.content, 48)}")
             self._maybe_refresh_memory_prompt()
         return changed
 
-    def compact_memory(self, *, expected_conf_uid: str | None = None,
+    def compact_memory(self, *, project_id=None, expected_conf_uid: str | None = None,
                        expected_digests: dict[str, str] | None = None) -> dict:
         character = self._memory_character(expected_conf_uid)
         if not character or not character.conf_uid:
             raise ValueError("請先選擇角色。")
         ensure_character_memory_root(self.cfg.open_llm_dir)
-        changed, removed_count = compact_character_memories(character.conf_uid, expected_digests=expected_digests)
+        changed, removed_count = compact_character_memories(character.conf_uid, expected_digests=expected_digests, project_id=self._memory_project(project_id))
         if changed:
             self._maybe_refresh_memory_prompt()
         self.log(f"[{log_ts()}] 角色記憶已整理，合併/移除 {removed_count} 條。")
@@ -814,15 +902,11 @@ class QtLauncherController:
         history_uid: str,
         character: Optional[CharacterRecord] = None,
     ) -> int:
-        deleted = 0
-        for path in self._safe_history_delete_paths(history_uid, character):
-            try:
-                if path.exists():
-                    path.unlink()
-                    deleted += 1
-            except OSError as exc:
-                self.log(f"[{log_ts()}] 刪除聊天檔案失敗：{path.name} / {exc}")
-        return deleted
+        from open_llm_vtuber.chat_history_manager import delete_history_path
+        paths = self._safe_history_delete_paths(history_uid, character)
+        if len(paths) != 2:
+            return 0
+        return delete_history_path(paths[0])
 
     def _runtime_current_history_uid(self) -> str:
         if not port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.2):
@@ -1190,9 +1274,14 @@ class QtLauncherController:
         self.log(f"[{log_ts()}] 已要求 runtime 刷新角色記憶 prompt。")
         return result
 
-    def read_tool_policy_summary(self) -> dict:
-        """Stored policy projection only; never discover/execute tools or claim adoption."""
-        return self._tool_policy_settings().read()
+    def _tool_inventory(self, client_uid=None):
+        try:
+            return self._post_llm_launcher("/launcher/tool-inventory", {"target_client_uid": client_uid})
+        except (ValueError, OSError, RuntimeError) as exc:
+            return {"error": str(exc)}
+
+    def read_tool_policy_summary(self, client_uid=None) -> dict:
+        return self._tool_policy_settings().read(self._tool_inventory(client_uid))
 
     def _tool_policy_settings(self):
         from .tool_policy_settings import ToolPolicySettings
@@ -1202,9 +1291,9 @@ class QtLauncherController:
             raise ValueError("tool_policy_noncanonical_owner")
         return ToolPolicySettings(canonical)
 
-    def update_tool_policy(self, payload):
+    def update_tool_policy(self, payload, client_uid=None):
         # Only called through the Qt broker after native confirmation.
-        return self._tool_policy_settings().update(payload, confirmed=True)
+        return self._tool_policy_settings().update(payload, confirmed=True, inventory=self._tool_inventory(client_uid))
 
     def read_companion_diagnostics(self) -> dict:
         return self.lifecycle.snapshot()
@@ -1292,6 +1381,14 @@ class QtLauncherController:
 
     def read_assistant_settings(self) -> dict:
         return self._assistant_settings_result(self._core_request("/v1/assistant-settings"))
+
+    def read_chat_speech_settings(self) -> dict:
+        from .config import read_chat_speech_settings
+        return read_chat_speech_settings(self.cfg.config_path)
+
+    def update_chat_speech_settings(self, settings: dict, expected_revision: str) -> dict:
+        from .config import update_chat_speech_settings
+        return update_chat_speech_settings(self.cfg.config_path, settings, expected_revision)
 
     def update_assistant_settings(self, settings: dict, expected_revision: str) -> dict:
         return self._assistant_settings_result(self._core_request("/v1/assistant-settings", {
@@ -1497,6 +1594,7 @@ class QtLauncherController:
 
         if port_is_open(self.cfg.llm_host, self.cfg.llm_port, 0.2):
             if self._try_hot_switch_profile(runtime_conf, char_cfg, character, project):
+                self._preload_profile_voice(character)
                 pet_status = self.launch_pet_electron()
                 self.apply_outfit(wait_for_shell=True)
                 history_result = self._apply_history_choice_after_start(
@@ -1535,6 +1633,7 @@ class QtLauncherController:
                 raise RuntimeError(message)
 
         if self.cfg.tts_mode == 'central':
+            self._preload_profile_voice(character)
             self._check_voice_capability()
             self.proc_tts = None
         else:
@@ -1559,6 +1658,19 @@ class QtLauncherController:
         return {"ok": True, "mode": "fresh-start", "history": history_result,
                 "pet": {"pid": pet_status.get("pid"), "instance_id": pet_status.get("instanceId")},
                 "warning": history_result.get("warning", ""), "voice": dict(self.lifecycle.voice)}
+
+    def _preload_profile_voice(self, character) -> None:
+        if self.cfg.tts_mode != 'central':
+            return
+        from .voice_client import preload_async
+        voice = dict(self.cfg.voice_ids).get(character.yaml_path.stem, '')
+        if voice:
+            # Formal Qt owner supplies _append_log_threadsafe -> log_signal.emit.
+            # The worker never receives widgets or mutates lifecycle/UI state.
+            try:
+                preload_async(self.cfg.voice_url, voice, self.log)
+            except Exception as exc:
+                self.log(f"中央語音 model_preload 未啟動 error_type={type(exc).__name__}；文字啟動不受影響")
 
     def _start_legacy_profile_tts(self, character, char_cfg) -> None:
         self.proc_tts = start_tts(

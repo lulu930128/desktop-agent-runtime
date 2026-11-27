@@ -73,11 +73,11 @@ class CentralVoiceTests(unittest.TestCase):
         self.assertEqual(tts['voice_id'], 'yuki')
         self.assertEqual(tts['ref_audio_path'], '')
 
-    def test_readiness_requires_current_model_and_successful_inference(self):
+    def test_readiness_distinguishes_loaded_model_from_verified_inference(self):
         from kuro_launcher.voice_client import readiness
         for loaded, inference, status, expected in (
             (None, 'not_run', 'available', 'cold'),
-            ('kuro', 'not_run', 'available', 'cold'),
+            ('kuro', 'not_run', 'available', 'available'),
             ('yuki', 'passed', 'available', 'cold'),
             ('kuro', 'passed', 'available', 'available'),
             ('kuro', 'passed', 'busy', 'busy'),
@@ -92,6 +92,21 @@ class CentralVoiceTests(unittest.TestCase):
                     self.assertEqual(result['state'], expected)
                     self.assertEqual(result['voiceId'], 'kuro')
                     synth.assert_not_called()
+
+    def test_model_only_preload_is_loaded_but_first_inference_is_unverified(self):
+        from kuro_launcher.voice_client import readiness
+        data = {'status': 'available', 'model_loaded': 'kuro',
+                'preload': {'voice': 'kuro', 'state': 'ready'},
+                'voices': [{'voice_id': 'kuro', 'last_inference': 'not_run'}]}
+        with patch('kuro_launcher.voice_client.require_voice', return_value=data), \
+             patch('kuro_launcher.voice_client.synthesize') as synth:
+            result = readiness('http://127.0.0.1:18890', 'kuro')
+        self.assertEqual(result['state'], 'available')
+        self.assertEqual(result['lastInference'], 'not_run')
+        self.assertIn('預載已完成', result['reason'])
+        self.assertIn('首次合成尚未驗證', result['reason'])
+        self.assertNotIn('合成成功', result['reason'])
+        synth.assert_not_called()
 
     def test_launcher_does_not_promote_cold_or_busy_voice_to_available(self):
         controller = SimpleNamespace(cfg=self.cfg(), lifecycle=SimpleNamespace(voice={}),

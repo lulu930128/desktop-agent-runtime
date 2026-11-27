@@ -73,10 +73,44 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         mirrored = json.loads(self.pet.send_text.call_args.args[0])
         self.assertNotIn("private", mirrored)
         self.assertEqual(mirrored["actions"], payload["actions"])
+        self.assertEqual(mirrored["request_id"], output.request_id)
+        self.assertEqual(mirrored["sequence"], 0)
+        await output(json.dumps({"type": "speech-status", "status": "failed", "reason": "playback_result", "private": "synthetic"}))
+        mirrored = json.loads(self.pet.send_text.call_args.args[0])
+        self.assertEqual(mirrored["status"], "failed")
+        self.assertNotIn("private", mirrored)
+
+    async def test_qt_stop_projects_a_scoped_speech_result_and_keeps_pet_receipt(self):
+        self.context.history_uid = None
+        output = PrimaryConversationOutput(self.qt.send_text, lambda: {"pet": self.pet},
+                                           identity={"history_uid": "fixture"})
+        self.handler.primary_outputs["qt"] = output
+        task = asyncio.create_task(asyncio.sleep(60))
+        self.handler.current_conversation_tasks["qt"] = task
+        await self.handler._handle_interrupt(self.qt, "qt", {"text": "launcher-interrupt"})
+        await asyncio.gather(task, return_exceptions=True)
+        status = json.loads(self.qt.send_text.await_args.args[0])
+        self.assertEqual((status["speech_request_id"], status["status"]), (output.request_id, "interrupted"))
+        self.assertIs(self.handler.primary_outputs["qt"], output)
+        output.acknowledge("pet", output.request_id, "interrupted", [])
+        self.assertIn("pet", output.early_interrupts)
+        self.qt.send_text.reset_mock()
+        await self.handler._handle_interrupt(self.qt, "qt", {"text": "launcher-interrupt"})
+        self.qt.send_text.assert_not_awaited()
+
+    async def test_failed_playback_is_not_success_and_wrong_turn_is_ignored(self):
+        output = PrimaryConversationOutput(self.qt.send_text, lambda: {"pet": self.pet})
+        await output(json.dumps({"type": "audio", "audio": "fixture"}))
+        await output(json.dumps({"type": "backend-synth-complete"}))
+        output.acknowledge('pet', 'old', 'completed')
+        self.assertFalse(output.completed.is_set())
+        output.acknowledge('pet', output.request_id, 'failed')
+        self.assertEqual((await output.wait_for_playback())['status'], 'failed')
 
     async def test_ack_correlated_to_primary_and_ignores_qt(self):
         output = PrimaryConversationOutput(self.qt.send_text, lambda: {"pet": self.pet})
         self.handler.primary_outputs["qt"] = output
+        await output(json.dumps({"type": "audio", "audio": "fixture"}))
         await output(json.dumps({"type": "backend-synth-complete"}))
         await self.handler._route_message(self.qt, "qt", {"type": "frontend-playback-complete", "request_id": output.request_id})
         await self.handler._route_message(self.pet, "pet", {"type": "frontend-playback-complete", "request_id": "old-turn"})
@@ -87,7 +121,8 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_no_pet_finalizes_without_legacy_wait(self):
         output = PrimaryConversationOutput(self.qt.send_text, lambda: {})
         manager = SimpleNamespace(task_list=[asyncio.create_task(asyncio.sleep(0))],
-                                  _payload_queue=asyncio.Queue(), audio_output_count=1)
+                                  _payload_queue=asyncio.Queue(), audio_output_count=1, speech_metrics={},
+                                  failed_segments=set(), missing_units=set(), audio_seconds=0)
         with patch("open_llm_vtuber.conversations.conversation_utils.message_handler.wait_for_response", new_callable=AsyncMock) as wait:
             await asyncio.wait_for(finalize_conversation_turn(manager, output, "qt"), .3)
             wait.assert_not_called()
@@ -96,6 +131,7 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_disconnect_and_immediate_ack_complete_wait(self):
         output = PrimaryConversationOutput(self.qt.send_text, lambda: {"pet": self.pet})
         self.handler.primary_outputs["qt"] = output
+        await output(json.dumps({"type": "audio", "audio": "fixture"}))
         await output(json.dumps({"type": "backend-synth-complete"}))
         await self.handler.handle_disconnect("pet")
         await asyncio.wait_for(output.wait_for_playback(), .2)
@@ -104,6 +140,7 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def test_pet_send_failure_does_not_fail_primary(self):
         self.pet.send_text.side_effect = ConnectionError()
         output = PrimaryConversationOutput(self.qt.send_text, lambda: {"pet": self.pet})
+        await output(json.dumps({"type": "audio", "audio": "fixture"}))
         await output(json.dumps({"type": "backend-synth-complete"}))
         await asyncio.wait_for(output.wait_for_playback(), .2)
 
@@ -112,17 +149,40 @@ class RuntimeTests(unittest.IsolatedAsyncioTestCase):
         async def immediate_ack(raw):
             output.acknowledge("pet", json.loads(raw).get("request_id"))
         self.pet.send_text.side_effect = immediate_ack
+        await output(json.dumps({"type": "audio", "audio": "fixture"}))
         await output(json.dumps({"type": "backend-synth-complete"}))
         await asyncio.wait_for(output.wait_for_playback(), .2)
 
     async def test_all_presentations_finish_before_primary_wait_completes(self):
         other = SimpleNamespace(send_text=AsyncMock())
         output = PrimaryConversationOutput(self.qt.send_text, lambda: {"pet": self.pet, "other": other})
+        await output(json.dumps({"type": "audio", "audio": "fixture"}))
         await output(json.dumps({"type": "backend-synth-complete"}))
         output.acknowledge("pet", output.request_id)
         self.assertFalse(output.completed.is_set())
         output.acknowledge("other", output.request_id)
         await asyncio.wait_for(output.wait_for_playback(), .2)
+
+    async def test_late_pet_cannot_claim_unreceived_audio_completed(self):
+        subscribers = {"pet": self.pet}
+        output = PrimaryConversationOutput(self.qt.send_text, lambda: subscribers)
+        await output(json.dumps({"type": "audio", "audio": "fixture"}))
+        output.disconnect("pet")
+        subscribers.clear()
+        subscribers["late"] = SimpleNamespace(send_text=AsyncMock())
+        await output(json.dumps({"type": "backend-synth-complete"}))
+        output.acknowledge("late", output.request_id)
+        self.assertEqual((await output.wait_for_playback())["status"], "unavailable")
+
+    async def test_partial_audio_delivery_cannot_claim_completed(self):
+        subscribers = {}
+        output = PrimaryConversationOutput(self.qt.send_text, lambda: subscribers)
+        await output(json.dumps({"type": "audio", "audio": "first"}))
+        subscribers["pet"] = self.pet
+        await output(json.dumps({"type": "audio", "audio": "second"}))
+        await output(json.dumps({"type": "backend-synth-complete"}))
+        output.acknowledge("pet", output.request_id)
+        self.assertEqual((await output.wait_for_playback())["status"], "unavailable")
 
     async def test_primary_cannot_join_group(self):
         callback = AsyncMock()

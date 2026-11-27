@@ -43,6 +43,7 @@ class OwnerTests(unittest.TestCase):
                 "fixture::read": {"mode": "read_only"}, "fixture::write": {"mode": "confirm"}}}), encoding="utf-8")
             controller = QtLauncherController.__new__(QtLauncherController)
             controller.cfg = SimpleNamespace(open_llm_dir=root)
+            controller._tool_inventory = Mock(return_value={})
             with patch.dict("os.environ", {"KURO_TOOL_POLICY_PATH": ""}):
                 result = controller.read_tool_policy_summary()
             self.assertFalse(result["confirmation_available"])

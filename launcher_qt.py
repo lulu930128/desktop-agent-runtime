@@ -259,6 +259,7 @@ def main() -> int:
     # before QApplication; failure must never construct a fallback window.
     try:
         web_bundle = prepare_owner_presentation(BASE_DIR)
+        print(f"[launcher-qt] verified presentation pid={os.getpid()} bundle={web_bundle.pin.fingerprint}", flush=True)
     except Exception as exc:
         print(f"[launcher-qt][ERROR] Web assets unavailable: {type(exc).__name__}", flush=True)
         _close_launcher_activation_event()

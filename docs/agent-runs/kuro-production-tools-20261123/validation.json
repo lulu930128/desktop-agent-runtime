@@ -1,0 +1,69 @@
+{
+  "timestamp": "2026-11-23T17:37:47.631945+08:00",
+  "real_responses": {
+    "requests": 116,
+    "unique_request_ids": 116,
+    "status_codes": [
+      200
+    ],
+    "configured_model": "gpt-6-luna",
+    "configured_effort": "none",
+    "role": "kuro_01"
+  },
+  "production_model_last_logged": "gpt-6-luna",
+  "gui": {
+    "state": "blocked",
+    "selected_window_inventory": [
+      "Kuro Pet Renderer"
+    ],
+    "native_qt_available_to_automation": false,
+    "launcher_pid": 119856,
+    "llm_pid": 73172,
+    "pet_pid": 127368,
+    "core_pid": 98260,
+    "formal_gui_teacher_gesture": false,
+    "confirmed_new_bundle_loaded": false,
+    "formal_hub_synthetic_submissions": 0
+  },
+  "tests": {
+    "history_tools_workspace": [
+      "Ran 12 tests in 0.193s",
+      "",
+      "OK"
+    ],
+    "qt_w10": [
+      "Ran 17 tests in 4.718s",
+      "",
+      "OK"
+    ],
+    "frontend": [
+      "ℹ tests 37",
+      "ℹ suites 0",
+      "ℹ pass 37",
+      "ℹ fail 0",
+      "ℹ cancelled 0",
+      "ℹ skipped 0",
+      "ℹ todo 0",
+      "ℹ duration_ms 6690.7041"
+    ],
+    "typecheck": [
+      "> check",
+      "> node ../../../pet-electron/node_modules/typescript/bin/tsc --project tsconfig.json --noEmit"
+    ]
+  },
+  "historical_w6": {
+    "failures": 1,
+    "errors": 2,
+    "reason": "Two tests still read qt_work_companion_view.py. One expects a removed Widgets constructor in qt_app.py."
+  },
+  "signed_installed_bundle": {
+    "status": "STAGING_VERIFIED",
+    "directory": "C:\\project\\desktop-agent-runtime\\assets\\qt-owner\\1fa9b1646a024b573fabe019e4fd940f0e34962f87db6b46cba52408290f3e2a",
+    "fingerprint": "1fa9b1646a024b573fabe019e4fd940f0e34962f87db6b46cba52408290f3e2a",
+    "manifestSha256": "fc759d5a95cfa53b0997e3d57ca68dc1c9d40675be9419d10de7a38b0a38ae9d",
+    "publicKey": "7fbee49c562d6aa6e4120326daa21843e4510463f92275f2a5a4db7efd276299",
+    "signature": "7d56b8a64b6fd5de6ff3a4c22dd09aa63101f36a90083658d35db4cd94bc480e6f4b05d4db7864b49b038fba120886bee142a7b78ea39c57579d86a78609090d",
+    "assets": 5,
+    "productionAdoption": false
+  }
+}

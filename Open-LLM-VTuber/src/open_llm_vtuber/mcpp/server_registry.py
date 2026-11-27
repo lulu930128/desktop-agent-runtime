@@ -4,6 +4,7 @@ import shutil
 import json
 import os
 import math
+from urllib.parse import urlsplit
 
 from datetime import timedelta
 from pathlib import Path
@@ -15,6 +16,73 @@ from .utils.path import validate_file
 
 DEFAULT_CONFIG_PATH = "mcp_servers.json"
 DEFAULT_TIMEOUT_SECONDS = 30
+
+# These are domain-owned MCP endpoints, never model-supplied network targets.
+HTTP_ENDPOINTS = {
+    "memory-core": "http://127.0.0.1:18818/mcp",
+    "personal-asset-os": "http://127.0.0.1:18876/mcp/",
+}
+HTTP_SERVER_NAMES = {"memory-core": "memory-core-mcp", "personal-asset-os": "Personal Asset OS"}
+# The installed owners enforce their own action scopes at these loopback endpoints.
+OWNER_SERVICES = {
+    "project-workspace": (18787, "gpt-project-workspace-mcp"),
+    "japanese-study": (18790, "japanese-study-mcp"),
+    "english-study": (18886, "english-study-mcp"),
+    "listening-audio": (18810, "listening-audio"),
+    "omi-search": (18797, "omi-search-mcp"),
+}
+for _service, (_port, _identity) in OWNER_SERVICES.items():
+    HTTP_ENDPOINTS[_service] = f"http://127.0.0.1:{_port}/mcp"
+    HTTP_SERVER_NAMES[_service] = _identity
+
+HTTP_READ_TOOLS = {
+    "memory-core": (
+        "search", "fetch", "memory_fetch_record_revision", "memory_list_record_links",
+        "memory_overview", "memory_detect_duplicates", "memory_list_collections", "memory_get_collection",
+    ),
+    "personal-asset-os": (
+        "get_asset_overview", "list_asset_accounts", "list_asset_positions",
+        "list_recent_asset_transactions", "get_pending_financial_events",
+        "get_reconciliation_status", "get_asset_system_status",
+    ),
+}
+HTTP_FORBIDDEN_ARGS = frozenset({"url", "uri", "endpoint", "headers", "auth", "token", "client_token",
+                               "scope", "scopes", "command", "env", "cwd", "transport"})
+
+
+def http_tool_is_read_only(server_name, tool) -> bool:
+    return (tool.name in HTTP_READ_TOOLS.get(server_name, ()) and tool.annotations is not None
+            and tool.annotations.readOnlyHint is True and tool.annotations.destructiveHint is not True)
+
+
+def http_arguments_allowed(server_name, args) -> bool:
+    return (isinstance(args, dict) and not HTTP_FORBIDDEN_ARGS.intersection(args)
+            and not (server_name == "memory-core" and args.get("sensitivity") == "restricted"))
+
+
+def validate_http_endpoint(server_name: str, url: Any) -> None:
+    if not isinstance(url, str) or server_name not in HTTP_ENDPOINTS:
+        raise ValueError("http_endpoint_denied")
+    parsed = urlsplit(url)
+    if (parsed.scheme != "http" or parsed.hostname != "127.0.0.1"
+            or parsed.username is not None or parsed.password is not None
+            or parsed.query or parsed.fragment or url != HTTP_ENDPOINTS[server_name]):
+        raise ValueError("http_endpoint_denied")
+
+
+def validate_http_server(server: MCPServer) -> None:
+    validate_http_endpoint(server.name, server.url)
+    if server.name in OWNER_SERVICES:
+        if (server.transport != "streamable_http" or server.command or server.args or server.env
+                or server.cwd or server.require_read_only or server.allowed_tools is not None):
+            raise ValueError("http_server_config_denied")
+        return
+    if (server.transport != "streamable_http" or server.require_read_only is not True
+            or not isinstance(server.allowed_tools, list)
+            or len(server.allowed_tools) != len(HTTP_READ_TOOLS[server.name])
+            or set(server.allowed_tools) != set(HTTP_READ_TOOLS[server.name])
+            or server.command or server.args or server.env or server.cwd):
+        raise ValueError("http_server_config_denied")
 
 
 def _normalize_timeout(value: Any) -> timedelta:
@@ -89,7 +157,34 @@ class ServerRegistry:
             return
 
         for server_name, server_details in servers_config.items():
+            if server_name == "omi-market":
+                logger.warning("MCPSR: Retired market server cannot be started.")
+                continue
             if not isinstance(server_details, dict):
+                continue
+            transport = server_details.get("transport", "stdio")
+            if transport == "streamable_http":
+                try:
+                    # HTTP has no command, environment, headers, auth or client options.
+                    if set(server_details) - {"transport", "url", "timeout", "allowed_tools", "require_read_only"}:
+                        raise ValueError("http_config_fields_denied")
+                    server = MCPServer(
+                        name=server_name, command="", transport=transport, url=server_details.get("url"),
+                        timeout=_normalize_timeout(server_details.get("timeout")),
+                        allowed_tools=server_details.get("allowed_tools"),
+                        require_read_only=server_details.get("require_read_only", False),
+                    )
+                    validate_http_server(server)
+                except (ValueError, TypeError):
+                    logger.warning("MCPSR: Invalid HTTP MCP configuration; server disabled.")
+                    continue
+                self.servers[server_name] = server
+                continue
+            if transport != "stdio" or server_name in HTTP_READ_TOOLS or "url" in server_details:
+                logger.warning("MCPSR: Invalid MCP transport; server disabled.")
+                continue
+            if type(server_details.get("require_read_only", False)) is not bool:
+                logger.warning("MCPSR: Invalid read-only annotation requirement; server disabled.")
                 continue
             allowed_tools = server_details.get("allowed_tools")
             if allowed_tools is not None and (not isinstance(allowed_tools, list) or not all(isinstance(name, str) and name for name in allowed_tools)):
@@ -128,12 +223,19 @@ class ServerRegistry:
                     )
                     continue
 
+            child_env = {key: os.path.expandvars(value) for key, value in (env or {}).items()}
+            if server_name == "project-workspace":
+                # The stdio owner alone validates these operator-supplied scope and journal paths.
+                for key in ("WORKSPACE_MCP_WRITE_POLICY", "WORKSPACE_MCP_WRITE_STATE_DIR"):
+                    if key not in child_env and key in os.environ:
+                        child_env[key] = os.environ[key]
             self.servers[server_name] = MCPServer(
                 name=server_name,
                 command=command,
                 args=server_details["args"],
-                env={key: os.path.expandvars(value) for key, value in server_details.get("env", {}).items()} if server_details.get("env") else None,
+                env=child_env or None,
                 allowed_tools=allowed_tools,
+                require_read_only=server_details.get("require_read_only", False),
                 cwd=server_details.get("cwd", None),
                 timeout=_normalize_timeout(server_details.get("timeout", None)),
             )

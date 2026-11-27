@@ -1,0 +1,245 @@
+{
+  "date": "2026-10-31",
+  "status": {
+    "source": "Source Ready",
+    "targeted": "PASS",
+    "runtime": "UNVERIFIED",
+    "desktopE2E": "UNVERIFIED",
+    "G5": "Pending"
+  },
+  "planSha256": "b1f2441d1791417275e71f126ed2f3040350fc118ea5cb59a17284b4477b04ef",
+  "head": "c2b3e64c27caaec8c2cba5b213444ddce0d79e03",
+  "pythonChecks": [
+    {
+      "name": "targeted-python",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_multilingual_speech.py",
+        "-v"
+      ],
+      "exitCode": 0,
+      "log": "C:\\project\\desktop-agent-runtime\\.tmp\\kuro-multilingual-speech-20261031\\targeted-python.log"
+    },
+    {
+      "name": "targeted-qt",
+      "command": [
+        "C:\\project\\desktop-agent-runtime\\envs\\kuro-llm310\\python.exe",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-p",
+        "test_chat_speech_settings_qt.py",
+        "-v"
+      ],
+      "exitCode": 0,
+      "log": "C:\\project\\desktop-agent-runtime\\.tmp\\kuro-multilingual-speech-20261031\\targeted-qt.log"
+    }
+  ],
+  "counts": {
+    "multilingualSpeechTests": 28,
+    "qtSettingsAndChatDeltaTests": 4,
+    "nodeTests": 26,
+    "legacyPronunciationTests": 47,
+    "isolatedSignedQtDomChecks": 11,
+    "syntaxFiles": 16
+  },
+  "longTokenFixture": {
+    "displayTokenChunks": 13500,
+    "displayWebsocketPayloads": 85,
+    "normalBridgeRequests": 0
+  },
+  "formalChildImport": {
+    "cwd": "Open-LLM-VTuber",
+    "entryEnvironment": "kuro_launcher.services.start_llm captured spawn env",
+    "module": "kuro_launcher/config.py",
+    "status": "PASS",
+    "runServerStarted": false
+  },
+  "builds": {
+    "frontendTypecheck": "PASS",
+    "petTypecheck": "PASS",
+    "petRendererBuild": "PASS",
+    "ownerBundleBuild": "STAGING_VERIFIED"
+  },
+  "sourceValidation": {
+    "status": "PASS",
+    "head": "c2b3e64c27caaec8c2cba5b213444ddce0d79e03",
+    "planUnchanged": true,
+    "planSha256": "b1f2441d1791417275e71f126ed2f3040350fc118ea5cb59a17284b4477b04ef",
+    "changedBaselineFiles": [
+      "Open-LLM-VTuber/prompts/utils/response_contract_prompt.txt",
+      "Open-LLM-VTuber/src/open_llm_vtuber/agent/agents/basic_memory_agent.py",
+      "Open-LLM-VTuber/src/open_llm_vtuber/agent/output_types.py",
+      "Open-LLM-VTuber/src/open_llm_vtuber/conversations/conversation_utils.py",
+      "Open-LLM-VTuber/src/open_llm_vtuber/conversations/single_conversation.py",
+      "Open-LLM-VTuber/src/open_llm_vtuber/conversations/speech_presentation.py",
+      "Open-LLM-VTuber/src/open_llm_vtuber/conversations/tts_manager.py",
+      "devtools/original-git-web-host-20261010/frontend/src/owner-presentation.ts",
+      "kuro_launcher/config.py",
+      "kuro_launcher/qt_controller.py",
+      "kuro_launcher/qt_web_adapter.py",
+      "kuro_launcher/qt_web_protocol.py",
+      "kuro_launcher/qt_web_release.py",
+      "pet-electron/renderer/src/backend/backend-client.ts",
+      "kuro_launcher/services.py",
+      "kuro_launcher/qt_chat_client.py"
+    ],
+    "unchangedBaselineFiles": [
+      "Open-LLM-VTuber/local_mcp/filesystem_tools_server.py",
+      "Open-LLM-VTuber/local_mcp/web_tools_server.py",
+      "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/market_preflight.py",
+      "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/mcp_client.py",
+      "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/server_registry.py",
+      "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_adapter.py",
+      "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_catalog_manager.py",
+      "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_executor.py",
+      "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_policy_manager.py",
+      "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/types.py",
+      "Open-LLM-VTuber/tests/test_market_preflight.py",
+      "Open-LLM-VTuber/tests/test_mcp_m0_consumers.py",
+      "Open-LLM-VTuber/tests/test_mcp_m0_omi_path.py",
+      "Open-LLM-VTuber/tests/test_mcp_m0_policy.py",
+      "Open-LLM-VTuber/tests/test_tool_catalog_market_routing.py",
+      "Open-LLM-VTuber/tests/test_tool_policy_omi.py",
+      "Open-LLM-VTuber/tests/verify_mcp_source_inventory.py",
+      "Open-LLM-VTuber/tool_catalog.json",
+      "Open-LLM-VTuber/tool_policy.json",
+      "devtools/original-git-web-host-20261010/build_owner_bundle.py",
+      "devtools/original-git-web-host-20261010/frontend/src/canonical-model.ts",
+      "devtools/original-git-web-host-20261010/frontend/src/owner-bootstrap.ts",
+      "devtools/original-git-web-host-20261010/frontend/src/work-panel/main.ts",
+      "docs/agent-runs/kuro-multilingual-speech-20261031/Plan.md",
+      "kuro_launcher/qt_app.py",
+      "kuro_launcher/runtime_conf.py",
+      "kuro_launcher/tool_policy_settings.py",
+      "projects/desktop-agent-runtime/prompts/tool_prompt.txt",
+      "tests/g2_tools_today_frontend.test.cjs",
+      "tests/g2_tools_today_surface.py",
+      "tests/qt_web_frontend.test.cjs",
+      "tests/test_g2_tool_settings.py",
+      "tests/test_g5_desktop.py",
+      "tests/test_qt_web_w10.py",
+      "tests/test_qt_web_w8.py",
+      "tests/test_qt_web_window_chrome.py"
+    ],
+    "newSourceFiles": [
+      "Open-LLM-VTuber/prompts/utils/speech_lanes_prompt.txt",
+      "tests/test_multilingual_speech.py",
+      "tests/test_chat_speech_settings_qt.py",
+      "tests/multilingual_speech_frontend.test.cjs",
+      "tests/multilingual_speech_surface.py"
+    ],
+    "syntaxFiles": 16,
+    "builderUnchanged": true,
+    "qtAppWipUnchanged": true,
+    "cachedDiffEmpty": true,
+    "oldBundleSignature": "PASS",
+    "newBundle": {
+      "status": "STAGING_VERIFIED",
+      "directory": "C:\\project\\desktop-agent-runtime\\assets\\qt-owner\\1ae1327c3f02836510f5712e7783c03a6b3a883e9f0d8d15d165247a14ae9a9a",
+      "fingerprint": "1ae1327c3f02836510f5712e7783c03a6b3a883e9f0d8d15d165247a14ae9a9a",
+      "manifestSha256": "d4837396ea4e6c79bd19c31573098978824ef04e1eb5b23ed6fdcfac17f92396",
+      "publicKey": "c618297b04b07d2f42792f049dc7e84000cd530ac80a1c734eb68ec24be78cec",
+      "signature": "7c24acc393927a0a65a310f041c9f2b5304dda7c1324b82a0f5cdbe92850d917ec3f545ff7251ab1f2b860c94fb4c56ea04b5ba7b9fa7c22cdb576be92ac3602",
+      "assets": 5,
+      "productionAdoption": false
+    },
+    "compiledSettingsControls": "PASS",
+    "normalSpeechNoBridgeOrLLMCalls": "PASS",
+    "gitDiffCheck": "PASS",
+    "taskDiff": "C:\\project\\desktop-agent-runtime\\.tmp\\kuro-multilingual-speech-20261031\\TaskDiff.patch"
+  },
+  "isolatedQt": {
+    "status": "ISOLATED_DOM_PASS",
+    "checks": [
+      {
+        "name": "signed-source-pin",
+        "passed": true
+      },
+      {
+        "name": "default-values",
+        "passed": true
+      },
+      {
+        "name": "three-policies",
+        "passed": true
+      },
+      {
+        "name": "locale-capability-truth",
+        "passed": true
+      },
+      {
+        "name": "separate-Core-proactiveVoice",
+        "passed": true
+      },
+      {
+        "name": "polling-keeps-draft",
+        "passed": true
+      },
+      {
+        "name": "real-Launcher-YAML-roundtrip",
+        "passed": true
+      },
+      {
+        "name": "navigation-retains-values",
+        "passed": true
+      },
+      {
+        "name": "reload-reads-owner",
+        "passed": true
+      },
+      {
+        "name": "no-input-language-control",
+        "passed": true
+      },
+      {
+        "name": "private-web-profile",
+        "passed": true
+      }
+    ],
+    "productionAdoption": false,
+    "fingerprint": "1ae1327c3f02836510f5712e7783c03a6b3a883e9f0d8d15d165247a14ae9a9a"
+  },
+  "sourceHashes": {
+    "Open-LLM-VTuber/prompts/utils/response_contract_prompt.txt": "aa1c4bf2b6bd4cd5e178ff1274502377f365afbe44e08623723cea1f47f8fc05",
+    "Open-LLM-VTuber/src/open_llm_vtuber/agent/agents/basic_memory_agent.py": "0b5672977c040f2d022b5d74e13cdb57a3c601d2f7443041c811cf6c0750b26b",
+    "Open-LLM-VTuber/src/open_llm_vtuber/agent/output_types.py": "20da367bf30b04bf257bb13dd8d0579df792270b6b44498d580fba73e6948ab4",
+    "Open-LLM-VTuber/src/open_llm_vtuber/conversations/conversation_utils.py": "fefb4bea9513e2e5891302f629d6a0c34147443a70efef981ad607cab237c56e",
+    "Open-LLM-VTuber/src/open_llm_vtuber/conversations/single_conversation.py": "0123927b264c7964bae37ae3861d9a29543efcf254e2912158002a9beb70237e",
+    "Open-LLM-VTuber/src/open_llm_vtuber/conversations/speech_presentation.py": "a075179aeb138547b9b65b6293c79d927e84268b11cac07f0da404fa0bbab682",
+    "Open-LLM-VTuber/src/open_llm_vtuber/conversations/tts_manager.py": "d5c6883a920f0e8ae2366b73bf2886c44d5d1d22186e3985bc2e95c0c4f6563c",
+    "devtools/original-git-web-host-20261010/frontend/src/owner-presentation.ts": "e9b345285ea02b270775ca21556f9ebc984160bd05f8a9fcd26dc9fd80c358d5",
+    "kuro_launcher/config.py": "1bad6d91b41f530abe8d2fc67871cb616ee93e23246b2d5f127e1a55e57a377e",
+    "kuro_launcher/qt_controller.py": "1880a88389b5d71435be8b1ddf9eeaf28b6cdd4c76079a503edc258feff5ac5f",
+    "kuro_launcher/qt_web_adapter.py": "a82268f728b66febd18a1a61d027d6dbdd2a266bfe0f2c4130a5bd016439fe38",
+    "kuro_launcher/qt_web_protocol.py": "f352f6f1af674a57e74908eea955439316f0db7af1dec438f287a88ab6f1f5cb",
+    "kuro_launcher/qt_web_release.py": "3ed3bdfa71a698db2f9a54c43a09356d2d544bc1751ee77a98fb70a7bdd202df",
+    "pet-electron/renderer/src/backend/backend-client.ts": "f962feab64c63b41454f90033acdf0d847500fc1bc4c55f494a10ff1c4f206e8",
+    "kuro_launcher/services.py": "2e2317848c7c17d96415236bc40c530cc7a0a8deef115116057053ad49630dd6",
+    "kuro_launcher/qt_chat_client.py": "08b165dcd68314a07a1f5e18d7ce1607bee325991f75f30dc399a495e739ac13",
+    "Open-LLM-VTuber/prompts/utils/speech_lanes_prompt.txt": "65ece3c26cb27338de713f5f3965efaf96ebf723b5998b680ce05883494bdf28",
+    "tests/test_multilingual_speech.py": "d7f3498c0b404d305a532e465838d943434e24d17f9b52abe5899820ae48b9fa",
+    "tests/test_chat_speech_settings_qt.py": "2461aa425be2c70888dc608a8241b99de3c86d9dea9e83733c3e8b4091af5035",
+    "tests/multilingual_speech_frontend.test.cjs": "aa2995049632ba6187d6266ff0bc91faae6cc1344a6ee7262a570d96848308c5",
+    "tests/multilingual_speech_surface.py": "db397cf26e8dd26ce960dbe2149a10fe92af136b1f5dfb046aabbd36220d9621"
+  },
+  "limits": [
+    "No formal Kuro startup or live deployment",
+    "No cloud LLM or central TTS inference",
+    "No non-Japanese voice validation",
+    "Qt offscreen D3D warnings; DOM evidence only",
+    "No latency or native visual acceptance claim",
+    "No commit or push"
+  ],
+  "memoryAndHistoryEvidence": "Synthetic fixture inputs only; real private history and memory untouched"
+}

@@ -1,25 +1,23 @@
 from __future__ import annotations
 
 import asyncio
-import ipaddress
+import json
+import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from html import unescape
 from typing import Any
-from urllib.parse import parse_qs, parse_qsl, unquote, urlencode, urljoin, urlparse, urlunparse
+from urllib.parse import parse_qs, urljoin, urlparse
 from zoneinfo import ZoneInfo
 
-import httpx
 from bs4 import BeautifulSoup
 from mcp.server.fastmcp import FastMCP
 
+from web_fetch import BRAVE_ENDPOINT, FetchBlocked, bounded_research, budget, fetch_text, safe_error, validate_url
+from web_evidence import canonical_url, evidence_appendix, extract_snapshot, utc_now
 
-USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/136.0.0.0 Safari/537.36"
-)
+
 SEARCH_ENDPOINT = "https://html.duckduckgo.com/html/"
 DEFAULT_TIMEZONE = "Asia/Taipei"
 LOCAL_INTENT_TOKENS = [
@@ -158,11 +156,11 @@ def _decode_duckduckgo_href(href: str) -> str:
     if not href:
         return ""
     href = href.strip()
-    parsed = urlparse(href)
-    if parsed.netloc.endswith("duckduckgo.com") and parsed.path.startswith("/l/"):
+    parsed = urlparse(urljoin(SEARCH_ENDPOINT, href))
+    if (parsed.hostname or "").lower() in {"duckduckgo.com", "www.duckduckgo.com", "html.duckduckgo.com"} and parsed.path.startswith("/l/"):
         target = parse_qs(parsed.query).get("uddg", [""])[0]
         if target:
-            return unquote(target)
+            return target
     if href.startswith("//"):
         return f"https:{href}"
     if href.startswith("/"):
@@ -172,7 +170,7 @@ def _decode_duckduckgo_href(href: str) -> str:
 
 def _domain(url: str) -> str:
     try:
-        return urlparse(url).netloc.lower()
+        return (urlparse(url).hostname or "").lower()
     except Exception:
         return ""
 
@@ -247,56 +245,14 @@ def _domain_matches(domain: str, candidates: list[str]) -> bool:
 
 
 def _canonical_url(url: str) -> str:
-    parsed = urlparse(url or "")
-    if not parsed.scheme or not parsed.netloc:
-        return (url or "").strip()
-
-    filtered_query = [
-        (key, value)
-        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
-        if not key.lower().startswith("utm_")
-        and key.lower()
-        not in {
-            "fbclid",
-            "gclid",
-            "mc_cid",
-            "mc_eid",
-            "ref",
-            "source",
-        }
-    ]
-    path = parsed.path.rstrip("/") or "/"
-    return urlunparse(
-        (
-            parsed.scheme.lower(),
-            _strip_www(parsed.netloc),
-            path,
-            "",
-            urlencode(filtered_query, doseq=True),
-            "",
-        )
-    )
+    return canonical_url(url)
 
 
 def _url_block_reason(url: str) -> str:
-    parsed = urlparse(url or "")
-    if parsed.scheme.lower() not in {"http", "https"}:
-        return "Only public HTTP/HTTPS pages can be fetched."
-
-    host = (parsed.hostname or "").strip().lower()
-    if not host:
-        return "URL has no hostname."
-    if host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}:
-        return f"URL host '{host}' is blocked."
-    if host.endswith(".local") or host.endswith(".internal"):
-        return f"URL host '{host}' looks private/internal."
-
     try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        return ""
-    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-        return f"URL host '{host}' is private/internal."
+        validate_url(url)
+    except (ValueError, TypeError) as exc:
+        return safe_error(exc)
     return ""
 
 
@@ -319,101 +275,19 @@ async def _get_text(
     timeout: float = 20.0,
     params: dict[str, Any] | None = None,
 ) -> str:
-    blocked = _url_block_reason(url)
-    if blocked:
-        raise ValueError(f"Blocked URL: {blocked}")
-
-    headers = {"User-Agent": USER_AGENT}
-    async with httpx.AsyncClient(
-        follow_redirects=True,
-        timeout=httpx.Timeout(timeout),
-        headers=headers,
-    ) as client:
-        response = await client.get(url, params=params)
-        response.raise_for_status()
-        return response.text
+    return (await fetch_text(url, timeout=timeout, params=params)).text
 
 
 def _extract_readable_text(html: str) -> tuple[str, str]:
-    soup = BeautifulSoup(html, "html.parser")
-    for bad in soup(["script", "style", "noscript", "svg", "header", "footer"]):
-        bad.decompose()
-
-    title = _normalize_whitespace(soup.title.get_text(" ", strip=True) if soup.title else "")
-
-    candidates = [
-        soup.select_one("main"),
-        soup.select_one("article"),
-        soup.select_one("[role='main']"),
-        soup.select_one(".article"),
-        soup.select_one(".post"),
-        soup.select_one(".entry-content"),
-        soup.select_one("#content"),
-    ]
-    text_source = next((node for node in candidates if node), soup)
-    text = _normalize_whitespace(text_source.get_text("\n", strip=True))
-    return title, text
+    snapshot = extract_snapshot("https://example.com/", html, 12000)
+    return snapshot["title"], snapshot["content"]
 
 
-def _meta_content(soup: BeautifulSoup, *selectors: str) -> str:
-    for selector in selectors:
-        node = soup.select_one(selector)
-        if not node:
-            continue
-        value = node.get("content") or node.get("datetime") or node.get_text(" ", strip=True)
-        value = _normalize_whitespace(str(value or ""))
-        if value:
-            return value
-    return ""
+def _extract_page_snapshot(url: str, html: str, max_chars: int) -> dict[str, Any]:
+    return extract_snapshot(url, html, max_chars)
 
 
-def _extract_page_snapshot(url: str, html: str, max_chars: int) -> dict[str, str]:
-    soup = BeautifulSoup(html, "html.parser")
-    title = _normalize_whitespace(soup.title.get_text(" ", strip=True) if soup.title else "")
-    description = _meta_content(
-        soup,
-        "meta[name='description']",
-        "meta[property='og:description']",
-        "meta[name='twitter:description']",
-    )
-    published_at = _meta_content(
-        soup,
-        "meta[property='article:published_time']",
-        "meta[property='og:updated_time']",
-        "meta[name='date']",
-        "meta[name='pubdate']",
-        "time[datetime]",
-    )
-
-    for bad in soup(["script", "style", "noscript", "svg", "header", "footer", "nav"]):
-        bad.decompose()
-
-    candidates = [
-        soup.select_one("main"),
-        soup.select_one("article"),
-        soup.select_one("[role='main']"),
-        soup.select_one(".article"),
-        soup.select_one(".post"),
-        soup.select_one(".entry-content"),
-        soup.select_one("#content"),
-    ]
-    text_source = next((node for node in candidates if node), soup)
-    text = _normalize_whitespace(text_source.get_text("\n", strip=True))
-    trimmed = text[:max_chars]
-    if len(text) > max_chars:
-        trimmed += " ..."
-
-    return {
-        "url": url,
-        "domain": _domain(url),
-        "title": title,
-        "description": description,
-        "published_at": published_at,
-        "content": trimmed,
-    }
-
-
-async def _search_once(query: str, max_results: int) -> list[dict[str, str]]:
+async def _search_ddg(query: str, max_results: int) -> list[dict[str, str]]:
     html = await _get_text(SEARCH_ENDPOINT, params={"q": query})
     soup = BeautifulSoup(html, "html.parser")
     results: list[dict[str, str]] = []
@@ -445,6 +319,107 @@ async def _search_once(query: str, max_results: int) -> list[dict[str, str]]:
             break
 
     return results
+
+
+@dataclass(frozen=True)
+class SearchQuery:
+    text: str
+    limit: int
+
+    def __post_init__(self):
+        if not self.text.strip() or len(self.text) > 600 or len(self.text.split()) > 75:
+            raise FetchBlocked("query_size_limit")
+        if not 1 <= self.limit <= 10:
+            raise FetchBlocked("query_result_limit")
+
+
+@dataclass(frozen=True)
+class BraveConfiguration:
+    enabled: bool = False
+    api_key: str = field(default="", repr=False)
+
+    @classmethod
+    def from_environment(cls, environment):
+        # Called only by the existing STDIO entrypoint. No dotenv loading or
+        # discovery. Never access the key unless the operator explicitly opts in.
+        if environment.get("KURO_WEB_BRAVE_ENABLED") != "1":
+            return cls()
+        key = environment.get("KURO_WEB_BRAVE_API_KEY", "")
+        # ServerRegistry owns expansion. Missing variables remain literal in
+        # expandvars(), including nested references; never send those as a key.
+        if (not isinstance(key, str) or not key or len(key) > 2048 or not key.isascii()
+                or any(ord(char) < 33 or ord(char) == 127 for char in key)
+                or re.search(r"%[^%]+%|\$(?:\{[^}]*\}|[A-Za-z_][A-Za-z0-9_]*)", key)):
+            return cls()
+        return cls(True, key)
+
+
+_brave = BraveConfiguration()
+
+
+class SearchBatch(list):
+    def __init__(self, rows=(), *, statuses=()):
+        super().__init__(rows)
+        self.statuses = list(statuses)
+
+
+def _provider_rows(rows, provider: str, query: SearchQuery) -> list[dict[str, Any]]:
+    result = []
+    seen = set()
+    observed_at = utc_now()
+    for row in rows[:20]:
+        if not isinstance(row, dict):
+            continue
+        raw_url = row.get("url")
+        if not isinstance(raw_url, str) or _url_block_reason(raw_url):
+            continue
+        url = _canonical_url(raw_url)
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        # Search-provider markup remains inert text in the existing MCP result.
+        title = _normalize_whitespace(str(row.get("title") or url))[:1000]
+        snippet = _normalize_whitespace(str(row.get("snippet") or row.get("description") or ""))[:2000]
+        result.append({"title": title, "url": raw_url, "canonical_url": url,
+                       "domain": _domain(url), "snippet": snippet, "provider": provider,
+                       "observed_at": observed_at, "query": query.text,
+                       "published_original": str(row.get("page_age") or row.get("age") or "")[:256]})
+        if len(result) >= query.limit:
+            break
+    return result
+
+
+async def _search_once(query: str, max_results: int) -> SearchBatch:
+    request = SearchQuery(query, max_results)
+    statuses = []
+    try:
+        rows = _provider_rows(await _search_ddg(request.text, request.limit), "duckduckgo_html", request)
+        statuses.append({"provider": "duckduckgo_html", "status": "ok" if rows else "zero_results"})
+        if rows:
+            return SearchBatch(rows, statuses=statuses)
+    except Exception as exc:
+        statuses.append({"provider": "duckduckgo_html", "status": "unavailable", "reason": safe_error(exc)})
+    if not _brave.enabled or not _brave.api_key:
+        statuses.append({"provider": "brave_api", "status": "unavailable", "reason": "not_configured"})
+        return SearchBatch(statuses=statuses)
+    active = budget.get()
+    if active:
+        if active.fallback_queries <= 0:
+            statuses.append({"provider": "brave_api", "status": "unavailable", "reason": "fallback_query_quota"})
+            return SearchBatch(statuses=statuses)
+        active.fallback_queries -= 1
+    try:
+        response = await fetch_text(BRAVE_ENDPOINT, params={"q": request.text, "count": request.limit}, api_key=_brave.api_key)
+        data = json.loads(response.text)
+        rows = data.get("web", {}).get("results", [])
+        if not isinstance(rows, list):
+            raise FetchBlocked("provider_schema_invalid")
+        rows = _provider_rows(rows, "brave_api", request)
+        statuses.append({"provider": "brave_api", "status": "ok" if rows else "zero_results"})
+        return SearchBatch(rows, statuses=statuses)
+    except Exception as exc:
+        statuses.append({"provider": "brave_api", "status": "unavailable", "reason": safe_error(exc)})
+        return SearchBatch(statuses=statuses)
 
 
 def _classify_search_intent(question: str) -> SearchIntent:
@@ -746,11 +721,21 @@ def _merge_results(
                     "domain": domain,
                     "source_kind": _source_kind(domain, title, item.get("snippet", "")),
                     "snippet": item.get("snippet", "").strip(),
+                    "providers": [],
+                    "observations": [],
                     "matched_queries": [],
                     "score": 0,
                 },
             )
             entry["matched_queries"].append(query)
+            provider = item.get("provider", "unknown")
+            if provider not in entry["providers"]:
+                entry["providers"].append(provider)
+            entry["observations"].append({"provider": provider, "query": query,
+                                          "url": url, "title": title,
+                                          "snippet": item.get("snippet", ""),
+                                          "published_original": item.get("published_original", ""),
+                                          "observed_at": item.get("observed_at")})
             if len(item.get("snippet", "")) > len(entry.get("snippet", "")):
                 entry["snippet"] = item.get("snippet", "").strip()
             entry["score"] = max(
@@ -792,21 +777,21 @@ async def _fetch_brief(url: str, max_chars: int = 900) -> str:
     return f"Content: {content}"
 
 
-async def _fetch_snapshot(url: str, max_chars: int = 1400) -> dict[str, str]:
+async def _fetch_snapshot(url: str, max_chars: int = 1400) -> dict[str, Any]:
     try:
-        html = await _get_text(url, timeout=15.0)
+        response = await fetch_text(url, timeout=15.0)
+        snapshot = _extract_page_snapshot(response.final_url, response.text, max_chars)
+        snapshot["requested_url"] = url
+        return snapshot
     except Exception as exc:
-        return {"url": url, "domain": _domain(url), "error": str(exc)}
-
-    snapshot = _extract_page_snapshot(url, html, max_chars)
-    snapshot["error"] = ""
-    return snapshot
+        return {"url": url, "domain": _domain(url), "error": safe_error(exc), "fetched_at": None}
 
 
 @mcp.tool(
     name="search_web",
     description="Quick public web search. Good for a fast first pass when you only need titles, snippets, and URLs.",
 )
+@bounded_research
 async def search_web(query: str, max_results: int = 5) -> str:
     query = _normalize_whitespace(query)
     if not query:
@@ -816,10 +801,10 @@ async def search_web(query: str, max_results: int = 5) -> str:
     try:
         results = await _search_once(query, max_results)
     except Exception as exc:
-        return f"Search error: {exc}"
+        return f"Search error: {safe_error(exc)}"
 
     if not results:
-        return "Search returned no usable results."
+        return "Search returned no usable results; partial/provider unavailable." + evidence_appendix([], provider_status=getattr(results, "statuses", []))
 
     lines = [f"Search results for: {query}"]
     for idx, item in enumerate(results, start=1):
@@ -829,7 +814,8 @@ async def search_web(query: str, max_results: int = 5) -> str:
         if item["snippet"]:
             lines.append(f"Snippet: {item['snippet']}")
         lines.append("")
-    return "\n".join(lines).strip()
+    merged = _merge_results([(query, results)], question=query)
+    return "\n".join(lines).strip() + evidence_appendix(merged, provider_status=getattr(results, "statuses", []))
 
 
 async def _advanced_search_web_impl(
@@ -847,6 +833,10 @@ async def _advanced_search_web_impl(
     question = _normalize_whitespace(question)
     if not question:
         return "Advanced search error: question is empty."
+    try:
+        SearchQuery(question, 1)
+    except FetchBlocked as exc:
+        return f"Advanced search error: {safe_error(exc)}"
 
     depth = _normalize_depth(depth)
     profile = SEARCH_DEPTH_PROFILES[depth]
@@ -863,7 +853,7 @@ async def _advanced_search_web_impl(
         fetch_top_pages,
         default=fetch_default,
         minimum=0,
-        maximum=5,
+        maximum=fetch_default,
     )
     recency_days = _clamp_int(recency_days, default=0, minimum=0, maximum=3650)
 
@@ -889,11 +879,16 @@ async def _advanced_search_web_impl(
 
     results_by_query: list[tuple[str, list[dict[str, str]]]] = []
     errors: list[str] = []
+    provider_status = []
     for query, result in zip(queries, gathered):
         if isinstance(result, Exception):
-            errors.append(f"{query}: {result}")
+            errors.append(f"{query}: {safe_error(result)}")
             continue
         results_by_query.append((query, result))
+        statuses = getattr(result, "statuses", [])
+        provider_status.extend({"query": query, **status} for status in statuses)
+        errors.extend(f"{query}: {status['provider']} {status['status']} ({status.get('reason', '')})"
+                      for status in statuses if status["status"] != "ok")
 
     merged = _merge_results(
         results_by_query,
@@ -905,7 +900,7 @@ async def _advanced_search_web_impl(
     )[:max_results]
     if not merged:
         error_text = f" Search errors: {' | '.join(errors)}" if errors else ""
-        return f"Advanced search returned no usable results.{error_text}"
+        return f"Advanced search returned no usable results; partial/provider unavailable.{error_text}" + evidence_appendix([], recency_days=recency_days, provider_status=provider_status)
 
     evidence_chars = int(profile["evidence_chars"])
     top_pages = [item for item in merged if item.get("url")][:fetch_top_pages]
@@ -920,7 +915,7 @@ async def _advanced_search_web_impl(
                 snapshot = {
                     "url": item["url"],
                     "domain": item.get("domain", ""),
-                    "error": str(payload),
+                    "error": safe_error(payload),
                 }
             else:
                 snapshot = payload
@@ -930,9 +925,7 @@ async def _advanced_search_web_impl(
                 for term in _question_terms(question):
                     if term in content:
                         item["score"] = int(item.get("score", 0)) + 1
-                if snapshot.get("published_at") and (intent.freshness or recency_days > 0):
-                    item["score"] = int(item.get("score", 0)) + 3
-            item["confidence"] = _confidence_label(item, fetched=not snapshot.get("error"))
+            item["confidence"] = _confidence_label(item, fetched=bool(snapshot.get("content")))
             fetched_snapshots.append(snapshot)
 
         merged = sorted(
@@ -945,7 +938,7 @@ async def _advanced_search_web_impl(
             reverse=True,
         )
 
-    return _format_advanced_search_output(
+    output = _format_advanced_search_output(
         question=question,
         depth=depth,
         queries=queries,
@@ -959,6 +952,7 @@ async def _advanced_search_web_impl(
         recency_days=recency_days,
         timezone=timezone,
     )
+    return output + evidence_appendix(merged, recency_days=recency_days, provider_status=provider_status)
 
 
 def _format_advanced_search_output(
@@ -1001,7 +995,7 @@ def _format_advanced_search_output(
     if blocked_domains:
         lines.append(f"Blocked domains: {', '.join(blocked_domains)}")
     if recency_days:
-        lines.append(f"Recency hint: prefer sources updated within {recency_days} days when dates are visible.")
+        lines.append(f"Recency hint: {recency_days} days; query hint only, no date filter enforced. Old/unknown dates are not today's evidence.")
 
     lines.extend(["", "Search plan:"])
     for idx, query in enumerate(queries, start=1):
@@ -1019,7 +1013,7 @@ def _format_advanced_search_output(
         lines.append(
             "Source: "
             f"{item.get('domain', '')} | kind={item.get('source_kind', 'general')} | "
-            f"confidence={item.get('confidence', 'low')} | score={item.get('score', 0)}"
+            f"heuristic_confidence={item.get('confidence', 'low')} | score={item.get('score', 0)}"
         )
         if item.get("snippet"):
             lines.append(f"Snippet: {item['snippet']}")
@@ -1034,7 +1028,7 @@ def _format_advanced_search_output(
             lines.append(f"{idx}. {snapshot.get('title') or snapshot.get('url')}")
             lines.append(f"URL: {snapshot.get('url', '')}")
             if snapshot.get("published_at"):
-                lines.append(f"Published/updated: {snapshot['published_at']}")
+                lines.append(f"Publisher-declared publication time (syntax validated only): {snapshot['published_at']}")
             if snapshot.get("description"):
                 lines.append(f"Description: {snapshot['description']}")
             if snapshot.get("error"):
@@ -1044,12 +1038,14 @@ def _format_advanced_search_output(
             lines.append("")
 
     lines.append("Research notes:")
+    lines.append("- Confidence and official-source labels are heuristic ranking only, not fact verification.")
+    lines.append("- Cross-source claims are unsupported until independently checked; different domains/providers do not prove independence.")
     lines.append(f"- Ranked {len(results)} sources across {len(distinct_domains)} domains.")
     if fetched_snapshots:
         ok_fetches = sum(1 for item in fetched_snapshots if not item.get("error"))
         lines.append(f"- Fetched readable evidence from {ok_fetches}/{len(fetched_snapshots)} top sources.")
     if high_confidence:
-        lines.append(f"- High-confidence sources found: {len(high_confidence)}.")
+        lines.append(f"- High heuristic-rank sources (not fact verified): {len(high_confidence)}.")
     if (require_official or intent.official or intent.documentation) and not official_like:
         lines.append("- Warning: no clearly official/documentation source was found.")
     if len(distinct_domains) < 2 and len(results) > 1:
@@ -1067,6 +1063,7 @@ def _format_advanced_search_output(
         "and returns ranked evidence for citation."
     ),
 )
+@bounded_research
 async def advanced_search_web(
     question: str,
     depth: str = "normal",
@@ -1099,6 +1096,7 @@ async def advanced_search_web(
         "and can fetch top pages for better evidence."
     ),
 )
+@bounded_research
 async def smart_search_web(
     question: str,
     max_results: int = 5,
@@ -1118,27 +1116,35 @@ async def smart_search_web(
     name="fetch_content",
     description="Fetch a public web page and return cleaned main text content for reading or verification.",
 )
+@bounded_research
 async def fetch_content(url: str, max_chars: int = 4000) -> str:
     url = (url or "").strip()
     if not url:
         return "Fetch error: url is empty."
+    blocked = _url_block_reason(url)
+    if blocked:
+        # Do not echo rejected URL userinfo or feed malformed authorities to the
+        # evidence formatter. DNS/peer validation still happens at connect time.
+        return f"Fetch error: {blocked}"
 
     max_chars = max(500, min(int(max_chars or 4000), 12000))
     snapshot = await _fetch_snapshot(url, max_chars=max_chars)
+    appendix = evidence_appendix([{"url": url, "title": snapshot.get("title", ""),
+                                  "providers": ["direct_http"], "fetched": snapshot}])
     if snapshot.get("error"):
-        return f"Fetch error: {snapshot['error']}"
+        return f"Fetch error: {snapshot['error']}" + appendix
     if not snapshot.get("content"):
-        return f"Fetched: {url}\nNo readable text content found."
+        return f"Fetched: {url}\nNo readable text content found." + appendix
 
     parts = [f"Fetched: {url}"]
     if snapshot.get("title"):
         parts.append(f"Title: {snapshot['title']}")
     if snapshot.get("published_at"):
-        parts.append(f"Published/updated: {snapshot['published_at']}")
+        parts.append(f"Publisher-declared publication time (syntax validated only): {snapshot['published_at']}")
     if snapshot.get("description"):
         parts.append(f"Description: {snapshot['description']}")
     parts.append(f"Content: {snapshot['content']}")
-    return "\n".join(parts)
+    return "\n".join(parts) + appendix
 
 
 @mcp.tool(
@@ -1159,4 +1165,5 @@ def get_current_time(timezone: str = DEFAULT_TIMEZONE) -> str:
 
 
 if __name__ == "__main__":
+    _brave = BraveConfiguration.from_environment(os.environ)
     mcp.run()

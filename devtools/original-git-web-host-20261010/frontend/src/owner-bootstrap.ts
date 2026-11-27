@@ -1,6 +1,7 @@
 import { makeOwnerBridge, OwnerTransport, type Port } from "./owner-bridge";
 import { installPresentationGuards } from "./owner-presentation";
 import { installPresentationPreferences } from "./owner-preferences";
+import "./owner-presentation.css";
 
 // No import of preview-bridge / synthetic / qt.ts. No renderer until handshake.
 async function boot(): Promise<void> {

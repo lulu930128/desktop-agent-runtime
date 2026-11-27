@@ -1,0 +1,222 @@
+{
+  "transport": "stdio",
+  "entry": "C:\\GPT_MCPtool\\project_reading\\dist\\src\\index.js",
+  "entry_sha256": "d5cdd22256a82eec7f1edc5685d06383084efedf9f421047ef2fab277425203e",
+  "build_files": 54,
+  "build_manifest_sha256": "eb01b8e09b681393fe2bde44a7fff781e816902cb6d06e9f4e6c8be3c7eab633",
+  "model_calls": 0,
+  "provider_calls": 0,
+  "live_runtime_adoption": false,
+  "exposed_ids": [
+    "kuro-filesystem::search_past_conversations",
+    "project-workspace::find_files",
+    "project-workspace::list_dir",
+    "project-workspace::project_context",
+    "project-workspace::read_file",
+    "project-workspace::read_files",
+    "project-workspace::search_text",
+    "project-workspace::workspace_info"
+  ],
+  "schemas": {
+    "kuro-filesystem": "ddcbd0bbc4fa5eac8662ed43550a4bbe03f682aee45acc3e59bf707086bf8878",
+    "project-workspace": "3c0b945bd16fff810d4162f47f977cfd922c02ea4a9fdd30b1c1a96a2b9537d3"
+  },
+  "workspace_identity": {
+    "applicationVersion": "1.7.0",
+    "toolContractVersion": "2026-10-14.2",
+    "buildId": "68edcbe8df019eeeb148",
+    "mode": "read-only",
+    "writeCapabilities": {
+      "enabled": false,
+      "reason": "not_configured",
+      "policyVersion": null,
+      "defaultRootAccess": "read-only",
+      "policyDigest": null,
+      "tools": [],
+      "rules": [],
+      "limits": null
+    },
+    "limits": {
+      "diagnostics": {
+        "timeoutMs": 10000,
+        "maxResults": 100,
+        "maxBodyBytes": 16384,
+        "maxStdoutBytes": 262144,
+        "maxStderrBytes": 4096,
+        "maxConcurrent": 8
+      },
+      "text": {
+        "maxSourceBytes": 20971520,
+        "maxReturnedBytes": 32768,
+        "maxReadLines": 200,
+        "maxBatchFiles": 8,
+        "maxBatchTotalLines": 400,
+        "maxBatchTotalBytes": 65536
+      },
+      "search": {
+        "maxResults": 50,
+        "maxReturnedBytes": 32768,
+        "maxVisitedEntries": 10000,
+        "timeoutMs": 5000
+      },
+      "git": {
+        "timeoutMs": 10000,
+        "maxDiffFiles": 20,
+        "maxDiffLines": 2000,
+        "maxDiffBytes": 524288
+      },
+      "code": {
+        "maxFiles": 500,
+        "maxSymbols": 2000,
+        "maxResults": 200,
+        "maxFileBytes": 1048576,
+        "maxTotalBytes": 33554432,
+        "timeoutMs": 8000
+      },
+      "maxDirEntries": 100,
+      "image": {
+        "maxSourceBytes": 52428800,
+        "maxPixels": 100000000,
+        "maxDimension": 4096,
+        "maxOutputBytes": 12582912
+      },
+      "fetch": {
+        "maxFileBytes": 12582912,
+        "enabledScopes": []
+      },
+      "spreadsheet": {
+        "maxSourceBytes": 26214400,
+        "maxExpandedBytes": 104857600,
+        "maxZipEntries": 2048,
+        "maxCells": 5000,
+        "maxRows": 500,
+        "maxColumns": 100
+      },
+      "office": {
+        "maxSourceBytes": 104857600,
+        "maxExpandedBytes": 524288000,
+        "maxZipEntries": 4096,
+        "maxXmlPartBytes": 10485760,
+        "maxXmlTotalBytes": 52428800,
+        "maxTextChars": 100000,
+        "maxDocumentBlocks": 300,
+        "maxDocumentTableCells": 5000,
+        "maxPresentationSlides": 50
+      },
+      "pdf": {
+        "maxSourceBytes": 52428800,
+        "maxPages": 500,
+        "maxReadPages": 10,
+        "maxTextChars": 100000,
+        "maxRenderDimension": 4096,
+        "maxRenderPixels": 16777216,
+        "maxOutputBytes": 12582912,
+        "timeoutMs": 15000
+      }
+    }
+  },
+  "read_tools_passed": 7,
+  "backend_negative_cases": 7,
+  "write_tools_blocked": 8,
+  "old_tools_blocked": 4,
+  "history_transport": true,
+  "parent_write_policy_not_inherited": true,
+  "formal_workspace": {
+    "roots": {
+      "projects": "C:\\project",
+      "mcp_tools": "C:\\GPT_MCPtool",
+      "work": "C:\\work"
+    },
+    "mode": "read-only",
+    "writeCapabilities": {
+      "enabled": false,
+      "reason": "not_configured",
+      "policyVersion": null,
+      "defaultRootAccess": "read-only",
+      "policyDigest": null,
+      "tools": [],
+      "rules": [],
+      "limits": null
+    },
+    "buildId": "68edcbe8df019eeeb148",
+    "limits": {
+      "diagnostics": {
+        "timeoutMs": 10000,
+        "maxResults": 100,
+        "maxBodyBytes": 16384,
+        "maxStdoutBytes": 262144,
+        "maxStderrBytes": 4096,
+        "maxConcurrent": 8
+      },
+      "text": {
+        "maxSourceBytes": 20971520,
+        "maxReturnedBytes": 32768,
+        "maxReadLines": 200,
+        "maxBatchFiles": 8,
+        "maxBatchTotalLines": 400,
+        "maxBatchTotalBytes": 65536
+      },
+      "search": {
+        "maxResults": 50,
+        "maxReturnedBytes": 32768,
+        "maxVisitedEntries": 10000,
+        "timeoutMs": 5000
+      },
+      "git": {
+        "timeoutMs": 10000,
+        "maxDiffFiles": 20,
+        "maxDiffLines": 2000,
+        "maxDiffBytes": 524288
+      },
+      "code": {
+        "maxFiles": 500,
+        "maxSymbols": 2000,
+        "maxResults": 200,
+        "maxFileBytes": 1048576,
+        "maxTotalBytes": 33554432,
+        "timeoutMs": 8000
+      },
+      "maxDirEntries": 100,
+      "image": {
+        "maxSourceBytes": 52428800,
+        "maxPixels": 100000000,
+        "maxDimension": 4096,
+        "maxOutputBytes": 12582912
+      },
+      "fetch": {
+        "maxFileBytes": 12582912,
+        "enabledScopes": []
+      },
+      "spreadsheet": {
+        "maxSourceBytes": 26214400,
+        "maxExpandedBytes": 104857600,
+        "maxZipEntries": 2048,
+        "maxCells": 5000,
+        "maxRows": 500,
+        "maxColumns": 100
+      },
+      "office": {
+        "maxSourceBytes": 104857600,
+        "maxExpandedBytes": 524288000,
+        "maxZipEntries": 4096,
+        "maxXmlPartBytes": 10485760,
+        "maxXmlTotalBytes": 52428800,
+        "maxTextChars": 100000,
+        "maxDocumentBlocks": 300,
+        "maxDocumentTableCells": 5000,
+        "maxPresentationSlides": 50
+      },
+      "pdf": {
+        "maxSourceBytes": 52428800,
+        "maxPages": 500,
+        "maxReadPages": 10,
+        "maxTextChars": 100000,
+        "maxRenderDimension": 4096,
+        "maxRenderPixels": 16777216,
+        "maxOutputBytes": 12582912,
+        "timeoutMs": 15000
+      }
+    }
+  },
+  "external_build_unchanged": true
+}

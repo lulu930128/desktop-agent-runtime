@@ -65,8 +65,9 @@ class W10IconTrayTests(unittest.TestCase):
                     self.assertFalse(icon.pixmap(size, size).isNull())
                     self.assertEqual(icon.pixmap(size, size).toImage(), expected.pixmap(size, size).toImage())
             self.assertEqual(window.tray.toolTip(), 'Kuro')
-            self.assertEqual([a.text() for a in window.tray.contextMenu().actions()],
-                             ['Show Kuro', 'Restart Kuro', 'Quit Kuro'])
+            self.assertEqual([a.text() for a in window.tray.contextMenu().actions() if a.isEnabled() and not a.isSeparator()],
+                             ['將 Kuro 帶到最前面', '顯示桌寵', '重新定位桌寵',
+                              '開啟日誌資料夾', '重新啟動 Kuro', '結束 Kuro'])
 
     def test_missing_and_corrupt_icon_warn_and_keep_tray_usable(self):
         with tempfile.TemporaryDirectory(dir=ROOT / '.tmp') as folder:

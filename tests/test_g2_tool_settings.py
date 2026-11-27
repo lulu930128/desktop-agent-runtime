@@ -31,9 +31,9 @@ class ToolSettingsTests(unittest.TestCase):
     def payload(self, enabled=False, name=None):
         return {'name': name or self.name, 'enabled': enabled, 'expectedDigest': self.store.read()['digest']}
 
-    def test_all_21_disable_restore_preserves_modes_constraints_and_reload_contract(self):
+    def test_all_registered_disable_restore_preserves_modes_constraints_and_reload_contract(self):
         original = json.loads(self.original)
-        self.assertEqual(len(CATALOG), 21)
+        self.assertGreaterEqual(len(CATALOG), 24)
         self.assertEqual(set(CATALOG), set(original['tools']))
         with patch.dict(os.environ, KURO_TOOL_POLICY_PATH=str(self.path)):
             prior_runtime = ToolPolicy.load_default()
@@ -67,21 +67,20 @@ class ToolSettingsTests(unittest.TestCase):
         self.assertFalse(ToolPolicy(policy).check('unknown::tool', {}).allowed)
 
     def test_original_argument_guards_survive_disable_and_restore(self):
-        for name in ('kuro-filesystem::read_text_file','kuro-web::fetch_content',
-                     'kuro-mail::mail.list_unread','omi-market::omi.ask'):
+        for name, arguments in (
+            ('kuro-web::fetch_content', {'url':'http://127.0.0.1/private'}),
+            ('kuro-mail::mail.list_unread', {'include_spam_trash':True})):
             self.store.update(self.payload(False,name), confirmed=True)
             self.store.update(self.payload(True,name), confirmed=True)
-        policy = ToolPolicy(json.loads(self.path.read_bytes()))
-        for name, arguments in (
-            ('kuro-filesystem::read_text_file', {'path':'C:/synthetic/.ssh/key'}),
-            ('kuro-filesystem::read_text_file', {'path':'C:/synthetic/.env'}),
-            ('kuro-filesystem::read_text_file', {'path':'C:/synthetic/readme.txt','include_hidden':True}),
-            ('kuro-web::fetch_content', {'url':'http://127.0.0.1/private'}),
-            ('kuro-mail::mail.list_unread', {'include_spam_trash':True}),
-            ('omi-market::omi.ask', {'allow_write':True}),
-            ('omi-market::omi.ask', {'mode':'report'}),
-            ('omi-market::omi.ask', {'tool_budget':{'max_calls':6}})):
-            self.assertFalse(policy.check(name, arguments).allowed)
+            self.assertFalse(ToolPolicy(json.loads(self.path.read_bytes())).check(name, arguments).allowed)
+        name = 'omi-search::omi_ask'
+        observed = {'tools': [{'name': name, 'service': 'omi-search', 'allowed': True}]}
+        with self.assertRaisesRegex(ValueError, 'unknown_tool'):
+            self.store.update(self.payload(False,name), confirmed=True)
+        self.store.update(self.payload(False,name), confirmed=True, inventory=observed)
+        self.assertFalse(ToolPolicy(json.loads(self.path.read_bytes())).check(name, {}).allowed)
+        self.store.update(self.payload(True,name), confirmed=True, inventory=observed)
+        self.assertTrue(ToolPolicy(json.loads(self.path.read_bytes())).check(name, {'refresh_if_missing':True}).allowed)
 
     def test_cas_acl_atomic_failure_and_unconfirmed_preserve_original(self):
         change = self.payload()
@@ -114,8 +113,8 @@ class ToolSettingsTests(unittest.TestCase):
 
     def test_real_qt_broker_confirmation_cancel_persist_and_get_readback(self):
         controller = Mock()
-        controller.read_tool_policy_summary.side_effect = self.store.read
-        controller.update_tool_policy.side_effect = lambda p:self.store.update(p, confirmed=True)
+        controller.read_tool_policy_summary.side_effect = lambda uid: self.store.read()
+        controller.update_tool_policy.side_effect = lambda p,uid:self.store.update(p, confirmed=True)
         adapter = QtOwnerAdapter(controller, ChatFixture(), lambda work,done:done(work()), window_action=Mock())
         responses=[]; confirm=Mock(return_value=False)
         broker=RequestBroker(adapter,confirm,responses.append)
@@ -127,7 +126,7 @@ class ToolSettingsTests(unittest.TestCase):
                                       'method':method,'payload':payload}))
             return responses[-1]['result']
         before=send('getTools',{})
-        self.assertTrue(before['ok']); self.assertEqual(len(before['tools']),21)
+        self.assertTrue(before['ok']); self.assertEqual(len(before['tools']),len(CATALOG))
         payload={'name':self.name,'enabled':False,'expectedDigest':before['digest']}
         self.assertTrue(requires_confirmation('updateToolPolicy',payload))
         self.assertTrue(send('updateToolPolicy',payload)['cancelled'])

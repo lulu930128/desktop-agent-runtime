@@ -1,18 +1,12 @@
+"""Historical OMI evidence presentation only; no transport, autorun or request builder."""
 from __future__ import annotations
 
-import asyncio
-from .tool_identity import legacy_name
 from .privacy import project, safe_text
 from .tool_result import ToolResult
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import Iterator
 import datetime
 import json
-import os
-import threading
-from concurrent.futures import TimeoutError as FutureTimeout
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
 
 OMI_ASK_CONTRACT_VERSION = "omi.decision.v4"
@@ -20,93 +14,6 @@ OMI_PREVIOUS_CONTRACT_VERSION = "omi.decision.v3"
 OMI_LEGACY_CONTRACT_VERSION = "omi.ai.ask.v2"
 OMI_ASK_STREAM_TOOL_NAME = "omi.ask_stream"
 OMI_AUTONOMOUS_TOOL_ID = "autonomous_omi_preflight"
-
-
-def should_autorun_omi(route: Any) -> bool:
-    """Return true when routing has identified OMI as the market data source."""
-    if route is None:
-        return False
-
-    tool_names = [legacy_name(name) for name in (getattr(route, "tool_names", None) or [])]
-    if "omi.ask" not in tool_names and OMI_ASK_STREAM_TOOL_NAME not in tool_names:
-        return False
-
-    intent = getattr(route, "intent", None)
-    return bool(getattr(intent, "needs_market_intelligence", False))
-
-
-def build_autonomous_omi_args(
-    *,
-    current_text: str,
-    route_text: str,
-    last_resolution: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Build a read-only OMI question envelope without doing market parsing in Kuro."""
-    conversation_context: dict[str, Any] = {
-        "route_text": str(route_text or "").strip(),
-    }
-    if last_resolution:
-        conversation_context["last_resolution"] = last_resolution
-
-    return {
-        "contract_version": OMI_ASK_CONTRACT_VERSION,
-        "question": _compose_question(
-            current_text=current_text,
-            route_text=route_text,
-        ),
-        "target": {"type": "auto"},
-        "mode": "auto",
-        "output": "decision_with_evidence",
-        "realtime_policy": "prefer_live",
-        "selection": {"max_response_bytes": 65_536},
-        "caller_profile": "kuro_readonly",
-        "allow_llm": True,
-        "allow_write": False,
-        "allow_external_fetch": True,
-        "tool_budget": {
-            "max_calls": 5,
-            "max_external_fetches": 3,
-            "max_total_seconds": 25,
-        },
-        "conversation_context": conversation_context,
-    }
-
-
-def _compose_question(*, current_text: str, route_text: str) -> str:
-    current_text = str(current_text or "").strip()
-    route_text = str(route_text or "").strip()
-    if current_text and current_text not in route_text:
-        question = f"Current user request:\n{current_text}\n\nRecent conversation context:\n{route_text}"
-    else:
-        question = route_text or current_text
-
-    question = question.strip()
-    if len(question) > 3900:
-        question = question[-3900:]
-    return question
-
-
-def _env_int(name: str, default: int) -> int:
-    try:
-        return int(os.environ.get(name, str(default)))
-    except ValueError:
-        return default
-
-
-def _omi_api_base_url() -> str:
-    return os.environ.get("OMI_API_BASE_URL", "http://127.0.0.1:8400").rstrip("/")
-
-
-def _omi_api_timeout_seconds() -> int:
-    return _env_int("OMI_API_TIMEOUT_SECONDS", 180)
-
-
-def _omi_ai_trust_token() -> str:
-    return (
-        os.environ.get("OMI_MCP_AI_TRUST_TOKEN")
-        or os.environ.get("OMI_AI_TRUST_TOKEN")
-        or ""
-    ).strip()
 
 
 def _utc_timestamp() -> str:
@@ -155,90 +62,6 @@ def iter_omi_sse_events_from_lines(lines: Iterator[str]) -> Iterator[dict[str, A
     event = build_event()
     if event:
         yield event
-
-
-def _iter_omi_sse_http_events(arguments: dict[str, Any]) -> Iterator[dict[str, Any]]:
-    payload = json.dumps(arguments, ensure_ascii=False, default=str).encode("utf-8")
-    headers = {
-        "Accept": "text/event-stream",
-        "Content-Type": "application/json",
-        "User-Agent": "kuro-omi-preflight/0.1",
-    }
-    trust_token = _omi_ai_trust_token()
-    if trust_token:
-        headers["X-OMI-AI-Trust-Token"] = trust_token
-
-    request = Request(
-        f"{_omi_api_base_url()}/api/ai/ask/stream",
-        data=payload,
-        headers=headers,
-        method="POST",
-    )
-
-    try:
-        with urlopen(request, timeout=_omi_api_timeout_seconds()) as response:
-            def bounded_lines():
-                while True:
-                    raw_line = response.readline(256 * 1024 + 1)
-                    if not raw_line:
-                        break
-                    if len(raw_line) > 256 * 1024:
-                        raise ValueError("OMI stream line exceeded its byte limit.")
-                    yield raw_line.decode("utf-8", errors="replace")
-            lines = bounded_lines()
-            yield from iter_omi_sse_events_from_lines(lines)
-    except HTTPError as exc:
-        raise RuntimeError(f"OMI API HTTP {exc.code}; response body omitted.") from None
-    except URLError as exc:
-        raise RuntimeError("OMI API unavailable; transport details omitted.") from None
-
-
-async def stream_omi_ask_events(arguments: dict[str, Any]) -> AsyncIterator[dict[str, Any]]:
-    loop = asyncio.get_running_loop()
-    queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(maxsize=64)
-    stopped = threading.Event()
-
-    def enqueue(item: dict[str, Any] | None) -> bool:
-        if stopped.is_set():
-            return False
-        pending = asyncio.run_coroutine_threadsafe(queue.put(item), loop)
-        while not stopped.is_set():
-            try:
-                pending.result(timeout=0.2)
-                return True
-            except FutureTimeout:
-                continue
-        pending.cancel()
-        return False
-
-    def worker() -> None:
-        try:
-            for event in _iter_omi_sse_http_events(arguments):
-                if not enqueue(project(event)):
-                    break
-        except Exception as exc:
-            enqueue(
-                {
-                    "event": "transport_error",
-                    "data": {
-                        "error": "OMI transport failed; execution outcome unknown.",
-                        "kind": exc.__class__.__name__,
-                    },
-                }
-            )
-        finally:
-            enqueue(None)
-
-    threading.Thread(target=worker, name="kuro-omi-sse", daemon=True).start()
-
-    try:
-        while True:
-            event = await queue.get()
-            if event is None:
-                break
-            yield event
-    finally:
-        stopped.set()
 
 
 def _stream_event_data(event: dict[str, Any]) -> dict[str, Any]:

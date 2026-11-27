@@ -78,20 +78,12 @@ class ToolCatalog:
             except Exception as exc:
                 logger.warning(f"Failed to load tool catalog from {path}: {exc}")
         return cls(
-            {"version": 1, "routing": {"max_candidate_tools": 6}, "categories": {}}
+            {"version": 1, "routing": {}, "categories": {}}
         )
 
     @property
     def enabled(self) -> bool:
         return bool(self.categories)
-
-    @property
-    def max_candidate_tools(self) -> int:
-        raw_value = self.routing.get("max_candidate_tools", 6)
-        try:
-            return max(1, min(int(raw_value), 20))
-        except Exception:
-            return 6
 
     def route(
         self,
@@ -146,6 +138,7 @@ class ToolCatalog:
                     category_score=category_score,
                     order_index=order_index,
                     intent=intent,
+                    request_text=text,
                 )
                 candidates.append(
                     ToolCandidate(
@@ -160,7 +153,7 @@ class ToolCatalog:
 
         candidates = sorted(candidates, key=lambda item: item.score, reverse=True)
         candidate_names = [
-            candidate.name for candidate in candidates[: self.max_candidate_tools]
+            candidate.name for candidate in candidates
         ]
 
         if not candidate_names:
@@ -177,7 +170,7 @@ class ToolCatalog:
             candidate_names,
             f"Planner intent={', '.join(intent.labels) or 'general'}; categories={', '.join(selected_categories)}",
             intent=intent,
-            candidates=candidates[: self.max_candidate_tools],
+            candidates=candidates,
         )
 
     def format_prompt_summary(
@@ -232,7 +225,12 @@ class ToolCatalog:
 
     def format_route_prompt(self, route: ToolRoute | None) -> str:
         if not route or not route.tool_names:
-            return ""
+            return (
+                "Runtime tool planner for this turn: no candidate tools are available. "
+                "No tool was called and no permission denial was observed. "
+                "Do not claim a lookup, retrieved data, or a permission rejection. "
+                "If external evidence is needed, say the query was not performed."
+            )
 
         intent = route.intent
         lines = [
@@ -246,12 +244,12 @@ class ToolCatalog:
                 lines.append(f"- Planner reasons: {'; '.join(intent.reasons[:4])}")
             if intent.needs_market_intelligence:
                 lines.append(
-                    "- Market route: call omi.ask first for local stock, market, "
+                    "- Market route: call omi-search::omi_ask first for local stock, market, "
                     "watchlist, and data-freshness context."
                 )
                 if intent.market_needs_web_enrichment:
                     lines.append(
-                        "- Web research is only a follow-up after omi.ask when the "
+                        "- Web research is only a follow-up after omi-search::omi_ask when the "
                         "user asked for fresh news, realtime quotes, or public-event "
                         "enrichment."
                     )
@@ -262,7 +260,7 @@ class ToolCatalog:
                     )
         if route.candidates:
             lines.append("- Candidate ranking:")
-            for candidate in route.candidates[: self.max_candidate_tools]:
+            for candidate in route.candidates:
                 lines.append(
                     (
                         f"  - {candidate.name}: {candidate.category}, "
@@ -360,6 +358,12 @@ class ToolCatalog:
         ):
             scores["local_files"] = scores.get("local_files", 0) + 2
 
+        # An explicitly named external source takes precedence over generic
+        # history/market words; this only selects tools, never executes them.
+        for category_id in ("memory_core", "personal_asset_os"):
+            if category_id in scores:
+                scores[category_id] += 40
+
         return sorted(scores.items(), key=lambda item: item[1], reverse=True)
 
     @staticmethod
@@ -441,6 +445,7 @@ class ToolCatalog:
         category_score: int,
         order_index: int,
         intent: ToolIntent,
+        request_text: str = "",
     ) -> tuple[int, str]:
         tool_name = legacy_name(str(item.get("name") or "").strip())
         level = str(item.get("level") or "").strip().lower()
@@ -449,6 +454,11 @@ class ToolCatalog:
         ]
         score = category_score * 10 - order_index
         reasons: list[str] = [f"category score {category_score}"]
+        if any(_normalize_text(keyword) in request_text
+               for keyword in item.get("intent_keywords", [])
+               if isinstance(keyword, str) and keyword.strip()):
+            score += 30
+            reasons.append("specific tool lookup intent")
 
         level_bonus = {
             "fast": {"light": 8, "search": 4, "read": 2, "deep": -3},
@@ -479,7 +489,7 @@ class ToolCatalog:
                 score += 8
                 reasons.append("deep mode prefers advanced search")
         elif category_id == "market_intelligence":
-            if intent.needs_market_intelligence and tool_name == "omi.ask":
+            if intent.needs_market_intelligence and tool_name == "omi-search::omi_ask":
                 score += 24
                 reasons.append("market questions use OMI first")
         elif category_id == "mail":
@@ -504,18 +514,23 @@ class ToolCatalog:
                     reasons.append("mail auth status is lightweight")
         elif category_id == "local_files":
             if intent.needs_directory_scan and tool_name in {
-                "list_directory",
-                "search_files",
+                "project-workspace::list_dir",
+                "project-workspace::project_context",
+                "project-workspace::find_files",
+                "project-workspace::search_text",
             }:
                 score += 14
                 reasons.append("directory/project scan")
-            if intent.needs_file_read and tool_name == "read_text_file":
+            if intent.needs_file_read and tool_name in {"project-workspace::read_file", "project-workspace::read_files"}:
                 score += 14
                 reasons.append("specific file read")
             if intent.has_path and tool_name in {
-                "read_text_file",
-                "list_directory",
-                "search_files",
+                "project-workspace::read_file",
+                "project-workspace::read_files",
+                "project-workspace::list_dir",
+                "project-workspace::project_context",
+                "project-workspace::find_files",
+                "project-workspace::search_text",
             }:
                 score += 10
                 reasons.append("path-like request")
@@ -737,6 +752,21 @@ def _looks_like_dashboard_update_request(text: str) -> bool:
 def _looks_like_market_intelligence_request(text: str) -> bool:
     direct_terms = [
         "台股",
+        "美股",
+        "美國股市",
+        "美國市場",
+        "納斯達克",
+        "那斯達克",
+        "道瓊",
+        "標普500",
+        "標普 500",
+        "s&p 500",
+        "nasdaq",
+        "dow jones",
+        "us market",
+        "u.s. market",
+        "us equities",
+        "u.s. equities",
         "大盤",
         "個股",
         "自選股",

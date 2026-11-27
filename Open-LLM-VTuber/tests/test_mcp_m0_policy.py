@@ -30,7 +30,7 @@ class PolicyTests(unittest.TestCase):
         self.assertFalse(policy.check('omi.ask',{}).allowed)
         self.assertFalse(policy.check('other::omi.ask',{}).allowed)
         policy=ToolPolicy({'tools':{'omi.ask':{'mode':'read_only'}}})
-        self.assertTrue(policy.check('omi-market::omi.ask',{}).allowed)
+        self.assertFalse(policy.check('omi-market::omi.ask',{}).allowed)
         self.assertFalse(policy.check('other::omi.ask',{}).allowed)
 
     def test_policy_snapshot_is_not_mutated_by_caller(self):

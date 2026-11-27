@@ -164,10 +164,6 @@ def _read_text_with_fallback(path: Path) -> tuple[str, str]:
     return raw.decode("utf-8", errors="replace"), "utf-8(replace)"
 
 
-@mcp.tool(
-    name="list_allowed_roots",
-    description="List the folders this read-only filesystem tool is allowed to access.",
-)
 def list_allowed_roots() -> str:
     lines = ["Allowed read-only roots:"]
     for alias, path in _iter_allowed_roots():
@@ -175,13 +171,6 @@ def list_allowed_roots() -> str:
     return "\n".join(lines)
 
 
-@mcp.tool(
-    name="list_directory",
-    description=(
-        "List files and folders inside an allowed directory. "
-        "Supports alias paths like workspace:, open_llm:, projects:, characters:."
-    ),
-)
 def list_directory(
     path: str = "",
     recursive: bool = False,
@@ -223,12 +212,6 @@ def list_directory(
     return "\n".join(lines)
 
 
-@mcp.tool(
-    name="read_text_file",
-    description=(
-        "Read a text file from an allowed root. Returns file path, detected encoding, and truncated content."
-    ),
-)
 def read_text_file(path: str, max_chars: int = 12000) -> str:
     target, root_alias = _resolve_input_path(path)
     if not target.exists():
@@ -257,13 +240,6 @@ def read_text_file(path: str, max_chars: int = 12000) -> str:
     )
 
 
-@mcp.tool(
-    name="search_files",
-    description=(
-        "Search text inside files under an allowed root. "
-        "Uses ripgrep when available and falls back to a slower Python scan."
-    ),
-)
 def search_files(
     query: str,
     path: str = "",

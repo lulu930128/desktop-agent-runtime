@@ -446,7 +446,16 @@ class QtRuntimeChatClient(QObject):
         if message_type == "audio":
             display_text = payload.get("display_text")
             if isinstance(display_text, dict):
-                self._append_assistant_text(display_text.get("text"))
+                text = display_text.get("text")
+                if (payload.get("display_contract") == "kuro.speech-lanes.v1"
+                        and payload.get("display_append") is True and isinstance(text, str)):
+                    # Ordered backend deltas are not cumulative legacy captions.
+                    # Keep repeated phrases, code whitespace and line breaks.
+                    self._assistant_text += text
+                    self._assistant_parts = [self._assistant_text]
+                    self.assistant_text_changed.emit(self._assistant_text)
+                else:
+                    self._append_assistant_text(text)
             return
 
         if message_type == "backend-synth-complete":

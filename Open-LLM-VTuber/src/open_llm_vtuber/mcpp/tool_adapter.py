@@ -10,8 +10,9 @@ from loguru import logger
 
 from .types import FormattedTool
 from .mcp_client import MCPClient
-from .server_registry import ServerRegistry
+from .server_registry import ServerRegistry, HTTP_READ_TOOLS, http_tool_is_read_only
 from .tool_identity import canonical_id, provider_alias
+from .tool_policy_manager import ToolPolicy
 
 
 OPENAI_TOOL_NAME_MAX_LENGTH = 64
@@ -38,6 +39,8 @@ class ToolAdapter:
         self.schema_profile = os.getenv("KURO_MCP_SCHEMA_PROFILE", "openai_non_strict")
         self.schema_errors: dict[str, str] = {}
         self.discovery_results = {}
+        self.exposure_errors = {}
+        self.workspace_scope = {}
 
     def get_last_formatted_tools_dict(self) -> Dict[str, FormattedTool]:
         """Return the raw tools from the most recent dynamic fetch."""
@@ -78,8 +81,18 @@ class ToolAdapter:
                         f"MC: Found {len(tools)} tools on server '{server_name}'"
                     )
                     for tool in tools:
+                        if server_name in HTTP_READ_TOOLS and not http_tool_is_read_only(server_name, tool):
+                            continue
+                        visibility = ((tool.meta or {}).get("ui") or {}).get("visibility")
+                        if isinstance(visibility, list) and "model" not in visibility:
+                            self.exposure_errors[canonical_id(server_name, tool.name)] = "app_only"
+                            continue
                         allowed = self.server_registery.servers[server_name].allowed_tools
                         if allowed is not None and tool.name not in allowed:
+                            continue
+                        if self.server_registery.servers[server_name].require_read_only and (
+                            not tool.annotations or tool.annotations.readOnlyHint is not True
+                        ):
                             continue
                         servers_info[server_name][tool.name] = {}
                         tool_info = servers_info[server_name][tool.name]
@@ -90,6 +103,7 @@ class ToolAdapter:
                         # Store the tool info in FormattedTool format
                         identity = canonical_id(server_name, tool.name)
                         formatted_tools[identity] = FormattedTool(
+                            read_only=bool(tool.annotations and tool.annotations.readOnlyHint is True),
                             canonical_id=identity,
                             wire_name=tool.name,
                             output_schema=tool.outputSchema,
@@ -99,6 +113,18 @@ class ToolAdapter:
                             # Generic schema will be generated later if needed
                             generic_schema=None,
                         )
+                    if (server_name == "project-workspace" and "workspace_info" in servers_info[server_name]
+                            and ToolPolicy.load_default().check("project-workspace::workspace_info", {}).allowed):
+                        info = formatted_tools["project-workspace::workspace_info"]
+                        result = await client.call_tool(server_name, "workspace_info", {},
+                            expected_schema_digest=schema_digest(info.input_schema),
+                            expected_output_digest=schema_digest(info.output_schema))
+                        data = result.structured_content if isinstance(result.structured_content, dict) else {}
+                        capability = data.get("writeCapabilities")
+                        caps = capability if isinstance(capability, dict) else {}
+                        self.workspace_scope = {"status": result.status, "mode": data.get("mode"),
+                            "write_enabled": caps.get("enabled"), "reason": caps.get("reason") or result.reason_code,
+                            "contract": data.get("toolContractVersion")}
                 except (ValueError, RuntimeError, ConnectionError) as e:
                     logger.error("MC: Failed to get info for server '; payload details omitted.")
                     if (
@@ -189,6 +215,7 @@ class ToolAdapter:
 
         rejected = []
         self.schema_errors = {}
+        policy = getattr(self, "_tool_policy", None) or ToolPolicy.load_default()
         for tool_name, data_object in sorted(formatted_tools_dict.items()):
             if not isinstance(data_object, FormattedTool):
                 logger.warning("MC: Skipping invalid tool format.")
@@ -198,7 +225,8 @@ class ToolAdapter:
 
             input_schema = data_object.input_schema
             try:
-                parameters = provider_schema(input_schema, self.schema_profile)
+                parameters = provider_schema(
+                    policy.llm_schema(tool_name, resolved_schema(input_schema)), self.schema_profile)
                 if data_object.output_schema is not None:
                     resolved_schema(data_object.output_schema, require_object=False)
             except SchemaError as exc:
@@ -210,6 +238,8 @@ class ToolAdapter:
             data_object.schema_profile = self.schema_profile
             data_object.generic_schema = parameters
             tool_description = data_object.description or "No description provided."
+            if tool_name == "omi-search::omi_ask":
+                tool_description = policy.argument_hint(tool_name).strip() + " " + tool_description
             openai_tool_name = _openai_api_tool_name(tool_name, used_openai_tool_names)
             data_object.api_name = openai_tool_name
             if openai_tool_name != tool_name:
@@ -257,12 +287,7 @@ class ToolAdapter:
             enabled_servers
         )
         openai_tools, claude_tools = self.format_tools_for_api(formatted_tools_dict)
-        effective_info = {}
-        for identity, tool in formatted_tools_dict.items():
-            effective_info.setdefault(tool.related_server, {})[identity] = {
-                "description": tool.description, "schema": tool.generic_schema,
-            }
-        mcp_prompt_string = self.construct_mcp_prompt_string(effective_info)
+        mcp_prompt_string = "Use kuro_discover to search the MCP inventory and load tools by canonical name."
         self._last_formatted_tools_dict = formatted_tools_dict
         logger.info("MC: Dynamic tool construction complete.")
         return mcp_prompt_string, openai_tools, claude_tools

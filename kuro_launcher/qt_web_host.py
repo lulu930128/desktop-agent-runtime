@@ -189,7 +189,7 @@ def _create_host(owner, bundle, *, fixture):
             self.adapter = QtOwnerAdapter(owner.controller, owner.chat_client, self.run_worker,
                 window_action=self.window_action, event=self.publish,
                 request_status=self.request_status,
-                request_data=self.request_data,
+                request_data=self.request_data, archive_picker=self.archive_picker,
                 profile_action=getattr(owner, "_submit_web_profile", None))
             self.status_waiters = []
             self.status_inflight = False
@@ -279,6 +279,19 @@ def _create_host(owner, bundle, *, fixture):
             audit("worker_delivery", guiThread=QThread.currentThread() == owner.thread(), closed=self.broker.closed)
             if not self.broker.closed: callback(result)
 
+        def archive_picker(self, action):
+            if action == "backup":
+                filename, _ = QFileDialog.getSaveFileName(owner, "將所有角色的歷史與記憶匯出至新封存檔", "", "ZIP (*.zip)")
+                return {"archive":filename} if filename else None
+            filename, _ = QFileDialog.getOpenFileName(owner, "選擇要驗證並還原的記憶封存", "", "ZIP (*.zip)")
+            if not filename:
+                return None
+            parent = QFileDialog.getExistingDirectory(owner,"選擇還原目的地的上層目錄")
+            if not parent:
+                return None
+            from uuid import uuid4
+            return {"archive":filename,"destination":str(Path(parent)/("kuro-restore-"+uuid4().hex))}
+
         def confirm(self, method, payload):
             # No HTML, no renderer confirmed flag; exact prepared payload bound.
             box = QMessageBox(owner)
@@ -287,7 +300,20 @@ def _create_host(owner, bundle, *, fixture):
             review = {k: v for k, v in payload.items() if not k.startswith("_")}
             if method == "sendText":
                 review["attachments"] = [{k: a[k] for k in ("name", "size", "mime_type")} for a in payload["attachments"]]
-            if method == "updateToolPolicy":
+            if method == "memoryAction" and payload.get("action") == "formation":
+                body = payload["payload"]
+                box.setText(f"儲存記憶模式？\n角色 {payload['expected_conf_uid']} · 專案 {payload['expected_project_id']}\n"
+                            f"分享範圍 {body['scope']} · 類型 {', '.join(body['categories']) or '僅明示或人工保存'}\n"
+                            "設定套用於之後的使用者陳述，持續到你更改設定。歷史回填另行選擇。")
+            elif method == "memoryAction" and payload["action"] in {"backup","restore","reprocess"}:
+                action = payload["action"]
+                if action == "backup":
+                    box.setText(f"匯出本機所有角色的歷史、事件、已保存與待審記憶及其政策？\n目的地 {payload['archive']}")
+                elif action == "restore":
+                    box.setText(f"驗證封存並還原至新目錄？\n來源 {payload['archive']}\n目的地 {payload['destination']}")
+                else:
+                    box.setText(f"重新核對此對話的衍生索引？\n角色 {payload['expected_conf_uid']}\n對話 {payload['history_uid']}\n專案 {payload['expected_project_id']}")
+            elif method == "updateToolPolicy":
                 from .tool_policy_settings import CATALOG
                 label = CATALOG[payload["name"]][0]
                 action = "啟用" if payload["enabled"] else "停用"

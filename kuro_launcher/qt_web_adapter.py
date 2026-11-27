@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import base64
+import hashlib
 import json
 from threading import Event
 from .qt_web_protocol import Rejected, error, attachments
@@ -42,10 +43,11 @@ def today_projection(raw):
 
 class QtOwnerAdapter:
     def __init__(self, controller, chat, run_worker, *, window_action, event=lambda *_: None,
-                 request_status=None, request_data=None, profile_action=None):
+                 request_status=None, request_data=None, profile_action=None, archive_picker=None):
         self.controller, self.chat, self.run_worker = controller, chat, run_worker
         self.window_action, self.event = window_action, event
         self.request_status, self.profile_action = request_status, profile_action
+        self.archive_picker = archive_picker
         self.request_data = request_data
         self.closed = False
         self.revision = 0
@@ -61,6 +63,8 @@ class QtOwnerAdapter:
         self.latest_user = ""
         self.latest_assistant = ""
         self.timeline = []
+        self.speech_status = ""
+        self.speech_missing = {}
         self.capture_identity = None
         self.runtime_snapshot = None
 
@@ -80,24 +84,29 @@ class QtOwnerAdapter:
             self.histories = []
             self.latest_user = self.latest_assistant = ""
             self.timeline = []
+            self.speech_status = ""
+            self.speech_missing = {}
             self.runtime_snapshot = None
         client, actor, context, history = current
         return {"client": client, "actor": actor, "context": context, "history": history, "revision": self.revision}
 
     def chat_state(self):
+        identity = self.identity()
         return {"ok": True, "aiState": self.state, "wsConnected": self.chat.connected,
             "confUid": self.chat.conf_uid, "confName": self.chat.conf_name,
             "currentHistoryUid": self.chat.current_history_uid,
             "currentHistoryTitle": self.chat.current_history_title,
             "latestUserText": self.latest_user, "latestAssistantText": self.latest_assistant,
-            "timeline": copy.deepcopy(self.timeline), "identity": self.identity(),
+            "timeline": copy.deepcopy(self.timeline), "identity": identity,
+            "speechStatus": self.speech_status, "speechMissing": self.speech_missing,
             "historyReady": self.chat.history_ready}
 
     def _history_result(self):
+        identity = self.identity()
         return {"ok": True, "confUid": self.chat.conf_uid, "historyUid": self.chat.current_history_uid,
             "current_history_uid": self.chat.current_history_uid, "selected_history_uid": self.chat.current_history_uid,
             "title": self.chat.current_history_title, "messages": copy.deepcopy(self.history_rows),
-            "histories": copy.deepcopy(self.histories), "identity": self.identity()}
+            "histories": copy.deepcopy(self.histories), "identity": identity}
 
     def _require_chat(self, *, idle=False):
         if not self.chat.history_ready: raise Rejected("conversation_not_ready")
@@ -117,9 +126,37 @@ class QtOwnerAdapter:
             if not self.memory_snapshot or self.memory_snapshot["identity"] != self.identity():
                 raise Rejected("read_memory_before_confirming")
             p["expected_conf_uid"] = self.identity()["actor"]
+            if self.memory_snapshot.get("formation"):
+                p["expected_project_id"] = self.memory_snapshot["formation"]["project_id"]
+                if p["expected_project_id"] != self.chat.active_project_id:
+                    raise Rejected("memory_project_changed")
+            if p["action"] in {"reprocess","backup","restore"}:
+                p["expected_project_id"] = self.memory_snapshot["formation"]["project_id"]
+                if p["action"] == "reprocess":
+                    p["history_uid"] = self.identity()["history"]
+                    if not p["history_uid"]:
+                        raise Rejected("history_required")
+                else:
+                    selection = self.archive_picker(p["action"]) if self.archive_picker else None
+                    if not selection:
+                        raise Rejected("cancelled")
+                    p.update(selection)
+            if p["action"] == "formation":
+                if not self.memory_snapshot.get("formation"):
+                    raise Rejected("formation_owner_unavailable")
+                p["expected_policy_digest"] = self.memory_snapshot["formation"]["digest"]
+                p["expected_project_id"] = self.memory_snapshot["formation"]["project_id"]
             if p["action"] == "compact":
                 p["digests"] = {r["id"]: r["content_digest"] for r in self.memory_snapshot["memories"]}
-            elif p["action"] in {"status", "delete"}:
+            elif p["action"]=="review":
+                rows = {r["id"]:r for r in self.memory_snapshot["memories"]}
+                p["review_content"] = []
+                for item in p["payload"]["entries"]:
+                    row = rows.get(item["entry_id"])
+                    if not row or row["status"]!="pending_confirmation" or row["content_digest"]!=item["content_digest"]:
+                        raise Rejected("memory_stale_digest")
+                    p["review_content"].append(row["content"])
+            elif p["action"] in {"status", "delete","revise","source"}:
                 row = next((r for r in self.memory_snapshot["memories"] if r["id"] == p["payload"]["entry_id"]), None)
                 if not row or not row["content_digest"]: raise Rejected("memory_digest_required")
                 if p["payload"].get("content_digest", row["content_digest"]) != row["content_digest"]: raise Rejected("memory_stale_digest")
@@ -213,11 +250,11 @@ class QtOwnerAdapter:
                 return error(str(exc))
             except Exception:
                 # No exception text / private payload / paths pass into HTML.
-                return error("owner_failed_or_offline", unknown=method in {"applyProfile", "memoryAction", "control", "updateAssistantSettings"} or method == "schedule" and p["action"] in {"mutate", "notification-action"})
+                return error("owner_failed_or_offline", unknown=method in {"applyProfile", "memoryAction", "control", "updateAssistantSettings", "updateChatSpeechSettings"} or method == "schedule" and p["action"] in {"mutate", "notification-action"})
         def complete(result):
             if self.closed or not active(): return
             if expected != self.identity() and method != "applyProfile":
-                done(error("context_changed_during_operation", unknown=method in {"memoryAction", "control", "updateAssistantSettings"} or method == "schedule" and p["action"] in {"mutate", "notification-action"}))
+                done(error("context_changed_during_operation", unknown=method in {"memoryAction", "control", "updateAssistantSettings", "updateChatSpeechSettings"} or method == "schedule" and p["action"] in {"mutate", "notification-action"}))
                 return
             if method == "applyProfile" and result.get("ok"):
                 c = self.controller
@@ -229,7 +266,7 @@ class QtOwnerAdapter:
                 self.memory_snapshot = copy.deepcopy(result) if result.get("ok") is True else None
             if method == "getState":
                 self.runtime_snapshot = copy.deepcopy(result) if result.get("ok") is True else None
-            if method == "memoryAction": self.memory_snapshot = None
+            if method == "memoryAction" and p["action"]!="source": self.memory_snapshot = None
             if method == "control" and result.get("ok"):
                 if p["action"] == "mic-start": self.capture_identity = expected
                 if p["action"] in {"mic-cancel", "mic-submit"}: self.capture_identity = None
@@ -287,10 +324,15 @@ class QtOwnerAdapter:
         if method == "getData": return today_projection(c.read_today())
         if method in {"refreshMail", "getMailMessage"}: return error("mail_canonical_contract_unavailable")
         if method == "getAssistantSettings": return {"ok": True, **c.read_assistant_settings()}
+        if method == "getChatSpeechSettings": return {"ok": True, **c.read_chat_speech_settings()}
+        if method == "updateChatSpeechSettings":
+            return {"ok": True, **c.update_chat_speech_settings(p["settings"], p["expectedRevision"])}
         if method == "updateAssistantSettings":
             return {"ok": True, **c.update_assistant_settings(p["settings"], p["expectedRevision"])}
-        if method == "getTools": return {"ok": True, **c.read_tool_policy_summary(), "confirmation_available": False}
-        if method == "updateToolPolicy": return {"ok": True, **c.update_tool_policy(p)}
+        if method == "getTools":
+            return {"ok": True, **c.read_tool_policy_summary(context["identity"].get("client")),
+                    "events": context["chat"].get("timeline", [])}
+        if method == "updateToolPolicy": return {"ok": True, **c.update_tool_policy(p, context["identity"].get("client"))}
         if method == "getProfile":
             return {"ok": True, "characters": [{"id": row.conf_uid, "name": row.conf_name} for row in c.character_records.values()],
                 "projects": [{"id": row.project_id, "name": row.display_name} for row in c.project_records.values()],
@@ -318,16 +360,34 @@ class QtOwnerAdapter:
             character = c.selected_character()
             if not character or not context["identity"]["actor"] or character.conf_uid != context["identity"]["actor"]:
                 return error("memory_actor_not_ready")
-            rows = c.read_memory_records(strict=True)
+            project = context["effective"]["project"]
+            scoped = {"project_id":project} if hasattr(c,"_memory_project") else {}
+            rows = c.read_memory_records(strict=True,**scoped)
+            formation = c.memory_formation(character.conf_uid,context["effective"]["project"]) if hasattr(c,"memory_formation") else None
             return {"ok": True, "character_id": character.conf_uid, "character_name": character.conf_name,
+                "formation": formation if isinstance(formation,dict) else None,
+                "processing": c.memory_processing_status(character.conf_uid, project) if hasattr(c,"memory_processing_status") else None,
                 "identity": context["identity"], "memories": [{"id": r.entry_id, "content": r.content,
                     "memory_type": r.memory_type, "status": r.status, "enabled": r.enabled,
                     "scope": r.scope_level, "source": r.source, "updated_at": r.updated_at,
-                    "content_digest": r.content_digest} for r in rows]}
+                    "content_digest": r.content_digest, "origin_history":getattr(r,"source_history_uid",""),
+                    "origin_actor":getattr(r,"source_character_id",""), "revision":getattr(r,"revision",1), "valid_to":getattr(r,"valid_to","")} for r in rows]}
         if method == "memoryAction":
             body, action = p["payload"], p["action"]
             kwargs = {"expected_conf_uid": p["expected_conf_uid"]}
+            if "expected_project_id" in p and p["expected_project_id"] != context["effective"]["project"]:
+                raise Rejected("memory_project_changed")
+            if action in {"status","delete","compact"} and hasattr(c,"_memory_project"):
+                kwargs["project_id"] = context["effective"]["project"]
             if action == "add": changed = c.add_memory(body["content"], **kwargs)
+            elif action=="source":
+                return c.read_memory_source(p["expected_conf_uid"],context["effective"]["project"],body)
+            elif action in {"review","revise"}:
+                return c.review_memories(action,body,p["expected_conf_uid"],context["effective"]["project"])
+            elif action in {"reprocess","backup","restore"}:
+                return {"ok": True, "maintenance": c.maintain_memories(action,p)}
+            elif action == "formation":
+                changed = c.configure_memory_formation(p["expected_conf_uid"],p["expected_project_id"],body,p["expected_policy_digest"])
             elif action == "compact": return {"ok": True, **c.compact_memory(expected_digests=p["digests"], **kwargs)}
             elif action == "status": changed = c.set_memory_status(body["entry_id"], body["status"], expected_digest=body["content_digest"], **kwargs)
             else: changed = c.delete_memory(body["entry_id"], expected_digest=body["content_digest"], **kwargs)
@@ -456,25 +516,53 @@ class QtOwnerAdapter:
             if kind == "history-error": wait["done"](error("history_owner_rejected"))
             elif kind == "history-deleted" and payload.get("success") is not True: wait["done"](error("history_delete_unknown", unknown=True))
             else: wait["done"](self._history_result())
-        if kind in {"tool_call_status", "full-text", "audio", "control"}:
+        if kind in {"tool_call_status", "full-text", "audio", "control", "speech-status"}:
             expected_scope = dict(zip(("client_uid", "conf_uid", "context_id", "history_uid"), self.chat.history_identity()))
             if payload.get("conversation_scope") != expected_scope: return
-        if kind == "tool_call_status":
+        if kind == "speech-status":
+            self.speech_status = str(payload.get("status", "unavailable"))
+            self.speech_missing = {k: v for k in ("missing_segments", "missing_units")
+                                   if isinstance((v := payload.get(k)), list) and v}
+            request_id = payload.get("speech_request_id")
+            if request_id and self.speech_status in {"completed", "partial", "unconfirmed", "failed",
+                                                     "timeout", "interrupted", "unavailable", "fallback"}:
+                self.controller.log("qt_speech_result " + json.dumps({
+                    "request_id": request_id, "history_uid": self.chat.current_history_uid,
+                    "status": self.speech_status, "missing": self.speech_missing,
+                    "display_sha256": hashlib.sha256(self.latest_assistant.encode("utf-8")).hexdigest(),
+                }))
+        elif kind == "tool_call_status":
             tool_id = payload.get("tool_id")
             self.timeline = [row for row in self.timeline if row.get("tool_id") != tool_id]
-            self.timeline.append({key: payload[key] for key in ("tool_id", "tool_name", "status", "timestamp") if key in payload})
+            self.timeline.append({key: payload[key] for key in ("tool_id", "tool_name", "status", "timestamp", "execution_status", "reason_code", "outcome", "call_summary", "content") if key in payload})
             self.timeline = self.timeline[-120:]
         elif kind in {"full-text", "audio"}:
+            status_changed = bool(kind == "audio" and payload.get("speech_status"))
+            if status_changed:
+                self.speech_status = str(payload["speech_status"])
             value = payload.get("text") if kind == "full-text" else (payload.get("display_text") or {}).get("text")
-            if isinstance(value, str) and value.strip() and value not in {"Connection established", "Thinking..."}:
-                value = value.replace("\r\n", "\n").replace("\r", "\n").strip()
-                if value.startswith(self.latest_assistant): self.latest_assistant = value[:100000]
+            previous = self.latest_assistant
+            if isinstance(value, str) and value and value not in {"Connection established", "Thinking..."}:
+                if kind == "full-text":
+                    # A full-text snapshot replaces the stream, including its
+                    # whitespace. Never append a second copy of that answer.
+                    self.latest_assistant = value
+                elif payload.get("display_contract") == "kuro.speech-lanes.v1" and payload.get("display_append") is True:
+                    # This is the Display transport contract, independent of the
+                    # private Speech v2 footer. Ordered deltas may repeat words
+                    # or contain only whitespace; neither is a duplicate caption.
+                    self.latest_assistant += value
+                elif value.startswith(self.latest_assistant): self.latest_assistant = value
                 elif value not in self.latest_assistant:
                     gap = " " if self.latest_assistant[-1:].isalnum() and value[:1].isalnum() else ""
-                    self.latest_assistant = (self.latest_assistant + gap + value)[:100000]
+                    self.latest_assistant += gap + value
+            if self.latest_assistant == previous and not status_changed:
+                return  # Empty TTS captions/repeated snapshots are not updates.
         elif kind == "control":
             control = payload.get("text")
             if control == "conversation-chain-start":
+                self.speech_status = ""
+                self.speech_missing = {}
                 self.state = "thinking"; self.latest_assistant = ""; self.timeline = []
             elif control == "conversation-chain-end": self.state = "idle"
             elif control in {"interrupt", "interrupt-signal"}: self.state = "interrupted"
@@ -500,7 +588,7 @@ class QtOwnerAdapter:
     def on_assistant(self, text):
         if self.closed: return
         self.identity()
-        self.latest_assistant = str(text)[:100000]
+        self.latest_assistant = str(text)
         self.event("onChatState", self.chat_state())
 
     def abandon(self, method):

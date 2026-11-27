@@ -4,6 +4,8 @@
 
 ## 1. 記憶：來源、有效性與保存授權
 
+2026-11-25 的[本機形成授權 v2](../kuro-long-term-companion-20261125/Contract-v2.md)補充後續完成回合的選擇性保存。外部 Memory Core 權限繼續依本契約處理。
+
 ### Lifecycle 與 active 條件
 
 M0 保留 `active`、`pending_confirmation`、`superseded`、`disabled`、`pending_delete`，不新增 `unverified` lifecycle，也不全面更名 legacy source。

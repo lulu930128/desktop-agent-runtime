@@ -50,12 +50,12 @@ class DiscoveryTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(result.complete)
             self.assertNotIn('fake',client._list_tools_cache)
 
-    async def test_page_count_and_tool_count_caps(self):
-        client,_=fixture([page(str(i),str(i)) for i in range(20)])
-        self.assertFalse((await client.discover_tools('fake')).complete)
-        tools=[Tool(name=str(i),inputSchema={'type':'object'}) for i in range(1001)]
-        client,_=fixture([SimpleNamespace(tools=tools,nextCursor=None)])
-        self.assertFalse((await client.discover_tools('fake')).complete)
+    async def test_pagination_has_no_candidate_count_cap(self):
+        client,_=fixture([page(str(i),str(i)) for i in range(20)] + [page('last')])
+        self.assertEqual(len((await client.discover_tools('fake')).tools), 21)
+        tools = [Tool(name=str(i), inputSchema={'type':'object'}) for i in range(1001)]
+        client, _ = fixture([SimpleNamespace(tools=tools, nextCursor=None)])
+        self.assertEqual(len((await client.discover_tools('fake')).tools), len(tools))
 
     async def test_timeout_and_cancel_leave_incomplete_diagnostics(self):
         client,session=fixture([])
@@ -99,7 +99,7 @@ class DiscoveryTests(unittest.IsolatedAsyncioTestCase):
         session.send_request.assert_awaited_once()
 
     async def test_protocol_unknown_and_cancel_are_distinct_without_retry(self):
-        for error, status in [(McpError(ErrorData(code=-32603,message='sentinel')),'failed'),
+        for error, status in [(McpError(ErrorData(code=-32603,message='sentinel')),'unknown'),
                               (RuntimeError('sentinel'),'unknown'), (asyncio.CancelledError(),'cancelled')]:
             client, session = fixture([page('a')])
             session.call_tool = AsyncMock(side_effect=error)

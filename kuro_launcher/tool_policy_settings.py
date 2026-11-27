@@ -7,13 +7,16 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import re
 
 from open_llm_vtuber.mcpp.tool_policy_manager import ToolPolicy, _valid_tool_config
 
 
 CONTRACT = 'kuro.tool-policy-settings.v1'
-GROUPS = {'kuro-web': '網路搜尋', 'kuro-filesystem': '檔案與對話查找',
-          'kuro-mail': '郵件', 'omi-market': '市場情報'}
+GROUPS = {'kuro-web': '網路搜尋', 'kuro-filesystem': '過往對話', 'project-workspace': '專案工作區',
+          'kuro-mail': '郵件', 'omi-search': 'OMI 市場資料', 'japanese-study': '日文學習',
+          'english-study': '英文學習', 'listening-audio': '聽力練習',
+          'memory-core': 'Memory Core 正式記憶', 'personal-asset-os': '個人資產 PAOS'}
 # Presentation metadata only; all execution authority remains in ToolPolicy.
 CATALOG = {
     'kuro-web::get_current_time': ('目前時間', '讀取目前時間與時區。'),
@@ -21,10 +24,6 @@ CATALOG = {
     'kuro-web::smart_search_web': ('智慧搜尋', '依問題選擇公開搜尋方式。'),
     'kuro-web::advanced_search_web': ('進階搜尋', '使用條件縮小公開搜尋結果。'),
     'kuro-web::fetch_content': ('讀取網頁', '讀取公開網頁；保留內網網址限制。'),
-    'kuro-filesystem::list_allowed_roots': ('可讀取的資料夾', '查看服務允許存取的根目錄。'),
-    'kuro-filesystem::list_directory': ('列出資料夾', '列出允許路徑；不包含隱藏或受保護檔案。'),
-    'kuro-filesystem::search_files': ('搜尋檔案', '在允許範圍尋找檔案，保留私人路徑限制。'),
-    'kuro-filesystem::read_text_file': ('讀取文字檔', '讀取允許的文字檔，不寫入檔案。'),
     'kuro-filesystem::search_past_conversations': ('查找過往對話', '由既有服務依其範圍查找對話；不擴大存取權。'),
     'kuro-mail::mail.auth_status': ('郵件授權狀態', '查看既有郵件授權狀態。'),
     'kuro-mail::mail.auth_start': ('開始郵件授權', '需逐次確認；執行佇列尚未提供，保持封鎖。'),
@@ -35,8 +34,21 @@ CATALOG = {
     'kuro-mail::mail.get_message_detail': ('郵件內容', '由原郵件服務唯讀取得內容；不寄出或修改郵件。'),
     'kuro-mail::mail.daily_brief': ('每日郵件概覽', '由原服務整理郵件；可能讀取信箱，不是 Core 快照。'),
     'kuro-mail::mail.refresh': ('更新郵件觀測', '原服務唯讀查詢信箱並更新本機 handoff；不寄信。'),
-    'omi-market::omi.ask': ('市場問題分析', '由 OMI 分析；保留預算、禁止寫入及報告模式限制，可能使用外部資料或 LLM。'),
-    'omi-market::omi.ask_stream': ('串流市場分析', '由 OMI 串流回覆；同樣受預算與禁止寫入限制，不是背景自動觀測。'),
+    'memory-core::search': ('搜尋正式記憶', '依使用者需求搜尋 Memory Core；與 Kuro 過往對話及角色記憶分開。'),
+    'memory-core::fetch': ('讀取正式記憶', '依穩定識別碼讀取外部正式記憶，不保存或修改記憶。'),
+    'memory-core::memory_fetch_record_revision': ('正式記憶版本', '唯讀指定紀錄的歷史版本。'),
+    'memory-core::memory_list_record_links': ('正式記憶關聯', '唯讀指定紀錄的關聯，不建立或移除關聯。'),
+    'memory-core::memory_overview': ('正式記憶概覽', '按需讀取 Memory Core 概覽；不是 Kuro History 或 Core Today。'),
+    'memory-core::memory_detect_duplicates': ('記憶重複查詢', '唯讀可能重複的紀錄；不合併、刪除或封存。'),
+    'memory-core::memory_list_collections': ('正式記憶集合', '唯讀列出可見集合，不建立或修改集合。'),
+    'memory-core::memory_get_collection': ('正式記憶集合內容', '有界讀取指定集合的成員，不自動寫入長期記憶。'),
+    'personal-asset-os::get_asset_overview': ('個人資產總覽', '按需讀取 PAOS 資產總覽；來源可能讀 Broker／FX，保留時間與品質警告。'),
+    'personal-asset-os::list_asset_accounts': ('資產帳戶清單', '唯讀帳戶與餘額，不調整帳務。'),
+    'personal-asset-os::list_asset_positions': ('投資部位', '按需讀取部位；來源可能讀 Broker／FX，不下單或刷新交易。'),
+    'personal-asset-os::list_recent_asset_transactions': ('近期資產交易', '唯讀近期交易摘要，不新增、沖銷或修改交易。'),
+    'personal-asset-os::get_pending_financial_events': ('待處理財務事件', '唯讀待處理記錄，不核准或寫入帳本。'),
+    'personal-asset-os::get_reconciliation_status': ('資產對帳狀態', '唯讀既有對帳證據，不執行對帳。'),
+    'personal-asset-os::get_asset_system_status': ('資產系統狀態', '按需讀取來源狀態，不啟停、備份或還原服務。'),
 }
 
 
@@ -44,7 +56,7 @@ def validate_change(payload):
     if not isinstance(payload, dict) or set(payload) != {'name', 'enabled', 'expectedDigest'}:
         raise ValueError('tool_policy_fields')
     name, enabled, digest = (payload[k] for k in ('name', 'enabled', 'expectedDigest'))
-    if not isinstance(name, str) or name not in CATALOG:
+    if not isinstance(name, str) or name.partition("::")[0] not in GROUPS or not re.fullmatch(r"[a-zA-Z0-9_.%-]+::[a-zA-Z0-9_.%-]+", name):
         raise ValueError('tool_policy_unknown_tool')
     if type(enabled) is not bool:
         raise ValueError('tool_policy_enabled_boolean_required')
@@ -73,7 +85,7 @@ class ToolPolicySettings:
         if len(raw) > 2 * 1024 * 1024:
             raise ValueError('tool_policy_too_large')
         data = json.loads(raw.decode('utf-8-sig'), object_pairs_hook=_object)
-        if not isinstance(data, dict) or not isinstance(data.get('tools'), dict) or set(data['tools']) != set(CATALOG):
+        if not isinstance(data, dict) or not isinstance(data.get('tools'), dict):
             raise ValueError('tool_policy_registry_mismatch')
         if data.get('default_mode') != 'blocked' or any(not isinstance(row, dict) or not _valid_tool_config(row) for row in data['tools'].values()):
             raise ValueError('tool_policy_invalid')
@@ -82,22 +94,34 @@ class ToolPolicySettings:
             raise ValueError('tool_policy_invalid')
         return raw, data, policy
 
-    def read(self):
+    def read(self, inventory=None):
         _, data, policy = self._load()
+        inventory = inventory or {}
+        live = {r['name']: r for r in inventory.get('tools', [])}
+        services = inventory.get('services', {})
         records = []
-        for name, (label, description) in CATALOG.items():
+        for name in sorted(set(data['tools']) | set(live)):
+            service, _, wire = name.partition('::')
+            source = live.get(name, {})
+            config = data['tools'].get(name, {})
+            label, description = CATALOG.get(name, (wire, ''))
             decision = policy.check(name, {})
-            service = name.split('::', 1)[0]
-            records.append({'name': name, 'label': label, 'description': description,
-                'service': service, 'serviceLabel': GROUPS[service],
-                'enabled': data['tools'][name].get('enabled', True),
-                'category': data['tools'][name]['category'], 'mode': data['tools'][name]['mode'],
-                'allowed': decision.allowed, 'reason': decision.reason, 'reason_code': decision.reason_code})
+            records.append({
+                'name': name, 'label': source.get('label', label), 'description': source.get('description', description),
+                'service': service, 'serviceLabel': GROUPS.get(service, service),
+                'enabled': config.get('enabled', True), 'category': config.get('category', service),
+                'mode': config.get('mode', 'owner'), 'operation': source.get('operation', 'unknown'),
+                'allowed': source.get('allowed', False), 'reason': decision.reason,
+                'reason_code': source.get('reason_code', services.get(service, {}).get('reason') or 'not_discovered'),
+            })
         return {'contract': CONTRACT, 'default_mode': policy.default_mode, 'tools': records,
+                'services': services, 'inventory_error': inventory.get('error', ''),
+                'catalog': {'toolNames': [r['name'] for r in records], 'groups': dict(GROUPS)},
                 'confirmation_available': False, 'settings_confirmation_required': True,
-                'runtime_adoption': 'UNVERIFIED', 'restart_required': True, 'digest': policy.digest}
+                'runtime_adoption': ('MATCHED' if inventory.get('policy_digest') == policy.digest else 'UNVERIFIED'),
+                'restart_required': inventory.get('policy_digest') != policy.digest, 'digest': policy.digest}
 
-    def update(self, payload, *, confirmed=False):
+    def update(self, payload, *, confirmed=False, inventory=None):
         validate_change(payload)
         if confirmed is not True:
             raise PermissionError('tool_policy_confirmation_required')
@@ -111,7 +135,13 @@ class ToolPolicySettings:
             raw, data, policy = self._load()
             if policy.digest != payload['expectedDigest']:
                 raise ValueError('tool_policy_stale_digest')
-            data['tools'][payload['name']]['enabled'] = payload['enabled']
+            name = payload['name']
+            if name not in data['tools']:
+                observed = {r['name'] for r in (inventory or {}).get('tools', [])}
+                if name not in observed or name.partition('::')[0] not in policy.owner_services:
+                    raise ValueError('tool_policy_unknown_tool')
+                data['tools'][name] = {'mode': 'owner'}
+            data['tools'][name]['enabled'] = payload['enabled']
             encoded = (json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) + '\n').encode('utf-8')
             with tempfile.NamedTemporaryFile(dir=self.path.parent, prefix='.tool-policy-', delete=False) as stream:
                 temporary = Path(stream.name)
@@ -122,7 +152,7 @@ class ToolPolicySettings:
                 raise ValueError('tool_policy_stale_digest')
             os.replace(temporary, self.path)
             temporary = None
-            readback = self.read()
+            readback = self.read(inventory)
             if readback['digest'] != ToolPolicy(data).digest:
                 raise RuntimeError('tool_policy_readback_unverified')
             return {**readback, 'persisted': True}

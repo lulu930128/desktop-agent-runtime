@@ -1,0 +1,29 @@
+{
+  "source_revision": "c2b3e64c27caaec8c2cba5b213444ddce0d79e03",
+  "real_responses_complete": true,
+  "formal_gui_acceptance": false,
+  "source_implementation_edited": false,
+  "file_sha256": {
+    "baseline-status.txt": "53c6ad58dd18f1e30c98be5b8afbaceb3fb353e84436f5e5cc3ecbd7ecee7727",
+    "business-readback.json": "360c38e4329b192b8755cde6cd63895eb3008f837b5f199586e4bae4e022e522",
+    "business_readback.py": "baa946aae815d54ee5ef4b2c68ee9a58bf62f7ceb1fb192b8ac83ab668ee955c",
+    "isolated-writes.json": "59facf34bd0fe4f370d5bd1a831f04359479facd6b093c134950e8b077ceeb6e",
+    "isolated_writes.py": "467d6caa6b237dec8cdca0410bcd748c4af0849f1d797147d167680bf9f130cb",
+    "listening-owner-examples.json": "ec3debba2d757c464a76874f5bfac25fb4da7c5c18e4267c7d3dbd3d3a2e8375",
+    "live-mcp.json": "c458379bc83e274126bd3fd9f38ec1bed4eec6e144c02ec893bd356cc705d257",
+    "live.py": "be4a3ab02c8f41dc33a92e42a7d6aaa6c0e9e58bbf3dde8709546ed12cad3d34",
+    "omi-cache-readback.json": "1c9e71faeb2a3999acbe97aa8a29bec4381102ee7654123fac59f02637e2537e",
+    "omi-owner-wait.json": "2f15f45fe9a33e09136dc40765e42e33b066834c41cdf96e6c404d9ffba4ac81",
+    "omi_cache_readback.py": "141ffeeb6cec7ceaffb5a65da04a5390bdd34282696415574b7b0186841a6d01",
+    "production-readback.json": "9c6e990298deaae2a5c46eda83c4c970934adb30cc7653b4d7b0f9f153443c52",
+    "public-challenge.txt": "ae263fac006afc5d1b895fc1e66518259a0b2e10f4dc63fafa39832aecedd361",
+    "responses-081808.json": "93d8b65336f050ce1b088f83c55cef390c2de404c04623a029d13e5a30322cc3",
+    "responses-082335.json": "a04729223d168ca57c2e0ff2adf3ceeb03b4c6ecde86f92e61bbfec6f5ee70d7",
+    "responses-schemas.json": "e82010a45655a20e3553bba4b6381a639420f9d8f83b1c0091024ec73d24bac4",
+    "responses_live.py": "906b712708eb1175c88808d78a0d5106ded2e6e4d0c9ce0a7fd1f205daf90332",
+    "Results.md": "f6c37938ee47f23a4440accaf97caef5bac31c45d039d64e56463d3259484e9e",
+    "runtime-status.json": "e714ae82ee410ec0c78edd68832881027dcd605eae1e3f0d83ad59a191a451d6",
+    "runtime_readback.py": "43629b1e020b85220d995e58cb307d4a3f3d4afbedcdffe85cfb1211cad15e5f",
+    "workspace-connector.json": "e5ef92c4e52961cb7e174078da0a0b92f65585d73ff77b4242d3764aed1c7b27"
+  }
+}

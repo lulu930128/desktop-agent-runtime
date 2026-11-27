@@ -21,30 +21,10 @@
     "kuro-web::fetch_content": {
       "mode": "read_only",
       "category": "web",
-      "url_args": ["url"],
+      "url_args": [
+        "url"
+      ],
       "block_private_urls": true
-    },
-    "kuro-filesystem::list_allowed_roots": {
-      "mode": "read_only",
-      "category": "filesystem"
-    },
-    "kuro-filesystem::list_directory": {
-      "mode": "read_only",
-      "category": "filesystem",
-      "path_args": ["path"],
-      "allow_hidden": false
-    },
-    "kuro-filesystem::search_files": {
-      "mode": "read_only",
-      "category": "filesystem",
-      "path_args": ["path"],
-      "allow_hidden": false
-    },
-    "kuro-filesystem::read_text_file": {
-      "mode": "read_only",
-      "category": "filesystem",
-      "path_args": ["path"],
-      "allow_hidden": false
     },
     "kuro-filesystem::search_past_conversations": {
       "mode": "read_only",
@@ -65,12 +45,16 @@
     "kuro-mail::mail.list_unread": {
       "mode": "read_only",
       "category": "mail",
-      "deny_truthy_args": ["include_spam_trash"]
+      "deny_truthy_args": [
+        "include_spam_trash"
+      ]
     },
     "kuro-mail::mail.search_recent": {
       "mode": "read_only",
       "category": "mail",
-      "deny_truthy_args": ["include_spam_trash"]
+      "deny_truthy_args": [
+        "include_spam_trash"
+      ]
     },
     "kuro-mail::mail.get_message_summary": {
       "mode": "read_only",
@@ -83,38 +67,76 @@
     "kuro-mail::mail.daily_brief": {
       "mode": "read_only",
       "category": "mail",
-      "deny_truthy_args": ["include_spam_trash"]
+      "deny_truthy_args": [
+        "include_spam_trash"
+      ]
     },
     "kuro-mail::mail.refresh": {
       "mode": "read_only",
       "category": "mail",
-      "deny_truthy_args": ["include_spam_trash"]
+      "deny_truthy_args": [
+        "include_spam_trash"
+      ]
     },
-    "omi-market::omi.ask": {
+    "memory-core::search": {
       "mode": "read_only",
-      "category": "market_intelligence",
-      "deny_truthy_args": ["allow_write"],
-      "deny_values": {
-        "mode": ["report"]
-      },
-      "max_numeric_args": {
-        "tool_budget.max_calls": 5,
-        "tool_budget.max_external_fetches": 3,
-        "tool_budget.max_total_seconds": 25
-      }
+      "category": "memory_core"
     },
-    "omi-market::omi.ask_stream": {
+    "memory-core::fetch": {
       "mode": "read_only",
-      "category": "market_intelligence",
-      "deny_truthy_args": ["allow_write"],
-      "deny_values": {
-        "mode": ["report"]
-      },
-      "max_numeric_args": {
-        "tool_budget.max_calls": 5,
-        "tool_budget.max_external_fetches": 3,
-        "tool_budget.max_total_seconds": 25
-      }
+      "category": "memory_core"
+    },
+    "memory-core::memory_fetch_record_revision": {
+      "mode": "read_only",
+      "category": "memory_core"
+    },
+    "memory-core::memory_list_record_links": {
+      "mode": "read_only",
+      "category": "memory_core"
+    },
+    "memory-core::memory_overview": {
+      "mode": "read_only",
+      "category": "memory_core"
+    },
+    "memory-core::memory_detect_duplicates": {
+      "mode": "read_only",
+      "category": "memory_core"
+    },
+    "memory-core::memory_list_collections": {
+      "mode": "read_only",
+      "category": "memory_core"
+    },
+    "memory-core::memory_get_collection": {
+      "mode": "read_only",
+      "category": "memory_core"
+    },
+    "personal-asset-os::get_asset_overview": {
+      "mode": "read_only",
+      "category": "personal_asset_os"
+    },
+    "personal-asset-os::list_asset_accounts": {
+      "mode": "read_only",
+      "category": "personal_asset_os"
+    },
+    "personal-asset-os::list_asset_positions": {
+      "mode": "read_only",
+      "category": "personal_asset_os"
+    },
+    "personal-asset-os::list_recent_asset_transactions": {
+      "mode": "read_only",
+      "category": "personal_asset_os"
+    },
+    "personal-asset-os::get_pending_financial_events": {
+      "mode": "read_only",
+      "category": "personal_asset_os"
+    },
+    "personal-asset-os::get_reconciliation_status": {
+      "mode": "read_only",
+      "category": "personal_asset_os"
+    },
+    "personal-asset-os::get_asset_system_status": {
+      "mode": "read_only",
+      "category": "personal_asset_os"
     }
   },
   "filesystem": {
@@ -155,5 +177,12 @@
       "0.0.0.0"
     ],
     "block_private_networks": true
-  }
+  },
+  "owner_services": [
+    "project-workspace",
+    "japanese-study",
+    "english-study",
+    "listening-audio",
+    "omi-search"
+  ]
 }

@@ -1,0 +1,42 @@
+{
+  "tests": 28,
+  "success": true,
+  "modules": [
+    "test_http_mcp",
+    "test_g2_tool_settings",
+    "test_tool_catalog_market_routing",
+    "test_project_workspace_cutover"
+  ],
+  "http": {
+    "mixed_transport": {
+      "synthetic_stdio_sessions": 8,
+      "http_sessions": 2,
+      "stdio_calls_after_http_failure_and_success": 8,
+      "aclose": "PASS"
+    },
+    "dispatch": {
+      "tools": [
+        "memory-core::search",
+        "memory-core::fetch",
+        "memory-core::memory_fetch_record_revision",
+        "memory-core::memory_list_record_links",
+        "memory-core::memory_overview",
+        "memory-core::memory_detect_duplicates",
+        "memory-core::memory_list_collections",
+        "memory-core::memory_get_collection",
+        "personal-asset-os::get_asset_overview",
+        "personal-asset-os::list_asset_accounts",
+        "personal-asset-os::list_asset_positions",
+        "personal-asset-os::list_recent_asset_transactions",
+        "personal-asset-os::get_pending_financial_events",
+        "personal-asset-os::get_reconciliation_status",
+        "personal-asset-os::get_asset_system_status"
+      ],
+      "synthetic_calls": 30,
+      "executor_denials": 135,
+      "production_business_calls": 0,
+      "provider_calls": 0
+    },
+    "unsafe_config_cases": 37
+  }
+}

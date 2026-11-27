@@ -2,6 +2,10 @@ import os
 import re
 import json
 from .mcpp.privacy import safe_text
+from functools import wraps
+from pathlib import Path
+import tempfile
+from .character_memory_repository import store_lock
 import uuid
 from datetime import datetime
 from typing import Literal, List, TypedDict, Optional
@@ -18,7 +22,7 @@ class HistoryMessage(TypedDict):
 
 
 def _now_iso() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    return datetime.now().astimezone().isoformat(timespec="microseconds")
 
 
 def _compact_text(content: str, max_len: int = 80) -> str:
@@ -89,7 +93,7 @@ def _sanitize_path_component(component: str) -> str:
     # Remove any path components, get just the basename
     sanitized = os.path.basename(component.strip())
 
-    if not _is_safe_filename(sanitized):
+    if sanitized != component.strip() or sanitized in {".",".."} or not _is_safe_filename(sanitized):
         raise ValueError(f"Invalid characters in path component: {component}")
 
     return sanitized
@@ -117,6 +121,35 @@ def _get_safe_history_path(conf_uid: str, history_uid: str) -> str:
     return full_path
 
 
+def _write_history(filepath, data):
+    path = Path(filepath)
+    fd, name = tempfile.mkstemp(prefix=".history-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(data, stream, ensure_ascii=False, indent=2)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(name, path)
+    finally:
+        Path(name).unlink(missing_ok=True)
+
+
+def _indexed_change(operation):
+    """Publish intent before changing the source. Reconciliation shares this lock."""
+    @wraps(operation)
+    def changed(conf_uid, history_uid, *args, **kwargs):
+        if not conf_uid or not history_uid:
+            return operation(conf_uid, history_uid, *args, **kwargs)
+        path = Path(_get_safe_history_path(conf_uid, history_uid))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with store_lock(path,wait=True):
+            pending = path.parent / ".index-pending"
+            pending.mkdir(exist_ok=True)
+            (pending / path.name).touch()
+            return operation(conf_uid, history_uid, *args, **kwargs)
+    return changed
+
+
 def create_new_history(conf_uid: str) -> str:
     """Create a new history file with a unique ID and return the history_uid"""
     if not conf_uid:
@@ -134,8 +167,7 @@ def create_new_history(conf_uid: str) -> str:
     try:
         filepath = os.path.join(conf_dir, f"{history_uid}.json")
         initial_data = [_build_metadata(now_str)]
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(initial_data, f, ensure_ascii=False, indent=2)
+        _write_history(filepath, initial_data)
     except Exception as e:
         logger.error('Failed to create new history file; payload details omitted.')
         return ""
@@ -144,6 +176,7 @@ def create_new_history(conf_uid: str) -> str:
     return history_uid
 
 
+@_indexed_change
 def store_message(
     conf_uid: str,
     history_uid: str,
@@ -151,6 +184,11 @@ def store_message(
     content: str,
     name: str | None = None,
     avatar: str | None = None,
+    *,
+    turn_id: str = "",
+    completion: str = "",
+    project_id: str = "",
+    formation_rule: str | None = None,
 ):
     """Store a message in a specific history file
 
@@ -173,16 +211,29 @@ def store_message(
     logger.debug(f"Storing {role} message to {filepath}")
 
     history_data = []
-    if os.path.exists(filepath):
+    previous_stat = Path(filepath).stat() if os.path.exists(filepath) else None
+    if previous_stat:
         try:
             with open(filepath, "r", encoding="utf-8") as f:
                 history_data = json.load(f)
         except Exception:
             logger.error(f"Failed to load history file: {filepath}")
-            pass
+            raise ValueError("Unreadable history; preserving original file") from None
 
     content = safe_text(content)
+    if not isinstance(history_data,list) or not all(isinstance(row,dict) for row in history_data):
+        raise ValueError("Invalid History source; preserving original")
+    if turn_id:
+        for index in range(len(history_data)-1,-1,-1):
+            prior = history_data[index]
+            if prior.get("turn_id")!=turn_id or prior.get("role")!=role:
+                continue
+            if (prior.get("content"),prior.get("completion",""),prior.get("project_id",""))!=(content,completion,project_id):
+                raise ValueError("Conflicting History turn identity")
+            previous = next((r.get("turn_id","") for r in reversed(history_data[:index]) if r.get("role")=="human"),"")
+            return {"previous_turn_id":previous,"observed_at":prior.get("timestamp","")}
     metadata = _ensure_metadata_entry(history_data)
+    previous_title = metadata.get("title", "")
 
     now_str = _now_iso()
     new_item = {
@@ -190,6 +241,9 @@ def store_message(
         "timestamp": now_str,
         "content": content,
     }
+
+    if turn_id:
+        new_item.update(turn_id=turn_id, completion=completion, project_id=project_id)
 
     # Add optional display information if provided
     if name is not None:
@@ -224,9 +278,51 @@ def store_message(
                 first_human.get("content", ""), max_len=72
             )
 
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(history_data, f, ensure_ascii=False, indent=2)
+    if role == "ai" and completion == "complete" and formation_rule is not None:
+        if not re.fullmatch(r"[a-zA-Z0-9_-]+", turn_id):
+            raise ValueError("Invalid formation turn identity")
+        pending = Path(filepath).parent / ".formation-pending"
+        pending.mkdir(exist_ok=True)
+        _write_history(pending / (turn_id + ".json"),
+                       {"history":history_uid, "turn":turn_id, "project_id":project_id, "policy_digest":formation_rule})
+    _write_history(filepath, history_data)
+    try:
+        from .conversation_history_index import _CONVERSATION_HISTORY_INDEX
+        _CONVERSATION_HISTORY_INDEX.record_append(conf_uid,history_uid,previous_stat,Path(filepath),
+                                                   actual_messages,metadata.get("title",""),previous_title)
+    except Exception as exc:
+        logger.warning("History index append pending ({})", type(exc).__name__)
     logger.debug(f"Successfully stored {role} message")
+    previous = next((m.get("turn_id", "") for m in reversed(actual_messages[:-1])
+                     if m.get("role") == "human"), "")
+    return {"previous_turn_id": previous, "observed_at": now_str}
+
+
+def read_memory_source(root: Path, actor: str, history: str, turn: str):
+    """Explicit management read of one referenced user statement, including renamed histories."""
+    import sqlite3
+    from contextlib import closing
+    root=Path(root).resolve()
+    if not (actor and history and turn):
+        return None
+    candidates=[history]
+    db = root/"memories/conversation_history.sqlite3"
+    if db.is_file():
+        try:
+            with closing(sqlite3.connect(db.as_uri()+"?mode=ro",uri=True)) as conn:
+                candidates.extend(row[0] for row in conn.execute(
+                    "SELECT DISTINCT history_uid FROM conversation_messages WHERE conf_uid=? AND json_extract(message_json,'$.turn_id')=?",
+                    (actor,turn)))
+        except sqlite3.Error:
+            pass  # The canonical original path is still independently readable.
+    for uid in dict.fromkeys(candidates):
+        path = root / _get_safe_history_path(actor,uid)
+        if path.is_file():
+            rows=json.loads(path.read_bytes())
+            for row in rows:
+                if row.get("role") in {"human","user"} and row.get("turn_id")==turn:
+                    return {"history":uid,"observed_at":row.get("timestamp",""),"project_id":row.get("project_id",""),"text":row.get("content","")}
+    return None
 
 
 def get_metadata(conf_uid: str, history_uid: str) -> dict:
@@ -249,6 +345,7 @@ def get_metadata(conf_uid: str, history_uid: str) -> dict:
     return {}
 
 
+@_indexed_change
 def update_metadate(conf_uid: str, history_uid: str, metadata: dict) -> bool:
     """Set metadata in history file
 
@@ -278,8 +375,7 @@ def update_metadate(conf_uid: str, history_uid: str, metadata: dict) -> bool:
             new_metadata.update(metadata)  # Add new fields
             history_data.insert(0, new_metadata)
 
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(history_data, f, ensure_ascii=False, indent=2)
+        _write_history(filepath, history_data)
 
         logger.debug(f"Updated metadata for history {history_uid}")
         return True
@@ -350,25 +446,30 @@ def get_history_timeline(conf_uid: str, history_uid: str, *, limit: int = 120, s
     return sorted(rows, key=order)[-max(1, min(limit, 500)):]
 
 
-def delete_history(conf_uid: str, history_uid: str) -> bool:
-    """Delete a specific history file"""
-    if not conf_uid or not history_uid:
-        logger.warning("Missing conf_uid or history_uid")
-        return False
+def delete_history_path(path: Path) -> int:
+    """Remove the paired transcript and events and invalidate derived recall under the same lock."""
+    if not path.parent.is_dir():
+        return 0
+    with store_lock(path,wait=True):
+        pending = path.parent / ".index-pending"
+        pending.mkdir(exist_ok=True)
+        (pending / path.name).touch()
+        count = 0
+        for source in (path.with_suffix(".events.jsonl"),path):
+            if source.exists():
+                source.unlink()
+                count += 1
+        return count
 
-    filepath = _get_safe_history_path(conf_uid, history_uid)
+
+def delete_history(conf_uid: str, history_uid: str) -> bool:
+    if not conf_uid or not history_uid:
+        return False
     try:
-        if os.path.exists(filepath):
-            # Remove the runtime's paired events before reporting a successful deletion.
-            events_path = os.path.splitext(filepath)[0] + ".events.jsonl"
-            if os.path.exists(events_path):
-                os.remove(events_path)
-            os.remove(filepath)
-            logger.debug(f"Successfully deleted history file: {filepath}")
-            return True
-    except Exception as e:
-        logger.error('Failed to delete history file; payload details omitted.')
-    return False
+        return bool(delete_history_path(Path(_get_safe_history_path(conf_uid,history_uid))))
+    except (OSError,ValueError):
+        logger.error("Failed to delete history; details omitted.")
+        return False
 
 
 def get_history_list(conf_uid: str, *, strict: bool = False) -> List[dict]:
@@ -470,6 +571,7 @@ def get_history_list(conf_uid: str, *, strict: bool = False) -> List[dict]:
         return []
 
 
+@_indexed_change
 def modify_latest_message(
     conf_uid: str,
     history_uid: str,
@@ -502,8 +604,7 @@ def modify_latest_message(
             return False
 
         latest_message["content"] = safe_text(new_content)
-        with open(filepath, "w", encoding="utf-8") as f:
-            json.dump(history_data, f, ensure_ascii=False, indent=2)
+        _write_history(filepath, history_data)
 
         logger.debug(f"Successfully modified latest {role} message")
         return True
@@ -526,7 +627,14 @@ def rename_history_file(
 
     try:
         if os.path.exists(old_filepath):
-            os.rename(old_filepath, new_filepath)
+            from contextlib import ExitStack
+            with ExitStack() as locks:
+                for path in sorted({Path(old_filepath), Path(new_filepath)}):
+                    locks.enter_context(store_lock(path,wait=True))
+                    pending = path.parent / ".index-pending"
+                    pending.mkdir(exist_ok=True)
+                    (pending / path.name).touch()
+                os.rename(old_filepath, new_filepath)
             logger.info(
                 f"Renamed history file from {old_history_uid} to {new_history_uid}"
             )

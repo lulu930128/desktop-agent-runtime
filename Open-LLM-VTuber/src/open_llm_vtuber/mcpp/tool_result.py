@@ -92,9 +92,23 @@ def normalize_result(response, **identity) -> ToolResult:
     if size > MAX_RESULT_BYTES:
         return ToolResult(**identity, status="failed", is_error=True, reason_code="result_too_large")
     is_error = bool(raw.get("isError", False))
-    return ToolResult(**identity, status="failed" if is_error else "succeeded", is_error=is_error,
+    structured = raw.get("structuredContent") or {}
+    source_error = structured.get("error") if isinstance(structured, dict) else None
+    if isinstance(structured, dict) and structured.get("ok") is False and source_error is not None:
+        is_error = True
+    reason = "tool_error" if is_error else ""
+    unknown = False
+    if (is_error and identity.get("server_id") == "project-workspace" and isinstance(source_error, str)
+            and source_error in {"WRITE_POLICY_DENIED", "WRITE_DISABLED", "PATH_DENIED", "SYMLINK_DENIED"}):
+        reason = "source_auth_denied"
+    if is_error and isinstance(source_error, dict):
+        if source_error.get("code") in ("TIMEOUT", "REQUEST_TIMEOUT") or source_error.get("status") == 504:
+            reason, unknown = "timeout", True
+        elif source_error.get("status") in (401, 403):
+            reason = "source_auth_denied"
+    return ToolResult(**identity, status="unknown" if unknown else "failed" if is_error else "succeeded", is_error=is_error,
                       content_items=raw.get("content", []), structured_content=raw.get("structuredContent"),
-                      private_metadata=raw.get("_meta", {}), reason_code="tool_error" if is_error else "")
+                      private_metadata=raw.get("_meta", {}), reason_code=reason)
 
 
 def utc_now() -> str:

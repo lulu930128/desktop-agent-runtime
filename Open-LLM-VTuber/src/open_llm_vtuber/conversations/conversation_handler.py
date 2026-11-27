@@ -126,19 +126,21 @@ async def handle_individual_interrupt(
             logger.info("🛑 Conversation task was successfully interrupted")
 
         try:
-            context.agent_engine.handle_interrupt(heard_response)
+            if heard_response and heard_response != "launcher-interrupt":
+                context.agent_engine.handle_interrupt(heard_response)
         except Exception as e:
             logger.error(f"Error handling interrupt: {e}")
 
         if context.history_uid:
-            store_message(
-                conf_uid=context.character_config.conf_uid,
-                history_uid=context.history_uid,
-                role="ai",
-                content=heard_response,
-                name=context.character_config.character_name,
-                avatar=context.character_config.avatar,
-            )
+            if heard_response and heard_response != "launcher-interrupt":
+                store_message(
+                    conf_uid=context.character_config.conf_uid,
+                    history_uid=context.history_uid,
+                    role="ai",
+                    content=heard_response,
+                    name=context.character_config.character_name,
+                    avatar=context.character_config.avatar,
+                )
             store_message(
                 conf_uid=context.character_config.conf_uid,
                 history_uid=context.history_uid,

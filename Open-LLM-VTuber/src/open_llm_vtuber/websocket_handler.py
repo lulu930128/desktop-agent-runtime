@@ -80,13 +80,24 @@ class PrimaryConversationOutput:
         self.pending = set()
         self.completed = asyncio.Event()
         self.synth_complete = False
+        self.playback_status = "completed"
+        self.audio_sequence = 0
+        self.delivered_audio = {}
+        self.required_segments = set()
+        self.segment_seconds = {}
+        self.playback_progress = asyncio.Event()
+        self.segment_progress = {}
+        self.early_interrupts = set()
+        self.disconnected_recipients = set()
+        self.missing_segments = set()
 
     @staticmethod
     def presentation_payload(payload):
         fields = {
-            "audio": ("audio", "display_text", "actions", "speech_status", "volumes", "slice_length"),
+            "audio": ("audio", "display_text", "actions", "speech_status", "volumes", "slice_length", "segment_id", "display_append", "display_contract"),
             "full-text": ("text",),
             "backend-synth-complete": (),
+            "speech-status": ("status", "reason", "locale", "missing_segments", "missing_units"),
             "force-new-message": (),
         }
         kind = payload.get("type")
@@ -103,37 +114,111 @@ class PrimaryConversationOutput:
 
     async def __call__(self, raw):
         original = json.loads(raw)
-        await self.send(json.dumps({**original, "conversation_scope": self.identity}, ensure_ascii=False)
+        await self.send(json.dumps({**original, "conversation_scope": self.identity, "speech_request_id": self.request_id}, ensure_ascii=False)
                         if self.identity else raw)
         payload = self.presentation_payload(original)
         if payload is None:
             return
         subscribers = dict(self.subscribers())
+        payload["request_id"] = self.request_id
+        if payload["type"] == "audio" and payload.get("audio"):
+            if isinstance(payload.get("segment_id"), int):
+                segment = payload["segment_id"]
+                self.required_segments.add(segment)
+                self.segment_seconds[segment] = max(0.0, float(original.get("audio_seconds") or 0.0))
+            payload["sequence"] = self.audio_sequence
+            self.audio_sequence += 1
         if payload["type"] == "backend-synth-complete":
             self.synth_complete = True
-            self.pending = set(subscribers)
-            payload["request_id"] = self.request_id
+            # A newly connected Pet cannot acknowledge audio it never received.
+            self.pending = {uid for uid in subscribers if self.audio_sequence
+                            and self.delivered_audio.get(uid) == self.audio_sequence}
+            if self.pending & self.early_interrupts:
+                self.playback_status = "interrupted"
+                self.pending.difference_update(self.early_interrupts)
+            if not self.early_interrupts and (not self.pending or len(self.pending) != len(subscribers)):
+                self.playback_status = "unavailable"
         for uid, socket in subscribers.items():
             try:
                 await asyncio.wait_for(socket.send_text(json.dumps(payload)), timeout=2)
+                if payload["type"] == "audio" and payload.get("audio"):
+                    self.delivered_audio[uid] = self.delivered_audio.get(uid, 0) + 1
+                    logger.info("speech_delivery request_id={} segment={} seconds={}",
+                                self.request_id, payload.get("segment_id"), original.get("audio_seconds"))
             except Exception:
                 logger.warning(f"Presentation delivery unavailable for {uid}; primary turn continues.")
                 self.disconnect(uid)
         if self.synth_complete and not self.pending:
             self.completed.set()
 
-    def acknowledge(self, uid, request_id):
+    def observe_segment(self, uid, request_id, segment, phase):
+        if request_id != self.request_id or type(segment) is not int or segment not in self.required_segments:
+            return
+        if phase not in {"playing", "ended", "failed"} or uid not in self.subscribers():
+            return
+        progress = self.segment_progress.setdefault(uid, {})
+        if progress.get(segment) in {"ended", "failed"} or progress.get(segment) == phase:
+            return
+        progress[segment] = phase
+        self.playback_progress.set()
+        logger.info("speech_playback_segment request_id={} segment={} phase={}", request_id, segment, phase)
+
+    def acknowledge(self, uid, request_id, status="completed", ended_segments=None):
+        if request_id == self.request_id and uid in self.subscribers():
+            logger.info("speech_pet_receipt request_id={} status={}", request_id, status)
+        if not self.synth_complete and request_id == self.request_id and status == "interrupted" and uid in self.subscribers():
+            self.early_interrupts.add(uid)
+            if isinstance(ended_segments, list):
+                for segment in ended_segments:
+                    self.observe_segment(uid, request_id, segment, "ended")
+            return
         if self.synth_complete and request_id == self.request_id and uid in self.pending:
-            self.disconnect(uid)
+            if status not in {"completed", "failed", "interrupted"}:
+                return
+            if self.required_segments:
+                ended = {n for n in ended_segments if type(n) is int} if isinstance(ended_segments, list) else set()
+                missing = self.required_segments - ended
+                self.missing_segments.update(missing)
+                if missing and status in {"completed", "failed"}:
+                    status = "partial" if self.required_segments & ended else ("failed" if status == "failed" else "unconfirmed")
+            if status != "completed":
+                self.playback_status = status
+            self.pending.discard(uid)
+            if not self.pending:
+                self.completed.set()
+                self.playback_progress.set()
 
     def disconnect(self, uid):
+        if uid in self.pending or uid in self.delivered_audio:
+            self.playback_status = "unavailable"
+            self.disconnected_recipients.add(uid)
+        self.delivered_audio.pop(uid, None)
         self.pending.discard(uid)
         if self.synth_complete and not self.pending:
             self.completed.set()
+            self.playback_progress.set()
 
     async def wait_for_playback(self):
-        await self.completed.wait()
-        return {"type": "frontend-playback-complete", "request_id": self.request_id}
+        # Existing Electron watchdog declares a stationary player failed after
+        # 15s. Budget the still outstanding measured media plus that stall window.
+        while not self.completed.is_set():
+            self.playback_progress.clear()
+            remaining = max((sum(seconds for n, seconds in self.segment_seconds.items()
+                                 if self.segment_progress.get(uid, {}).get(n) not in {"ended", "failed"})
+                             for uid in self.pending), default=0)
+            try:
+                await asyncio.wait_for(self.playback_progress.wait(), remaining + 15)
+            except asyncio.TimeoutError:
+                if not self.completed.is_set():
+                    self.playback_status = "timeout"
+                    break
+        if self.playback_status == "unavailable" and not self.delivered_audio:
+            self.missing_segments.update(self.required_segments)
+        for uid in self.pending | self.early_interrupts | self.disconnected_recipients:
+            self.missing_segments.update(n for n in self.required_segments if
+                                         self.segment_progress.get(uid, {}).get(n) != "ended")
+        return {"type": "frontend-playback-complete", "request_id": self.request_id,
+                "status": self.playback_status, "missing_segments": sorted(self.missing_segments)}
 
 
 class WebSocketHandler:
@@ -929,9 +1014,11 @@ class WebSocketHandler:
                 return
             if msg_type == "frontend-playback-complete":
                 for output in self.primary_outputs.values():
-                    output.acknowledge(client_uid, data.get("request_id"))
+                    output.acknowledge(client_uid, data.get("request_id"), data.get("status", "completed"), data.get("ended_segments"))
                 return
             if msg_type == "audio-play-start":
+                for output in self.primary_outputs.values():
+                    output.observe_segment(client_uid, data.get("request_id"), data.get("segment_id"), data.get("phase"))
                 return
         elif not (role == "qt-primary" and msg_type == "frontend-playback-complete"):
             message_handler.handle_message(client_uid, data)
@@ -1086,6 +1173,10 @@ class WebSocketHandler:
                 broadcast_to_group=self.broadcast_to_group,
             )
         else:
+            output = self.primary_outputs.get(client_uid)
+            task = self.current_conversation_tasks.get(client_uid)
+            if output and (not task or task.done()):
+                return
             await handle_individual_interrupt(
                 client_uid=client_uid,
                 current_conversation_tasks=self.current_conversation_tasks,
@@ -1093,9 +1184,12 @@ class WebSocketHandler:
                 heard_response=heard_response,
             )
 
-            output = self.primary_outputs.pop(client_uid, None)
             if output:
+                # Retain the current request until the next turn or disconnect so
+                # the Pet can return its correlated interruption receipt.
                 await output(json.dumps({"type": "control", "text": "interrupt"}))
+                await output(json.dumps({"type": "speech-status", "status": "interrupted",
+                                         "reason": "user_interrupt"}))
 
     async def _handle_history_list_request(
         self, websocket: WebSocket, client_uid: str, data: WSMessage

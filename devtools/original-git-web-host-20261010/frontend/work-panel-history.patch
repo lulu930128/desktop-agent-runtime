@@ -1,0 +1,265 @@
+--- a/main.ts
++++ b/main.ts
+@@ -215,6 +215,9 @@
+   private reduceMotion = toBoolean(window.localStorage.getItem("kuro.work-panel.reduce-motion"));
+   private toastTimer = 0;
+   private historyRefreshTimer = 0;
++  private historyReadGeneration = 0;
++  private chatScopeGeneration = 0;
++  private liveTurn: { base: HistoryMessage[]; user: string; assistant: string } | null = null;
+ 
+   constructor() {
+     this.renderShell();
+@@ -311,11 +314,16 @@
+   }
+ 
+   private async refreshHistory(): Promise<void> {
++    const generation = this.historyReadGeneration = (this.historyReadGeneration || 0) + 1;
++    const scope = this.chatScopeGeneration || 0;
+     try {
+       const result = await bridge.getHistories();
+-      this.history = result?.ok ? result : await bridge.getChatHistory();
++      const history = result?.ok ? result : await bridge.getChatHistory();
++      if (generation === this.historyReadGeneration && scope === (this.chatScopeGeneration || 0)) this.history = history;
+     } catch (_error) {
+-      this.history = { ok: false, error: "history-unavailable", messages: [] };
++      if (generation === this.historyReadGeneration && scope === (this.chatScopeGeneration || 0)) {
++        this.history = { ...this.history, ok: false, error: "history-unavailable" };
++      }
+     }
+   }
+ 
+@@ -377,7 +385,23 @@
+   private onChatState(state: ChatState): void {
+     const previousHistory = this.chat.currentHistoryUid;
+     const previousAiState = this.chat.aiState;
++    const scopeChanged = ["currentHistoryUid", "confUid", "wsConnected"].some(key =>
++      key in state && state[key as keyof ChatState] !== this.chat[key as keyof ChatState]) ||
++      ("identity" in state && JSON.stringify(state["identity"]) !== JSON.stringify(this.chat["identity"]));
++    const startsTurn = state.aiState === "thinking" && !isBusyState(previousAiState);
++    const base = startsTurn && !scopeChanged
++      ? (this.liveTurn ? this.mergedChatMessages() : [...(this.history.messages || [])]) : [];
++    if (scopeChanged) {
++      this.chatScopeGeneration = (this.chatScopeGeneration || 0) + 1;
++      this.liveTurn = null;
++      this.history = { ok: true, messages: [] };
++    }
+     this.chat = { ...this.chat, ...(state || {}) };
++    if (startsTurn) this.liveTurn = { base, user: "", assistant: "" };
++    if (this.liveTurn && (isBusyState(this.chat.aiState) || isBusyState(previousAiState))) {
++      this.liveTurn.user = String(this.chat.latestUserText ?? "");
++      this.liveTurn.assistant = String(this.chat.latestAssistantText ?? "");
++    }
+     this.runtime = {
+       ...this.runtime,
+       aiState: this.chat.aiState,
+@@ -400,7 +424,7 @@
+       this.updateComposerState();
+       this.updateSensorControls();
+     }
+-    if (previousHistory !== this.chat.currentHistoryUid || (isBusyState(previousAiState) && !isBusyState(this.chat.aiState))) {
++    if (scopeChanged || previousHistory !== this.chat.currentHistoryUid || (isBusyState(previousAiState) && !isBusyState(this.chat.aiState))) {
+       this.scheduleHistoryRefresh();
+     }
+   }
+@@ -497,7 +521,15 @@
+   private applyHistoryPayload(payload: ChatHistoryPayload): void {
+     this.history = payload || { ok: false, histories: [], messages: [] };
+     const currentUid = text(payload.current_history_uid ?? payload.selected_history_uid);
+-    if (currentUid) {
++    if (currentUid !== text(this.chat.currentHistoryUid)) {
++      // Direct select/create replies may arrive before onChatState. Retire
++      // the old live turn and its in-flight reads at this same scope boundary.
++      this.liveTurn = null;
++      this.chatScopeGeneration = (this.chatScopeGeneration || 0) + 1;
++      this.historyReadGeneration = (this.historyReadGeneration || 0) + 1;
++      this.chat.latestUserText = this.chat.latestAssistantText = "";
++    }
++    if (payload.current_history_uid !== undefined || payload.selected_history_uid !== undefined) {
+       this.chat.currentHistoryUid = currentUid;
+       this.runtime.currentHistoryUid = currentUid;
+     }
+@@ -974,6 +1006,34 @@
+ 
+   private mergedChatMessages(): HistoryMessage[] {
+     const messages = Array.isArray(this.history.messages) ? [...this.history.messages] : [];
++    if (this.liveTurn) {
++      const { base, user, assistant } = this.liveTurn;
++      const role = (value: string) => ["human", "user"].includes(value) ? "user" : ["ai", "assistant"].includes(value) ? "assistant" : value;
++      const same = (a: HistoryMessage, b: HistoryMessage) => role(a.role) === role(b.role) && a.content === b.content && a.timestamp === b.timestamp;
++      // Only the suffix after this turn's observed history prefix can contain
++      // its persisted rows. Identical words in earlier turns are not identity.
++      let overlap = Math.min(base.length, messages.length);
++      while (overlap && !base.slice(-overlap).every((row, i) => same(row, messages[i]))) overlap--;
++      const rows = overlap || !base.length ? messages : [...base];
++      let index = overlap || base.length;
++      while (index < rows.length && !["user", "assistant"].includes(role(rows[index].role))) index++;
++      if (user) {
++        if (role(rows[index]?.role || "") === "user" && rows[index].content === user) index++;
++        else {
++          rows.push({ role: "human", content: user });
++          index = rows.length;
++        }
++      }
++      while (index < rows.length && !["user", "assistant"].includes(role(rows[index].role))) index++;
++      if (assistant) {
++        if (role(rows[index]?.role || "") === "assistant") {
++          // A same-turn history snapshot owns the final text. A newer stream
++          // may extend a partial snapshot, but never creates another AI row.
++          if (isBusyState(this.chat.aiState) && assistant.startsWith(rows[index].content)) rows[index] = { ...rows[index], content: assistant };
++        } else rows.push({ role: "assistant", content: assistant });
++      }
++      return rows.slice(-120);
++    }
+     const latestUser = text(this.chat.latestUserText);
+     const latestAssistant = text(this.chat.latestAssistantText);
+     const lastUser = [...messages].reverse().find((item) => ["human", "user"].includes(text(item.role).toLowerCase()));
+@@ -1006,7 +1066,7 @@
+         const row = createElement("article", `message ${messageRoleClass(message.role)}`);
+         row.appendChild(createElement("div", "message-role", messageRoleLabel(message.role)));
+         const content = createElement("div");
+-        content.appendChild(createElement("div", "message-copy", text(message.content)));
++        content.appendChild(createElement("div", "message-copy", String(message.content ?? "")));
+         const timeValue = formatDateLabel(message.timestamp, true);
+         if (timeValue) content.appendChild(createElement("div", "message-time", timeValue));
+         row.appendChild(content);
+@@ -1549,6 +1609,44 @@
+       group.appendChild(empty);
+       return group;
+     }
++    const formation = (this.memories as MemoryState & {
++      formation?: { categories: string[]; scope: string; project_id: string }
++    }).formation;
++    if (formation) {
++      const options = document.createElement("fieldset");
++      options.appendChild(createElement("legend", "", "新對話的自動保存"));
++      const fields = [["preference","偏好"],["experience","經歷"],["goal","個人目標"]].map(([value, title]) => {
++        const label = document.createElement("label");
++        const check = document.createElement("input");
++        check.type = "checkbox"; check.value = value; check.checked = formation.categories.includes(value);
++        label.append(check, document.createTextNode(title)); options.appendChild(label);
++        return check;
++      });
++      const scope = document.createElement("select");
++      scope.setAttribute("aria-label","自動記憶保存範圍");
++      for (const [value,title] of [["character","此角色"],["global_user","跨角色共用"],["project","此專案共用"]]) {
++        if (value === "project" && !formation.project_id) continue;
++        scope.add(new Option(title,value,false,formation.scope === value));
++      }
++      options.append(scope,button("quiet-button","儲存記憶模式",() => this.runMemoryAction("formation", {
++        scope: scope.value, categories: fields.filter((c) => c.checked).map((c) => c.value)
++      })));
++      group.appendChild(options);
++      const processing = (this.memories as MemoryState & {
++        processing?: {state: string; processed: number; pending_turns:number;unresolved_turns:number; failures: Record<string,number>}
++      }).processing;
++      if (processing) {
++        const failures = Object.entries(processing.failures).map(([reason,n]) => reason + " × " + n).join("、");
++        const statusLabel = processing.state === "unbuilt" ? "尚未建立" : processing.state === "degraded" ? "需修復" : "可用";
++        group.appendChild(createElement("div","memory-meta",
++          "索引" + statusLabel + " · 最近一次回填已處理 " + processing.processed + " 個來源 · 待形成 " + processing.pending_turns + " 輪 · 範圍待核對 " + processing.unresolved_turns + " 輪" + (failures ? " · " + failures : "")));
++      }
++      const maintenance = createElement("div","memory-actions");
++      maintenance.append(button("quiet-button","重查目前對話索引",() => this.runMemoryAction("reprocess",{})),
++        button("quiet-button","匯出所有角色",() => this.runMemoryAction("backup",{})),
++        button("quiet-button","還原至新目錄",() => this.runMemoryAction("restore",{})));
++      group.appendChild(maintenance);
++    }
+     const addBox = createElement("div", "memory-add");
+     const input = createElement("textarea", "memory-input") as HTMLTextAreaElement;
+     input.rows = 2;
+@@ -1564,7 +1662,39 @@
+       empty.append(createElement("strong", "", "目前沒有長期記憶"), createElement("span", "", "新增後會保留來源、狀態與更新時間。"));
+       list.appendChild(empty);
+     } else {
+-      records.slice(0, 80).forEach((record) => list.appendChild(this.memoryRow(record)));
++      const search = document.createElement("input");
++      search.type = "search";
++      search.placeholder = "搜尋內容、來源或狀態";
++      search.setAttribute("aria-label", search.placeholder);
++      const selected = new Set<string>();
++      if (records.some((record) => record.status === "pending_confirmation")) {
++        const toolbar = createElement("div","memory-actions");
++        const submit = (status: string) => {
++          const entries = records.filter(r => selected.has(r.id)).map(r => ({entry_id:r.id,content_digest:r.content_digest}));
++          if (entries.length) void this.runMemoryAction("review",{entries,status});
++        };
++        toolbar.append(button("quiet-button","核准勾選項目",() => submit("active")),
++          button("quiet-button","拒絕勾選項目",() => submit("disabled")));
++        group.appendChild(toolbar);
++      }
++      const render = () => {
++        const query = search.value.trim().toLowerCase();
++        const visible = records.filter((r) => [r.content, r.status, r.source, r.scope].join(" ").toLowerCase().includes(query));
++        list.replaceChildren(...visible.map((record) => {
++          const row = this.memoryRow(record);
++          if (record.status === "pending_confirmation") {
++            const choice=document.createElement("input");
++            choice.type="checkbox"; choice.checked=selected.has(record.id);
++            choice.setAttribute("aria-label","勾選候選記憶 " + record.content);
++            choice.addEventListener("change",() => choice.checked ? selected.add(record.id) : selected.delete(record.id));
++            row.prepend(choice);
++          }
++          return row;
++        }));
++      };
++      group.appendChild(search);
++      search.addEventListener("input", render);
++      render();
+     }
+     group.appendChild(list);
+     if (records.length) {
+@@ -1580,8 +1710,36 @@
+     const top = createElement("div", "memory-row-top");
+     top.appendChild(createElement("span", `status-pill tone-${record.status === "active" ? "good" : record.status === "pending_confirmation" ? "warn" : "quiet"}`, text(record.status, "unknown")));
+     top.appendChild(createElement("span", "memory-meta", `${text(record.memory_type, "fact")} · ${text(record.scope, "character")}`));
+-    row.append(top, createElement("div", "memory-content", record.content));
++    row.append(top, createElement("div", "memory-content", record.content),
++      createElement("small", "memory-meta", [record.source, record.updated_at, record.id].filter(Boolean).join(" · ")));
++    const detail = record as MemoryEntry & { origin_history?:string; origin_actor?:string; revision?:number; valid_to?:string };
++    if (detail.revision) row.appendChild(createElement("small","memory-meta",`版本 ${detail.revision} ${detail.valid_to || ""}`));
++    if (detail.origin_history && detail.origin_actor) {
++      const excerpt=createElement("div","memory-source");
++      const source=button("text-button","查看來源",async () => {
++        const response=await bridge.memoryAction("source",{entry_id:record.id,content_digest:record.content_digest});
++        const evidence=(response as {source?:{text:string;history:string;observed_at:string;can_open_history:boolean}})?.source;
++        excerpt.replaceChildren();
++        if (!evidence) {excerpt.textContent="此來源目前無法讀取。";return;}
++        excerpt.append(createElement("small","memory-meta",evidence.observed_at),
++          createElement("div","memory-content",evidence.text));
++        if (evidence.can_open_history) excerpt.appendChild(button("text-button","開啟來源對話",
++          async () => { this.setMode("chat");await this.selectHistory(evidence.history); }));
++      });
++      row.append(source,excerpt);
++    }
+     const actions = createElement("div", "memory-actions");
++    if (record.status === "active") {
++      const edit=button("text-button","修訂",() => {
++        const input=document.createElement("textarea");
++        input.value=record.content; input.setAttribute("aria-label","修訂記憶內容");
++        const save=button("quiet-button","保存新版本",() => this.runMemoryAction("revise",{
++          entry_id:record.id,content_digest:record.content_digest,content:input.value}));
++        const cancel=button("text-button","取消",() => {input.remove();save.remove();cancel.remove();edit.disabled=false;});
++        edit.disabled=true; row.append(input,save,cancel);input.focus();
++      });
++      actions.appendChild(edit);
++    }
+     if (record.status === "pending_confirmation") {
+       actions.appendChild(button("text-button", "核准", () => this.runMemoryAction("status", { entry_id: record.id, status: "active", content_digest: record.content_digest })));
+       actions.appendChild(button("text-button", "拒絕", () => this.runMemoryAction("status", { entry_id: record.id, status: "disabled" })));
+@@ -1613,8 +1771,13 @@
+       this.showToast(text(result?.error, "記憶操作失敗。"), true);
+       return;
+     }
+-    this.memories = result;
+-    this.showToast(result.changed === false ? "記憶沒有變更；內容可能重複或已是目前狀態。" : "記憶已更新。");
++    await this.refreshMemories();
++    if (action === "review") {
++      const review=result as typeof result & {applied:number;unresolved:string[]};
++      this.showToast("已處理 " + review.applied + " 筆，需重新核對 " + review.unresolved.length + " 筆。");
++    } else if (["backup","restore","reprocess"].includes(action)) {
++      this.showToast(action === "backup" ? "已匯出並驗證封存檔。" : action === "restore" ? "封存檔已還原至所選位置。" : "已完成對話索引核對。");
++    } else this.showToast(result.changed === false ? "記憶沒有變更；內容可能重複或已是目前狀態。" : "記憶已更新。");
+     if (this.mode === "settings") this.renderSettings();
+   }
+ 

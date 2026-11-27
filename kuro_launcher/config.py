@@ -1,10 +1,97 @@
 import os
 import re
+import hashlib
+import json
+import tempfile
+from threading import RLock
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import yaml
+
+
+CHAT_SPEECH_CONTRACT = "kuro.chat-speech-settings.v1"
+CHAT_SPEECH_DEFAULTS = {"locale": "ja-JP", "policy": "summary", "route": "dual_lane"}
+CHAT_SPEECH_LOCALES = {"ja-JP": "default", "zh-Hant": "unverified", "en-US": "unverified"}
+_CHAT_SPEECH_LOCK = RLock()
+
+
+def validate_chat_speech_settings(value: Any) -> dict:
+    if (not isinstance(value, dict) or set(value) != set(CHAT_SPEECH_DEFAULTS)
+            or not all(isinstance(item, str) for item in value.values())
+            or value.get("locale") not in CHAT_SPEECH_LOCALES
+            or value.get("policy") not in {"brief", "summary", "detailed"}
+            or value.get("route") not in {"dual_lane", "legacy_bridge"}):
+        raise ValueError("invalid_chat_speech_settings")
+    if value["route"] == "legacy_bridge" and value["locale"] != "ja-JP":
+        raise ValueError("legacy_bridge_requires_ja_JP")
+    return dict(value)
+
+
+def _chat_speech_snapshot(raw: bytes) -> dict:
+    try:
+        document = yaml.safe_load(raw.decode("utf-8-sig")) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError("launcher_config_invalid_yaml") from exc
+    if not isinstance(document, dict):
+        raise ValueError("launcher_config_must_be_mapping")
+    stored = document.get("chat_speech")
+    if stored is None:
+        settings = dict(CHAT_SPEECH_DEFAULTS)
+    else:
+        if not isinstance(stored, dict) or stored.get("contract") != CHAT_SPEECH_CONTRACT:
+            raise ValueError("chat_speech_contract_mismatch")
+        settings = validate_chat_speech_settings({k: v for k, v in stored.items() if k != "contract"})
+    revision = hashlib.sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()
+    return {"contract": CHAT_SPEECH_CONTRACT, "settings": settings, "revision": revision,
+            "persisted": stored is not None, "locales": dict(CHAT_SPEECH_LOCALES),
+            "consumer": "conversation-runtime", "effective": "next_turn"}
+
+
+def read_chat_speech_settings(path: Path) -> dict:
+    """Launcher owns this file; the conversation consumer reads once per turn."""
+    return _chat_speech_snapshot(Path(path).read_bytes())
+
+
+def update_chat_speech_settings(path: Path, settings: dict, expected_revision: str) -> dict:
+    """Change only the existing YAML section; preserve unrelated settings bytes."""
+    desired = validate_chat_speech_settings(settings)
+    path = Path(path)
+    with _CHAT_SPEECH_LOCK:
+        raw = path.read_bytes()
+        if _chat_speech_snapshot(raw)["revision"] != expected_revision:
+            raise ValueError("chat_speech_revision_conflict")
+        content = raw.decode("utf-8-sig")
+        newline = "\r\n" if "\r\n" in content else "\n"
+        section = yaml.safe_dump({"chat_speech": {"contract": CHAT_SPEECH_CONTRACT, **desired}},
+                                 allow_unicode=True, sort_keys=False).replace("\n", newline)
+        match = re.search(r"(?m)^chat_speech:[^\r\n]*(?:\r?\n(?:[ \t]+[^\r\n]*|[ \t]*))*\r?\n?", content)
+        if match:
+            content = content[:match.start()] + section + content[match.end():]
+        else:
+            content += ("" if content.endswith("\n") else newline) + section
+        encoded = (b"\xef\xbb\xbf" if raw.startswith(b"\xef\xbb\xbf") else b"") + content.encode("utf-8")
+        candidate = _chat_speech_snapshot(encoded)
+        if candidate["settings"] != desired:
+            raise ValueError("chat_speech_write_validation_failed")
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=path.parent, prefix=".chat-speech-", delete=False) as handle:
+                temporary = Path(handle.name)
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            if path.read_bytes() != raw:
+                raise ValueError("launcher_config_changed_during_write")
+            os.replace(temporary, path)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+        result = read_chat_speech_settings(path)
+        if result["settings"] != desired:
+            raise ValueError("chat_speech_readback_unverified")
+        return result
 
 
 def _load_core_hubs(core_cfg):

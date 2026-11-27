@@ -1,0 +1,97 @@
+{
+  "checked_at": "2026-11-23T16:05:55.994754+08:00",
+  "head": "c2b3e64c27caaec8c2cba5b213444ddce0d79e03",
+  "current_branch": "main",
+  "python_regressions": {
+    "profile": "test_dynamic_tool_turn test_project_workspace_cutover test_conversation_mcp test_tool_policy_omi test_omi_effective_arguments test_paos_local_memory_routing test_mcp_m0_omi_path test_r2_settings_parity test_mcp_m0_policy test_mcp_m0_schema test_mcp_m0_discovery test_mcp_m0_consumers test_tool_argument_diagnostics test_g2_tool_settings test_http_mcp test_no_tool_query_truth test_tool_catalog_market_routing",
+    "command": "envs/kuro-llm310/python.exe -B -m unittest <profile modules>",
+    "PYTHONPATH": "Open-LLM-VTuber;Open-LLM-VTuber/src;Open-LLM-VTuber/tests;tests;.",
+    "summary": "Ran 113 tests in 24.745s\n\nOK",
+    "exit_code": 0,
+    "previous_run_note": "One earlier concurrent run exceeded the synthetic 250ms timeout during handshake. Final full regression passed."
+  },
+  "frontend": {
+    "typecheck": {
+      "args": [
+        "C:\\Program Files\\nodejs\\node.EXE",
+        "../../../pet-electron/node_modules/typescript/bin/tsc",
+        "--project",
+        "tsconfig.json",
+        "--noEmit"
+      ],
+      "exit_code": 0,
+      "output": ""
+    },
+    "isolated_owner_build": {
+      "args": [
+        "C:\\Program Files\\nodejs\\node.EXE",
+        "../../../pet-electron/node_modules/vite/bin/vite.js",
+        "build",
+        "--config",
+        "vite.owner.config.mjs",
+        "--outDir",
+        "../.runtime/kuro-dynamic-tools-20261123"
+      ],
+      "exit_code": 0,
+      "output": "vite v8.0.13 building client environment for production...\n\ntransforming...✓ 14 modules transformed.\nrendering chunks...\ncomputing gzip size...\n../.runtime/kuro-dynamic-tools-20261123/work-panel.html                  0.72 kB │ gzip:  0.43 kB\n../.runtime/kuro-dynamic-tools-20261123/assets/work-panel-DDIU12fo.css   2.83 kB │ gzip:  0.89 kB\n../.runtime/kuro-dynamic-tools-20261123/assets/main-ThBymPWv.css        31.57 kB │ gzip:  7.20 kB\n../.runtime/kuro-dynamic-tools-20261123/assets/work-panel-BN697JZL.js   42.16 kB │ gzip: 15.14 kB\n../.runtime/kuro-dynamic-tools-20261123/assets/main-BqxJj57E.js         79.69 kB │ gzip: 24.62 kB\n\n✓ built in 99ms"
+    },
+    "tests": {
+      "args": [
+        "C:\\Program Files\\nodejs\\node.EXE",
+        "--test",
+        "tests/g2_tools_today_frontend.test.cjs"
+      ],
+      "exit_code": 0,
+      "output": "✔ source overview distinguishes empty limited missing offline auth stale and auto blocked (0.6941ms)\n✔ policy UI writes only boolean plus CAS and verifies GET without adoption claim (0.8806ms)\n✔ policy UI accepts the canonical inventory without a fixed legacy count (0.4047ms)\n✔ cancel no retry, stale readback and permission upgrade in reply never look saved (0.2665ms)\n✔ new source preferences are process local and cannot store policy (8.0417ms)\nℹ tests 5\nℹ suites 0\nℹ pass 5\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 311.2659"
+    },
+    "qt_render": {
+      "groups": [
+        "Project Workspace發現 53 · 可呼叫 51",
+        "日文學習發現 37 · 可呼叫 35",
+        "英文學習發現 17 · 可呼叫 17",
+        "聽力練習發現 7 · 可呼叫 7",
+        "OMI 市場資料發現 63 · 可呼叫 49"
+      ],
+      "japaneseRows": 37,
+      "events": 42,
+      "togglesDisabled": true,
+      "workspace": "Project Workspace發現 53 · 可呼叫 51",
+      "workspaceScope": "read-only · 來源未授權寫入 · not_configured · 2026-11-20.1",
+      "overflow": false,
+      "agentReason": true
+    }
+  },
+  "flows": {
+    "domain_calls": 20,
+    "search_load_calls": 22,
+    "events_sha256": "6988300107536ad991e8dc6fa107076855ff42c80cd4f5058e8bfe6221c580e9"
+  },
+  "formal_bundle": {
+    "status": "BLOCKED",
+    "errorType": "ValueError",
+    "error": "Immutable Git source mismatch: src/work-panel/main.ts",
+    "productionAdoption": false
+  },
+  "listener_sample": {
+    "local_time": "2026-11-23T15:54:38+08:00",
+    "23456": false,
+    "23567": false,
+    "23569": false
+  },
+  "source": {
+    "patch_sha256": "a1fe852615254ecdb5870acdc06aa98b1933c75692acf389dd70ae9714d5ede6",
+    "replayed_byte_exact": true,
+    "path_count": 43,
+    "git_diff_check": 0
+  },
+  "artifact_sha256": {
+    "preview.html": "ceee727831b226f305a394e2ce377b5cdb3aa4ed09ce2e3a7dfdbb696388054f",
+    "tools-preview.png": "175896cae54746aada2f76b78d929dac3f09d525e716ddba5f217e61aecd7aea",
+    "inventory.json": "294c8768972215043a8464d1562d6c1e08a47a5c5537cbdde3142ee3940fd633",
+    "workspace-owner.json": "74db6b34721440587fd0605ef03043568029bb516ad46ecc7cd49cfd0ebf788f",
+    "workflows.json": "6988300107536ad991e8dc6fa107076855ff42c80cd4f5058e8bfe6221c580e9",
+    "task.patch": "a1fe852615254ecdb5870acdc06aa98b1933c75692acf389dd70ae9714d5ede6",
+    "changed-files.json": "efab6f7ce3d7a4770c95345807c7106d83e0b7b7ccf8a127bf237c980b5c43b0",
+    "Progress.md": "1c9e694788a870d57a77ad1a74cf21df791caa1bde54e25383cd17eb07865c0c"
+  }
+}

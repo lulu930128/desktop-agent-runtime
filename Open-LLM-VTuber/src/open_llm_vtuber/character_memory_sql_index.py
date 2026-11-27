@@ -1,16 +1,23 @@
 from __future__ import annotations
 
 import hashlib
+from .character_memory_repository import store_lock
+from .memory_semantics import (
+    local_encoder,
+    vector_schema,
+    remove_vector,
+    put_vector,
+    vector_hits,
+)
 import json
 import sqlite3
 from contextlib import closing
-from pathlib import Path
+from functools import lru_cache
 from typing import Any
 
-from loguru import logger
 
 from .character_memory_repository import CharacterMemoryRepository
-from .character_memory_lifecycle import is_active_memory
+from .character_memory_lifecycle import is_active_memory, has_save_authorization
 from .character_memory_retriever import (
     KeywordMemoryIndex,
     MemorySearchHit,
@@ -18,268 +25,255 @@ from .character_memory_retriever import (
     entry_scope_level,
     entry_status,
     keyword_terms,
+    query_terms,
 )
 
 
 class SQLiteMemoryIndex:
-    """SQLite-backed memory index with an FTS5 fast path.
+    """A revision-checked projection of the canonical Repository, shared by Qt and Chat."""
 
-    The JSON store remains the source of truth for now. This index is a
-    rebuildable sidecar that gives retrieval a real SQL boundary and prepares
-    the system for a future database-backed repository.
-    """
-
-    def __init__(
-        self,
-        db_path: Path | None = None,
-        *,
-        repository: CharacterMemoryRepository | None = None,
-        fallback_index: KeywordMemoryIndex | None = None,
-    ) -> None:
+    def __init__(self, db_path=None, *, repository=None, fallback_index=None):
         self._repository = repository or CharacterMemoryRepository()
         self._db_path = db_path
         self._fallback_index = fallback_index or KeywordMemoryIndex()
-        self._fts_available_by_path: dict[Path, bool] = {}
+        self._initialized = {}
 
-    def search(
-        self,
-        entries: list[dict[str, Any]],
-        plan: Any,
-        *,
-        namespace: str = "",
-    ) -> list[MemorySearchHit]:
-        if not entries:
-            return []
-        sql_scores: dict[str, float] = {}
-        try:
-            self._sync_entries(namespace, entries)
-            sql_scores = self._query_scores(namespace, entries, plan)
-        except Exception as exc:
-            logger.warning(f"SQLite memory index unavailable; using keyword index: {exc}")
+    def db_path(self):
+        return self._db_path or self._repository.root() / "character_memory.sqlite3"
 
-        hits = self._fallback_index.search(entries, plan, namespace=namespace)
-        if not sql_scores:
-            return hits
-
-        merged_hits: list[MemorySearchHit] = []
-        for hit in hits:
-            entry_id = self._entry_id(hit.entry)
-            sql_score = sql_scores.get(entry_id, 0.0)
-            reasons = hit.reasons
-            if sql_score:
-                reasons = (*reasons, "sqlite_fts")
-            merged_hits.append(
-                MemorySearchHit(
-                    entry=hit.entry,
-                    score=hit.score + sql_score,
-                    reasons=reasons,
-                )
-            )
-        merged_hits.sort(
-            key=lambda hit: (
-                hit.score,
-                str(hit.entry.get("updated_at") or ""),
-            ),
-            reverse=True,
-        )
-        return merged_hits
-
-    def sync(self, namespace: str, entries: list[dict[str, Any]]) -> None:
-        self._sync_entries(namespace, entries)
-
-    def db_path(self) -> Path:
-        if self._db_path is not None:
-            return self._db_path
-        return self._repository.root() / "character_memory.sqlite3"
-
-    def _connect(self) -> sqlite3.Connection:
-        path = self.db_path()
+    def _connect(self):
+        path = self.db_path().resolve()
         path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(path)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        return conn
-
-    def _ensure_schema(self, conn: sqlite3.Connection) -> None:
-        db_path = self.db_path().resolve()
-        if db_path in self._fts_available_by_path:
-            return
-
-        conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS memory_entries (
-                entry_id TEXT PRIMARY KEY,
-                conf_uid TEXT NOT NULL,
-                scope_level TEXT NOT NULL,
-                scope_id TEXT NOT NULL DEFAULT '',
-                memory_type TEXT NOT NULL DEFAULT 'fact',
-                status TEXT NOT NULL DEFAULT 'active',
-                enabled INTEGER NOT NULL DEFAULT 1,
-                subject TEXT NOT NULL DEFAULT '',
-                key TEXT NOT NULL DEFAULT '',
-                content TEXT NOT NULL,
-                confidence REAL NOT NULL DEFAULT 0,
-                importance REAL NOT NULL DEFAULT 0,
-                source TEXT NOT NULL DEFAULT '',
-                updated_at TEXT NOT NULL DEFAULT '',
-                entry_json TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_memory_entries_conf_status
-                ON memory_entries(conf_uid, status, enabled);
-            CREATE INDEX IF NOT EXISTS idx_memory_entries_scope_type
-                ON memory_entries(conf_uid, scope_level, memory_type);
-            """
-        )
-
-        self._fts_available_by_path[db_path] = self._ensure_fts_schema(conn)
-
-    def _fts_available(self) -> bool:
-        return self._fts_available_by_path.get(self.db_path().resolve(), False)
-
-    def _ensure_fts_schema(self, conn: sqlite3.Connection) -> bool:
         try:
-            conn.execute(
-                """
-                CREATE VIRTUAL TABLE IF NOT EXISTS memory_entries_fts USING fts5(
-                    entry_id UNINDEXED,
-                    conf_uid UNINDEXED,
-                    scope_level,
-                    memory_type,
-                    subject,
-                    key,
-                    content,
-                    tokenize='unicode61'
-                )
-                """
-            )
-        except sqlite3.OperationalError as exc:
-            logger.warning(f"SQLite FTS5 is unavailable for character memory: {exc}")
-            return False
-        return True
-
-    def _sync_entries(self, namespace: str, entries: list[dict[str, Any]]) -> None:
-        namespace = self._namespace(namespace, entries)
-        if not namespace:
-            return
-
-        rows = [self._entry_row(namespace, entry) for entry in entries]
-        entry_ids = [row["entry_id"] for row in rows]
-
-        with closing(self._connect()) as conn:
-            self._ensure_schema(conn)
-            with conn:
-                conn.executemany(
-                    """
-                    INSERT OR REPLACE INTO memory_entries (
-                        entry_id, conf_uid, scope_level, scope_id, memory_type, status,
-                        enabled, subject, key, content, confidence, importance, source,
-                        updated_at, entry_json
-                    ) VALUES (
-                        :entry_id, :conf_uid, :scope_level, :scope_id, :memory_type,
-                        :status, :enabled, :subject, :key, :content, :confidence,
-                        :importance, :source, :updated_at, :entry_json
+            stamp = path.stat().st_ino
+            if self._initialized.get(path) != stamp:
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("BEGIN IMMEDIATE")
+                if not conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE name='memory_revisions'"
+                ).fetchone():
+                    conn.execute("DROP TABLE IF EXISTS memory_entries_fts")
+                    conn.execute("DROP TABLE IF EXISTS memory_entries")
+                    conn.execute(
+                        "CREATE TABLE memory_revisions(conf_uid TEXT PRIMARY KEY,rev TEXT)"
                     )
-                    """,
-                    rows,
+                conn.commit()
+                conn.executescript("""
+                    CREATE TABLE IF NOT EXISTS memory_spans(
+                      owner TEXT, character TEXT, history TEXT, turn TEXT,
+                      PRIMARY KEY(owner,character,history,turn));
+                    CREATE TABLE IF NOT EXISTS memory_entries(
+                      conf_uid TEXT,entry_id TEXT,scope_level TEXT,scope_id TEXT,memory_type TEXT,
+                      status TEXT,enabled INTEGER,subject TEXT,key TEXT,content TEXT,confidence REAL,
+                      importance REAL,source TEXT,updated_at TEXT,entry_json TEXT, PRIMARY KEY(conf_uid,entry_id));
+                    CREATE VIRTUAL TABLE IF NOT EXISTS memory_entries_fts USING fts5(terms);
+                """)
+                vector_schema(conn)
+                self._initialized[path] = stamp
+            return conn
+        except Exception:
+            conn.close()
+            raise
+
+    def _revision(self, path, encoder):
+        try:
+            stat = path.stat()
+            return f"facts-v2:{stat.st_ino}:{stat.st_mtime_ns}:{stat.st_size}:{encoder.revision if encoder else ''}"
+        except FileNotFoundError:
+            return ""
+
+    def refresh(self, namespace):
+        path = self._repository.store_path(namespace)
+        encoder = local_encoder()
+        with closing(self._connect()) as conn:
+            rev = self._revision(path, encoder)
+            known = conn.execute(
+                "SELECT rev FROM memory_revisions WHERE conf_uid=?", (namespace,)
+            ).fetchone()
+            if (known[0] if known else "") == rev:
+                return
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with store_lock(path), conn:
+                rev = self._revision(path, encoder)
+                store = self._repository.load(namespace)
+                entries = store["entries"]
+                conn.execute("DELETE FROM memory_spans WHERE owner=?", (namespace,))
+                conn.executemany(
+                    "INSERT OR IGNORE INTO memory_spans VALUES(?,?,?,?)",
+                    ((namespace, *ref) for ref in store.get("suppressed_spans", [])),
                 )
-                self._delete_stale_rows(conn, namespace, entry_ids)
-                if self._fts_available():
-                    self._sync_fts_rows(conn, namespace, rows)
+                self._sync(conn, namespace, entries, encoder)
+                conn.execute(
+                    "INSERT OR REPLACE INTO memory_revisions VALUES(?,?)",
+                    (namespace, rev),
+                )
 
-    def _delete_stale_rows(
-        self,
-        conn: sqlite3.Connection,
-        namespace: str,
-        entry_ids: list[str],
-    ) -> None:
-        if entry_ids:
-            placeholders = ",".join("?" for _ in entry_ids)
+    def sync(self, namespace, entries):
+        with closing(self._connect()) as conn, conn:
+            self._sync(conn, namespace, entries, local_encoder())
+            conn.execute("DELETE FROM memory_revisions WHERE conf_uid=?", (namespace,))
+
+    def _sync(self, conn, namespace, entries, encoder):
+        existing = {
+            r["entry_id"]: r
+            for r in conn.execute(
+                "SELECT rowid,entry_id,entry_json FROM memory_entries WHERE conf_uid=?",
+                (namespace,),
+            )
+        }
+        vectors = dict(
             conn.execute(
-                f"""
-                DELETE FROM memory_entries
-                WHERE conf_uid = ? AND entry_id NOT IN ({placeholders})
-                """,
-                [namespace, *entry_ids],
+                "SELECT id,revision FROM semantic_vectors WHERE owner=?", (namespace,)
             )
-        else:
-            conn.execute("DELETE FROM memory_entries WHERE conf_uid = ?", (namespace,))
+        )
+        for entry in entries:
+            row = self._entry_row(namespace, entry)
+            key = row["entry_id"]
+            old = existing.pop(key, None)
+            vector_eligible = row["enabled"] or (
+                row["status"] == "superseded" and has_save_authorization(entry)
+            )
+            if old and old["entry_json"] == row["entry_json"]:
+                if (
+                    not encoder
+                    or not vector_eligible
+                    or vectors.get(key) == encoder.revision
+                ):
+                    continue
+            if old:
+                self._remove(conn, namespace, old)
+            fields = ",".join(row)
+            values = ",".join(":" + name for name in row)
+            rowid = conn.execute(
+                f"INSERT INTO memory_entries({fields}) VALUES({values})", row
+            ).lastrowid
+            terms = sorted(
+                keyword_terms(" ".join([row["content"], row["subject"], row["key"]]))
+            )
+            conn.execute(
+                "INSERT INTO memory_entries_fts(rowid,terms) VALUES(?,?)",
+                (rowid, " ".join(terms)),
+            )
+            if encoder and vector_eligible:
+                put_vector(
+                    conn, namespace, key, encoder, encoder.encode([row["content"]])[0]
+                )
+        for old in existing.values():
+            self._remove(conn, namespace, old)
 
-    def _sync_fts_rows(
-        self,
-        conn: sqlite3.Connection,
-        namespace: str,
-        rows: list[dict[str, Any]],
-    ) -> None:
-        conn.execute("DELETE FROM memory_entries_fts WHERE conf_uid = ?", (namespace,))
-        conn.executemany(
-            """
-            INSERT INTO memory_entries_fts (
-                entry_id, conf_uid, scope_level, memory_type, subject, key, content
-            ) VALUES (
-                :entry_id, :conf_uid, :scope_level, :memory_type, :subject, :key,
-                :content
-            )
-            """,
-            rows,
+    def _remove(self, conn, namespace, old):
+        conn.execute("DELETE FROM memory_entries_fts WHERE rowid=?", (old["rowid"],))
+        conn.execute("DELETE FROM memory_entries WHERE rowid=?", (old["rowid"],))
+        remove_vector(conn, namespace, old["entry_id"])
+
+    def suppressed(self, namespaces, character, history=""):
+        stamps = tuple(
+            self._revision(self._repository.store_path(ns), None) for ns in namespaces
+        )
+        return self._read_suppressed(
+            self.db_path().resolve(), tuple(namespaces), character, history, stamps
         )
 
-    def _query_scores(
+    @lru_cache(maxsize=32)
+    def _read_suppressed(self, database, namespaces, character, history, stamps):
+        result = set()
+        for namespace in namespaces:
+            if self._repository.store_path(namespace).is_file():
+                self.refresh(namespace)
+                with closing(self._connect()) as conn:
+                    rows = conn.execute(
+                        "SELECT history,turn FROM memory_spans WHERE owner=? AND character=?"
+                        " AND (?='' OR history=?)",
+                        (namespace, character, history, history),
+                    )
+                    result.update((r[0], r[1]) for r in rows)
+        return frozenset(result)
+
+    def lookup(
         self,
-        namespace: str,
-        entries: list[dict[str, Any]],
-        plan: Any,
-    ) -> dict[str, float]:
-        namespace = self._namespace(namespace, entries)
-        if not namespace:
-            return {}
-
-        query_text = str(getattr(plan, "query_text", "") or "")
-        fts_query = self._build_fts_query(query_text)
-        entry_ids = {self._entry_id(entry) for entry in entries}
-        scores: dict[str, float] = {}
-
+        namespace,
+        plan,
+        *,
+        history_uid="",
+        historical=False,
+        project_id="",
+        cutoff="",
+    ):
+        if not self._repository.store_path(namespace).is_file():
+            return []
+        self.refresh(namespace)
+        terms = sorted(
+            query_terms(plan.query_text), key=lambda term: (-len(term), term)
+        )
+        encoder = local_encoder()
+        if not terms and not encoder:
+            return []
+        expression = " OR ".join('"' + term.replace('"', '""') + '"' for term in terms)
+        where = """conf_uid=? AND (enabled=1 OR (? AND status='superseded'))
+          AND (scope_level!='thread' OR (scope_id=? AND ?!=''))
+          AND (scope_level!='project' OR (scope_id=? AND ?!='' AND scope_id!=conf_uid))"""
+        args = (namespace, historical, history_uid, history_uid, project_id, project_id)
+        if cutoff:
+            where += """ AND substr(coalesce(json_extract(entry_json,'$.valid_from'),
+                             json_extract(entry_json,'$.created_at')),1,10) <= ?
+                         AND coalesce(nullif(substr(json_extract(entry_json,'$.valid_to'),1,10),''),'9999-12-31') > ?"""
+            args += (cutoff, cutoff)
+        elif not historical:
+            where += """ AND (nullif(json_extract(entry_json,'$.valid_from'),'') IS NULL
+                              OR julianday(json_extract(entry_json,'$.valid_from')) <= julianday('now'))
+                         AND (nullif(json_extract(entry_json,'$.valid_to'),'') IS NULL
+                              OR julianday(json_extract(entry_json,'$.valid_to')) > julianday('now'))"""
+        limit = max(plan.max_entries * 8, 1)
         with closing(self._connect()) as conn:
-            self._ensure_schema(conn)
-            if self._fts_available() and fts_query:
-                for row in conn.execute(
-                    """
-                    SELECT entry_id, bm25(memory_entries_fts) AS rank
-                    FROM memory_entries_fts
-                    WHERE conf_uid = ? AND memory_entries_fts MATCH ?
-                    LIMIT 80
-                    """,
-                    (namespace, fts_query),
-                ):
-                    entry_id = str(row["entry_id"])
-                    if entry_id not in entry_ids:
+            hits = {}
+            if terms:
+                rows = conn.execute(
+                    f"""SELECT entry_json,bm25(memory_entries_fts) rank FROM memory_entries m
+                    JOIN memory_entries_fts ON memory_entries_fts.rowid=m.rowid
+                    WHERE {where} AND memory_entries_fts MATCH ? ORDER BY rank,entry_id LIMIT ?""",
+                    (*args, expression, limit),
+                )
+                for row in rows:
+                    entry = json.loads(row["entry_json"])
+                    if not has_save_authorization(entry):
                         continue
-                    rank = float(row["rank"] or 0.0)
-                    scores[entry_id] = max(scores.get(entry_id, 0.0), 28.0 - rank)
+                    hits[entry["id"]] = MemorySearchHit(
+                        entry, 1.0 - row["rank"], ("fts",)
+                    )
+            if encoder:
+                predicate = f"AND EXISTS (SELECT 1 FROM memory_entries WHERE entry_id=s.id AND {where})"
+                for identity, score in vector_hits(
+                    conn,
+                    namespace,
+                    encoder,
+                    plan.query_text,
+                    0.48,
+                    limit,
+                    eligible_sql=predicate,
+                    eligible_args=args,
+                ).items():
+                    row = conn.execute(
+                        f"SELECT entry_json FROM memory_entries WHERE {where} AND entry_id=?",
+                        (*args, identity),
+                    ).fetchone()
+                    if row and has_save_authorization(json.loads(row[0])):
+                        previous = hits.get(identity)
+                        hits[identity] = MemorySearchHit(
+                            json.loads(row[0]),
+                            score + (previous.score if previous else 0),
+                            ("fts", "vector") if previous else ("vector",),
+                        )
+            return sorted(hits.values(), key=lambda h: (-h.score, h.entry["id"]))
 
-            like_terms = list(keyword_terms(query_text))[:8]
-            for term in like_terms:
-                pattern = f"%{term}%"
-                for row in conn.execute(
-                    """
-                    SELECT entry_id
-                    FROM memory_entries
-                    WHERE conf_uid = ?
-                      AND (
-                        content LIKE ?
-                        OR subject LIKE ?
-                        OR key LIKE ?
-                        OR memory_type LIKE ?
-                      )
-                    LIMIT 80
-                    """,
-                    (namespace, pattern, pattern, pattern, pattern),
-                ):
-                    entry_id = str(row["entry_id"])
-                    if entry_id in entry_ids:
-                        scores[entry_id] = scores.get(entry_id, 0.0) + 4.0
-
-        return scores
+    def search(self, entries, plan, *, namespace=""):
+        eligible = {self._entry_id(entry) for entry in entries}
+        return [
+            hit
+            for hit in self.lookup(namespace, plan)
+            if self._entry_id(hit.entry) in eligible
+        ]
 
     def _entry_row(self, namespace: str, entry: dict[str, Any]) -> dict[str, Any]:
         content = clean_text(str(entry.get("content") or ""), max_len=500)
@@ -315,20 +309,3 @@ class SQLiteMemoryIndex:
             ]
         )
         return hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()
-
-    def _namespace(self, namespace: str, entries: list[dict[str, Any]]) -> str:
-        namespace = (namespace or "").strip()
-        if namespace:
-            return namespace
-        for entry in entries:
-            scope_id = str(entry.get("scope_id") or "").strip()
-            if scope_id:
-                return scope_id
-        return ""
-
-    def _build_fts_query(self, query_text: str) -> str:
-        terms = list(keyword_terms(query_text))
-        if not terms:
-            return ""
-        quoted_terms = [f'"{term.replace(chr(34), chr(34) + chr(34))}"' for term in terms[:12]]
-        return " OR ".join(quoted_terms)

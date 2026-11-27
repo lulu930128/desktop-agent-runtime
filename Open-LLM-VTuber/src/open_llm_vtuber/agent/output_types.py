@@ -57,6 +57,7 @@ class SentenceOutput(BaseOutput):
     display_text: DisplayText  # Changed from str to DisplayText
     tts_text: str  # Text for TTS
     actions: Actions
+    speech_lane: bool = False  # Display already separated from the private footer.
 
     async def __aiter__(self):
         """Yield the sentence pair and actions"""

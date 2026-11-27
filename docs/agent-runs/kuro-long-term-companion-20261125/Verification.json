@@ -1,0 +1,121 @@
+{
+  "checked_at": "2026-11-25T18:09:17.937875+08:00",
+  "baseline_head": "c2b3e64c27caaec8c2cba5b213444ddce0d79e03",
+  "branch": "main",
+  "branch_ahead": 1,
+  "worktree": "Existing uncommitted Speech, Tool Discovery and Qt changes. Fingerprints identify the observed combined files, not attribution of every diff hunk.",
+  "bridge_job": "fb1ed63a-e6d5-471e-a957-6b6bf72c087f",
+  "contract_version": 2,
+  "tests": [
+    {
+      "cases": 241,
+      "result": "pass",
+      "command": "$env:QT_QPA_PLATFORM='offscreen'\n$env:PYTHONIOENCODING='utf-8'\n$env:PYTHONPATH=((Resolve-Path Open-LLM-VTuber/src).Path,(Resolve-Path Open-LLM-VTuber).Path,(Resolve-Path .).Path,(Resolve-Path tests).Path,(Resolve-Path Open-LLM-VTuber/tests).Path -join ';')\n$env:LOGURU_LEVEL='ERROR'\n.\\envs\\kuro-llm310\\python.exe -B -m unittest test_companion_memory test_mcp_m0_memory test_paos_local_memory_routing test_character_memory_manager test_japanese_exercise_history test_mcp_m0_discovery test_mcp_m0_integration test_mcp_m0_consumers test_mcp_m0_results test_multilingual_speech test_speech_semantic_alignment test_speech_vnext test_r4_history_transport test_g4_qt_core test_r1_history_parity test_history_list_owner test_qt_web_existing_window test_qt_web_transport test_qt_web_security test_qt_web_disposable test_kuro_core_store test_kuro_core_contracts"
+    },
+    {
+      "cases": 70,
+      "result": "pass",
+      "command": "$env:QT_QPA_PLATFORM='offscreen'\n$env:PYTHONIOENCODING='utf-8'\n$env:PYTHONPATH=((Resolve-Path Open-LLM-VTuber/src).Path,(Resolve-Path Open-LLM-VTuber).Path,(Resolve-Path .).Path,(Resolve-Path tests).Path,(Resolve-Path Open-LLM-VTuber/tests).Path -join ';')\n$env:LOGURU_LEVEL='ERROR'\n.\\envs\\kuro-llm310\\python.exe -B -m unittest test_g6_pet_boundary test_pet_lifecycle test_kuro_core_work_g1"
+    },
+    {
+      "cases": 29,
+      "result": "pass",
+      "command": "node --test tests/history_list_frontend.test.cjs tests/multilingual_speech_frontend.test.cjs tests/pet_native_frame.test.cjs tests/qt_display_history_frontend.test.cjs"
+    }
+  ],
+  "historical_nonpassing": [
+    "ERROR: test_graph_includes_actual_widget_observers_and_attributes (test_qt_web_w6.DryRunTests)",
+    "ERROR: test_inventory_is_blocked_and_preserves_owners (test_qt_web_w6.DryRunTests)",
+    "ERROR: test_w8_qt_gate_versions_drift_without_claiming_pet_or_native_pass (test_qt_web_w8.W8SourceGateTests)",
+    "FAIL: test_formal_entry_uses_reviewed_pin_and_retains_explicit_widgets_rollback (test_qt_web_w6.DryRunTests)",
+    "FAIL: test_current_signed_bundle_lineage_and_every_asset_reject_tampering (test_qt_web_w10.W10SourceTests)"
+  ],
+  "static_checks": [
+    "scoped git diff --check",
+    "Python ast.parse",
+    "ruff check --select F on the new modules and replay harnesses",
+    "UTF-8 and relative documentation links; JSON readback"
+  ],
+  "staging": {
+    "fingerprint": "85a8c575346ee9fd4d7582f261764d2bccafa53949b550c77f4f6161a619620e",
+    "manifest_sha256": "c2868781454da7c57ea2de18341ffcf7d10c33eb50b553c6bfdd90baae75fe27",
+    "adopted": false,
+    "qt_platform": "offscreen"
+  },
+  "production": {
+    "observed_listeners": {
+      "23456": 130300,
+      "23567": 124772,
+      "23569": 138072
+    },
+    "loaded_sha": null,
+    "loaded_model": null,
+    "new_auto_save_grants": 0,
+    "private_backfill": false,
+    "formal_migration": false,
+    "formal_qt_e2e": "unverified"
+  },
+  "file_sha256": {
+    "Open-LLM-VTuber/src/open_llm_vtuber/character_memory_manager.py": "b0a912ac34bd58c980fc045fd79c363a1ea94e84cd531c110d7964b1a2d40d3c",
+    "Open-LLM-VTuber/src/open_llm_vtuber/character_memory_repository.py": "77071c8975dfc43c16fbc5c730ca520f70df0be292e2dd96bab82eb2350cc8fb",
+    "Open-LLM-VTuber/src/open_llm_vtuber/character_memory_retriever.py": "5b756403f6b2e82c92678f594283de623f43fed2ed77191616c4aac777a614eb",
+    "Open-LLM-VTuber/src/open_llm_vtuber/character_memory_sql_index.py": "14fbde3806b0ea29a2d4915f4c86cc87e8e1536d21819050ae90c97d39b7350a",
+    "Open-LLM-VTuber/src/open_llm_vtuber/character_memory_lifecycle.py": "17dd6b12e9331671998aa095308d625a669133379112131a0495d72e1ea94c32",
+    "Open-LLM-VTuber/src/open_llm_vtuber/chat_history_manager.py": "c04164405a52e54b69292362468a7315bd1f9de5b6229304fb202c5e6065198e",
+    "Open-LLM-VTuber/src/open_llm_vtuber/chat_event_manager.py": "436438039f91d2ad4367091ae537028c5593fe81158af2abf8f27f7c148411cd",
+    "Open-LLM-VTuber/src/open_llm_vtuber/conversation_history_index.py": "920a0fad850f96dce326801a1fca0e89702c9a4ef2341eb27b0c63deaf8856a7",
+    "Open-LLM-VTuber/src/open_llm_vtuber/conversations/single_conversation.py": "b9dcc2e94b4c6799e167423e46988ba916ddcc8c3ed78a89c3ed8472c2c7db4d",
+    "Open-LLM-VTuber/src/open_llm_vtuber/agent/agents/basic_memory_agent.py": "bb6715208a10a3d3ab5f9a302c53cd5a61f705a01aaddb9bea16003757d6a89b",
+    "Open-LLM-VTuber/src/open_llm_vtuber/memory_episode.py": "faf986f2ca86d8a24929614b67ce4389a13791da07403c20e147b15ba3d91189",
+    "Open-LLM-VTuber/src/open_llm_vtuber/memory_formation.py": "b829a68588a4d73bc1b48c5ea633ec4c9dcb4815845694cff9460b51c3a8ebdf",
+    "Open-LLM-VTuber/src/open_llm_vtuber/memory_maintenance.py": "c1d418420e163f38c022f2bb88aa5a6c7c8a4cee3501f9a73856dda3bbc8de84",
+    "Open-LLM-VTuber/src/open_llm_vtuber/memory_semantics.py": "f150069f2ca5004563167eba2a31fa8f4aba0a0d57b3d5b0512c79eb2100ea23",
+    "Open-LLM-VTuber/requirements-companion.txt": "6d1af0c5dd7bae0c7edbd1619935c312264a55a476e4570f6c1abd6a154db065",
+    "Open-LLM-VTuber/tests/test_companion_memory.py": "a58f15a012730e25e1639e749e854b52d997f2cb3642fe85d319c404b87577a2",
+    "Open-LLM-VTuber/tests/test_character_memory_manager.py": "feb8708545b0e9407c1c0eca588a5bbe7188e45605a65773fe697b0c248fea18",
+    "kuro_launcher/qt_web_adapter.py": "d280ff712cf0ac5910539a47ae6bd980a6cfe5cf5b1ae52ab36b314d6c6fa152",
+    "kuro_launcher/qt_web_host.py": "414ff167fa0faa7df5f350f2bd6f28c6f5d597445976f6606b88c621bd468505",
+    "kuro_launcher/qt_web_protocol.py": "c924d0b0d9a5ae92e700b27c2e62ed96f81ec84a615380163448eac3517fab28",
+    "kuro_launcher/qt_controller.py": "eaf5e56c8eeca15e6ab5f3106d3b0eea841e0c80f423254dff927444ddce4dd4",
+    "devtools/original-git-web-host-20261010/frontend/work-panel-history.patch": "294c8f57de86d856761975f3311cc6d8f2e73dc8f4f8dc56168d3025c393f77c",
+    "devtools/original-git-web-host-20261010/frontend/work-panel-history.cjs": "6a97e52ecdb9eaeecb366fb67cd866969802388f65bf6677d664ca4485f70fb2",
+    "docs/architecture/DataLineage.md": "3cc46dea65456525fb06887f99db3b8ded278a3fd722ea9dfb0fdd45d10c0c81",
+    "docs/agent-runs/mcp-trust-security-m0/Contract.md": "c76a1624c2934e8157333281e0958e34894f4e774dcc6be5c04bef3254f51b12"
+  },
+  "evidence_sha256": {
+    "Baseline.json": "39d7d91433c09fc4444c8e8d027a40f7d573f479dc80724feb557cec13db5f6e",
+    "Benchmark.json": "a196ef1a05b849b9e1bc96588178e8b0248177507f60fab549f878d75a2dd7a3",
+    "Contract-v2.md": "9d4044b728c7a76205797d288c14591036147e630acc6dbc4ca460d903a1dc6b",
+    "Evidence.md": "0d73a33f19168595761a3674ff503a9a6fcb5251b655e0a646713d404e0d90aa",
+    "FinalQuality.json": "a520d12be6263674a4c6db13b4507a1062f09b60b55e66bde9b0e159827401cb",
+    "Formation.json": "3e63637fadc6009e9aee73fc804e8478118795122950a80b7c1ba4062f3a45ae",
+    "formation_replay.py": "9cb82c4a1b2b6595ef009952ffc815ab69e741f1fb73a202ff8f68b9f8c2ec1c",
+    "hot_path_replay.py": "627858f038efec56c0150f9af5601ddd8f035359ffb881475cd286a135370662",
+    "HotPath.json": "785d486334c998555c331e21854dd866259d498d778bd42032ca45371c7f64f2",
+    "LoCoMo-current.json": "1fa548c34415c6834caa593a89e58bc2a6d7e10da01b0f2840ac9ee75bb500a6",
+    "LoCoMo.json": "6fded62237a02ae025b96a0623c5561c9ac03c0d74de4b9982992ba637bf1935",
+    "locomo_replay.py": "52a7d5cc03a84f451b33f30bad8939f74fff3db3ea5f69e56ea766169b902468",
+    "Longitudinal.json": "158c375d93d5443532ccad85dbdb41f5ae0bf2db87dbce3cb4254a2b6c57997b",
+    "Migration.json": "6a4b32b10b6802dab7407ae87df031bfd2c85c509b134aae4cb6520a87212f7d",
+    "migration_replay.py": "382228e81a29c63838fe2b94a1956ff66618dc970183d12e2f749145e26f6296",
+    "ModelFinal.json": "8167303bb0eeab44ef9a5e470d69f1da80e5ec5d0062bd63335c22eeadfef097",
+    "Plan.md": "d4ba750ea60fe9e21a59561859d9d4194e58b7c1a620f15fd166cba6c2b982ca",
+    "Progress.md": "25cb549669d35bc06b1fd763b46ed17648cd9539e3577090ab2ec4db8e63a1c6",
+    "PublicEvaluation.json": "9005cee0f7c570c9f49ed3d9b667fbe2db5a19157100dd63898543c63a10827c",
+    "PublicFinal.json": "15059c38032fbde6e611cc612e4f9a30e8b62a24ff817d0aee873cb91f3f3976",
+    "qt_panel_replay.py": "9043355bb73d496d7a0255c4b0254f8b1958801dab265299b1a2d7cc715b4631",
+    "qt_runtime_replay.py": "8901f57a8ffd2758ab1ba70bff02937fddcdff22608dfc84b793bb314ba682e0",
+    "QtModelSwap.json": "74660d743091bf34174529becb30852dd090c0dbac8517c08879cca7889f7802",
+    "QtPanel.json": "620b9e558e5f129edac0d55684d7dad1a56c99c334277d6924217b2f425420ea",
+    "QtReplay.json": "d7c1f7681807b2f39f0c7638f0dd5fba6f9018acaaa9c10969fc6d3423e6665c",
+    "Quality.json": "d8de1cc0d1f882b78e5e66eace82800acd5a9c6de11a19d5bf198ad16ed3808b",
+    "quality_replay.py": "8565e6ae962e1dce28bccd91a80dc9ccf4dd721158edbb1a86c365c5bb96661c",
+    "replay.py": "06e95d1868fbb8c97049e5f0f87173008776ce88e015f9e8bdb92fda7606dd62",
+    "Runbook.md": "121f7829884ec53b69ad8801a3233a0b2a24e8ab596f9650c64b1cf52c63cc7f",
+    "semantic_scale.py": "2941f0375a8984b3d2b4c48ab38f329a16f5c939ec702c4ef7a68254b2a8b5c5",
+    "SemanticScale.json": "52e2698493f37b62ba94782bc9a67edaa2a5662f476186b1d7a0052b884e47f3",
+    "SemanticScaleOptimized.json": "d816a9c4083b4bc388b9e8b9634639d36030da837608452d62ebbacc4b5d9f1a",
+    "SourceBaseline.json": "2ce9468e292a29851514db42e14b48cb39ad4bbb3d805c617a468ef5dd3a8a7a",
+    "Streaming.json": "b4290b1f31b94f6cde3ca768cc63a30c69b5b5080da70c4bc09895fee16bcef3"
+  }
+}

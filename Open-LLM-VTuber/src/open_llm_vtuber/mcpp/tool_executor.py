@@ -1,4 +1,6 @@
 import json
+import hashlib
+from contextlib import asynccontextmanager
 import datetime
 import asyncio
 from .privacy import argument_summary, project, safe_text, secret_values
@@ -17,7 +19,7 @@ from typing import (
 
 from .types import ToolCallObject
 from .mcp_client import MCPClient
-from .tool_manager import ToolManager
+from .tool_manager import ToolManager, ToolSelection, DISCOVERY
 from .tool_policy_manager import ToolPolicy, ToolPolicyDecision
 from .tool_catalog_manager import normalize_thinking_power
 
@@ -32,7 +34,17 @@ class ToolExecutor:
         self._mcp_client = mcp_client
         self._tool_manager = tool_manager
         self._tool_policy = ToolPolicy.load_default()
+        self._turn_lock = asyncio.Lock()
         self._thinking_power = normalize_thinking_power(thinking_power)
+
+    @asynccontextmanager
+    async def turn_session(self):
+        # SDK HTTP/stdio transports must leave their AnyIO scopes in the task that entered them.
+        async with self._turn_lock, self._mcp_client:
+            yield
+
+    def inventory(self):
+        return self._tool_manager.inventory(self._tool_policy)
 
     def parse_tool_call(self, call: Union[Dict[str, Any], ToolCallObject]) -> tuple:
         """Parse tool call from different formats.
@@ -144,7 +156,7 @@ class ToolExecutor:
                     args_dict = json.loads(arguments_str)
                     parsed_tools.append(
                         {
-                            "name": tool_name if tool_name.startswith(canonical_id(server, "_")[:-1]) else canonical_id(server, tool_name),
+                            "name": DISCOVERY if tool_name == DISCOVERY else tool_name if tool_name.startswith(canonical_id(server, "_")[:-1]) else canonical_id(server, tool_name),
                             "server": server,
                             "args": args_dict,
                             "id": f"prompt_tool_{len(parsed_tools)}",
@@ -165,9 +177,12 @@ class ToolExecutor:
         self,
         tool_calls: Union[List[Dict[str, Any]], List[ToolCallObject]],
         caller_mode: Literal["Claude", "OpenAI", "Prompt"],
+        selection: ToolSelection | None = None,
     ) -> AsyncIterator[Dict[str, Any]]:
         """Execute tools and yield status updates."""
         tool_results_for_llm = []
+        market_evidence = False
+        advertised = set(selection.names) if selection else set()
 
         logger.info(f"Executing {len(tool_calls)} tool(s) for {caller_mode} caller.")
         for call in tool_calls:
@@ -183,6 +198,7 @@ class ToolExecutor:
             logger.info("Executing tool call; payload omitted.")
 
             if parse_error:
+                result_content = "schema_invalid: " + str(result_content)
                 logger.warning('Skipping tool call due to parsing error; payload details omitted.')
                 status_update = {
                     "type": "tool_call_status",
@@ -190,6 +206,8 @@ class ToolExecutor:
                     or f"parse_error_{datetime.datetime.now(datetime.timezone.utc).isoformat()}",
                     "tool_name": tool_name or "Unknown Tool",
                     "status": "error",
+                    "outcome": "schema_invalid",
+                    "reason_code": "invalid_arguments",
                     "content": result_content,
                     "timestamp": datetime.datetime.now(
                         datetime.timezone.utc
@@ -209,6 +227,21 @@ class ToolExecutor:
                     tool_results_for_llm.append(formatted_result)
                 continue  # Skip execution logic for this call
 
+            if selection and tool_name in (DISCOVERY, "kuro::" + DISCOVERY):
+                try:
+                    discovery = await selection.discover(tool_input, self._tool_policy)
+                    is_error = discovery["status"] != "discovered"
+                except SchemaError as exc:
+                    discovery = {"status": "schema_invalid", "diagnostics": exc.diagnostics}
+                    is_error = True
+                summary = json.dumps(discovery, ensure_ascii=False)
+                yield {"type": "tool_call_status", "tool_id": tool_id, "tool_name": DISCOVERY,
+                       "status": "error" if is_error else "completed", "reason_code": discovery["status"],
+                       "call_summary": argument_summary(tool_input),
+                           "content": safe_text(summary, limit=2048) if is_error else str(discovery.get("loaded", []))}
+                tool_results_for_llm.append(self.format_tool_result(caller_mode, tool_id, summary, is_error))
+                continue
+
             api_tool_name = tool_name
             tool_name = self._tool_manager.resolve_tool_name(tool_name)
             if tool_name != api_tool_name:
@@ -218,7 +251,17 @@ class ToolExecutor:
 
             tool_input = self._apply_thinking_power(tool_name, tool_input)
 
-            policy_decision = self.check_call(tool_name, tool_input)
+            policy_decision = self.check_call(tool_name, tool_input, tool_id=tool_id)
+            if selection and tool_name not in advertised:
+                policy_decision = ToolPolicyDecision(False, "blocked", "Load the tool with kuro_discover first.", "tool_not_loaded")
+            # A new request UUID does not make a repeated unknown write safe.
+            operation_args = {k: v for k, v in tool_input.items()
+                              if k not in {"operationId", "operation_id", "requestId", "request_id",
+                                           "idempotencyKey", "idempotency_key"}} if isinstance(tool_input, dict) else tool_input
+            operation = (tool_name, hashlib.sha256(json.dumps(operation_args, sort_keys=True,
+                         ensure_ascii=True).encode()).hexdigest())
+            if selection and operation in selection.uncertain:
+                policy_decision = ToolPolicyDecision(False, "blocked", "Outcome unknown. Read the owner's receipt with the original identity.", "result_unknown")
             if not policy_decision.allowed:
                 logger.warning("Tool call blocked by runtime policy: {}", policy_decision.reason_code)
                 status_update = {
@@ -226,6 +269,8 @@ class ToolExecutor:
                     "tool_id": tool_id,
                     "tool_name": tool_name if self._tool_manager.get_tool(tool_name) else "Unavailable tool",
                     "status": policy_decision.status,
+                    "outcome": ("schema_invalid" if policy_decision.reason_code in ("invalid_arguments", "schema_changed")
+                                else "result_unknown" if policy_decision.reason_code == "result_unknown" else "policy_denied"),
                     "reason_code": policy_decision.reason_code,
                     "content": policy_decision.reason,
                     "timestamp": datetime.datetime.now(
@@ -237,7 +282,7 @@ class ToolExecutor:
                 formatted_result = self.format_tool_result(
                     caller_mode,
                     tool_id,
-                    f"Tool call blocked by runtime policy: {policy_decision.reason}",
+                    f"{status_update['outcome']} ({policy_decision.reason_code}): {policy_decision.reason}",
                     True,
                 )
                 if formatted_result:
@@ -270,6 +315,12 @@ class ToolExecutor:
                 raise
 
             # Determine content for status update and LLM result format
+            if metadata.get("uncertain") and selection:
+                # Only the owner's explicit read-only annotation can rule out a write.
+                info = self._tool_manager.get_tool(tool_name)
+                if info and not info.read_only:
+                    selection.uncertain.add(operation)
+            market_evidence |= tool_name.startswith("omi-search::") and not is_error
             status_content = safe_text(text_content, limit=2048)
             llm_formatted_content = text_content  # Default to text content for LLM
 
@@ -284,13 +335,38 @@ class ToolExecutor:
                 "status": "error" if is_error else "completed",
                 "execution_status": metadata.get("execution_status", "failed" if is_error else "succeeded"),
                 "reason_code": metadata.get("reason_code", ""),
+                "call_summary": argument_summary(tool_input),
                 "content": safe_text(status_content, limit=2048)
                 if not is_error
                 else safe_text(f"Error: {text_content}", limit=2048),
                 "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             }
 
-            if legacy_name(tool_name) in {"omi.ask", "omi.ask_stream"}:
+            reason = metadata.get("reason_code", "")
+            if metadata.get("uncertain"):
+                outcome = "result_unknown"
+            elif not is_error:
+                outcome = "actual_success"
+            elif reason in ("source_auth_denied", "http_tool_denied"):
+                outcome = "policy_denied"
+            elif reason in ("schema_changed", "invalid_arguments", "output_schema_invalid"):
+                outcome = "schema_invalid"
+            elif reason in ("timeout", "discovery_timeout", "transport_offline"):
+                outcome = "timeout" if "timeout" in reason else reason
+            else:
+                outcome = reason or "tool_error"
+            status_update["outcome"] = outcome
+            if is_error:
+                prefix = f"{outcome} ({reason or 'no_receipt'}). "
+                if isinstance(llm_formatted_content, list):
+                    llm_formatted_content = [{"type": "text", "text": prefix}, *llm_formatted_content]
+                else:
+                    llm_formatted_content = prefix + llm_formatted_content
+
+            if "practice_readback" in metadata:
+                status_update["practice_readback"] = metadata["practice_readback"]
+
+            if tool_name == "omi-search::omi_ask":
                 from .market_preflight import build_omi_evidence_snapshot
                 evidence = metadata.get("omi_evidence") or build_omi_evidence_snapshot(text_content)
                 if evidence:
@@ -315,9 +391,22 @@ class ToolExecutor:
         logger.info(
             f"Finished executing tools with {len(tool_results_for_llm)} results."
         )
-        yield {"type": "final_tool_results", "results": tool_results_for_llm}
+        yield {"type": "final_tool_results", "results": tool_results_for_llm, "market_evidence": market_evidence}
 
-    def check_call(self, tool_name: str, tool_input: Any) -> ToolPolicyDecision:
+    def _log_schema_error(self, info, tool_id: str, exc: SchemaError, identity: str) -> None:
+        if exc.code != "invalid_arguments":
+            return
+        payload = {
+            "tool_identity": safe_text(identity, limit=160),
+            "tool_alias": safe_text(info.api_name, limit=160),
+            "call_id": safe_text(tool_id, limit=160),
+            "schema_digest": info.schema_digest or schema_digest(info.input_schema),
+            "reason_code": exc.code,
+            "diagnostics": exc.diagnostics,
+        }
+        logger.warning("Tool argument schema validation failed: {}", json.dumps(payload, ensure_ascii=True, separators=(",", ":")))
+
+    def check_call(self, tool_name: str, tool_input: Any, *, tool_id: str = "") -> ToolPolicyDecision:
         info = self._tool_manager.get_tool(tool_name)
         if not info:
             return ToolPolicyDecision(False, "blocked", "Tool is unavailable in this tool snapshot.", "tool_unavailable")
@@ -325,15 +414,21 @@ class ToolExecutor:
         policy = getattr(self, "_tool_policy", None)
         if policy is None:
             return ToolPolicyDecision(False, "blocked", "Policy unavailable.", "policy_unavailable")
-        decision = policy.check(identity, tool_input)
-        if not decision.allowed:
-            return decision
         try:
             if info.schema_digest and schema_digest(info.input_schema) != info.schema_digest:
                 raise SchemaError("schema_changed")
+            tool_input = policy.prepare_arguments(identity, tool_input, info.input_schema)
+            decision = policy.check(identity, tool_input)
+            if not decision.allowed:
+                return ToolPolicyDecision(False, decision.status,
+                                          decision.reason + policy.argument_hint(identity), decision.reason_code)
             validate_arguments(info.input_schema, tool_input)
         except SchemaError as exc:
-            return ToolPolicyDecision(False, "blocked", exc.code, exc.code)
+            self._log_schema_error(info, tool_id, exc, identity)
+            hint = policy.argument_hint(identity) if exc.code == "invalid_arguments" else ""
+            if exc.code == "invalid_arguments":
+                hint = " " + json.dumps(list(exc.diagnostics), separators=(",", ":")) + hint
+            return ToolPolicyDecision(False, "blocked", exc.code + hint, exc.code)
         return decision
 
     async def run_single_tool(
@@ -357,16 +452,11 @@ class ToolExecutor:
 
         if tool_info:
             identity = tool_info.canonical_id or canonical_id(tool_info.related_server, tool_info.wire_name or legacy_name(tool_name))
-            decision = self._tool_policy.check(identity, tool_input) if self._tool_policy else None
+            decision = self.check_call(tool_name, tool_input, tool_id=tool_id)
             if decision is None or not decision.allowed:
                 text = decision.reason if decision else "Policy unavailable."
                 return True, text, {}, [{"type": "text", "text": text}]
-            try:
-                if tool_info.schema_digest and schema_digest(tool_info.input_schema) != tool_info.schema_digest:
-                    raise SchemaError("schema_changed")
-                validate_arguments(tool_info.input_schema, tool_input)
-            except SchemaError as exc:
-                return True, exc.code, {}, [{"type": "text", "text": exc.code}]
+            tool_input = self._tool_policy.prepare_arguments(identity, tool_input, tool_info.input_schema)
 
         if not tool_info:
             logger.error("Tool unavailable in ToolManager.")
@@ -400,7 +490,22 @@ class ToolExecutor:
                     content_items = project(result_dict.content_items, secrets=secrets)
                     metadata = {"execution_status": result_dict.status, "reason_code": result_dict.reason_code,
                                 "claude_content": result_dict.claude_content(secrets=secrets, limit=65536 if legacy_name(identity).startswith("omi.") else 128*1024)}
-                    if legacy_name(identity) in {"omi.ask", "omi.ask_stream"}:
+                    metadata["uncertain"] = (not tool_info.read_only and result_dict.may_have_executed and
+                        (result_dict.status == "unknown" or result_dict.reason_code in ("result_too_large", "output_schema_invalid")))
+                    if identity == "japanese-study::study_get_practice_session" and not is_error:
+                        result = result_dict.structured_content
+                        session = result.get("session") if isinstance(result, dict) else None
+                        if (isinstance(session, dict) and result.get("ok") is True
+                                and session.get("session_id") == tool_input.get("sessionId")
+                                and session.get("submission_id")):
+                            metadata["practice_readback"] = {
+                                "session_id": session["session_id"],
+                                "submission_id": session["submission_id"],
+                            }
+                    if metadata["uncertain"]:
+                        text_content += " Outcome unknown. Read back with the original operation identity; do not resend."
+                        metadata["claude_content"].append({"type": "text", "text": "Read back the original operation before retrying."})
+                    if identity == "omi-search::omi_ask":
                         from .market_preflight import build_omi_evidence_snapshot
                         source_text = json.dumps(project(result_dict.structured_content, secrets=secrets), ensure_ascii=False) if result_dict.structured_content is not None else text_content
                         metadata["omi_evidence"] = build_omi_evidence_snapshot(source_text)
@@ -415,12 +520,14 @@ class ToolExecutor:
 
             except (ValueError, RuntimeError, ConnectionError):
                 logger.error("Tool execution failed; raw exception omitted.")
-                text_content = "Tool execution failed; outcome is unknown."
+                metadata = {"execution_status": "unknown", "reason_code": "result_unknown", "uncertain": True}
+                text_content = "Tool execution failed; outcome is unknown. Read the original receipt."
                 content_items = [{"type": "error", "text": text_content}]
                 is_error = True
             except Exception:
                 logger.error("Tool execution failed; raw exception omitted.")
-                text_content = "Tool execution failed; outcome is unknown."
+                metadata = {"execution_status": "unknown", "reason_code": "result_unknown", "uncertain": True}
+                text_content = "Tool execution failed; outcome is unknown. Read the original receipt."
                 content_items = [{"type": "error", "text": text_content}]
                 is_error = True
 

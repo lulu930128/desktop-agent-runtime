@@ -1,0 +1,130 @@
+{
+  "utc": "2026-11-23T08:31:47.292032+00:00",
+  "matched_every_recorded_round": true,
+  "schemas": {
+    "kuro_discover": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "load": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "refresh": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "project-workspace__read_file_3da1317c2308bae15ab1": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "description": "Configured root id. Defaults to projects."
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "File path relative to the workspace root."
+        },
+        "startLine": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "1-based starting line. Defaults to 1."
+        },
+        "maxLines": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20000,
+          "description": "Maximum lines to return."
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "text",
+            "binary"
+          ]
+        },
+        "delivery": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "inline",
+            "resource"
+          ]
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "snapshotId": {
+          "type": "string"
+        },
+        "includeSha256": {
+          "type": "boolean",
+          "description": "Hash the complete source bytes using bounded buffers. For a background capture, obtain archiveSha256 from the ready transfer."
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "english-study__english_search_reference_ent_d1117d9f5a12b83dbdf5": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "sourceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "partOfSpeech": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false,
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    }
+  },
+  "sha256": {
+    "kuro_discover": "4750c77f07dfb942d27921b1d34abd2ee7fee3f34d2d0e5d7c1cf33572b34d6c",
+    "project-workspace__read_file_3da1317c2308bae15ab1": "0fed668970f21c5891eadb8787b985041a15d7351c75607a254d4d9019494cff",
+    "english-study__english_search_reference_ent_d1117d9f5a12b83dbdf5": "c0f5f16a053d4046bfd8a2d63b2fab5590184caa879cb2c336d76eb33c916609"
+  }
+}

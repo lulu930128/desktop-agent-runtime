@@ -349,12 +349,13 @@ def start_llm(cfg: AppConfig, logger_cb, *, logs_root: Path, run_id: str) -> Man
     env["OPEN_LLM_VTUBER_CONFIG"] = str(cfg.runtime_conf_path)
     env["KURO_LAUNCHER_LOGS_DIR"] = str(Path(logs_root).resolve())
     env["KURO_MEMORY_ROOT"] = str((Path(cfg.open_llm_dir) / "memories").resolve())
+    env["KURO_LAUNCHER_SETTINGS_FILE"] = str(cfg.config_path.resolve())
 
     _probe_llm_import(python_llm, Path(cfg.open_llm_dir), env, logger_cb)
 
     # 讓 launcher 起的 python 優先 import repo 版本（避免吃到 site-packages 舊版）
     repo_src = str(Path(cfg.open_llm_dir) / "src")
-    env["PYTHONPATH"] = repo_src + os.pathsep + env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = os.pathsep.join((repo_src, str(cfg.root), env.get("PYTHONPATH", "")))
 
     # （可選，但強烈建議）避免子程序輸出日文炸 cp950
     env["PYTHONUTF8"] = "1"

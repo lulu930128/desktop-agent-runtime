@@ -1,0 +1,2 @@
+# Optional offline companion encoder. The runtime's numpy and onnxruntime remain required.
+tokenizers==0.22.1

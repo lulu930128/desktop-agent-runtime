@@ -1,0 +1,115 @@
+{
+  "tools": {
+    "project-workspace::workspace_info": {
+      "mode": "read_only",
+      "category": "filesystem"
+    },
+    "project-workspace::list_dir": {
+      "mode": "read_only",
+      "category": "filesystem",
+      "path_args": [
+        "path"
+      ],
+      "allow_hidden": false
+    },
+    "project-workspace::find_files": {
+      "mode": "read_only",
+      "category": "filesystem",
+      "path_args": [
+        "path"
+      ],
+      "allow_hidden": false
+    },
+    "project-workspace::search_text": {
+      "mode": "read_only",
+      "category": "filesystem",
+      "path_args": [
+        "path"
+      ],
+      "allow_hidden": false
+    },
+    "project-workspace::read_file": {
+      "mode": "read_only",
+      "category": "filesystem",
+      "path_args": [
+        "path"
+      ],
+      "allow_hidden": false
+    },
+    "project-workspace::read_files": {
+      "mode": "read_only",
+      "category": "filesystem",
+      "path_args": [
+        "files[].path"
+      ],
+      "allow_hidden": false
+    },
+    "project-workspace::project_context": {
+      "mode": "read_only",
+      "category": "filesystem",
+      "path_args": [
+        "project"
+      ],
+      "allow_hidden": false
+    },
+    "omi-search::omi_ask": {
+      "mode": "read_only",
+      "category": "market_intelligence",
+      "deny_present_args": [
+        "caller_profile",
+        "allow_llm",
+        "allow_write",
+        "allow_external_fetch",
+        "scope_type",
+        "scope_id",
+        "query"
+      ],
+      "allow_values": {
+        "mode": [
+          "data_only"
+        ],
+        "refresh_if_missing": [
+          false
+        ],
+        "contract_version": [
+          "omi.decision.v4"
+        ]
+      },
+      "max_numeric_args": {
+        "tool_budget.max_calls": 5,
+        "tool_budget.max_external_fetches": 0,
+        "tool_budget.max_total_seconds": 25
+      }
+    }
+  },
+  "filesystem": {
+    "deny_path_patterns": [
+      "*.env",
+      "*.env.*",
+      "*/.env",
+      "*/.env.*",
+      "*.pem",
+      "*.key",
+      "*.pfx",
+      "*.p12",
+      "*id_rsa*",
+      "*id_ed25519*",
+      "*api_key*",
+      "*apikey*",
+      "*secret*",
+      "*password*",
+      "*credential*",
+      "*/AppData/Local/Google/Chrome/User Data/*",
+      "*/AppData/Local/Microsoft/Edge/User Data/*",
+      "*/AppData/Roaming/Mozilla/Firefox/Profiles/*",
+      "*/Cookies",
+      "*/Login Data"
+    ],
+    "deny_path_parts": [
+      ".git",
+      ".ssh",
+      ".gnupg",
+      "keyrings"
+    ]
+  }
+}

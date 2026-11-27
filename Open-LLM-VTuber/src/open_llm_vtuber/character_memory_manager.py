@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import sqlite3
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -9,12 +10,13 @@ from typing import Any, Literal, TypedDict
 
 from loguru import logger
 
-from .character_memory_repository import CharacterMemoryRepository
-from .character_memory_retriever import CharacterMemoryRetriever
+from .character_memory_repository import CharacterMemoryRepository, memory_namespaces, store_lock
+from .memory_formation import read_policy, semantic_spans
+from .character_memory_retriever import CharacterMemoryRetriever, MemorySearchHit, query_cutoff, query_terms, suppressed_turn_ids
 from .character_memory_sql_index import SQLiteMemoryIndex
 from .mcpp.privacy import safe_text
 from .character_memory_lifecycle import (
-    authorize, review_digest, entry_status as lifecycle_status,
+    authorize, has_save_authorization, review_digest, entry_status as lifecycle_status,
     is_active_memory as lifecycle_active,
 )
 
@@ -119,6 +121,7 @@ SENSITIVE_PATTERNS = [
 
 SOURCE_PRIORITY = {
     "manual": 105,
+    "user_statement": 75,
     "explicit": 100,
     "tool_verified": 90,
     "assistant_outcome_confirmed": 82,
@@ -128,11 +131,21 @@ SOURCE_PRIORITY = {
 }
 
 _MEMORY_REPOSITORY = CharacterMemoryRepository()
-_MEMORY_RETRIEVER = CharacterMemoryRetriever(index=SQLiteMemoryIndex())
+_MEMORY_INDEX = SQLiteMemoryIndex(repository=_MEMORY_REPOSITORY)
+_MEMORY_RETRIEVER = CharacterMemoryRetriever(index=_MEMORY_INDEX)
+
+
+def _at_or_after(observed: str, previous: str) -> bool:
+    try:
+        when = datetime.fromisoformat(observed)
+        before = datetime.fromisoformat(previous)
+        return when.tzinfo is not None and before.tzinfo is not None and when >= before
+    except (TypeError, ValueError):
+        return False
 
 
 def _now_iso() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    return datetime.now().astimezone().isoformat(timespec="microseconds")
 
 
 def _memory_root() -> Path:
@@ -159,7 +172,7 @@ def _save_store(conf_uid: str, data: dict[str, Any]) -> None:
     _MEMORY_REPOSITORY.save(conf_uid, data)
     # The index is derived; synchronize deletes and disables, including the last row.
     try:
-        _MEMORY_RETRIEVER.sync(conf_uid, data.get("entries", []))
+        _MEMORY_INDEX.refresh(conf_uid)
     except Exception:
         logger.warning("Memory index refresh deferred; retrieval will retry from canonical data.")
 
@@ -295,6 +308,8 @@ def infer_memory_delete_plan(user_text: str) -> MemoryDeletePlan:
     if not normalized:
         return MemoryDeletePlan()
 
+    if re.search(r"(さっき|前の話|直前|前のターン).*(忘れて|覚えないで)",text):
+        return MemoryDeletePlan(action="disable_recent_turn",skip_write=True,reasons=["previous user turn"])
     skip_write = any(
         term in normalized
         for term in [
@@ -328,10 +343,14 @@ def infer_memory_delete_plan(user_text: str) -> MemoryDeletePlan:
             skip_write=True,
             reasons=["user asked not to write this turn"],
         )
+    if has_forget and not re.match(
+            r"^(?:請|幫我|請幫我|麻煩|please\s+)?(?:忘記|刪掉|刪除|清空|移除|不要再記得|forget\b|delete\b|remove\b|clear\b)",
+            text, re.I):
+        return MemoryDeletePlan()
     if not has_forget:
         return MemoryDeletePlan()
 
-    if any(term in normalized for term in ["剛剛", "上一輪", "這一輪", "剛才", "lastturn"]):
+    if any(term in normalized for term in ["剛剛", "上一輪", "這一輪", "剛才", "lastturn","previousturn","whatijustsaid"]):
         return MemoryDeletePlan(
             action="disable_recent_turn",
             skip_write=True,
@@ -654,22 +673,6 @@ def build_memory_write_plan(
     return MemoryWritePlan(candidates=candidates, reasons=reasons)
 
 
-def _extract_forget_target(user_text: str) -> str:
-    text = _clean_text(user_text, max_len=500)
-    if not re.search(r"(忘記|忘掉|刪掉|刪除|移除)", text):
-        return ""
-    if "記憶" not in text and "記住" not in text:
-        return ""
-    if re.search(r"(全部|所有|所有的|全部的).{0,8}記憶", text):
-        return "__all__"
-    target = _extract_after_marker(
-        text,
-        ["忘記", "忘掉", "刪掉", "刪除", "移除"],
-    )
-    target = re.sub(r"(這個|這段|記憶|長期記憶|關於)", "", target)
-    return _clean_text(target, max_len=120).strip(" 的。.!！?？")
-
-
 def _find_existing(entries: list[dict[str, Any]], content: str) -> dict[str, Any] | None:
     target = _normalize(content)
     if not target:
@@ -681,14 +684,6 @@ def _find_existing(entries: list[dict[str, Any]], content: str) -> dict[str, Any
             continue
         if existing == target:
             return entry
-        if len(target) > 16 and (target in existing or existing in target):
-            return entry
-
-    if content.startswith("使用者希望被稱呼為"):
-        for entry in entries:
-            if str(entry.get("content") or "").startswith("使用者希望被稱呼為"):
-                return entry
-
     return None
 
 
@@ -706,9 +701,12 @@ def _upsert_memory(
     key: str = "",
     evidence: dict[str, Any] | None = None,
     status: MemoryStatus = "active",
+    scope_id: str = "",
+    auto_rule: dict | None = None,
 ) -> bool:
     entries: list[dict[str, Any]] = store["entries"]
-    if source not in {"manual", "explicit"}:
+    automatic = source == "user_statement" and auto_rule is not None
+    if source not in {"manual", "explicit"} and not automatic:
         status = "pending_confirmation"
     if not subject or not key:
         default_subject, default_key = _default_subject_key(
@@ -719,13 +717,20 @@ def _upsert_memory(
         subject = subject or default_subject
         key = key or default_key
 
-    existing = _find_existing(entries, content)
+    scope_id = scope_id or str(store.get("conf_uid") or "")
+    existing = _find_existing([e for e in entries if _entry_scope_level(e) == scope_level
+                               and e.get("scope_id") == scope_id
+                               and (subject != "experience" or e.get("key") == key)], content)
     now = _now_iso()
     enabled = status == "active"
     if existing:
+        if evidence and evidence.get("turn_id") and (existing.get("evidence") or {}).get("turn_id") == evidence["turn_id"]:
+            return False
         # Repeated claims are no authority to edit a prior decision or provenance.
         # Retain the existing record byte-for-byte; its ID remains the reference.
-        if source not in {"manual", "explicit"}:
+        if _is_active_memory(existing) and existing.get("source") == source:
+            return False
+        if source not in {"manual", "explicit"} or _source_priority(source) < _source_priority(str(existing.get("source"))):
             return False
         changed = False
         existing_source = str(existing.get("source") or "unknown")
@@ -758,7 +763,7 @@ def _upsert_memory(
     supersedes: list[str] = []
     conflicts_with: list[str] = []
     conflict = _find_conflicting_memory(
-        entries,
+        [e for e in entries if e.get("scope_id") == scope_id],
         content=content,
         scope_level=scope_level,
         subject=subject,
@@ -770,10 +775,12 @@ def _upsert_memory(
         can_supersede = (
             status == "active"
             and _source_priority(source) >= _source_priority(existing_source)
+            and (not automatic or _at_or_after((evidence or {}).get("observed_at",""), conflict.get("valid_from","")))
         )
         if can_supersede:
             conflict["enabled"] = False
             conflict["status"] = "superseded"
+            conflict["valid_to"] = (evidence or {}).get("observed_at") or now
             conflict["updated_at"] = now
             supersedes.append(conflict_id)
         else:
@@ -786,7 +793,10 @@ def _upsert_memory(
             "id": uuid.uuid4().hex,
             "scope": "character",
             "scope_level": scope_level,
-            "scope_id": str(store.get("conf_uid") or ""),
+            "scope_id": scope_id,
+            "valid_from": (evidence or {}).get("observed_at") or now,
+            "revision": int(conflict.get("revision",1)) + 1 if conflict and supersedes else 1,
+            "last_confirmed_at": now if enabled and source in {"manual","explicit"} else None,
             "memory_type": memory_type,
             "subject": subject,
             "key": key,
@@ -806,33 +816,10 @@ def _upsert_memory(
     )
     if status == "active" and source in {"manual", "explicit"}:
         authorize(entries[-1], source, history_uid)
+    elif status == "active" and automatic:
+        authorize(entries[-1], "scoped_auto", evidence["rule_digest"])
+        entries[-1]["save_authorization"].update(version=2, source_digest=review_digest(evidence))
     return True
-
-
-def _disable_memories(store: dict[str, Any], target: str) -> int:
-    entries: list[dict[str, Any]] = store["entries"]
-    now = _now_iso()
-    count = 0
-    if target == "__all__":
-        for entry in entries:
-            if entry.get("enabled", True):
-                entry["enabled"] = False
-                entry["status"] = "disabled"
-                entry["updated_at"] = now
-                count += 1
-        return count
-
-    normalized_target = _normalize(target)
-    if not normalized_target:
-        return 0
-    for entry in entries:
-        content = str(entry.get("content") or "")
-        if normalized_target in _normalize(content) and entry.get("enabled", True):
-            entry["enabled"] = False
-            entry["status"] = "disabled"
-            entry["updated_at"] = now
-            count += 1
-    return count
 
 
 def _memory_matches_target(entry: dict[str, Any], target_text: str) -> bool:
@@ -852,9 +839,25 @@ def _memory_matches_target(entry: dict[str, Any], target_text: str) -> bool:
     )
     if normalized_target in haystack:
         return True
-    target_terms = _keyword_terms(target_text)
-    entry_terms = _keyword_terms(haystack)
-    return bool(target_terms and target_terms & entry_terms)
+    return False
+
+
+def _suppress(store, entry):
+    evidence = entry.get("evidence") or {}
+    ref = [evidence.get("character_id"), entry.get("source_history_uid"), evidence.get("turn_id")]
+    if all(ref) and ref not in store.setdefault("suppressed_spans", []):
+        store["suppressed_spans"].append(ref)
+
+
+def _in_conversation_scope(entry, namespace, project_id, history_uid):
+    level = _entry_scope_level(entry)
+    scope = entry.get("scope_id")
+    if level == "project":
+        # Older role-local stores reused the character ID for an unknown project.
+        return bool(project_id and scope == project_id and scope != namespace)
+    if level == "thread":
+        return bool(history_uid and scope == history_uid)
+    return True
 
 
 def _apply_memory_delete_plan(
@@ -862,6 +865,9 @@ def _apply_memory_delete_plan(
     plan: MemoryDeletePlan,
     *,
     history_uid: str,
+    previous_turn_id: str = "",
+    character_id: str = "",
+    project_id: str = "",
 ) -> tuple[bool, list[str]]:
     if plan.action == "none":
         return False, []
@@ -869,7 +875,8 @@ def _apply_memory_delete_plan(
     entries = [
         entry
         for entry in store.get("entries", [])
-        if isinstance(entry, dict) and _is_active_memory(entry)
+        if isinstance(entry, dict) and _in_conversation_scope(entry, store.get("conf_uid"), project_id, history_uid)
+        and _entry_status(entry) in {"active","pending_confirmation","superseded","pending_delete"}
     ]
     if not entries:
         return False, []
@@ -884,7 +891,9 @@ def _apply_memory_delete_plan(
         matches = [
             entry
             for entry in entries
-            if str(entry.get("source_history_uid") or "") == str(history_uid or "")
+            if previous_turn_id
+            and (entry.get("evidence") or {}).get("turn_id") == previous_turn_id
+            and (entry.get("evidence") or {}).get("character_id") == character_id
         ]
         final_status = "disabled"
     elif plan.action == "disable_matching":
@@ -906,6 +915,7 @@ def _apply_memory_delete_plan(
 
     now = _now_iso()
     for entry in matches:
+        _suppress(store, entry)
         entry["enabled"] = False
         entry["status"] = final_status
         entry["updated_at"] = now
@@ -917,24 +927,19 @@ def _apply_memory_delete_plan(
 def _compact_store(store: dict[str, Any]) -> bool:
     raw_entries = store.get("entries", [])
     if not isinstance(raw_entries, list):
-        store["entries"] = []
-        return True
+        raise ValueError("Invalid memory entries; compact refused")
 
     changed = False
     merged_entries: list[dict[str, Any]] = []
+    seen_ids: dict[str, dict] = {}
     for raw_entry in raw_entries:
         if not isinstance(raw_entry, dict):
-            changed = True
-            continue
-        content = _clean_text(str(raw_entry.get("content") or ""), max_len=260)
-        if not content:
-            changed = True
-            continue
+            raise ValueError("Invalid memory record; compact refused")
+        content = raw_entry.get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("Invalid memory content; compact refused")
 
         entry = dict(raw_entry)
-        if entry.get("content") != content:
-            entry["content"] = content
-            changed = True
         entry.setdefault("id", uuid.uuid4().hex)
         entry.setdefault("scope", "character")
         entry.setdefault("scope_level", _entry_scope_level(entry))
@@ -962,28 +967,14 @@ def _compact_store(store: dict[str, Any]) -> bool:
         entry.setdefault("created_at", _now_iso())
         entry.setdefault("updated_at", entry.get("created_at") or _now_iso())
 
-        existing = _find_existing(merged_entries, content)
-        if existing and existing == entry:
+        existing = seen_ids.get(entry["id"])
+        if existing == entry:
             changed = True
             continue
+        if existing is not None:
+            raise ValueError("Conflicting duplicate memory ID; compact refused")
+        seen_ids[entry["id"]] = entry
         merged_entries.append(entry)
-
-    enabled_entries = [entry for entry in merged_entries if _is_active_memory(entry)]
-    if len(enabled_entries) > 80:
-        enabled_entries.sort(
-            key=lambda entry: (
-                float(entry.get("importance") or 0),
-                str(entry.get("updated_at") or ""),
-            ),
-            reverse=True,
-        )
-        keep_ids = {entry.get("id") for entry in enabled_entries[:80]}
-        for entry in merged_entries:
-            if _is_active_memory(entry) and entry.get("id") not in keep_ids:
-                entry["enabled"] = False
-                entry["status"] = "disabled"
-                entry["updated_at"] = _now_iso()
-                changed = True
 
     merged_entries.sort(
         key=lambda entry: (
@@ -1000,21 +991,24 @@ def _compact_store(store: dict[str, Any]) -> bool:
     return changed
 
 
-def compact_character_memories(conf_uid: str, *, expected_digests: dict[str, str] | None = None) -> tuple[bool, int]:
+def compact_character_memories(conf_uid: str, *, expected_digests: dict[str, str] | None = None,
+                               project_id: str = "") -> tuple[bool, int]:
     if not conf_uid:
         return False, 0
-    store = _load_store(conf_uid)
+    stores = [(ns,_load_store(ns)) for ns in memory_namespaces(conf_uid,project_id)]
     if expected_digests is not None:
-        actual = {str(entry.get("id") or ""): review_digest(entry)
-                  for entry in store.get("entries", []) if isinstance(entry, dict)}
+        actual = {entry["id"]:review_digest(entry) for _,store in stores for entry in store["entries"]}
         if actual != expected_digests:
             raise ValueError("Memory changed since review; reload before confirming.")
-    before_count = len(store.get("entries", [])) if isinstance(store.get("entries"), list) else 0
-    changed = _compact_store(store)
-    after_count = len(store.get("entries", [])) if isinstance(store.get("entries"), list) else 0
-    if changed:
-        _save_store(conf_uid, store)
-    return changed, max(0, before_count - after_count)
+    removed = 0
+    changed = False
+    for namespace, store in stores:
+        before = len(store["entries"])
+        if _compact_store(store):
+            _save_store(namespace,store)
+            changed = True
+            removed += before-len(store["entries"])
+    return changed,removed
 
 
 def add_character_memory(
@@ -1023,6 +1017,7 @@ def add_character_memory(
     *,
     memory_type: MemoryType | None = None,
     scope_level: MemoryScopeLevel = "character",
+    project_id: str = "", history_uid: str = "",
     source: str = "manual",
     confidence: float = 0.95,
     importance: float = 0.75,
@@ -1036,13 +1031,15 @@ def add_character_memory(
     if not content or _contains_sensitive_data(content):
         return False
 
-    store = _load_store(conf_uid)
+    namespaces = memory_namespaces(conf_uid, project_id)
+    namespace = namespaces[1] if scope_level == "global_user" else namespaces[-1] if scope_level == "project" and project_id else conf_uid
+    store = _load_store(namespace)
     changed = _upsert_memory(
         store,
         content=content,
         memory_type=memory_type or _classify_memory_type(content),
         source=source,
-        history_uid="",
+        history_uid=history_uid, scope_id={"global_user":"local-user","project":project_id,"thread":history_uid}.get(scope_level,conf_uid),
         confidence=confidence,
         importance=importance,
         scope_level=scope_level,
@@ -1052,8 +1049,38 @@ def add_character_memory(
     if not changed:
         return False
 
-    _compact_store(store)
-    _save_store(conf_uid, store)
+    _save_store(namespace, store)
+    return True
+
+
+def _record_store(character, project, identity):
+    for namespace in memory_namespaces(character, project):
+        store = _load_store(namespace)
+        if any(entry.get("id") == identity for entry in store["entries"]):
+            return namespace, store
+    return character, _load_store(character)
+
+
+def revise_character_memory(character, project, identity, content, *, expected_digest):
+    """User-reviewed replacement with one canonical atomic publication."""
+    if not isinstance(content,str) or not content.strip() or len(content.strip())>260 or _contains_sensitive_data(content):
+        raise ValueError("Invalid memory revision")
+    namespace,store=_record_store(character,project,identity)
+    old=next((e for e in store["entries"] if e.get("id")==identity),None)
+    if old is None or review_digest(old)!=expected_digest or not _is_active_memory(old):
+        raise ValueError("Reviewed memory revision is no longer current")
+    content=content.strip()
+    if old["content"]==content:
+        return False
+    now=_now_iso()
+    current=dict(old,id=uuid.uuid4().hex,content=content,source="manual",revision=old.get("revision",1)+1,
+                 status="active",enabled=True,created_at=now,updated_at=now,valid_from=now,valid_to=None,
+                 last_confirmed_at=now,supersedes=[identity],conflicts_with=[],source_history_uid="",
+                 evidence={"source":"launcher","revises":identity,"reviewed_digest":expected_digest})
+    authorize(current,"user_confirmation",expected_digest)
+    old.update(enabled=False,status="superseded",valid_to=now,updated_at=now)
+    store["entries"].append(current)
+    _save_store(namespace,store)
     return True
 
 
@@ -1062,7 +1089,7 @@ def update_character_memory_status(
     entry_id: str,
     status: MemoryStatus,
     *,
-    expected_digest: str | None = None,
+    expected_digest: str | None = None, project_id: str = "",
 ) -> bool:
     """Update lifecycle status for a memory entry.
 
@@ -1080,7 +1107,7 @@ def update_character_memory_status(
     }:
         return False
 
-    store = _load_store(conf_uid)
+    conf_uid, store = _record_store(conf_uid, project_id, entry_id)
     entries = store.get("entries")
     if not isinstance(entries, list):
         return False
@@ -1100,6 +1127,8 @@ def update_character_memory_status(
             or (status == "active" and not lifecycle_active(entry))
         )
         entry["status"] = status
+        if not enabled:
+            _suppress(store, entry)
         entry["enabled"] = enabled
         entry["updated_at"] = now
         if status == "active":
@@ -1110,12 +1139,12 @@ def update_character_memory_status(
     return False
 
 
-def delete_character_memory(conf_uid: str, entry_id: str, *, expected_digest: str | None = None) -> bool:
+def delete_character_memory(conf_uid: str, entry_id: str, *, expected_digest: str | None = None, project_id: str = "") -> bool:
     """Permanently remove one memory entry from the canonical store."""
     if not conf_uid or not entry_id:
         return False
 
-    store = _load_store(conf_uid)
+    conf_uid, store = _record_store(conf_uid, project_id, entry_id)
     entries = store.get("entries")
     if not isinstance(entries, list):
         return False
@@ -1137,6 +1166,9 @@ def delete_character_memory(conf_uid: str, entry_id: str, *, expected_digest: st
     if len(next_entries) == len(entries):
         return False
 
+    for entry in entries:
+        if entry.get("id") == entry_id:
+            _suppress(store, entry)
     store["entries"] = next_entries
     _save_store(conf_uid, store)
     return True
@@ -1148,34 +1180,46 @@ def process_character_memory_turn(
     history_uid: str,
     user_text: str,
     assistant_text: str = "",
+    turn_id: str = "", previous_turn_id: str = "",
+    observed_at: str = "", project_id: str = "",
+    backfill: bool = False, policy_digest: str | None = None,
 ) -> tuple[bool, list[str]]:
     """Conservatively extract long-term character memories from a completed turn."""
     if not conf_uid:
         return False, []
 
-    user_text = _clean_text(user_text, max_len=1200)
-    if not user_text:
+    if not user_text.strip():
         return False, []
-
+    if _contains_sensitive_data(user_text) or _contains_sensitive_data(assistant_text):
+        return False, ["skipped-sensitive"]
+    original_text = user_text.strip()
+    user_text = _clean_text(user_text, max_len=1200)
     assistant_text = _clean_text(assistant_text, max_len=1600)
 
-    if _contains_sensitive_data(user_text) or _contains_sensitive_data(assistant_text):
-        logger.info("Skipped character memory write because the turn looks sensitive.")
-        return False, ["skipped-sensitive"]
-
-    store = _load_store(conf_uid)
-    notes: list[str] = []
-    changed = False
-
+    notes = []
+    observed_at = observed_at or _now_iso()
+    namespaces = memory_namespaces(conf_uid, project_id)
     delete_plan = infer_memory_delete_plan(user_text)
-    delete_changed, delete_notes = _apply_memory_delete_plan(
-        store,
-        delete_plan,
-        history_uid=history_uid,
-    )
-    if delete_changed:
-        changed = True
-    notes.extend(delete_notes)
+    if delete_plan.skip_write:
+        if backfill:
+            return False, ["excluded:historical-command"]
+        changed = False
+        for namespace in namespaces:
+            store = _load_store(namespace)
+            modified, actions = _apply_memory_delete_plan(store, delete_plan, history_uid=history_uid,
+                                                         character_id=conf_uid, previous_turn_id=previous_turn_id, project_id=project_id)
+            if namespace == conf_uid:
+                for identity in (turn_id, previous_turn_id if delete_plan.action == "disable_recent_turn" else ""):
+                    if identity:
+                        ref = [conf_uid, history_uid, identity]
+                        if ref not in store.setdefault("suppressed_spans", []):
+                            store["suppressed_spans"].append(ref)
+                            modified = True
+            if modified:
+                _save_store(namespace, store)
+                changed = True
+            notes.extend(actions)
+        return changed, notes + ["write-skipped"]
 
     write_plan = build_memory_write_plan(
         user_text=user_text,
@@ -1185,109 +1229,74 @@ def process_character_memory_turn(
     if write_plan.skip_write:
         notes.append("write-skipped")
 
-    for candidate in write_plan.candidates:
-        content = str(candidate.get("content") or "")
-        if _contains_sensitive_data(content):
-            continue
-        if _upsert_memory(
-            store,
-            content=content,
-            memory_type=candidate.get("memory_type", "fact"),
-            source=str(candidate.get("source") or "heuristic"),
-            history_uid=history_uid,
-            confidence=float(candidate.get("confidence") or 0.72),
-            importance=float(candidate.get("importance") or 0.68),
-            scope_level=candidate.get("scope_level", "character"),
-            subject=str(candidate.get("subject") or ""),
-            key=str(candidate.get("key") or ""),
-            evidence=candidate.get("evidence") or {},
-            status=candidate.get("status", "active"),
-        ):
-            changed = True
-            note_action = (
-                "pending"
-                if candidate.get("status") == "pending_confirmation"
-                else "upsert"
-            )
-            notes.append(f"{note_action}:{candidate.get('source') or 'heuristic'}")
+    rule = read_policy(_MEMORY_REPOSITORY, conf_uid, project_id)
+    if policy_digest is not None and (review_digest(rule) if rule else "") != policy_digest:
+        if backfill:
+            raise ValueError("formation_policy_changed")
+        rule = None
+    semantic = semantic_spans(original_text, rule, history=history_uid, turn=turn_id, observed=observed_at)
+    def persist(rule):
+        candidates = list(write_plan.candidates)
+        if turn_id and turn_id in suppressed_turn_ids(suppressed_sources(conf_uid, project_id)):
+            return False, ["excluded:suppressed"]
+        if semantic and not any(c.get("source") == "explicit" for c in candidates):
+            candidates = [c for c in candidates if c["source"] != "heuristic"] + semantic
+        if backfill:
+            candidates = [c for c in candidates if any(c is formed for formed in semantic)]
+        changed = False
+        for candidate in candidates:
+            content = str(candidate.get("content") or "")
+            if _contains_sensitive_data(content):
+                continue
+            level = candidate.get("scope_level", "character")
+            if candidate.get("source") == "explicit" and candidate.get("memory_type") in {"identity","preference"}:
+                level = "global_user"
+            namespace = namespaces[1] if level == "global_user" else namespaces[-1] if level == "project" and project_id else conf_uid
+            scope_id = {"global_user":"local-user","project":project_id,"thread":history_uid}.get(level,conf_uid)
+            store = _load_store(namespace)
+            if turn_id and [conf_uid,history_uid,turn_id] in store.get("suppressed_spans", []):
+                continue
+            evidence = dict(candidate.get("evidence") or {}, character_id=conf_uid, turn_id=turn_id,
+                            observed_at=observed_at, project_id=project_id)
+            if _upsert_memory(
+                store,
+                content=content,
+                memory_type=candidate.get("memory_type", "fact"),
+                source=str(candidate.get("source") or "heuristic"),
+                history_uid=history_uid,
+                confidence=float(candidate.get("confidence") or 0.72),
+                importance=float(candidate.get("importance") or 0.68),
+                scope_level=level, scope_id=scope_id, auto_rule=rule if any(candidate is formed for formed in semantic) else None,
+                subject=str(candidate.get("subject") or ""),
+                key=str(candidate.get("key") or ""),
+                evidence=evidence,
+                status=candidate.get("status", "active"),
+            ):
+                _save_store(namespace, store)
+                changed = True
+                note_action = (
+                    "pending"
+                    if candidate.get("status") == "pending_confirmation"
+                    else "upsert"
+                )
+                notes.append(f"{note_action}:{candidate.get('source') or 'heuristic'}")
 
-    if not changed:
-        return False, notes
+        return changed, notes
 
-    _compact_store(store)
-    _save_store(conf_uid, store)
-    return True, notes
-
-
-def _scope_priority_score(
-    scope_level: MemoryScopeLevel,
-    priority: list[MemoryScopeLevel],
-) -> int:
-    try:
-        return max(0, 20 - priority.index(scope_level) * 4)
-    except ValueError:
-        return 0
-
-
-def _score_memory_for_plan(entry: dict[str, Any], plan: MemoryReadPlan) -> float:
-    content = str(entry.get("content") or "")
-    memory_type = str(entry.get("memory_type") or "fact")
-    score = float(entry.get("importance") or 0.0) * 45
-    score += float(entry.get("confidence") or 0.0) * 15
-    score += _scope_priority_score(_entry_scope_level(entry), plan.scope_priority)
-
-    if memory_type in plan.memory_types:
-        score += max(4, 18 - plan.memory_types.index(memory_type) * 2)
-
-    query_terms = _keyword_terms(plan.query_text)
-    entry_terms = _keyword_terms(
-        " ".join(
-            [
-                content,
-                str(entry.get("subject") or ""),
-                str(entry.get("key") or ""),
-                memory_type,
-            ]
-        )
-    )
-    overlap = query_terms & entry_terms
-    if overlap:
-        score += min(len(overlap), 10) * 7
-
-    normalized_query = _normalize(plan.query_text)
-    normalized_content = _normalize(content)
-    if normalized_query and normalized_content:
-        if normalized_query in normalized_content or normalized_content in normalized_query:
-            score += 16
-
-    updated_at = str(entry.get("updated_at") or "")
-    if updated_at:
-        score += 2
-    return score
-
-
-def _pack_memory_entries(
-    entries: list[dict[str, Any]],
-    *,
-    max_entries: int,
-    token_budget: int | None,
-) -> list[dict[str, Any]]:
-    selected: list[dict[str, Any]] = []
-    used_tokens = 0
-    for entry in entries:
-        if len(selected) >= max_entries:
-            break
-        content = _clean_text(str(entry.get("content") or ""), max_len=220)
-        if not content:
-            continue
-        entry_tokens = _estimate_tokens(content) + 8
-        if token_budget is not None and selected and used_tokens + entry_tokens > token_budget:
-            continue
-        selected.append(entry)
-        used_tokens += entry_tokens
-        if token_budget is not None and used_tokens >= token_budget:
-            break
-    return selected
+    if rule and semantic:
+        # Revocation and authorization share the policy file lock. Classification
+        # can run outside it; only the exact reviewed grant may authorize a write.
+        policy_path = _MEMORY_REPOSITORY.root() / "formation-policy.json"
+        with store_lock(policy_path,wait=True):
+            current = read_policy(_MEMORY_REPOSITORY,conf_uid,project_id)
+            if current != rule:
+                if backfill:
+                    raise ValueError("formation_policy_changed")
+                for candidate in semantic:
+                    candidate.update(scope_level="character",status="pending_confirmation")
+                rule = None
+            return persist(rule)
+    return persist(rule)
 
 
 def _format_scope_label(entry: dict[str, Any]) -> str:
@@ -1304,21 +1313,12 @@ def _default_subject_key(
 ) -> tuple[str, str]:
     normalized = _normalize(content)
     if scope_level == "project":
-        if any(term in normalized for term in ["工具", "tool", "搜尋", "search"]):
-            return "tooling", "tool_planner"
-        if any(term in normalized for term in ["launcher", "控制版面"]):
-            return "launcher", "state"
-        if any(term in normalized for term in ["記憶", "memory"]):
-            return "memory_system", "state"
-        return "project_progress", normalized[:48]
-
+        return "project", normalized
     if memory_type == "identity":
         if any(term in normalized for term in ["稱呼", "叫我", "名字"]):
             return "user_identity", "preferred_name"
         return "user_identity", normalized[:48]
     if memory_type == "preference":
-        if any(term in normalized for term in ["語氣", "回覆", "中文", "日文"]):
-            return "user_preference", "reply_style"
         return "user_preference", normalized[:48]
     if memory_type == "boundary":
         return "user_boundary", normalized[:48]
@@ -1354,28 +1354,135 @@ def _find_conflicting_memory(
     return None
 
 
+def formation_policy_digest(character_id, project_id):
+    rule = read_policy(_MEMORY_REPOSITORY, character_id, project_id)
+    return review_digest(rule) if rule else ""
+
+
+def finish_pending_turns(character, history, current_turn, live_input):
+    """Resume persisted live turns under their original grant. Use L0 on recovery."""
+    import json
+    from .chat_history_manager import _get_safe_history_path, get_history, read_memory_source
+    pending = Path(_get_safe_history_path(character,history)).parent / ".formation-pending"
+    changed, notes = False, []
+    history_cache = {}
+    markers = []
+    for marker in pending.glob("*.json"):
+        try:
+            markers.append((marker.stat().st_mtime_ns,marker))
+        except FileNotFoundError:
+            continue  # A concurrent worker finished it.
+    for _,marker in sorted(markers):
+        try:
+            with store_lock(pending / "worker"):
+                if not marker.is_file():
+                    continue
+                job = json.loads(marker.read_bytes())
+                turn, uid = job["turn"], job["history"]
+                if turn == current_turn and uid == history:
+                    data = live_input
+                else:
+                    source = Path(_get_safe_history_path(character,uid))
+                    if not source.is_file():
+                        relocated = read_memory_source(Path.cwd(),character,uid,turn)
+                        if relocated is None:
+                            notes.append("formation-source-unavailable")
+                            continue
+                        uid = relocated["history"]
+                        source = Path(_get_safe_history_path(character,uid))
+                    stat=source.stat()
+                    revision=(stat.st_ino,stat.st_size,stat.st_mtime_ns)
+                    if history_cache.get(uid,(None,))[0] != revision:
+                        rows=get_history(character,uid,strict=True)
+                        turns={}
+                        previous=""
+                        for i,user in enumerate(rows):
+                            if user.get("role")!="human":
+                                continue
+                            identity=user.get("turn_id","")
+                            reply=rows[i+1] if i+1<len(rows) else {}
+                            if identity and reply.get("turn_id")==identity and reply.get("completion")=="complete":
+                                turns[identity]=dict(user_text=user["content"],assistant_text=reply["content"],
+                                    previous_turn_id=previous,project_id=user.get("project_id",""),observed_at=user["timestamp"])
+                            previous=identity
+                        history_cache[uid]=(revision,turns)
+                    data=history_cache[uid][1].get(turn)
+                    if data is None:
+                        notes.append("formation-incomplete")
+                        continue
+                modified, actions = process_character_memory_turn(conf_uid=character,history_uid=uid,turn_id=turn,
+                                                                 policy_digest=job["policy_digest"],**data)
+                changed |= modified
+                notes.extend(actions)
+                marker.unlink()
+        except (OSError,ValueError,KeyError,TypeError,sqlite3.Error) as exc:
+            logger.warning("Memory formation pending ({})", type(exc).__name__)
+            notes.append("formation-deferred")
+    return changed,notes
+
+
+def suppressed_sources(character_id, project_id="", history_uid=""):
+    if not character_id:
+        return set()
+    namespaces = memory_namespaces(character_id, project_id)
+    try:
+        return _MEMORY_INDEX.suppressed(namespaces, character_id, history_uid)
+    except (sqlite3.Error, OSError, ValueError):
+        return {(history,turn) for namespace in namespaces
+                for character,history,turn in _load_store(namespace).get("suppressed_spans", [])
+                if character == character_id and (not history_uid or history == history_uid)}
+
+
 def list_character_memories(
     conf_uid: str,
     *,
     enabled_only: bool = True,
     query_text: str = "",
     read_plan: MemoryReadPlan | None = None,
+    project_id: str = "", history_uid: str = "", historical: bool = False,
     max_entries: int | None = None,
     token_budget: int | None = None,
 ) -> list[dict[str, Any]]:
     if not conf_uid:
         return []
-    store = _load_store(conf_uid)
-    entries = [
-        entry
-        for entry in store.get("entries", [])
-        if isinstance(entry, dict)
-    ]
-
+    namespaces = memory_namespaces(conf_uid, project_id)
     plan = read_plan
     if plan is None and query_text:
         plan = infer_memory_read_plan(query_text, max_entries=max_entries or 12)
 
+    if plan and enabled_only:
+        cutoff = query_cutoff(plan.query_text)
+        hits = []
+        for namespace in namespaces:
+            try:
+                hits.extend(_MEMORY_INDEX.lookup(namespace, plan, project_id=project_id,
+                                                 history_uid=history_uid, historical=historical or bool(cutoff), cutoff=cutoff))
+            except (ValueError, OSError, RuntimeError, sqlite3.Error):
+                logger.warning("Memory projection unavailable; using scoped canonical text")
+                entries = _load_store(namespace)["entries"]
+                terms = query_terms(plan.query_text)
+                for entry in entries:
+                    if cutoff and (not (entry.get("valid_from") or entry.get("created_at")) or
+                            (entry.get("valid_from") or entry["created_at"])[:10] > cutoff or
+                            (entry.get("valid_to") and entry["valid_to"][:10] <= cutoff)):
+                        continue
+                    if not historical and not cutoff:
+                        now = _now_iso()
+                        if ((entry.get("valid_from") and not _at_or_after(now,entry["valid_from"])) or
+                                (entry.get("valid_to") and _at_or_after(now,entry["valid_to"]))):
+                            continue
+                    authorized_history = (historical or bool(cutoff)) and _entry_status(entry)=="superseded" and has_save_authorization(entry)
+                    if (not (_is_active_memory(entry) or authorized_history) or not terms.intersection(_keyword_terms(entry["content"]))
+                            or not _in_conversation_scope(entry, namespace, project_id, history_uid)):
+                        continue
+                    hits.append(MemorySearchHit(entry, 1, ("canonical",)))
+        hits.sort(key=lambda h: (-h.score, h.entry["id"]))
+        return _MEMORY_RETRIEVER._pack_entries([h.entry for h in hits], max_entries=max_entries or plan.max_entries,
+                                               token_budget=token_budget or plan.token_budget)
+    entries = [
+        entry for namespace in namespaces for entry in _load_store(namespace)["entries"]
+        if not enabled_only or _in_conversation_scope(entry, namespace, project_id, history_uid)
+    ]
     entries = _MEMORY_RETRIEVER.retrieve(
         entries,
         enabled_only=enabled_only,
@@ -1392,6 +1499,7 @@ def format_character_memories_for_prompt(
     *,
     max_entries: int = 24,
     query_text: str = "",
+    project_id: str = "", history_uid: str = "",
     token_budget: int | None = None,
     read_plan: MemoryReadPlan | None = None,
 ) -> str:
@@ -1408,7 +1516,8 @@ def format_character_memories_for_prompt(
 
     entries = list_character_memories(
         conf_uid,
-        enabled_only=True,
+        enabled_only=True, history_uid=history_uid, project_id=project_id,
+        historical=bool(re.search(r"以前|當時|過去|之前|截至|as of|時点|formerly|used to|previously|以前は", query_text, re.I)),
         query_text=query_text,
         read_plan=plan,
         max_entries=max_entries,
@@ -1435,11 +1544,18 @@ def format_character_memories_for_prompt(
         content = _clean_text(str(entry.get("content") or ""), max_len=220)
         if content:
             scope_label = _format_scope_label(entry)
-            lines.append(f"- [{scope_label}] ({memory_type}) {content}")
+            validity = entry.get("status") or "unknown"
+            observed = (entry.get("evidence") or {}).get("observed_at") or entry.get("created_at","")
+            evidence = entry.get("evidence") or {}
+            provenance = " ".join(f"{key}={value}" for key,value in (
+                ("observed",observed),("event_date",evidence.get("event_date")),("valid_to",entry.get("valid_to")),
+                ("revision",entry.get("revision",1)),("source",entry.get("source")),
+                ("history",entry.get("source_history_uid")),("turn",evidence.get("turn_id"))) if value)
+            lines.append(f"- [{scope_label} {validity} {provenance} id={entry.get('id')}] ({memory_type}) {content}")
     return "\n".join(lines).strip()
 
 
-def format_character_memories_for_preview(conf_uid: str, *, max_entries: int = 80) -> str:
+def format_character_memories_for_preview(conf_uid: str, *, max_entries: int | None = None) -> str:
     entries = list_character_memories(conf_uid, enabled_only=False)[:max_entries]
     if not entries:
         return "目前沒有角色長期記憶。"

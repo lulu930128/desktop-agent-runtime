@@ -1,6 +1,6 @@
 // Candidate-only import boundary. The archived Git model remains byte-identical.
 export * from "./work-panel/model";
-import { normalizeViewItem, sourceLabel as originalSourceLabel, statusLabel as originalStatusLabel } from "./work-panel/model";
+import { normalizeViewItem, formatDateLabel, sourceLabel as originalSourceLabel, statusLabel as originalStatusLabel } from "./work-panel/model";
 import type { BriefingData, ViewItem } from "./work-panel/types";
 
 export const SOURCE_ORDER = ["all", "calendar", "japanese_study", "english_study", "mail", "omi"];
@@ -17,8 +17,15 @@ export function todayItems(data: BriefingData): ViewItem[] {
   return items.map((item, index) => {
     const view = normalizeViewItem(item, "today", index);
     if (!view) throw new Error("Canonical Core item cannot be displayed");
-    // Keep canonical raw reasons in evidence; primary copy is human-readable.
-    return {...view, meta: "來源提供的工作；資料品質與限制請見來源狀態。"};
+    // Keep raw reason codes in the unchanged detail evidence, not the list.
+    const raw = item as Record<string, any>;
+    const reasons = new Set(Array.isArray(raw.reasonCodes) ? raw.reasonCodes : []);
+    const usefulMeta = view.meta.split(" · ").filter(part => part && !reasons.has(part)
+      && !/^[a-z][a-z0-9]*_[a-z0-9_]+$/.test(part)).join(" · ");
+    const summary = typeof raw.summary === "string" ? raw.summary.trim() : "";
+    const detail = usefulMeta || summary;
+    const date = formatDateLabel(view.date, true);
+    return {...view, meta: [date ? `期限 ${date}` : "", detail.length > 90 ? `${detail.slice(0, 90)}…` : detail].filter(Boolean).join(" · ")};
   });
 }
 

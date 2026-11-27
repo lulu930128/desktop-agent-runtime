@@ -1,0 +1,126 @@
+{
+  "applied_to_original_preimages_and_compared_bytes": true,
+  "patch_sha256": "5114e8eabb33e93e62ce233ae57e7cb95ca054141a93d947d9d874bbf3cb93dc",
+  "source_files": [
+    {
+      "path": "Open-LLM-VTuber/mcp_servers.json",
+      "before": "abc2cdb3d86502a3377a2e0662944030059d2cab144c31d0f9de3e789b3094c2",
+      "after": "c1bdbac363fdcd53075eb3dead00b0f36f1658f2960be4fc602804af6b97752d"
+    },
+    {
+      "path": "Open-LLM-VTuber/policies/kuro-workspace-write.json",
+      "before": null,
+      "after": "068c85b8155047f93b72ee7cb81031a5d97ca36d55f5fe237e3f6d5e1126c400"
+    },
+    {
+      "path": "Open-LLM-VTuber/prompts/persona/kuro.txt",
+      "before": "1580ae14a6412cb0a1a7e8496a19f8120bbb55545aba6b6d289242dde94ea84b",
+      "after": "7dac7913cdc7342ee3bcd904a609d39510df8d8467456a279734641f41ba8552"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/agent/agents/basic_memory_agent.py",
+      "before": "34b3259aa31590c70cc33d65623033bc9c9db7037df74dd0a9f77676644f1974",
+      "after": "b343fe6c1ec940b192b831b3cdde4f9cacec8665809d072dd8a3d026d926dcdb"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_executor.py",
+      "before": "49dbfe666c818fa6bacc5d24f4eac7b691fa020c082f8ff4478424a1e1b7990c",
+      "after": "d3294e49d098047e811c0c8447f2176f8fa1d5b5e71237a5241cfc6ff69ed64a"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_manager.py",
+      "before": "ab2ccfc257ed4d0b776ccfd2b5e50d3f9665f82bc9774ddc78114ab5918e44dd",
+      "after": "0a86fe37d22c2b0f9fb39c2da88cb05e5d926912197b65ea1b2df0c1fc4a96ec"
+    },
+    {
+      "path": "Open-LLM-VTuber/tests/test_japanese_exercise_history.py",
+      "before": null,
+      "after": "ed8f215f54b4935b7ce7888ea384b4325fb2416ff9e010ee95959330a02e9908"
+    },
+    {
+      "path": "Open-LLM-VTuber/tests/test_project_workspace_cutover.py",
+      "before": "244c55f497ab7aaf76cb38f657e2efe1e78a95eed7525b1cfeedd93fadc5b56f",
+      "after": "24203156b4b643a5c2c671dacddccd66fa49311393b418ec6c45af000071b2d2"
+    },
+    {
+      "path": "assets/qt-owner/1fa9b1646a024b573fabe019e4fd940f0e34962f87db6b46cba52408290f3e2a/assets/main-BqxJj57E.js",
+      "before": null,
+      "after": "658a91a2f01844484453c59338435f5c688e03524e0138b3353bd4b5a2494c0f"
+    },
+    {
+      "path": "assets/qt-owner/1fa9b1646a024b573fabe019e4fd940f0e34962f87db6b46cba52408290f3e2a/assets/main-ThBymPWv.css",
+      "before": null,
+      "after": "ee0a05721bc68dd2d901f8f6d53909f4c87380c0725084443e837d9c29139816"
+    },
+    {
+      "path": "assets/qt-owner/1fa9b1646a024b573fabe019e4fd940f0e34962f87db6b46cba52408290f3e2a/assets/work-panel-BaDbKsPW.js",
+      "before": null,
+      "after": "f1d30d7350e9e7af1a919f517186112bc81393f35ef076085312e37ff16da3b1"
+    },
+    {
+      "path": "assets/qt-owner/1fa9b1646a024b573fabe019e4fd940f0e34962f87db6b46cba52408290f3e2a/assets/work-panel-DDIU12fo.css",
+      "before": null,
+      "after": "68da8d6a9d9c9b593b6d6d4256c418dba34660d81c0fbf6ef2a309c3413cf498"
+    },
+    {
+      "path": "assets/qt-owner/1fa9b1646a024b573fabe019e4fd940f0e34962f87db6b46cba52408290f3e2a/candidate-manifest.json",
+      "before": null,
+      "after": "fc759d5a95cfa53b0997e3d57ca68dc1c9d40675be9419d10de7a38b0a38ae9d"
+    },
+    {
+      "path": "assets/qt-owner/1fa9b1646a024b573fabe019e4fd940f0e34962f87db6b46cba52408290f3e2a/owner-build.json",
+      "before": null,
+      "after": "79a1fe63e149db9ea9cd0c2f5877f48b936a37eae9d5ec142c2778cf70883ed7"
+    },
+    {
+      "path": "assets/qt-owner/1fa9b1646a024b573fabe019e4fd940f0e34962f87db6b46cba52408290f3e2a/work-panel.html",
+      "before": null,
+      "after": "3b2dc5a7abb47f4582ba5ee14be40e6e06fba29a3b1ea7d49e07e2424cb6408c"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/build_owner_bundle.py",
+      "before": "3bd800fc3644e62a071d941bb521ac98dc2f26da50d56ac3c731540a32293a95",
+      "after": "7cd2ee9db672644d3133680756c208a02390fc2baed78ecdac117bd71b633f5e"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/frontend/src/work-panel/main.ts",
+      "before": "19f4a06315d256ddc3c87f912ee8b4346169ee905a427d483502e1f29c767e24",
+      "after": "9f0b8eb99c7f1e0435b0b85eaf46222edce1215c6cf89dce91be1105d9cdbbc5"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/frontend/vite.config.mjs",
+      "before": "a9597a30b6b3b4429de8f9b0b5836fa163b3ab1ba11840e2fbce97e8bc05da57",
+      "after": "bd8d175fa349618a3f2163d05412c1b0edf1bb5e972f4b442940a6dcf12a5998"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/frontend/vite.owner.config.mjs",
+      "before": "e4734b5d29072a416f568bffabe403b7817e32559dacdd6b960d184c29b1c61a",
+      "after": "1cb8869b66d33bedc71ebc671e0e5834e21c5d9f1da60ac2abe7b3a617fa04c5"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/frontend/work-panel-history.cjs",
+      "before": null,
+      "after": "6a97e52ecdb9eaeecb366fb67cd866969802388f65bf6677d664ca4485f70fb2"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/frontend/work-panel-history.patch",
+      "before": null,
+      "after": "fcfd152daf33af1f36582141fc4eeaeed44767ce3be0757b1b41e6cee73adde8"
+    },
+    {
+      "path": "kuro_launcher/qt_web_release.py",
+      "before": "33a953abab0a5f06e56a564ee33d398dc08c758fece50bbe9b837edba3d3a382",
+      "after": "ea1866a042511db4bd0866e8603f3307a5f569c79018b5175abbde8a3cff575f"
+    },
+    {
+      "path": "projects/desktop-agent-runtime/prompts/tool_prompt.txt",
+      "before": "51ba0d883710221b50654fa2482e64a04ec285f54d1f5a90031a6e79a8881726",
+      "after": "ccc9929653f97f02e8ee7ee1231dcc3464f5fa418db572c211365be73bdf924d"
+    },
+    {
+      "path": "tests/qt_display_history_frontend.test.cjs",
+      "before": "bacf954633c7d9890932060c05b58242f3ebf20b0cfe4d0d11963cfd3a346dd4",
+      "after": "af228c791bda3c23ab181a898645c920c7c0fc264b0b2c74b615f66d6823357a"
+    }
+  ]
+}

@@ -139,23 +139,34 @@ function harness(timeout=100) {
   return {t,sent,reply,identity,event:value=>event(JSON.stringify(value))};
 }
 
-test('real original renderChrome Pet-ready branch requires lifecycle voice contract', () => {
-  const file=ts.createSourceFile('main.ts',fs.readFileSync(path.join(root,'src/work-panel/main.ts'),'utf8'),ts.ScriptTarget.Latest,true);
-  const cls=file.statements.find(n=>ts.isClassDeclaration(n));
-  const method=cls.members.find(n=>n.name?.getText(file)==='renderChrome');
-  const js=ts.transpileModule(`class Probe { ${method.getText(file)} }`,{compilerOptions:{target:ts.ScriptTarget.ES2020}}).outputText;
-  const status={replaceChildren(){},appendChild(){}};
-  const appRoot={querySelector:s=>s==='[data-runtime-status]'?status:null,querySelectorAll:()=>[]};
-  const Probe=new Function('appRoot','createElement','button','text',js+'; return Probe;')(appRoot,()=>({}),()=>({}),(v,f)=>String(v??f));
-  const probe=new Probe();probe.mode='chat';probe.chat={};probe.capabilitySummary=()=>'';
-  const pet={state:'unavailable'};
-  probe.runtime={wsConnected:true,capabilities:{pet,launcher:{ok:false,state:'unavailable'}}};
-  probe.renderChrome(); // Exact pre-fix projection: first state succeeds.
-  pet.state='ready';
-  assert.throws(()=>probe.renderChrome(),TypeError); // Same branch as native second state.
-  probe.runtime.capabilities.launcher={voice:{state:'unknown'},restartRequired:false};
-  probe.renderChrome();
-  assert.equal(status.hidden,false); // Unknown voice must remain visible.
+test('source-pinned bundle includes the current banner-removing owner adapter and two-row layout', () => {
+  const {createHash}=require('node:crypto');
+  const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
+  const repo=path.resolve(__dirname,'..');
+  const release=fs.readFileSync(path.join(repo,'kuro_launcher/qt_web_release.py'),'utf8');
+  const fingerprint=release.match(/fingerprint='([a-f0-9]{64})'/)[1];
+  const manifestSha=release.match(/manifest_sha256='([a-f0-9]{64})'/)[1];
+  const bundle=path.join(repo,'assets/qt-owner',fingerprint);
+  const manifestBytes=fs.readFileSync(path.join(bundle,'candidate-manifest.json'));
+  assert.equal(sha(manifestBytes),manifestSha);
+  const record=JSON.parse(fs.readFileSync(path.join(bundle,'owner-build.json'),'utf8'));
+  assert.equal(record.fingerprint,fingerprint);
+  assert.equal(record.manifestSha256,manifestSha);
+  for (const name of ['src/owner-presentation.ts','src/owner-presentation.css','src/owner-bootstrap.ts']) {
+    assert.equal(sha(fs.readFileSync(path.join(root,name))),record.lineage.sources[name],name);
+  }
+  const assets=Object.entries(JSON.parse(manifestBytes).files).map(([name,digest])=>{
+    const bytes=fs.readFileSync(path.join(bundle,name));
+    assert.equal(sha(bytes),digest,name);
+    return {name,text:bytes.toString('utf8')};
+  });
+  const js=assets.filter(a=>a.name.endsWith('.js')).map(a=>a.text).join('\n');
+  const css=assets.filter(a=>a.name.endsWith('.css')).map(a=>a.text).join('\n');
+  assert.ok(/for\((?:const|let) (\w+) of document\.querySelectorAll\(["'`]\[data-runtime-status\]["'`]\)\)\1\.remove\(\)/.test(js),'Built adapter removes banner nodes');
+  assert.match(css,/#app \.workspace\{grid-template-rows:var\(--chrome-height\) minmax\(0,\s*1fr\)\}/);
+  assert.match(css,/#app \.workspace>\.stage\{grid-row:2\}/);
+  // Original renderer stays immutable; DOM behavior is exercised by the Qt fixture.
+  assert.match(fs.readFileSync(path.join(root,'src/work-panel/main.ts'),'utf8'),/data-runtime-status/);
 });
 
 test('throwing state listener cannot orphan the already accepted owner reply', async () => {

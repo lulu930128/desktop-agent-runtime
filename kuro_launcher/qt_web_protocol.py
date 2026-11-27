@@ -15,7 +15,8 @@ METHODS = frozenset(("schedule", "getState", "getData", "getChatState", "getChat
     "deleteHistory", "getMemories", "memoryAction", "getTools", "sendText",
     "refreshMail", "getMailMessage", "control", "closeWindow", "minimizeWindow",
     "toggleMaximizeWindow", "getWindowState", "startWindowMove", "startWindowResize",
-    "getAssistantSettings", "updateAssistantSettings", "updateToolPolicy"))
+    "getAssistantSettings", "updateAssistantSettings", "updateToolPolicy",
+    "getChatSpeechSettings", "updateChatSpeechSettings"))
 WINDOW_EDGES = frozenset(("top", "bottom", "left", "right",
                          "top-left", "top-right", "bottom-left", "bottom-right"))
 IDENTITY_KEYS = {"actor", "history", "context", "client", "revision"}
@@ -86,6 +87,13 @@ def validate(method, p):
         if not isinstance(p["expectedRevision"], str) or not re.fullmatch(r"[a-f0-9]{64}", p["expectedRevision"]):
             raise Rejected("assistant_settings_revision_required")
         return True
+    if method == "updateChatSpeechSettings":
+        from .config import validate_chat_speech_settings
+        object_fields(p, {"settings", "expectedRevision"}, {"settings", "expectedRevision"})
+        validate_chat_speech_settings(p["settings"])
+        if not isinstance(p["expectedRevision"], str) or not re.fullmatch(r"[a-f0-9]{64}", p["expectedRevision"]):
+            raise Rejected("chat_speech_revision_required")
+        return True
     if method == "updateToolPolicy":
         from .tool_policy_settings import validate_change
         validate_change(p)
@@ -112,14 +120,28 @@ def validate(method, p):
         object_fields(p, {"action", "payload"}, {"action", "payload"})
         action, body = p["action"], p["payload"]
         fields = {"add": {"content"}, "status": {"entry_id", "status", "content_digest"},
-                  "delete": {"entry_id", "content_digest"}, "compact": set()}
+                  "delete": {"entry_id", "content_digest"}, "compact": set(), "source":{"entry_id","content_digest"}, "review": {"entries","status"}, "revise":{"entry_id","content_digest","content"}, "reprocess": set(), "backup": set(), "restore": set(), "formation": {"categories","scope"}}
         if not isinstance(action, str) or action not in fields: raise Rejected("memory_action_unsupported")
         object_fields(body, fields[action])
-        if action == "add": string(body.get("content"), 260)
-        if action in {"status", "delete"}: string(body.get("entry_id"))
+        if action == "formation":
+            if (body.get("scope") not in {"global_user","project","character"} or not isinstance(body.get("categories"),list)
+                    or any(not isinstance(v,str) or v not in {"preference","experience","goal"} for v in body["categories"])):
+                raise Rejected("invalid_formation_scope")
+        if action == "review":
+            rows = body.get("entries")
+            if not isinstance(rows,list) or not rows or body.get("status") not in {"active","disabled"}:
+                raise Rejected("invalid_review_selection")
+            for row in rows:
+                object_fields(row,{"entry_id","content_digest"},{"entry_id","content_digest"})
+                string(row["entry_id"])
+                string(row["content_digest"],128)
+            if len({r["entry_id"] for r in rows}) != len(rows):
+                raise Rejected("duplicate_review_id")
+        if action in {"add","revise"}: string(body.get("content"), 260)
+        if action in {"status", "delete","revise","source"}: string(body.get("entry_id"))
         if "content_digest" in body: string(body["content_digest"], 128)
         if action == "status" and body.get("status") not in {"active", "disabled"}: raise Rejected("memory_status")
-        return True
+        return action != "source"
     if method == "schedule":
         object_fields(p, {"action", "payload"}, {"action", "payload"})
         action, body = p["action"], p["payload"]
@@ -173,7 +195,8 @@ def validate(method, p):
 
 def requires_confirmation(method, payload):
     # Ordinary chat/create/select use the explicit UI action + downstream policy.
-    return (method in {"deleteHistory", "memoryAction", "applyProfile", "updateAssistantSettings", "updateToolPolicy"}
+    return (method == "memoryAction" and payload.get("action") != "source"
+            or method in {"deleteHistory", "applyProfile", "updateAssistantSettings", "updateToolPolicy"}
             or method == "schedule" and payload.get("action") in {"mutate", "notification-action"}
             or method == "control" and payload.get("action") != "interrupt")
 

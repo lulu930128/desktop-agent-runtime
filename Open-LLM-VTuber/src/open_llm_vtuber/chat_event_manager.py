@@ -15,6 +15,7 @@ HistoryEventType = Literal[
     "omi_evidence",
     "memory_update",
     "memory_skipped",
+    "memory_deferred",
 ]
 
 

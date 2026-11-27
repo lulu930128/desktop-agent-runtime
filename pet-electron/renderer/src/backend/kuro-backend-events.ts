@@ -1,4 +1,5 @@
 export type KuroBackendEvent =
+  | { type: "speech-status"; status: string }
   | {
       type: "model-load";
       modelUrl: string;
@@ -11,6 +12,8 @@ export type KuroBackendEvent =
       speechStatus?: string;
       displayText: string;
       audioBase64: string | null;
+      segmentId?: number;
+      appendDisplay?: boolean;
     }
   | {
       type: "assistant-text";

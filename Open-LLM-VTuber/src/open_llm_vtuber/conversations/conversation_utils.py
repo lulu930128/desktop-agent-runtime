@@ -14,6 +14,7 @@ from typing import Optional, Union, Any, List, Dict
 import zipfile
 import numpy as np
 import json
+import time
 from loguru import logger
 
 from ..speech_pronunciation import (
@@ -33,6 +34,7 @@ from .speech_presentation import (
     SPEECH_POLICY_TABLE_JA,
     SPEECH_POLICY_URL_JA,
     SpeechPolicyEngine,
+    _critical_values, _semantic_numbers, _semantic_flags,
     normalize_speech_plan_for_presentation,
     speech_plan_item,
 )
@@ -2562,6 +2564,16 @@ async def handle_sentence_output(
 
     This avoids long list/step content being spoken and greatly reduces playback queue / timeouts.
     """
+    if output.speech_lane:
+        # Display only; speech is queued once after the final tool-free completion.
+        visible = output.display_text.text
+        tags = []  # Emotion comes from the footer; display/code bytes stay intact.
+        display = copy.deepcopy(output.display_text)
+        display.text = visible
+        await tts_manager.speak("", display, output.actions, live2d_model, tts_engine, websocket_send, display_append=True)
+        tts_manager.add_deferred_speech(display_text=visible, tts_text="", display=display,
+                                       actions=output.actions, emotion_tags=tags)
+        return visible
     speech_policy = SpeechPolicyEngine()
     presentation = speech_policy.create_envelope(response_type="chat")
     full_response = ""
@@ -2846,6 +2858,178 @@ async def handle_sentence_output(
         )
 
     return full_response
+
+
+def _natural_speech_chunks(spoken: str, *, utterance=False, wire_fields=None) -> list[str]:
+    """Keep short utterances intact and split long speech at natural boundaries."""
+    # The central Voice v1 owner accepts 2000 Unicode characters per POST.
+    # A 2000-character all-non-BMP string can also exceed its 16384-byte JSON body.
+    def fits(text):
+        body = json.dumps(dict(wire_fields or {"voice": "kuro", "language": "ja", "speed_factor": 1.0}, text=text))
+        return len(text) <= 2000 and len(body.encode("ascii")) <= 16384
+
+    if not spoken.strip():
+        return []
+    pairs = {"「": "」", "『": "』", "（": "）", "(": ")", "【": "】"}
+    stack, units = [], []
+    start = 0
+    for i, ch in enumerate(spoken):
+        if ch in pairs:
+            stack.append(pairs[ch])
+        elif stack and ch == stack[-1]:
+            stack.pop()
+        if not stack and ch in "。！？!?\n" and (i + 1 == len(spoken) or spoken[i+1] not in "。！？!?"):
+            unit = spoken[start:i+1]
+            if unit.strip():
+                units.append(unit)
+                start = i+1
+    if start < len(spoken):
+        if spoken[start:].strip() or not units:
+            units.append(spoken[start:])
+        else:
+            units[-1] += spoken[start:]
+    # A 129-character unpunctuated WAV was verified through its audible ending.
+    # A legal 2000-character request failed inference twice. For long prose this
+    # is a preferred break point: a whole phrase or number may be longer.
+    preferred = 129
+    has_numeric_fragment = any(not any(ch.isalpha() for ch in part) for part in units)
+    if len(spoken) <= preferred and fits(spoken) and (utterance or has_numeric_fragment):
+        return [spoken]
+    clause_break = re.compile(r"[、，；;：:\s]+|(?<!\d),(?!\d)|(?:ました|でした|ません|でしょう|ます|です)(?!が|から|けれど)")
+    chunks = []
+    for unit in units:
+        while len(unit) > preferred or not fits(unit):
+            low, end = 0, min(len(unit), 2000)
+            while low < end:
+                middle = (low + end + 1) // 2
+                if fits(unit[:middle]):
+                    low = middle
+                else:
+                    end = middle - 1
+            target = min(end, preferred)
+            boundaries = [m.end() for m in clause_break.finditer(unit, 0, end)
+                          if m.end() - target < target]
+            cut = min(boundaries, key=lambda pos: abs(pos - target)) if boundaries else target
+            # A complete grammatical phrase can exceed the preferred size.
+            # Keep decimal, signed, grouped and percentage values together.
+            numeric = r"[-+−]?\d+(?:,\d{3})*(?:\.\d+)?[%％]?"
+            for number in re.finditer(numeric, unit):
+                if number.start() >= cut:
+                    break
+                if cut < number.end():
+                    cut = number.start() or number.end()
+                    break
+            if cut <= 0 or cut > end:
+                raise ValueError("unsplittable_numeric_speech")
+            chunks.append(unit[:cut])
+            unit = unit[cut:]
+        if unit.strip():
+            chunks.append(unit)
+    return chunks
+
+
+async def queue_generated_speech(
+    *, lane: dict | None, settings: dict, tts_manager: TTSTaskManager,
+    tts_engine: TTSInterface, live2d_model: Live2dModel, websocket_send: WebSocketSend,
+    pronunciation_entries: list[PronunciationEntry] | None = None,
+    completed_display: str = "",
+) -> None:
+    """Deterministic final lane -> existing central TTS owner. No Bridge/LLM IO."""
+    deferred = tts_manager.pop_deferred_speech() or {}
+    state = (lane or {}).get("state", "missing")
+    spoken, reason = "", state
+    playable = state in {"ready", "semantic_unverified"}
+    if playable:
+        # Detailed passages have already been validated independently; the v2
+        # single-footer size guard does not bound the whole narrated answer.
+        spoken = lane.get("text", "")
+        reason = "ready"
+    display_ack = (state == "missing" and settings.get("route") == "dual_lane"
+                   and settings["locale"] == "ja-JP" and len(completed_display) >= 800
+                   and len(re.findall(r"(?m)^[ \t]*(?:[-*•]|\d+[.)、])[ \t]+\S", completed_display)) >= 6)
+    if display_ack:
+        # An acknowledgment of an already completed on-screen list, never a
+        # generated summary or a repair of rejected/malformed semantic speech.
+        spoken, reason = SpeechPolicyEngine().validate_lane(SPEECH_POLICY_DETAIL_ITEMS_JA, "ja-JP")
+        reason = "missing_display_acknowledgment" if spoken else reason
+    if settings["locale"] != "ja-JP":
+        spoken, reason = "", "locale_voice_unverified"
+    if spoken and tts_engine is None:
+        spoken, reason = "", "voice_unavailable"
+    chunks = []
+    hits = []
+    if spoken:
+        units = (lane or {}).get("speech") or [{"text": spoken, "source_ids": []}]
+        if display_ack:
+            units = [{"text": spoken, "source_ids": []}]
+        wire_fields = None
+        if isinstance(getattr(tts_engine, "voice_id", None), str) and tts_engine.voice_id:
+            wire_fields = dict(voice=tts_engine.voice_id, language=tts_engine.text_lang, speed_factor=tts_engine.speed_factor)
+        for n, unit in enumerate(units, 1):
+            value, why = SpeechPolicyEngine().validate_lane(unit["text"], settings["locale"])
+            if value:
+                before = value
+                value, replacements = apply_pronunciation(value, pronunciation_entries)
+                if replacements and (_critical_values(before) != _critical_values(value)
+                                     or _semantic_numbers(before) != _semantic_numbers(value)
+                                     or _semantic_flags(before) != _semantic_flags(value)):
+                    value, replacements = before, []
+                hits.extend(replacements)
+                value, why = SpeechPolicyEngine().validate_lane(value, settings["locale"])
+            if not value:
+                tts_manager.missing_units.add(n)
+                reason = why
+                continue
+            try:
+                parts = _natural_speech_chunks(value, utterance=bool(unit.get("source_ids")), wire_fields=wire_fields)
+            except ValueError:
+                tts_manager.missing_units.add(n)
+                continue
+            ids = tuple(unit.get("source_ids", []))
+            # Dependents share an explicit semantic source. Unanchored sentences
+            # can be synthesized independently. Keep price/condition text together.
+            group = frozenset(ids) if ids else None
+            chunks.extend((part, group) for part in parts)
+        if not chunks:
+            spoken = ""
+    if spoken and reason == "ready" and state == "semantic_unverified":
+        reason = state  # Text/pronunciation guards do not verify semantics.
+    tts_manager.speech_metrics.update(route="dual_lane", state=reason, bridge_requests=0,
+                                     lane_state=state,
+                                     speech_ready_at=time.monotonic(), pronunciation_hits=len(hits),
+                                     contract=(lane or {}).get("contract", "missing"),
+                                     anchors=len((lane or {}).get("anchors", [])) if playable else None,
+                                     semantic_segments=len((lane or {}).get("speech", [])) if playable else None)
+    diagnostics = (lane or {}).get("diagnostics", {})
+    if diagnostics:
+        tts_manager.speech_metrics["validation"] = diagnostics
+    tts_manager.missing_units.update((lane or {}).get("missing_units", []))
+    if not spoken:
+        # Silent Display payloads have no synthesis tasks for finalization to
+        # await. Drain them before completion clears the existing sender queue.
+        await tts_manager._payload_queue.join()
+        await websocket_send(json.dumps({"type": "speech-status", "status": "unavailable",
+                                         "reason": reason, "locale": settings["locale"],
+                                         "validation": diagnostics, "missing_units": sorted(tts_manager.missing_units)}))
+        return
+    if display_ack:
+        tts_manager.speech_metrics["delivery"] = "display_acknowledgment"
+        await websocket_send(json.dumps({"type": "speech-status", "status": "fallback",
+                                         "reason": "missing", "locale": settings["locale"],
+                                         "delivery": "display_acknowledgment"}))
+    if reason == "semantic_unverified":
+        await websocket_send(json.dumps({"type": "speech-status", "status": "degraded",
+                                         "reason": reason, "locale": settings["locale"],
+                                         "validation": diagnostics}))
+    emotion = _canonicalize_emotion((lane or {}).get("emotion", "neutral"))
+    await websocket_send(json.dumps({"type": "emotion", "emotion": emotion, "tags": [emotion]}))
+    display = copy.deepcopy(deferred.get("display")) or DisplayText(text="")
+    display.text = ""  # Never put the speech transcript in Chat/History/subtitles.
+    tts_manager.speech_metrics['tts_chunks'] = len(chunks)
+    for index, (chunk, group) in enumerate(chunks):
+        await tts_manager.speak(chunk, display, deferred.get("actions") if index == 0 else None,
+                                live2d_model, tts_engine, websocket_send, speech_group=group,
+                                segment_id=index + 1)
 
 
 async def flush_deferred_sentence_speech(
@@ -3334,14 +3518,11 @@ async def finalize_conversation_turn(
 
     if tts_manager.audio_output_count:
         try:
-            response = await asyncio.wait_for(
-                websocket_send.wait_for_playback()
-                if callable(getattr(type(websocket_send), "wait_for_playback", None))
-                else message_handler.wait_for_response(
-                    client_uid, "frontend-playback-complete"
-                ),
-                timeout=30,
-            )
+            if callable(getattr(type(websocket_send), "wait_for_playback", None)):
+                response = await websocket_send.wait_for_playback()
+            else:
+                response = await asyncio.wait_for(message_handler.wait_for_response(
+                    client_uid, "frontend-playback-complete"), timeout=tts_manager.audio_seconds + 15)
         except asyncio.TimeoutError:
             response = None
             logger.warning(
@@ -3352,7 +3533,25 @@ async def finalize_conversation_turn(
             logger.warning(
                 f"No playback completion response from {client_uid}; continuing finalize."
             )
+        status = (response.get("status", "completed") if isinstance(response, dict)
+                  else "completed" if response else "timeout")
+        missing = sorted(tts_manager.failed_segments)
+        missing_units = sorted(tts_manager.missing_units)
+        if isinstance(response, dict):
+            missing = sorted(set(missing).union(response.get("missing_segments", [])))
+        if (missing or missing_units) and status == "completed":
+            status = "partial"
+        if status == "completed" and tts_manager.speech_metrics.get("delivery") == "display_acknowledgment":
+            status = "fallback"
+        tts_manager.speech_metrics["playback_status"] = status
+        await websocket_send(json.dumps({"type": "speech-status", "status": status,
+                                         "reason": "playback_result", "missing_segments": missing,
+                                         "missing_units": missing_units}))
+        logger.info("speech_playback_result {}", json.dumps({"status": status}))
 
+    if not tts_manager.audio_output_count and tts_manager.failed_segments:
+        await websocket_send(json.dumps({"type": "speech-status", "status": "unavailable",
+            "reason": "synthesis_failed", "missing_segments": sorted(tts_manager.failed_segments)}))
     await websocket_send(json.dumps({"type": "force-new-message"}))
 
     if broadcast_ctx and broadcast_ctx.broadcast_func:

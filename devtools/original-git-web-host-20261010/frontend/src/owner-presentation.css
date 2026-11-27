@@ -1,0 +1,52 @@
+/* Owner-only presentation. Original renderer CSS remains byte-identical. */
+/* Higher specificity than the dynamically imported original renderer CSS. */
+#app .workspace { grid-template-rows: var(--chrome-height) minmax(0, 1fr); }
+#app .workspace > .stage { grid-row: 2; }
+.owner-source-strip, .owner-source-overview, .owner-tool-settings, .owner-attachment-help {
+  font: 14px/1.5 var(--ui-font);
+  color: var(--paper);
+  min-width: 0;
+}
+.owner-source-strip { margin: 16px 0 0; }
+.owner-source-strip ul { display: flex; flex-wrap: wrap; gap: 6px 20px; padding: 0; margin: 0; list-style: none; }
+.owner-source-strip li { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.owner-source-strip .owner-source-notice { margin: 0 0 8px; color: var(--warn); }
+.owner-source-overview { margin-top: 20px; border-block: 1px solid var(--line); }
+.owner-source-overview > summary, .owner-tool-group > summary { padding: 12px 0; }
+.owner-source-overview summary, .owner-tool-settings summary, .owner-attachment-help summary { cursor: pointer; }
+.owner-source-overview summary:hover, .owner-tool-settings summary:hover, .owner-attachment-help summary:hover { color: var(--moon); }
+.owner-source-overview summary:focus-visible, .owner-tool-settings summary:focus-visible, .owner-attachment-help summary:focus-visible {
+  outline: 2px solid var(--moon); outline-offset: 3px; border-radius: 2px;
+}
+.owner-source-detail { padding: 16px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.owner-source-detail h3, .owner-tool-copy h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+.owner-source-detail p, .owner-tool-copy p { margin: 4px 0; }
+.owner-source-time, .owner-source-limits, .owner-source-axes, .owner-tool-purpose { color: var(--muted); font-size: 13px; }
+.owner-source-limits:empty { display: none; }
+.owner-diagnostic { margin-top: 8px; font-size: 12px; color: var(--muted); }
+.owner-diagnostic pre, .owner-diagnostic code { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 var(--data-font); }
+.owner-tool-group { border-bottom: 1px solid var(--line); }
+.owner-tool-heading { font-size: 15px; font-weight: 600; }
+.owner-tool-count { margin-left: 16px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+.owner-tool-row { display: flex; align-items: flex-start; gap: 16px; padding: 12px 0 12px 18px; border-top: 1px solid var(--line); }
+.owner-tool-copy { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.owner-tool-purpose { line-height: 1.5; }
+.owner-tool-policy { font-size: 13px; }
+.owner-tool-toggle { display: flex; align-items: center; gap: 8px; min-height: 36px; flex-shrink: 0; cursor: pointer; font-size: 13px; }
+.owner-tool-toggle input { width: 18px; height: 18px; accent-color: var(--iris); }
+.owner-tool-settings .settings-note { margin: 8px 0 12px; font-size: 13px; }
+.owner-attachment-help { margin-top: 6px; font-size: 12px; color: var(--muted); }
+.owner-attachment-help summary { width: fit-content; padding: 4px 0; }
+.owner-attachment-help p { margin: 4px 0 0; max-width: 65ch; font-size: 13px; }
+@media (max-width: 640px) {
+  .owner-tool-row { padding-left: 0; gap: 12px; }
+  .owner-source-strip ul { gap: 6px 16px; }
+  .owner-tool-count { margin-left: 8px; }
+}
+
+.owner-tool-settings pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 16rem;
+  overflow: auto;
+}

@@ -1,0 +1,224 @@
+{
+  "baseline_head": "c2b3e64c27caaec8c2cba5b213444ddce0d79e03",
+  "baseline_status_sha256": "e3a428c59de0303664e43357884ee5c62770c4a196bf524b44c147fcebcfdb26",
+  "basis": "Pre-existing working files captured before edits; generated evidence is outside the patch.",
+  "patch_sha256": "a1fe852615254ecdb5870acdc06aa98b1933c75692acf389dd70ae9714d5ede6",
+  "byte_exact_replay": true,
+  "files": [
+    {
+      "path": "devtools/original-git-web-host-20261010/frontend/src/owner-presentation.css",
+      "before_sha256": "8831570ad953f1f69b439b42199f6fbe9b7925de423d9538ba4433214e87f6bc",
+      "after_sha256": "9b6217a8e3a9dd5a10a633d370bae9ffd0a2c6821b6aadcb4747143d5176ced1"
+    },
+    {
+      "path": "devtools/original-git-web-host-20261010/frontend/src/owner-presentation.ts",
+      "before_sha256": "b334fc3a2c6c50e87469356e473293854507806a496da35b9b31d00011778c94",
+      "after_sha256": "1093b4e97ea149fd78b956a4f924caf1e6d2f3a10ecb982cf31579a1d57d570f"
+    },
+    {
+      "path": "kuro_launcher/qt_controller.py",
+      "before_sha256": "cb4fc22e8e3351f2005014e48b62da995162a3b93a506703d546e5b8f0432fb2",
+      "after_sha256": "8b966f6cc5a7389104593a1265bb1abdba11d4f2249946c7f261c4e82bb3664d"
+    },
+    {
+      "path": "kuro_launcher/qt_web_adapter.py",
+      "before_sha256": "c74079b4f57c223c3425e5ac0d316089f6b32b2c5738bdde9f4838b7f82123b7",
+      "after_sha256": "4e1bd5ab8a84fe1b12f14a2f3042e0dd499d322668c447552c6a974a8a65b41a"
+    },
+    {
+      "path": "kuro_launcher/tool_policy_settings.py",
+      "before_sha256": "603c40d52d7adc1e61433d5803d626c516c435ab32d8a9bc6eabd47996e982fa",
+      "after_sha256": "4076a16eae7b0dd54339e64e5380b88d41511d2cd5f48680f051e324a9d3f7d3"
+    },
+    {
+      "path": "Open-LLM-VTuber/mcp_servers.json",
+      "before_sha256": "603d656f47c644f7c0dba031c57c3d3eadf9abfb4f01644bbb3c3f48cb335ab9",
+      "after_sha256": "abc2cdb3d86502a3377a2e0662944030059d2cab144c31d0f9de3e789b3094c2"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/agent/agents/basic_memory_agent.py",
+      "before_sha256": "3a3c28e198b7e0458245a76b18cac3a51981bbda14bb8a0ca0bafb10a0ced97e",
+      "after_sha256": "34b3259aa31590c70cc33d65623033bc9c9db7037df74dd0a9f77676644f1974"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/mcp_client.py",
+      "before_sha256": "df8cb4e273387278dffb3e39b1d4055013159f60b473c9fd2a3778a15a42e998",
+      "after_sha256": "04c90747aaacb77f24d937f33bc6f46e577aee843d9911cf89307023623c8883"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/server_registry.py",
+      "before_sha256": "ff132afe19c522b237134a5076ce402eec237935b80e4e82cc32505cb8ce1f4a",
+      "after_sha256": "6413c6c7d68ff5f492dd77de60889e481c023a7c2887375e0426cc782449132d"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_adapter.py",
+      "before_sha256": "63ed5ac703e66184fc4c9cefd2110374d4417d9b99e8efe501b22b748750f8d1",
+      "after_sha256": "05257198d0c528a8f4bb4acefcbeda6231213918352ecca173259990b3151bd7"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_catalog_manager.py",
+      "before_sha256": "718f8d836660d23a83ca345872c3f6f6554365de31b1b9061864e15c32b6218c",
+      "after_sha256": "d29b0eb952910d43f327351cd1cdd997a5df72f97f48c398cb4acfa2edfca4d1"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_executor.py",
+      "before_sha256": "98844866548aeb99dbde6db781b518ca803779ac4f468f4c30df8298207c7ad7",
+      "after_sha256": "49dbfe666c818fa6bacc5d24f4eac7b691fa020c082f8ff4478424a1e1b7990c"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_manager.py",
+      "before_sha256": "14d1416cb5bed3dd4061d911a4a0af6fcf8e604bb4e64116ff53b0857c7e2cdd",
+      "after_sha256": "ab2ccfc257ed4d0b776ccfd2b5e50d3f9665f82bc9774ddc78114ab5918e44dd"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_policy_manager.py",
+      "before_sha256": "15938e1d2f2468aeca91d0a7e398c0d5d69162ad3585ffc9a72decb47616baec",
+      "after_sha256": "a37c1e69d6b7b2eff4a0884430ab7c33cf5406a7ea4974db05605411c3123449"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_result.py",
+      "before_sha256": "2cfef3e5af0d92ae2c96ab62f46d1f8704200b83919735b939229d6c7a054b70",
+      "after_sha256": "20affaff4d2355a9b26162b9d8b0c388d65e4f4e0bb7f5fa03d4eca179f786a7"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_schema.py",
+      "before_sha256": "c2890a133719322f788955b9e54c0989da809e35e50e0e5521940a8882ce7cd0",
+      "after_sha256": "806692557f9f04f55a79d159887b58578797d0bd35238e3344db5c52cc7e3b99"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/types.py",
+      "before_sha256": "53bc8b4405acdbab48a38465cccef13911960c3afb00dd5f7e4a6cfd0052f235",
+      "after_sha256": "184390c797da0e2087051280624c586ef34122ba90111bc83176f4ccf5762251"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/routes.py",
+      "before_sha256": "d32a0324cebf85314329250f2d04adb29b898d6f7eef623a92ab8bcf895db2bf",
+      "after_sha256": "f773f932c1a69518fe1ef9dcd0d48e0196855f9b37699198aa18deca2410afc5"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/service_context.py",
+      "before_sha256": "ba903f3e5b9575d0f3a23bac9cb9ed6b413db99fc22de5c94fe6793426a6518d",
+      "after_sha256": "ff027ea8f3ee6ea963fb9ddd09c8f7824fa2ea45d5bee2a96f9308f42e6c29ee"
+    },
+    {
+      "path": "Open-LLM-VTuber/tests/test_conversation_mcp.py",
+      "before_sha256": "d7ed2f7e04412087796f478536eea48c319b029177ae3546cced4ec801e63aec",
+      "after_sha256": "95d822e29b97e95ad6ff17748b58cd04e787aa6ef72d22ca398909bd69849b19"
+    },
+    {
+      "path": "Open-LLM-VTuber/tests/test_http_mcp.py",
+      "before_sha256": "2a2e5284819053011cc14ad54a2c4c646c4fbf298b3571ac972e67d68f9f7615",
+      "after_sha256": "615a2723f99738f764543f237c51431219a1631690de5caee747a8b682e5ae93"
+    },
+    {
+      "path": "Open-LLM-VTuber/tests/test_mcp_m0_discovery.py",
+      "before_sha256": "0b796f5b4e05848c602e33d6ff6b225bde3f48a8f6b3d13d070953cef651b692",
+      "after_sha256": "29393129b2f761e86aa40893ca8f0005b9af73e77f592781f4da2302d3ce1712"
+    },
+    {
+      "path": "Open-LLM-VTuber/tests/test_mcp_m0_omi_path.py",
+      "before_sha256": "59f40d6d88156d685a73fa832b7432af9573b4627ab79e487c4d57b1fa8ab4b7",
+      "after_sha256": "4ad67e66c0ac389f181965d6f7dd8a114b7cb4b94f5c180160be011081afd984"
+    },
+    {
+      "path": "Open-LLM-VTuber/tests/test_mcp_m0_schema.py",
+      "before_sha256": "ef5ba3638c794e5db7ebfb0d7a645079fb5dbe3cb6fa6166972f107270755875",
+      "after_sha256": "0f545b762aff6573072610d86127aa5a9ff42e037e1f2476379566c49152c6c4"
+    },
+    {
+      "path": "Open-LLM-VTuber/tests/test_no_tool_query_truth.py",
+      "before_sha256": "42c9d4bfddc7f7f100b55d3d59b7ec49642a8a1752364227fb61de21029dd005",
+      "after_sha256": "a823442f00177ddd3e63db695ce709055b57b0b2d02d012b973cb404e2a5053a"
+    },
+    {
+      "path": "Open-LLM-VTuber/tests/test_omi_effective_arguments.py",
+      "before_sha256": "e76ea6caa8408b20e1175562e2d96d878bf8df5a49f613d6cda4b8b0339a593e",
+      "after_sha256": "a5dec1bbdb0352195310a3c4ac63ae032387a49d880519e9c7bc782d123a6bdd"
+    },
+    {
+      "path": "Open-LLM-VTuber/tests/test_paos_local_memory_routing.py",
+      "before_sha256": "74d504bb7ec04549b3f5cad58d2c16b7cf955c27560fb946bd68df9fb9f8eb45",
+      "after_sha256": "fee528f49427ad65321efd4e974c0c9b6afb0916d9f71462cb7228677c0682cf"
+    },
+    {
+      "path": "Open-LLM-VTuber/tests/test_project_workspace_cutover.py",
+      "before_sha256": "900c97dc895781a134bf49c3e3c98989d64aae39f8e3f4f99fcbea828764128a",
+      "after_sha256": "244c55f497ab7aaf76cb38f657e2efe1e78a95eed7525b1cfeedd93fadc5b56f"
+    },
+    {
+      "path": "Open-LLM-VTuber/tests/test_tool_argument_diagnostics.py",
+      "before_sha256": "38513066ec2dac854b54fbedc95ce5995131b0246f9247e02a76f857ed30a9bb",
+      "after_sha256": "23f517f03058188581e40c28d54144aacd4a0c6f0b1cae2c43fc562790e6caeb"
+    },
+    {
+      "path": "Open-LLM-VTuber/tests/test_tool_policy_omi.py",
+      "before_sha256": "969377c9a3bb1217ade706dc158d59ce0fe2a7d32c86801ff423ef02725efe9a",
+      "after_sha256": "59ea30bcbeced8627284602d52ea8c1c9665d3b3b6a4ac1d841822de08643647"
+    },
+    {
+      "path": "Open-LLM-VTuber/tool_catalog.json",
+      "before_sha256": "a27eea756b0ba9d5fdcc7ecd6afe41cabbc022c00a5fb5e95eeb16f3d3552582",
+      "after_sha256": "61726ebb5ec5b51950e786840dd58790d40b9b4a9ae0167d98617c133c5e440e"
+    },
+    {
+      "path": "Open-LLM-VTuber/tool_policy.json",
+      "before_sha256": "3cd58bd4300fc131f2607755852fbf8e1187472e041394e7d82931a5885a98ba",
+      "after_sha256": "ed19a73e1a88e1e1ba14491ea04a1d0beac0715c8badd59c4e09e836f5390bb5"
+    },
+    {
+      "path": "projects/desktop-agent-runtime/prompts/tool_prompt.txt",
+      "before_sha256": "fb293f170ed99e95c5969195ca557271fb63368f24dae2ca6e387d4c1aacf6c6",
+      "after_sha256": "51ba0d883710221b50654fa2482e64a04ec285f54d1f5a90031a6e79a8881726"
+    },
+    {
+      "path": "tests/g2_tools_today_frontend.test.cjs",
+      "before_sha256": "49f0563e31790098de771b1b80dcaa69d65748ade5763677d56a120ed33f7943",
+      "after_sha256": "04a2766de60fdf5b731b11dfe9a0d002dba01dd6b7066168858accb918d60827"
+    },
+    {
+      "path": "tests/test_g2_tool_settings.py",
+      "before_sha256": "c019639b0291e90154e01ce2a242fe58500ebd615af73c4f51e11f2e4d5ca0b2",
+      "after_sha256": "57129dca6119dfde0caa976b12c7fca5a1ca5b86c4bd6b3f68d7715004f23a55"
+    },
+    {
+      "path": "tests/test_r2_settings_parity.py",
+      "before_sha256": "5876a768b3d6e5f863d4608967a3884a40c56115858618d537947c08489ce163",
+      "after_sha256": "748bf6b91d56ac32e3e5eff06b7c2ba0dbb0b67f85753450507bc367a575e9f5"
+    },
+    {
+      "path": "docs/agent-runs/kuro-dynamic-tools-20261123/build_preview.mjs",
+      "before_sha256": null,
+      "after_sha256": "ec2a9d7832f6498dd8ca6e99cf773710e25f9c601ab1f664d5a3d039a7a5541a"
+    },
+    {
+      "path": "docs/agent-runs/kuro-dynamic-tools-20261123/inspect_inventory.py",
+      "before_sha256": null,
+      "after_sha256": "d12e7d5f73db6af5aa749b7c57640196f67219a59137c29c05295e7eac523d0a"
+    },
+    {
+      "path": "docs/agent-runs/kuro-dynamic-tools-20261123/Plan.md",
+      "before_sha256": null,
+      "after_sha256": "4441491048f5f487f47853162ae6e8986b37fb4087f18cc19f70c2e58d1f5eeb"
+    },
+    {
+      "path": "docs/agent-runs/kuro-dynamic-tools-20261123/verify_preview.py",
+      "before_sha256": null,
+      "after_sha256": "249ec6ac874abb845810445f1576a93bd6e6d8c352304fdfc63684c01d30df81"
+    },
+    {
+      "path": "docs/agent-runs/kuro-dynamic-tools-20261123/verify_workflows.py",
+      "before_sha256": null,
+      "after_sha256": "ab72c96a706032926f80bbb29a1be915241540091160abaf4e65e42b65d26aec"
+    },
+    {
+      "path": "Open-LLM-VTuber/tests/fixtures/legacy_tool_grants.json",
+      "before_sha256": null,
+      "after_sha256": "0e94197185d31c58b8ca99416a2e5485d10db3aa14ce4d368f9e586066cf31b5"
+    },
+    {
+      "path": "Open-LLM-VTuber/tests/test_dynamic_tool_turn.py",
+      "before_sha256": null,
+      "after_sha256": "725b803243dab99c1174fd64740df728c019202cc3bb038f921ec15350c8c1bd"
+    }
+  ]
+}

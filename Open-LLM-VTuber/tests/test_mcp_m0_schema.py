@@ -82,5 +82,7 @@ class SchemaExposureTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('a::invalid',prompt)
         self.assertEqual(len(openai),1)
         self.assertEqual(len(claude),1)
-        self.assertIn('minimum',prompt)
+        self.assertNotIn('minimum',prompt)
+        self.assertIn('kuro_discover', prompt)
+        self.assertEqual(openai[0]['function']['parameters']['properties']['n']['minimum'], 2)
         self.assertEqual(list(adapter.get_last_formatted_tools_dict()),['a::good'])

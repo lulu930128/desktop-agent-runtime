@@ -190,6 +190,16 @@ def init_client_ws_route(default_context_cache: ServiceContext) -> APIRouter:
                 status_code=500,
             )
 
+    @router.post("/launcher/tool-inventory")
+    async def launcher_tool_inventory(payload: dict):
+        uid, _, error = ws_handler._resolve_launcher_target(payload.get("target_client_uid"))
+        if error or not uid:
+            return JSONResponse({"ok": False, "error": error or "no_active_session"}, status_code=409)
+        context = ws_handler.client_contexts.get(uid)
+        if not context or not context.tool_manager or not context.tool_executor:
+            return JSONResponse({"ok": False, "error": "mcp_unavailable"}, status_code=409)
+        return {"ok": True, "client_uid": uid, **context.tool_executor.inventory()}
+
     @router.post("/launcher/refresh-memory")
     async def launcher_refresh_memory(payload: dict):
         """Refresh the active system prompt after launcher-side memory changes."""

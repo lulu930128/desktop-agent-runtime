@@ -19,7 +19,8 @@ COMMIT = "995c23c7c8d1be62000229d58610d2214f3bb745"
 ORIGINALS = ("src/work-panel/main.ts", "src/work-panel/styles.css", "src/work-panel/model.ts",
              "src/work-panel/types.ts", "src/work-panel/schedule.ts", "work-panel.html")
 ADAPTERS = ("src/owner-bootstrap.ts", "src/owner-bridge.ts", "src/owner-preferences.ts",
-            "src/owner-presentation.ts", "src/canonical-model.ts", "vite.owner.config.mjs", "tsconfig.json")
+            "src/owner-presentation.ts", "src/owner-presentation.css", "src/canonical-model.ts", "vite.owner.config.mjs", "tsconfig.json",
+            "work-panel-history.cjs", "work-panel-history.patch")
 
 
 def digest(data):

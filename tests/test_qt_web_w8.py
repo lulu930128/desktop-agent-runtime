@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QSystemTrayIcon, QWidge
 
 from kuro_launcher import qt_app, qt_branding, qt_web_host
 from test_qt_web_window_chrome import window_action
+from kuro_launcher.qt_web_release import VerifiedOwnerBundle, RELEASE_PIN
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -31,9 +32,8 @@ def web_window():
         stack.enter_context(patch.object(qt_web_host, 'create_existing_window_host', side_effect=surface))
         for name in ('_start_notification_delivery', '_schedule_startup_auto_start'):
             stack.enter_context(patch.object(qt_app.KuroQtLauncherWindow, name))
-        stack.enter_context(patch.object(qt_app, 'QSettings', side_effect=AssertionError('Private state')))
         stack.enter_context(patch.object(QSystemTrayIcon, 'show'))
-        window = qt_app.KuroQtLauncherWindow(SimpleNamespace(), web_bundle=object())
+        window = qt_app.KuroQtLauncherWindow(SimpleNamespace(), web_bundle=VerifiedOwnerBundle.load(ROOT / 'assets/qt-owner' / RELEASE_PIN.fingerprint, RELEASE_PIN))
         window.status_timer.stop()
         window.runtime_timer.stop()
         try:
@@ -60,8 +60,9 @@ class W8IconTrayTests(unittest.TestCase):
                     self.assertFalse(icon.pixmap(size, size).isNull())
                     self.assertEqual(icon.pixmap(size, size).toImage(), expected.pixmap(size, size).toImage())
             self.assertEqual(window.tray.toolTip(), 'Kuro')
-            self.assertEqual([a.text() for a in window.tray.contextMenu().actions()],
-                             ['Show Kuro', 'Restart Kuro', 'Quit Kuro'])
+            self.assertEqual([a.text() for a in window.tray.contextMenu().actions() if a.isEnabled() and not a.isSeparator()],
+                             ['將 Kuro 帶到最前面', '顯示桌寵', '重新定位桌寵',
+                              '開啟日誌資料夾', '重新啟動 Kuro', '結束 Kuro'])
 
     def test_missing_and_corrupt_icon_warn_and_keep_tray_usable(self):
         with tempfile.TemporaryDirectory(dir=ROOT / '.tmp') as folder:

@@ -19,11 +19,11 @@ API `available` 表示可接收請求，模型按需載入；`last_inference` �
 ## 等待時間、恢復與狀態
 
 - 對話中央 TTS 的連線 timeout 為 1 秒，POST read timeout 為 180 秒，允許首次載入與角色切換完成。health 不保證下一個 POST 仍持有同一個模型，因此已載入模型也使用相同上限。
-- health busy 或 POST HTTP 429 僅略過當次語音，下一句會重新檢查服務，不啟動長時間 circuit。
+- health busy 或 POST HTTP 429 僅略過當次語音，下一句會重新檢查服務，不啟動長時間 circuit；新版中央若明示同 voice 正在 model-only preload，首句會送出一次 POST，交由 owner 最多等待預載 150 秒，不在 consumer 直接略過。
 - 合成逾時可能代表中央仍在處理；不自動重送原句。下一句先檢查 health，服務仍 busy 就略過。
 - 連線失敗、discovery timeout、HTTP 錯誤或無效音訊使用 5 秒冷卻，之後可由新句子恢復，不需重新建立 TTS client。
-- Launcher 顯示 `cold`（首次發聲需載入）、`busy`（正在處理）、`available`（目標模型已載入且當次程序最近合成成功）、`unavailable`（離線或已知失敗）。readiness 是當下觀察，不保證下一次推論或 Electron 播放成功。
-- 健康輪詢不做 synthesis 或 warm-up。角色切換保持文字可用，首次發聲由中央按需載入目標 voice。
+- Launcher 顯示 `cold`（目標模型未載入）、`busy`（正在處理）、`available`（目標模型已載入）、`unavailable`（離線或已知失敗）。`available` 的 reason 區分「預載已完成，首次合成尚未驗證」與「最近一次合成成功」，不能由 model loaded 推定聽感或推論已過。readiness 是當下觀察，不保證下一次推論或 Electron 播放成功。
+- 健康輪詢不做 synthesis 或 warm-up。新版 Kuro 只在 Profile fresh start／成功 hot switch 各非阻塞請求一次中央 `/preload`；它只載入模型、不合成假音訊，失敗不阻擋文字啟動。舊中央缺少 capability 時不呼叫假 warming、不重試。
 - 診斷記錄 failure reason、階段、voice、耗時、HTTP status 與冷卻秒數，不記錄合成文字、response body 或模型路徑。
 
 修復與驗證範圍見 [本次進度](agent-runs/tts-lifecycle-20260913/Progress.md)。
@@ -36,6 +36,7 @@ API `available` 表示可接收請求，模型按需載入；`last_inference` �
 - listening_audio 保留呼叫 JLPT；不另實作模型管理。JLPT audio cache 包含中央 package digest。
 - 中央 service 只接 JSON 的 voice、text、language、speed_factor；不接受模型或檔案路徑。
 - 單一推論鎖涵蓋模型切換與完整音訊生成；重建模型時清除上個角色的 reference cache。
+- 2026-10-31 首句修復目前為 Source Ready／Runtime Pending。正式 supervisor 換版後，以 `/health.service_version`、程序載入時的 `source_sha256`、`preload.state` 與中央 log 驗證；僅 HTTP 202 不代表模型就緒。
 
 ## 舊資料清理與人工驗收
 

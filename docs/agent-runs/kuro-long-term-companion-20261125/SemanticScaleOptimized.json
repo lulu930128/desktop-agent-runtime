@@ -1,0 +1,443 @@
+{
+  "runs": [
+    {
+      "messages": 1000,
+      "added": 1000,
+      "corpus_sha256": "3d943dfc3f892d11dd0c16f73fb410063233bd734c2c21531d8e81bb507eb446",
+      "vectors": 500,
+      "rows": {
+        "ai": 500,
+        "episode": 500,
+        "human": 500
+      },
+      "stage_seconds": 10.486546900123358,
+      "build_cpu_seconds": 9.5,
+      "process_peak_bytes": 552308736,
+      "queries": [
+        {
+          "query": "陶芸教室の参加費はいくら？",
+          "seconds": 0.06616980023682117,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ]
+          ]
+        },
+        {
+          "query": "陶芸教室の参加費はいくら？",
+          "seconds": 0.040646899957209826,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ]
+          ]
+        },
+        {
+          "query": "What did the pottery workshop cost?",
+          "seconds": 0.03935409989207983,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ]
+          ]
+        },
+        {
+          "query": "What did the pottery workshop cost?",
+          "seconds": 0.03912650002166629,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ]
+          ]
+        },
+        {
+          "query": "azurite ceramic admission",
+          "seconds": 0.03796419966965914,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              18
+            ]
+          ]
+        },
+        {
+          "query": "azurite ceramic admission",
+          "seconds": 0.039032300002872944,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              18
+            ]
+          ]
+        },
+        {
+          "query": "庫存出貨",
+          "seconds": 0.050677199847996235,
+          "hit": false,
+          "sources": [
+            [
+              "0",
+              1
+            ],
+            [
+              "0",
+              109
+            ],
+            [
+              "0",
+              115
+            ],
+            [
+              "0",
+              13
+            ]
+          ]
+        },
+        {
+          "query": "庫存出貨",
+          "seconds": 0.06499500013887882,
+          "hit": false,
+          "sources": [
+            [
+              "0",
+              1
+            ],
+            [
+              "0",
+              109
+            ],
+            [
+              "0",
+              115
+            ],
+            [
+              "0",
+              13
+            ]
+          ]
+        }
+      ],
+      "db_bytes": 5640192,
+      "query_p50_seconds": 0.04000049992464483
+    },
+    {
+      "messages": 10000,
+      "added": 9000,
+      "corpus_sha256": "5e2c09757faed93fbb142ffbfd5a77e1d836f7d569fe985f3b4c9f94359138eb",
+      "vectors": 5000,
+      "rows": {
+        "ai": 5000,
+        "episode": 5000,
+        "human": 5000
+      },
+      "stage_seconds": 72.7115291999653,
+      "build_cpu_seconds": 71.59375,
+      "process_peak_bytes": 552308736,
+      "queries": [
+        {
+          "query": "陶芸教室の参加費はいくら？",
+          "seconds": 1.0987121001817286,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ]
+          ]
+        },
+        {
+          "query": "陶芸教室の参加費はいくら？",
+          "seconds": 0.25489640003070235,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ]
+          ]
+        },
+        {
+          "query": "What did the pottery workshop cost?",
+          "seconds": 0.2971499999985099,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ],
+            [
+              "1000",
+              621
+            ],
+            [
+              "1000",
+              761
+            ],
+            [
+              "1000",
+              779
+            ]
+          ]
+        },
+        {
+          "query": "What did the pottery workshop cost?",
+          "seconds": 0.28629609989002347,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ],
+            [
+              "1000",
+              621
+            ],
+            [
+              "1000",
+              761
+            ],
+            [
+              "1000",
+              779
+            ]
+          ]
+        },
+        {
+          "query": "azurite ceramic admission",
+          "seconds": 0.24708659993484616,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              18
+            ]
+          ]
+        },
+        {
+          "query": "azurite ceramic admission",
+          "seconds": 0.23983249999582767,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              18
+            ]
+          ]
+        },
+        {
+          "query": "庫存出貨",
+          "seconds": 0.3269289000891149,
+          "hit": false,
+          "sources": [
+            [
+              "1000",
+              27
+            ],
+            [
+              "1000",
+              33
+            ],
+            [
+              "1000",
+              45
+            ],
+            [
+              "1000",
+              135
+            ]
+          ]
+        },
+        {
+          "query": "庫存出貨",
+          "seconds": 0.3123904997482896,
+          "hit": false,
+          "sources": [
+            [
+              "1000",
+              27
+            ],
+            [
+              "1000",
+              33
+            ],
+            [
+              "1000",
+              45
+            ],
+            [
+              "1000",
+              135
+            ]
+          ]
+        }
+      ],
+      "db_bytes": 56020992,
+      "query_p50_seconds": 0.2917230499442667
+    },
+    {
+      "messages": 100000,
+      "added": 90000,
+      "corpus_sha256": "3a4320e43ef8576aad7abd3b6375b9b902ceee569d5dcf5ed4ab4c9cd42f9446",
+      "vectors": 50000,
+      "rows": {
+        "ai": 50000,
+        "episode": 50000,
+        "human": 50000
+      },
+      "stage_seconds": 813.2172445002943,
+      "build_cpu_seconds": 781.25,
+      "process_peak_bytes": 552308736,
+      "queries": [
+        {
+          "query": "陶芸教室の参加費はいくら？",
+          "seconds": 11.31126690004021,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ]
+          ]
+        },
+        {
+          "query": "陶芸教室の参加費はいくら？",
+          "seconds": 2.724975800141692,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ]
+          ]
+        },
+        {
+          "query": "What did the pottery workshop cost?",
+          "seconds": 3.252748299855739,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ],
+            [
+              "1000",
+              621
+            ],
+            [
+              "1000",
+              761
+            ],
+            [
+              "1000",
+              779
+            ]
+          ]
+        },
+        {
+          "query": "What did the pottery workshop cost?",
+          "seconds": 3.14879749994725,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ],
+            [
+              "1000",
+              621
+            ],
+            [
+              "1000",
+              761
+            ],
+            [
+              "1000",
+              779
+            ]
+          ]
+        },
+        {
+          "query": "azurite ceramic admission",
+          "seconds": 2.7589976000599563,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              18
+            ]
+          ]
+        },
+        {
+          "query": "azurite ceramic admission",
+          "seconds": 2.738040199968964,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              18
+            ]
+          ]
+        },
+        {
+          "query": "庫存出貨",
+          "seconds": 3.6358517999760807,
+          "hit": false,
+          "sources": [
+            [
+              "1000",
+              27
+            ],
+            [
+              "11000",
+              509
+            ],
+            [
+              "12000",
+              97
+            ],
+            [
+              "12000",
+              211
+            ]
+          ]
+        },
+        {
+          "query": "庫存出貨",
+          "seconds": 3.500180700328201,
+          "hit": false,
+          "sources": [
+            [
+              "1000",
+              27
+            ],
+            [
+              "11000",
+              509
+            ],
+            [
+              "12000",
+              97
+            ],
+            [
+              "12000",
+              211
+            ]
+          ]
+        }
+      ],
+      "db_bytes": 561717248,
+      "query_p50_seconds": 3.2007728999014944
+    }
+  ],
+  "network_calls": 0
+}

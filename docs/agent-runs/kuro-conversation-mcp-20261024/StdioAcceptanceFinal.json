@@ -1,0 +1,131 @@
+{
+  "production_backend_calls": 0,
+  "provider_calls": 0,
+  "llm_calls": 0,
+  "runtime_adoption": "PENDING",
+  "discovery": {
+    "omi-search": {
+      "complete": true,
+      "count": 20,
+      "digest": "32232a46e34bbc4e8deb33c58193fc57653cad9da2a5f732747248ae3efbac48"
+    },
+    "japanese-study": {
+      "complete": true,
+      "count": 34,
+      "digest": "0d0b9ae1d42ec2329eba7ff80dd26d838a1440db51410b1a1f104e49b3b34ec0"
+    },
+    "english-study": {
+      "complete": true,
+      "count": 17,
+      "digest": "d53a6a5e4165d8896316ff5fb45741f71fdc982cd8eab3bab0ea114a0ed5fc80"
+    },
+    "listening-audio": {
+      "complete": true,
+      "count": 7,
+      "digest": "b2509c34c019542e3bb1e35c0cf456a79eb67d9cc7ae1209337897bf3cca6212"
+    }
+  },
+  "exposed_ids": [
+    "english-study::english_get_due_reviews",
+    "english-study::english_get_ielts_progress",
+    "english-study::english_get_item",
+    "english-study::english_get_plan",
+    "english-study::english_get_practice_session",
+    "english-study::english_get_reference_entry",
+    "english-study::english_get_summary",
+    "english-study::english_list_practice_sessions",
+    "english-study::english_search_items",
+    "english-study::english_search_reference_entries",
+    "japanese-study::study_get_due_reviews",
+    "japanese-study::study_get_item",
+    "japanese-study::study_get_learner_policy",
+    "japanese-study::study_get_learning_context",
+    "japanese-study::study_get_plan",
+    "japanese-study::study_get_practice_session",
+    "japanese-study::study_get_summary",
+    "japanese-study::study_list_practice_sessions",
+    "japanese-study::study_list_study_lists",
+    "japanese-study::study_search_items",
+    "listening-audio::listening_get_attempt_result",
+    "listening-audio::listening_get_question",
+    "listening-audio::listening_health",
+    "omi-search::omi_ask",
+    "omi-search::omi_read_capability_status",
+    "omi-search::omi_read_data_freshness",
+    "omi-search::omi_read_market_overview",
+    "omi-search::omi_read_refresh_status",
+    "omi-search::omi_read_source_health",
+    "omi-search::omi_read_stock_context",
+    "omi-search::omi_read_tw_market_dashboard",
+    "omi-search::omi_read_tw_stock_chart",
+    "omi-search::omi_read_tw_stock_dashboard_detail",
+    "omi-search::omi_read_tw_stock_research",
+    "omi-search::omi_read_tw_workspace_header",
+    "omi-search::omi_read_tw_workspace_hot_groups",
+    "omi-search::omi_read_tw_workspace_watchlist",
+    "omi-search::omi_search_tw_symbols"
+  ],
+  "exact_omi_backend_payload": {
+    "contract_version": "omi.decision.v4",
+    "question": "Synthetic unchanged question",
+    "mode": "data_only",
+    "caller_profile": "omi_search",
+    "allow_llm": false,
+    "allow_write": false,
+    "allow_external_fetch": false,
+    "target": {
+      "type": "auto"
+    },
+    "realtime_policy": "cache_only",
+    "tool_budget": {
+      "max_calls": 3,
+      "max_external_fetches": 0,
+      "max_total_seconds": 20
+    }
+  },
+  "offline_sources_remain_errors": 3,
+  "successful_fixture_calls": 31,
+  "exercised_ids": [
+    "english-study::english_get_due_reviews",
+    "english-study::english_get_ielts_progress",
+    "english-study::english_get_item",
+    "english-study::english_get_plan",
+    "english-study::english_get_practice_session",
+    "english-study::english_get_reference_entry",
+    "english-study::english_get_summary",
+    "english-study::english_list_practice_sessions",
+    "english-study::english_search_items",
+    "english-study::english_search_reference_entries",
+    "japanese-study::study_get_due_reviews",
+    "japanese-study::study_get_item",
+    "japanese-study::study_get_learner_policy",
+    "japanese-study::study_get_learning_context",
+    "japanese-study::study_get_plan",
+    "japanese-study::study_get_practice_session",
+    "japanese-study::study_get_summary",
+    "japanese-study::study_list_practice_sessions",
+    "japanese-study::study_list_study_lists",
+    "japanese-study::study_search_items",
+    "listening-audio::listening_get_attempt_result",
+    "listening-audio::listening_get_question",
+    "listening-audio::listening_health",
+    "omi-search::omi_ask",
+    "omi-search::omi_read_capability_status",
+    "omi-search::omi_read_data_freshness",
+    "omi-search::omi_read_market_overview",
+    "omi-search::omi_read_refresh_status",
+    "omi-search::omi_read_source_health",
+    "omi-search::omi_read_stock_context"
+  ],
+  "blocked_attempts": 484,
+  "parent_secrets_not_inherited": true,
+  "only_omi_query_posts": true,
+  "external_files_unchanged": 37,
+  "http_methods": [
+    "GET",
+    "POST"
+  ],
+  "post_paths": [
+    "/api/ai/ask"
+  ]
+}

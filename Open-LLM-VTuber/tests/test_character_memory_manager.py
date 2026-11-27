@@ -106,25 +106,24 @@ class CharacterMemoryManagerTest(unittest.TestCase):
             self.conf_uid,
             "Launcher memory architecture uses repository and retriever boundaries.",
             memory_type="project_decision",
-            scope_level="project",
+            scope_level="project", project_id="launcher",
             importance=0.75,
         )
 
         results = list_character_memories(
             self.conf_uid,
-            query_text="launcher repository retriever",
+            project_id="launcher", query_text="launcher repository retriever",
             max_entries=2,
         )
 
-        self.assertGreaterEqual(len(results), 2)
+        self.assertEqual(len(results), 1)  # Unrelated tea preference must not enter this prompt.
         self.assertIn("Launcher memory architecture", results[0]["content"])
 
         db_path = Path(self.temp_dir) / "character_memory.sqlite3"
         self.assertTrue(db_path.exists())
         with sqlite3.connect(db_path) as conn:
             count = conn.execute(
-                "SELECT COUNT(*) FROM memory_entries WHERE conf_uid = ?",
-                (self.conf_uid,),
+                "SELECT COUNT(*) FROM memory_entries",
             ).fetchone()[0]
         self.assertEqual(count, 2)
 
@@ -133,38 +132,44 @@ class CharacterMemoryManagerTest(unittest.TestCase):
             self.conf_uid,
             "Keep this memory about launcher indexing.",
             memory_type="project_state",
-            scope_level="project",
+            scope_level="project", project_id="launcher",
         )
         add_character_memory(
             self.conf_uid,
             "Remove this memory about an obsolete launcher path.",
             memory_type="project_state",
-            scope_level="project",
+            scope_level="project", project_id="launcher",
         )
 
         list_character_memories(
             self.conf_uid,
-            query_text="launcher indexing",
+            project_id="launcher", query_text="launcher indexing",
             max_entries=2,
         )
-        entries = list_character_memories(self.conf_uid, enabled_only=False)
+        entries = list_character_memories(self.conf_uid, enabled_only=False, project_id="launcher")
         obsolete_entry = next(
             entry for entry in entries if "obsolete launcher path" in entry["content"]
         )
-        self.assertTrue(delete_character_memory(self.conf_uid, obsolete_entry["id"]))
+        self.assertTrue(delete_character_memory(self.conf_uid, obsolete_entry["id"], project_id="launcher"))
 
         list_character_memories(
             self.conf_uid,
-            query_text="launcher indexing",
+            project_id="launcher", query_text="launcher indexing",
             max_entries=2,
         )
         db_path = Path(self.temp_dir) / "character_memory.sqlite3"
         with sqlite3.connect(db_path) as conn:
             count = conn.execute(
-                "SELECT COUNT(*) FROM memory_entries WHERE conf_uid = ?",
-                (self.conf_uid,),
+                "SELECT COUNT(*) FROM memory_entries",
             ).fetchone()[0]
         self.assertEqual(count, 1)
+
+    def test_legacy_unknown_project_is_manageable_but_never_prompted(self):
+        add_character_memory(self.conf_uid, "Obsidian release window", scope_level="project")
+        self.assertTrue(list_character_memories(self.conf_uid, enabled_only=False))
+        for project in ("", self.conf_uid, "obsidian"):
+            for query in ("", "Obsidian release"):
+                self.assertEqual(list_character_memories(self.conf_uid, project_id=project, query_text=query), [])
 
     def test_cross_history_search_excludes_current_history(self) -> None:
         old_history_uid = create_new_history(self.conf_uid)

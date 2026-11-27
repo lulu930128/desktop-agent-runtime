@@ -11,6 +11,9 @@ export const llmVtuberAdapter: BackendProtocolAdapter = {
   toKuroEvents(payload, context) {
     const messageType = String(payload.type || "");
     const events: KuroBackendEvent[] = [];
+    if (messageType === "speech-status") {
+      return [{ type: "speech-status", status: String(payload.status || "unavailable") }];
+    }
 
     if (messageType === "set-model-and-conf") {
       const modelInfo = payload.model_info || {};
@@ -31,7 +34,9 @@ export const llmVtuberAdapter: BackendProtocolAdapter = {
       events.push({
         type: "assistant-audio",
         speechStatus: typeof payload.speech_status === 'string' ? payload.speech_status : undefined,
-        displayText: normalizeText(payload.display_text?.text || ""),
+        appendDisplay: payload.display_contract === "kuro.speech-lanes.v1" && payload.display_append === true,
+        displayText: payload.display_append === true ? String(payload.display_text?.text ?? "") : normalizeText(payload.display_text?.text || ""),
+        segmentId: Number.isInteger(payload.segment_id) ? payload.segment_id : undefined,
         audioBase64: payload.audio || null
       });
       return events;

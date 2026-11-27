@@ -1,0 +1,267 @@
+{
+  "model": null,
+  "external_calls": 0,
+  "runs": [
+    {
+      "messages": 1000,
+      "corpus_sha256": "9111942569e4b44c5485d1065507cc87c85bfa321cc4a33e61103346ef83c1b7",
+      "cold_seconds": 0.039225800428539515,
+      "retrieval_p50_seconds": 0.03563470020890236,
+      "queries": [
+        {
+          "query": "azurite",
+          "gold": [
+            17
+          ],
+          "found": [
+            17
+          ],
+          "recall": 1.0,
+          "precision": 1.0,
+          "false_hits": 0,
+          "seconds": 0.04076449992135167,
+          "sync_calls": 1,
+          "traced_message_mutations": 1000
+        },
+        {
+          "query": "azurite",
+          "gold": [
+            17
+          ],
+          "found": [
+            17
+          ],
+          "recall": 1.0,
+          "precision": 1.0,
+          "false_hits": 0,
+          "seconds": 0.03723019966855645,
+          "sync_calls": 1,
+          "traced_message_mutations": 1000
+        },
+        {
+          "query": "藍銅礦",
+          "gold": [
+            17
+          ],
+          "found": [],
+          "recall": 0.0,
+          "precision": null,
+          "false_hits": 0,
+          "seconds": 0.03529869997873902,
+          "sync_calls": 1,
+          "traced_message_mutations": 1000
+        },
+        {
+          "query": "藍銅礦",
+          "gold": [
+            17
+          ],
+          "found": [],
+          "recall": 0.0,
+          "precision": null,
+          "false_hits": 0,
+          "seconds": 0.03559880005195737,
+          "sync_calls": 1,
+          "traced_message_mutations": 1000
+        },
+        {
+          "query": "unobtainium",
+          "gold": [],
+          "found": [],
+          "recall": null,
+          "precision": null,
+          "false_hits": 0,
+          "seconds": 0.03567060036584735,
+          "sync_calls": 1,
+          "traced_message_mutations": 1000
+        },
+        {
+          "query": "unobtainium",
+          "gold": [],
+          "found": [],
+          "recall": null,
+          "precision": null,
+          "false_hits": 0,
+          "seconds": 0.03466699970886111,
+          "sync_calls": 1,
+          "traced_message_mutations": 1000
+        }
+      ],
+      "bytes": 880640
+    },
+    {
+      "messages": 10000,
+      "corpus_sha256": "d17b4f827a86b4b4a52bc92731e0073e76c8f869409bea390f2add60cd4286a0",
+      "cold_seconds": 0.2632446000352502,
+      "retrieval_p50_seconds": 0.3036901499144733,
+      "queries": [
+        {
+          "query": "azurite",
+          "gold": [
+            17
+          ],
+          "found": [
+            17
+          ],
+          "recall": 1.0,
+          "precision": 1.0,
+          "false_hits": 0,
+          "seconds": 0.30310599971562624,
+          "sync_calls": 1,
+          "traced_message_mutations": 10000
+        },
+        {
+          "query": "azurite",
+          "gold": [
+            17
+          ],
+          "found": [
+            17
+          ],
+          "recall": 1.0,
+          "precision": 1.0,
+          "false_hits": 0,
+          "seconds": 0.30427430011332035,
+          "sync_calls": 1,
+          "traced_message_mutations": 10000
+        },
+        {
+          "query": "藍銅礦",
+          "gold": [
+            17
+          ],
+          "found": [],
+          "recall": 0.0,
+          "precision": null,
+          "false_hits": 0,
+          "seconds": 0.31609930004924536,
+          "sync_calls": 1,
+          "traced_message_mutations": 10000
+        },
+        {
+          "query": "藍銅礦",
+          "gold": [
+            17
+          ],
+          "found": [],
+          "recall": 0.0,
+          "precision": null,
+          "false_hits": 0,
+          "seconds": 0.3085007001645863,
+          "sync_calls": 1,
+          "traced_message_mutations": 10000
+        },
+        {
+          "query": "unobtainium",
+          "gold": [],
+          "found": [],
+          "recall": null,
+          "precision": null,
+          "false_hits": 0,
+          "seconds": 0.2968577998690307,
+          "sync_calls": 1,
+          "traced_message_mutations": 10000
+        },
+        {
+          "query": "unobtainium",
+          "gold": [],
+          "found": [],
+          "recall": null,
+          "precision": null,
+          "false_hits": 0,
+          "seconds": 0.3027056995779276,
+          "sync_calls": 1,
+          "traced_message_mutations": 10000
+        }
+      ],
+      "bytes": 6983680
+    },
+    {
+      "messages": 100000,
+      "corpus_sha256": "bba4ae9ca45f539fb9a9ed35e6ed26c3d7b09b6567f805942ec9105fc47a0cb3",
+      "cold_seconds": 6.999809000175446,
+      "retrieval_p50_seconds": 9.56975240004249,
+      "queries": [
+        {
+          "query": "azurite",
+          "gold": [
+            17
+          ],
+          "found": [
+            17
+          ],
+          "recall": 1.0,
+          "precision": 1.0,
+          "false_hits": 0,
+          "seconds": 9.41837550001219,
+          "sync_calls": 1,
+          "traced_message_mutations": 100000
+        },
+        {
+          "query": "azurite",
+          "gold": [
+            17
+          ],
+          "found": [
+            17
+          ],
+          "recall": 1.0,
+          "precision": 1.0,
+          "false_hits": 0,
+          "seconds": 9.658392900135368,
+          "sync_calls": 1,
+          "traced_message_mutations": 100000
+        },
+        {
+          "query": "藍銅礦",
+          "gold": [
+            17
+          ],
+          "found": [],
+          "recall": 0.0,
+          "precision": null,
+          "false_hits": 0,
+          "seconds": 9.761149600148201,
+          "sync_calls": 1,
+          "traced_message_mutations": 100000
+        },
+        {
+          "query": "藍銅礦",
+          "gold": [
+            17
+          ],
+          "found": [],
+          "recall": 0.0,
+          "precision": null,
+          "false_hits": 0,
+          "seconds": 9.442807500250638,
+          "sync_calls": 1,
+          "traced_message_mutations": 100000
+        },
+        {
+          "query": "unobtainium",
+          "gold": [],
+          "found": [],
+          "recall": null,
+          "precision": null,
+          "false_hits": 0,
+          "seconds": 9.48111189994961,
+          "sync_calls": 1,
+          "traced_message_mutations": 100000
+        },
+        {
+          "query": "unobtainium",
+          "gold": [],
+          "found": [],
+          "recall": null,
+          "precision": null,
+          "false_hits": 0,
+          "seconds": 9.829168400261551,
+          "sync_calls": 1,
+          "traced_message_mutations": 100000
+        }
+      ],
+      "bytes": 66293760
+    }
+  ]
+}

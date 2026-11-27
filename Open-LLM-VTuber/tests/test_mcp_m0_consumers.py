@@ -44,16 +44,10 @@ class ConsumerTests(unittest.IsolatedAsyncioTestCase):
             'format_omi_evidence_for_history':market_preflight.format_omi_evidence_for_history})
         evidence={'kind':'omi_evidence','warnings':['stale'],'missing':['bars']}
         context=SimpleNamespace(history_uid='h',character_config=SimpleNamespace(conf_uid='fixture'))
-        save(context=context,output_item={'status':'completed','tool_name':'omi-market::omi.ask','content':'truncated UI text','omi_evidence':evidence},skip_history=False)
+        save(context=context,output_item={'status':'completed','tool_name':'omi-search::omi_ask','content':'truncated UI text','omi_evidence':evidence},skip_history=False)
         self.assertEqual(store.call_args.kwargs['event_type'],'omi_evidence')
         self.assertEqual(store.call_args.kwargs['detail'],evidence)
 
-    async def test_omi_worker_error_is_safe_and_delta_is_incomplete(self):
-        def failed(_):
-            yield {'event':'delta','data':{'text':'partial evidence'}}
-            raise RuntimeError('sentinel')
-        with patch.object(market_preflight,'_iter_omi_sse_http_events',failed):
-            events=[event async for event in market_preflight.stream_omi_ask_events({})]
-        self.assertNotIn('sentinel',str(events))
+    async def test_historical_delta_without_final_remains_incomplete(self):
+        events = [{'event': 'delta', 'data': {'text': 'partial evidence'}}]
         self.assertTrue(market_preflight.format_omi_stream_final_tool_result(events)['is_error'])
-        self.assertTrue(market_preflight.format_omi_stream_final_tool_result(events[:1])['is_error'])

@@ -12,6 +12,8 @@ from urllib.parse import urlparse
 
 from loguru import logger
 from .tool_identity import legacy_canonical, legacy_name
+from .server_registry import OWNER_SERVICES, HTTP_READ_TOOLS, http_arguments_allowed
+from .tool_schema import resolved_schema
 
 
 @dataclass(frozen=True)
@@ -49,6 +51,7 @@ class ToolPolicy:
             else {}
         )
         self.web = self.policy.get("web") if isinstance(self.policy.get("web"), dict) else {}
+        self.owner_services = {s for s in OWNER_SERVICES if isinstance(self.policy.get("owner_services"), list) and s in self.policy["owner_services"]}
         self.default_mode = self.policy.get("default_mode", "blocked")
         self.valid = isinstance(self.policy.get("tools", {}), dict)
         for section, list_keys, bool_keys in (
@@ -83,6 +86,15 @@ class ToolPolicy:
         if not self.valid or not isinstance(args, dict):
             return ToolPolicyDecision(False, "blocked", "Invalid policy configuration or arguments.", "invalid_policy_config")
         canonical = legacy_canonical(tool_name)
+        server_id, _, wire_name = canonical.partition("::")
+        if server_id in HTTP_READ_TOOLS:
+            if wire_name not in HTTP_READ_TOOLS[server_id]:
+                return ToolPolicyDecision(False, "blocked", "HTTP tool is outside the public read-only subset.", "http_tool_denied")
+            if not http_arguments_allowed(server_id, args):
+                return ToolPolicyDecision(False, "blocked", "HTTP connection options and restricted scopes are not enabled.", "http_arguments_denied")
+        # Historical owner pins are not compatibility routes to OMI Search.
+        if canonical.startswith("omi-market::"):
+            return ToolPolicyDecision(False, "blocked", "Retired market server.", "retired_server")
         raw = legacy_name(canonical)
         tool_cfg = self.tools.get(canonical, self.tools.get(raw))
         # A legacy deny remains a deny during an incremental configuration migration.
@@ -91,6 +103,8 @@ class ToolPolicy:
             if (not isinstance(legacy_cfg, dict) or legacy_cfg.get("enabled", True) is not True
                     or not mode_decision(legacy_cfg.get("mode", self.default_mode)).allowed):
                 tool_cfg = legacy_cfg
+        if server_id in self.owner_services and canonical not in self.tools and raw not in self.tools:
+            tool_cfg = {"mode": "owner"}
         if not isinstance(tool_cfg, dict):
             return ToolPolicyDecision(
                 allowed=False,
@@ -103,7 +117,10 @@ class ToolPolicy:
             return ToolPolicyDecision(False, "blocked", "Invalid tool policy rules.", "invalid_policy_config")
         if tool_cfg.get("enabled", True) is False:
             return ToolPolicyDecision(False, "blocked", "Disabled by user setting.", "tool_disabled")
-        decision = mode_decision(tool_cfg.get("mode", self.default_mode))
+        if tool_cfg.get("mode") == "owner" and server_id in self.owner_services:
+            decision = ToolPolicyDecision(True, "allowed", "Authorized service; invocation subject to owner policy.", "owner_authorized")
+        else:
+            decision = mode_decision(tool_cfg.get("mode", self.default_mode))
         if not decision.allowed:
             return decision
 
@@ -119,7 +136,88 @@ class ToolPolicy:
         if not url_decision.allowed:
             return url_decision
 
-        return ToolPolicyDecision(allowed=True, status="allowed", reason="Allowed by runtime policy.")
+        return decision
+
+    def llm_schema(self, tool_name: str, schema: dict) -> dict:
+        """Narrow OMI's provider descriptor without changing its wire contract."""
+        value = deepcopy(schema)
+        identity = legacy_canonical(tool_name)
+        if identity.partition("::")[0] in self.owner_services or identity != "omi-search::omi_ask" or not self.check(identity, {}).allowed:
+            return value
+        cfg = self.tools.get(identity, self.tools.get(legacy_name(identity), {}))
+        properties = value.get("properties", {})
+        for name, allowed in cfg.get("allow_values", {}).items():
+            node = properties.get(name)
+            if not isinstance(node, dict):
+                continue
+            permitted = [x for x in allowed if "enum" not in node or any(
+                type(x) is type(y) and x == y for y in node["enum"])]
+            node["enum"] = deepcopy(permitted)
+            if len(permitted) == 1:
+                node["default"] = deepcopy(permitted[0])
+                node["description"] = "Kuro read-only policy fixes this argument to the declared value."
+        for path, limit in cfg.get("max_numeric_args", {}).items():
+            node = value
+            for part in path.split("."):
+                node = node.get("properties", {}).get(part, {})
+            if node.get("type") not in {"integer", "number"}:
+                continue
+            node["maximum"] = min(node.get("maximum", limit), limit)
+            if "default" in node:
+                node["default"] = min(node["default"], node["maximum"])
+            if node.get("minimum") == node["maximum"]:
+                node["enum"] = [node["maximum"]]
+            node["description"] = "Kuro policy upper bound; omitted arguments use this default."
+        if "realtime_policy" in properties:
+            properties["realtime_policy"]["default"] = "cache_only"
+        if "refresh_policy" in properties:
+            properties["refresh_policy"]["default"] = {"mode": "off", "before_answer": False}
+            for name, default in (("mode", "off"), ("before_answer", False)):
+                if name in properties["refresh_policy"].get("properties", {}):
+                    properties["refresh_policy"]["properties"][name]["default"] = default
+        if "target" in properties:
+            properties["target"]["description"] = (
+                "For a market overview use {type: market, market: US} (or the requested market). "
+                "market belongs inside target, never at the argument root.")
+        return value
+
+    def prepare_arguments(self, tool_name: str, args: Any, schema: dict) -> Any:
+        """Supply declared OMI defaults and repair only the known market placement."""
+        identity = legacy_canonical(tool_name)
+        if identity.partition("::")[0] in self.owner_services or identity != "omi-search::omi_ask" or not isinstance(args, dict) or not self.check(identity, {}).allowed:
+            return args
+        effective = self.llm_schema(identity, resolved_schema(schema))
+        properties = effective.get("properties", {})
+        value = deepcopy(args)
+        # Do not infer market intent, overwrite a target, or drop unknown fields.
+        target = value.get("target", {})
+        market = value.get("market")
+        if (isinstance(market, str) and market.strip() and "market" not in properties
+                and "market" in properties.get("target", {}).get("properties", {})
+                and isinstance(target, dict) and target.get("type", "market") == "market"
+                and target.get("market", market) == market):
+            value["target"] = {"type": "market", **target, "market": value.pop("market")}
+        for name in ("contract_version", "mode", "refresh_if_missing", "realtime_policy", "refresh_policy"):
+            if name not in value and "default" in properties.get(name, {}):
+                value[name] = deepcopy(properties[name]["default"])
+        budget_schema = properties.get("tool_budget", {}).get("properties", {})
+        budget = value.get("tool_budget", {})
+        if isinstance(budget, dict) and budget_schema:
+            value["tool_budget"] = {**{k: deepcopy(v["default"]) for k, v in budget_schema.items()
+                                       if "default" in v}, **budget}
+        return value
+
+    def argument_hint(self, tool_name: str) -> str:
+        if legacy_canonical(tool_name).partition("::")[0] in self.owner_services or legacy_canonical(tool_name) != "omi-search::omi_ask":
+            return ""
+        cfg = self.tools.get("omi-search::omi_ask", self.tools.get(legacy_name(tool_name), {}))
+        return (" Primary entry point for natural-language market questions, including yesterday's US market: "
+                "call omi_ask first, before specialist read tools. Preserve the user's relative-date question "
+                "for OMI to resolve; do not guess a trade_date. "
+                "Use target.type=market and target.market for a market overview; never root market. "
+                "Correct the rejected arguments before retrying. Kuro allowed values: "
+                + json.dumps(cfg.get("allow_values", {}), sort_keys=True)
+                + "; numeric upper bounds: " + json.dumps(cfg.get("max_numeric_args", {}), sort_keys=True) + ".")
 
     def _check_argument_rules(
         self,
@@ -127,6 +225,12 @@ class ToolPolicy:
         tool_cfg: dict[str, Any],
         args: dict[str, Any],
     ) -> ToolPolicyDecision:
+        for key in tool_cfg.get("deny_present_args", []):
+            if key in args:
+                return ToolPolicyDecision(False, "blocked", "Retired or privileged argument is not accepted.")
+        for key, values in tool_cfg.get("allow_values", {}).items():
+            if key in args and not any(type(args[key]) is type(value) and args[key] == value for value in values):
+                return ToolPolicyDecision(False, "blocked", "Argument is outside the permitted read-only values.")
         deny_truthy_args = tool_cfg.get("deny_truthy_args") or []
         if isinstance(deny_truthy_args, list):
             for arg_name in deny_truthy_args:
@@ -194,16 +298,22 @@ class ToolPolicy:
             )
 
         for arg_name in path_args:
-            raw_path = str(args.get(str(arg_name)) or "").strip()
-            if not raw_path:
-                continue
-            denied_reason = self._deny_reason_for_path(raw_path)
-            if denied_reason:
-                return ToolPolicyDecision(
-                    allowed=False,
-                    status="blocked",
-                    reason=denied_reason,
-                )
+            # Project Workspace's batch schema is files: [{path, ...}].
+            # Check each path with the same layered policy as single reads.
+            if arg_name == "files[].path":
+                files = args.get("files", [])
+                if not isinstance(files, list) or any(
+                    not isinstance(row, dict) or not isinstance(row.get("path"), str)
+                    for row in files
+                ):
+                    return ToolPolicyDecision(False, "blocked", "Invalid batch paths.")
+                paths = [row["path"] for row in files]
+            else:
+                paths = [str(args.get(str(arg_name)) or "")]
+            for raw_path in paths:
+                denied_reason = self._deny_reason_for_path(raw_path.strip())
+                if denied_reason:
+                    return ToolPolicyDecision(False, "blocked", denied_reason)
         return ToolPolicyDecision(True, "allowed", "Allowed by runtime policy.")
 
     def _deny_reason_for_path(self, raw_path: str) -> str:
@@ -339,19 +449,20 @@ def _string_list(value: Any) -> bool:
 
 
 def _valid_tool_config(cfg: dict[str, Any]) -> bool:
-    known = {"mode", "enabled", "category", "path_args", "url_args", "deny_truthy_args", "deny_values", "max_numeric_args", "allow_hidden", "block_private_urls"}
+    known = {"mode", "enabled", "category", "path_args", "url_args", "deny_truthy_args", "deny_values", "max_numeric_args", "allow_hidden", "block_private_urls", "deny_present_args", "allow_values"}
     if set(cfg) - known:
         return False
-    for key in ("path_args", "url_args", "deny_truthy_args"):
+    for key in ("path_args", "url_args", "deny_truthy_args", "deny_present_args"):
         if key in cfg and not _string_list(cfg[key]):
             return False
     for key in ("allow_hidden", "block_private_urls", "enabled"):
         if key in cfg and type(cfg[key]) is not bool:
             return False
-    if "deny_values" in cfg:
-        values = cfg["deny_values"]
-        if not isinstance(values, dict) or not all(isinstance(k, str) and k and isinstance(v, list) and all(type(x) in (str, bool, int, float) for x in v) for k, v in values.items()):
-            return False
+    for key in ("deny_values", "allow_values"):
+        if key in cfg:
+            values = cfg[key]
+            if not isinstance(values, dict) or not all(isinstance(k, str) and k and isinstance(v, list) and all(type(x) in (str, bool, int, float) for x in v) for k, v in values.items()):
+                return False
     if "max_numeric_args" in cfg:
         values = cfg["max_numeric_args"]
         if not isinstance(values, dict) or not all(isinstance(k, str) and all(k.split('.')) and _numeric_arg_value(v) is not None for k, v in values.items()):

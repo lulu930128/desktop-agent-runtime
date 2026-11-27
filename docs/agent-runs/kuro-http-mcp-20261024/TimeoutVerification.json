@@ -1,0 +1,10 @@
+{
+  "success": true,
+  "http": {
+    "timeout": {
+      "actual_synthetic_tools_calls": 1,
+      "retries": 0,
+      "bounded_seconds": 3
+    }
+  }
+}

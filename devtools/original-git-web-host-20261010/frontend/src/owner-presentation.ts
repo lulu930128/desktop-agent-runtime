@@ -77,32 +77,40 @@ export function isImeSubmit(event: Pick<KeyboardEvent, "key" | "isComposing" | "
 export function installPresentationGuards(transport: OwnerTransport): void {
   installWindowGestures(transport);
   const projectAssistantSettings = installAssistantSettings(transport);
+  const projectChatSpeechSettings = installChatSpeechSettings(transport);
   const projectToolSettings = installToolSettings(transport);
   const projectSources = installSourceOverview();
+  const projectAttachments = installAttachmentHelp();
+  const projectHistory = installHistoryListGuards(transport);
   let composing = false;
   document.addEventListener("compositionstart", () => { composing = true; }, true);
   document.addEventListener("compositionend", () => { composing = false; }, true);
   document.addEventListener("keydown", event => {
     if (event.target instanceof HTMLTextAreaElement && isImeSubmit(event, composing)) event.stopImmediatePropagation();
   }, true);
-  // Use original styles and control positions. No CSS/geometry patch for W1 drift.
+  // Project owner presentation without changing the immutable renderer sources.
   let timeline: Array<Record<string, unknown>> = [];
+  let speechStatus = "";
+  let missingSpeech = "";
   let data: Record<string, any> | null = null;
   let notificationWrites = false;
   transport.on("onNotificationCapability", value => { notificationWrites = value?.consumerWriteContract === "kuro.core.notification-command.v1"; queueMicrotask(project); });
   transport.on("onData", value => { data = value; queueMicrotask(project); });
-  transport.on("onChatState", state => { timeline = Array.isArray(state.timeline) ? state.timeline : []; queueMicrotask(project); });
+  transport.on("onChatState", state => { timeline = Array.isArray(state.timeline) ? state.timeline : []; speechStatus = String(state.speechStatus || "");
+    const missing = state.speechMissing || {};
+    missingSpeech = [missing.missing_segments?.length ? "音訊段 " + missing.missing_segments.join("、") : "",
+      missing.missing_units?.length ? "內容段 " + missing.missing_units.join("、") : ""].filter(Boolean).join("，"); queueMicrotask(project); });
   const unsupported = new Set(["手動更新 Mail", "重試啟動對話", "停止對話服務", "重新啟動 Kuro", "播放待機動作", "顯示桌寵"]);
   function project(): void {
+    // Diagnostics remains in Settings; remove the redundant banner and its action.
+    // Only existing nodes are removed, so the observer's follow-up is a no-op.
+    for (const node of document.querySelectorAll('[data-runtime-status]')) node.remove();
     projectAssistantSettings();
+    projectChatSpeechSettings();
     projectToolSettings();
     projectSources(data);
-    const composer = document.querySelector<HTMLElement>(".attachment-row");
-    if (composer && !composer.parentElement?.querySelector("[data-owner-attachment-caps]")) {
-      const note = document.createElement("p"); note.className = "settings-note"; note.dataset.ownerAttachmentCaps = "true";
-      note.textContent = "附件：PNG／JPEG／WebP、TXT、PDF、WAV；最多 6 個，每個 4 MiB，合計 8 MiB。未支援格式會拒絕傳送。";
-      composer.after(note);
-    }
+    projectAttachments();
+    projectHistory();
     for (const node of document.querySelectorAll<HTMLButtonElement>("button")) {
       if (unsupported.has(node.textContent?.trim() || "")) {
         node.disabled = true;
@@ -120,6 +128,20 @@ export function installPresentationGuards(transport: OwnerTransport): void {
       node.disabled = !notificationWrites; node.title = notificationWrites ? "由 Core 驗證版本，Qt 確認後套用。" : "此通知操作尚缺 Core 版本與重複保護 contract；既有 Qt 通知配送不受影響。";
     }
     const list = document.querySelector("[data-message-inner]");
+    const speechLabels: Record<string, string> = {
+      partial: "語音僅部分播完，完整回答已保留。", unconfirmed: "尚未確認必要段落已播完。", preparing: "正在整理語音…", unavailable: "語音暫時無法使用，完整回答已保留。",
+      failed: "語音播放失敗，完整回答已保留。", timeout: "尚未確認語音播放完成。",
+      interrupted: "語音已中斷。", skipped_after_failure: "後續語音因合成失敗而停止。",
+      fallback: "這次只有簡短語音提示，完整回答請見文字。"
+    };
+    const message = speechLabels[speechStatus] || "";
+    const label = message && missingSpeech ? message + " 未確認範圍：" + missingSpeech : message;
+    let speechNote = list?.querySelector<HTMLElement>("[data-owner-speech]");
+    if (speechNote && !label) speechNote.remove();
+    if (list && label) {
+      if (!speechNote) { speechNote = document.createElement("p"); speechNote.dataset.ownerSpeech = "true"; speechNote.setAttribute("role", "status"); list.appendChild(speechNote); }
+      if (speechNote.textContent !== label) speechNote.textContent = label;
+    }
     const previous = list?.querySelector<HTMLElement>("[data-owner-tools]");
     const toolKey = JSON.stringify(timeline);
     if (previous && previous.dataset.key !== toolKey) previous.remove();
@@ -128,7 +150,7 @@ export function installPresentationGuards(transport: OwnerTransport): void {
       box.setAttribute("role", "log"); box.setAttribute("aria-label", "工具執行事件");
       for (const row of timeline) {
         const entry = document.createElement("p");
-        entry.textContent = `工具事件 · ${String(row.tool_name || "")} · ${String(row.status || "")}`;
+        entry.textContent = `工具事件 · ${String(row.tool_name || "")} · ${String(row.status || "")} · ${String(row.reason_code || row.execution_status || "")}`;
         box.appendChild(entry);
       }
       list.appendChild(box);
@@ -153,6 +175,165 @@ export function installPresentationGuards(transport: OwnerTransport): void {
     }
   }
   new MutationObserver(() => { project(); }).observe(document.getElementById("app")!, {childList: true, subtree: true});
+}
+
+export function installHistoryListGuards(transport: Pick<OwnerTransport, "on">): () => void {
+  let state = "loading";
+  let reading = false;
+  let ready = false;
+  let opening = false;
+  const project = () => {
+    const header = document.querySelector<HTMLElement>(".chat-header");
+    let progress = header?.querySelector<HTMLElement>("[data-owner-history-progress]");
+    if (header && reading && !progress) {
+      progress = document.createElement("div"); progress.className = "chat-subtitle";
+      progress.dataset.ownerHistoryProgress = "true"; progress.setAttribute("role", "status");
+      progress.textContent = "正在讀取對話紀錄…"; header.appendChild(progress);
+    }
+    if (!reading) progress?.remove();
+    const drawer = document.querySelector<HTMLElement>("[data-history-drawer]");
+    const list = drawer?.querySelector<HTMLElement>(".history-list");
+    if (!drawer || !list) return;
+    drawer.setAttribute("aria-busy", String(state === "loading"));
+    list.hidden = state !== "ready";
+    let status = drawer.querySelector<HTMLElement>("[data-owner-history-status]");
+    if (state === "ready") { status?.remove(); return; }
+    if (!status) {
+      status = document.createElement("div"); status.className = "history-empty";
+      status.dataset.ownerHistoryStatus = "true"; status.setAttribute("role", "status");
+      status.setAttribute("aria-live", "polite"); drawer.appendChild(status);
+    }
+    const copy = state === "loading" ? "正在等待對話服務並讀取紀錄…" : "對話紀錄讀取失敗；請重新開啟側欄再試。";
+    if (status.textContent !== copy) status.textContent = copy;
+  };
+  transport.on("onHistoryReadState", value => {
+    state = value.state; reading = state === "loading";
+    if (!reading) opening = false;
+    queueMicrotask(project);
+  });
+  transport.on("onIdentityChange", () => { ready = false; state = "loading"; queueMicrotask(project); });
+  transport.on("onChatState", value => {
+    const next = value.wsConnected === true && value.historyReady === true;
+    if (!next) { state = "loading"; queueMicrotask(project); }
+    if (next && !ready && !reading) {
+      // Reuse the immutable renderer's existing close/open read handler.
+      // No list data or selection is held by this presentation adapter.
+      queueMicrotask(() => {
+        if (!document.querySelector("[data-stage]")?.classList.contains("has-history")) return;
+        document.querySelector<HTMLButtonElement>("[data-history-drawer] .history-drawer-header .icon-button")?.click();
+        document.querySelector<HTMLButtonElement>("[data-history-toggle]")?.click();
+      });
+    }
+    ready = next;
+  });
+  document.addEventListener("click", event => {
+    if (!(event.target instanceof Element) || !event.target.closest("[data-history-toggle]")) return;
+    if (document.querySelector("[data-stage]")?.classList.contains("has-history")) return;
+    if (opening) { event.preventDefault(); event.stopImmediatePropagation(); }
+    else opening = true;
+  }, true);
+  return project;
+}
+
+export function validChatSpeechSettings(value: any): boolean {
+  const s = value?.settings;
+  return value?.ok === true && value.contract === "kuro.chat-speech-settings.v1"
+    && /^[a-f0-9]{64}$/.test(value.revision) && typeof value.persisted === "boolean"
+    && value.consumer === "conversation-runtime" && value.effective === "next_turn"
+    && ["ja-JP", "zh-Hant", "en-US"].includes(s?.locale)
+    && ["brief", "summary", "detailed"].includes(s?.policy)
+    && ["dual_lane", "legacy_bridge"].includes(s?.route)
+    && (s.route !== "legacy_bridge" || s.locale === "ja-JP")
+    && value.locales?.["ja-JP"] === "default" && value.locales?.["zh-Hant"] === "unverified"
+    && value.locales?.["en-US"] === "unverified";
+}
+
+export async function saveChatSpeechSettings(transport: Pick<OwnerTransport, "call">, snapshot: any, settings: any): Promise<any> {
+  if (!validChatSpeechSettings(snapshot)) return {ok:false, error:"chat_speech_not_loaded"};
+  const written = await transport.call("updateChatSpeechSettings", {settings, expectedRevision:snapshot.revision});
+  if (!written?.ok) return written;
+  if (!validChatSpeechSettings(written) || !written.persisted) return {ok:false, unknownResult:true};
+  const read = await transport.call("getChatSpeechSettings");
+  if (!validChatSpeechSettings(read) || read.revision !== written.revision
+      || ["locale", "policy", "route"].some(key => read.settings[key] !== settings[key]))
+    return {ok:false, unknownResult:true};
+  return read;
+}
+
+export function installChatSpeechSettings(transport: Pick<OwnerTransport, "call" | "on">): () => void {
+  let panel: HTMLElement | null = null, snapshot: any = null, busy = false, generation = 0;
+  let message = "尚未讀取一般聊天朗讀設定。";
+  function render(sync = false): void {
+    if (!panel) return;
+    const status = panel.querySelector<HTMLElement>("[data-chat-speech-status]")!;
+    if (status.textContent !== message) status.textContent = message;
+    panel.querySelectorAll<HTMLSelectElement>("select").forEach(input => { input.disabled = busy || !snapshot || snapshot.preview === true; });
+    panel.querySelector<HTMLButtonElement>("[data-chat-speech-save]")!.disabled = busy || !snapshot;
+    panel.querySelector<HTMLButtonElement>("[data-chat-speech-reload]")!.disabled = busy;
+    if (sync && snapshot) {
+      panel.querySelector<HTMLSelectElement>("[name=chatSpeechLocale]")!.value = snapshot.settings.locale;
+      panel.querySelector<HTMLSelectElement>("[name=chatSpeechPolicy]")!.value = snapshot.settings.policy;
+    }
+  }
+  async function load(): Promise<void> {
+    if (busy) return;
+    busy = true; const expected = generation; message = "正在讀取 Launcher 朗讀設定…"; render();
+    try {
+      const result = await transport.call("getChatSpeechSettings");
+      if (expected !== generation) return;
+      snapshot = validChatSpeechSettings(result) ? result : null;
+      message = snapshot ? "已讀回設定；更改後從下一回合套用。" : "設定讀取失敗，請重新讀取。";
+    } catch { snapshot = null; message = "設定讀取失敗，請重新讀取。"; }
+    finally { busy = false; render(true); }
+  }
+  transport.on("onIdentityChange", () => {
+    generation++; snapshot = null; message = "工作階段已變更，請重新讀取。"; render();
+  });
+  return () => {
+    if (document.querySelector(".settings-nav-item.is-active strong")?.textContent !== "語音與感知") return;
+    const content = document.querySelector<HTMLElement>(".settings-content");
+    if (!content || content.querySelector("[data-owner-chat-speech]")) return;
+    if (panel) { content.appendChild(panel); return; }
+    panel = document.createElement("section"); panel.className = "settings-group"; panel.dataset.ownerChatSpeech = "true";
+    const heading = document.createElement("h2"); heading.textContent = "一般聊天朗讀"; panel.appendChild(heading);
+    const select = (title: string, name: string, options: Array<[string, string]>) => {
+      const row = document.createElement("label"); row.className = "setting-row";
+      const label = document.createElement("span"); label.className = "setting-copy"; label.textContent = title;
+      const input = document.createElement("select"); input.name = name; input.setAttribute("aria-label", title);
+      for (const [value, caption] of options) { const option = document.createElement("option"); option.value = value; option.textContent = caption; input.appendChild(option); }
+      row.append(label, input); panel!.appendChild(row);
+    };
+    select("朗讀策略", "chatSpeechPolicy", [["brief", "極簡"], ["summary", "摘要"], ["detailed", "詳細"]]);
+    select("朗讀語言", "chatSpeechLocale", [["ja-JP", "日文（目前預設）"], ["zh-Hant", "繁體中文（語音未驗證）"], ["en-US", "English（語音未驗證）"]]);
+    const note = document.createElement("p"); note.className = "settings-note";
+    note.textContent = "文字與語音輸入會自動理解語言。朗讀設定與主動通知分開；目前中央角色模型以日文為預設。其他語言可儲存並用於口播稿，語音未驗證前暫不送合成，完整文字仍會顯示。";
+    panel.appendChild(note);
+    const status = document.createElement("p"); status.className = "settings-note"; status.dataset.chatSpeechStatus = "true";
+    status.setAttribute("role", "status"); status.setAttribute("aria-live", "polite"); panel.appendChild(status);
+    const actions = document.createElement("div"); actions.className = "settings-actions";
+    const reload = document.createElement("button"); reload.type = "button"; reload.className = "quiet-button";
+    reload.textContent = "重新讀取"; reload.dataset.chatSpeechReload = "true"; reload.addEventListener("click", () => { void load(); });
+    const save = document.createElement("button"); save.type = "button"; save.className = "quiet-button";
+    save.textContent = "儲存朗讀設定"; save.dataset.chatSpeechSave = "true";
+    save.addEventListener("click", async () => {
+      if (!panel || busy || !snapshot) return;
+      const desired = {...snapshot.settings,
+        locale:panel.querySelector<HTMLSelectElement>("[name=chatSpeechLocale]")!.value,
+        policy:panel.querySelector<HTMLSelectElement>("[name=chatSpeechPolicy]")!.value};
+      if (desired.route === "legacy_bridge" && desired.locale !== "ja-JP") {
+        message = "目前為舊語音回退模式，只支援日文。"; render(); return;
+      }
+      busy = true; const expected = generation; message = "正在儲存並讀回…"; render();
+      try {
+        const result = await saveChatSpeechSettings(transport, snapshot, desired);
+        if (expected !== generation) return;
+        snapshot = validChatSpeechSettings(result) ? result : null;
+        message = snapshot ? "朗讀設定已儲存並讀回，從下一回合套用。" : "無法確認儲存結果；請重新讀取，不會自動重送。";
+      } catch { snapshot = null; message = "無法確認儲存結果，請重新讀取。"; }
+      finally { busy = false; render(true); }
+    });
+    actions.append(reload, save); panel.appendChild(actions); content.appendChild(panel); render(); void load();
+  };
 }
 
 export function validAssistantSettings(value: any): boolean {
@@ -205,7 +386,7 @@ export function installAssistantSettings(transport: Pick<OwnerTransport, "call" 
     for (const panel of panels.values()) {
       const status = panel.querySelector<HTMLElement>("[data-settings-status]")!;
       text(status, message);
-      panel.querySelectorAll<HTMLInputElement>("input").forEach(input => { input.disabled = busy || !snapshot; });
+      panel.querySelectorAll<HTMLInputElement>("input").forEach(input => { input.disabled = busy || !snapshot || snapshot.preview === true; });
       const save = panel.querySelector<HTMLButtonElement>("[data-settings-save]")!;
       save.disabled = busy || !snapshot;
       panel.querySelector<HTMLButtonElement>("[data-settings-reload]")!.disabled = busy;
@@ -297,10 +478,16 @@ export function installAssistantSettings(transport: Pick<OwnerTransport, "call" 
 export function validToolSettings(value: any): boolean {
   return value?.ok === true && value.contract === 'kuro.tool-policy-settings.v1'
     && typeof value.digest === 'string' && /^[a-f0-9]{64}$/.test(value.digest)
-    && value.runtime_adoption === 'UNVERIFIED' && value.confirmation_available === false
-    && Array.isArray(value.tools) && value.tools.length === 21
-    && new Set(value.tools.map((r: any) => r.name)).size === 21
+    && ['MATCHED','UNVERIFIED'].includes(value.runtime_adoption) && value.confirmation_available === false
+    && Array.isArray(value.catalog?.toolNames) && value.catalog.groups !== null
+    && typeof value.catalog.groups === 'object' && !Array.isArray(value.catalog.groups)
+    && Array.isArray(value.tools) && (value.tools.length > 0 || !!value.services)
+    && value.catalog.toolNames.length === value.tools.length
+    && new Set(value.catalog.toolNames).size === value.tools.length
+    && new Set(value.tools.map((r: any) => r.name)).size === value.tools.length
     && value.tools.every((r: any) => ['name','label','description','service','serviceLabel','mode'].every(k => typeof r[k] === 'string')
+      && value.catalog.toolNames.includes(r.name) && r.name.startsWith(r.service + '::')
+      && value.catalog.groups[r.service] === r.serviceLabel
       && typeof r.enabled === 'boolean' && typeof r.allowed === 'boolean');
 }
 
@@ -312,6 +499,7 @@ export async function saveToolSetting(transport: Pick<OwnerTransport,'call'>, sn
   if (!validToolSettings(written) || written.persisted !== true) return {ok:false,unknownResult:true};
   const read = await transport.call('getTools');
   if (!validToolSettings(read) || read.digest !== written.digest
+      || JSON.stringify(read.catalog) !== JSON.stringify(snapshot.catalog)
       || read.tools.find((r: any) => r.name === name)?.enabled !== enabled
       || snapshot.tools.some((old: any) => {
         const row = read.tools.find((r: any) => r.name === old.name);
@@ -329,11 +517,12 @@ export function installToolSettings(transport: Pick<OwnerTransport,'call'|'on'>)
   let panel: HTMLElement | null = null, snapshot: any = null, busy = false, generation = 0;
   let message = '尚未讀取工具設定。';
   const folds = new Map<string,boolean>();
+  const diagnostics = new Map<string,boolean>();
   const sync = () => {
     if (!panel) return;
     setCopy(panel.querySelector<HTMLElement>('[data-tool-status]')!, message);
     panel.querySelectorAll<HTMLInputElement>('[data-tool-toggle]').forEach(input => {
-      input.disabled = busy || !snapshot;
+      input.disabled = busy || !snapshot || snapshot.preview === true;
       const row = snapshot?.tools.find((r: any) => r.name === input.dataset.toolToggle);
       if (row) input.checked = row.enabled;
     });
@@ -342,23 +531,42 @@ export function installToolSettings(transport: Pick<OwnerTransport,'call'|'on'>)
   const fill = () => {
     if (!panel || !snapshot) return;
     panel.querySelectorAll<HTMLDetailsElement>('[data-tool-service]').forEach(d => folds.set(d.dataset.toolService!,d.open));
+    panel.querySelectorAll<HTMLDetailsElement>('[data-tool-diagnostic]').forEach(d => diagnostics.set(d.dataset.toolDiagnostic!,d.open));
+    const focused = (document.activeElement as HTMLElement | null)?.dataset.toolToggle;
     const list = panel.querySelector<HTMLElement>('[data-tool-groups]')!; list.replaceChildren();
-    for (const service of [...new Set<string>(snapshot.tools.map((r: any) => r.service))]) {
+    if (snapshot.events?.length) {
+      const history = element('details'); history.append(element('summary', '本輪工具呼叫紀錄'));
+      for (const event of snapshot.events) {
+        history.append(element('h3', event.tool_name),
+          element('p', [event.tool_id, event.outcome || event.status, event.reason_code || event.execution_status].filter(Boolean).join(' · ')),
+          element('p', event.call_summary || '', 'owner-tool-purpose'),
+          element('pre', event.content || ''));
+      }
+      list.append(history);
+    }
+    for (const service of new Set<string>([...Object.keys(snapshot.services || {}),
+        ...snapshot.tools.map((r: any) => r.service)])) {
       const rows = snapshot.tools.filter((r: any) => r.service === service);
-      const group = element('details'); group.dataset.toolService = service; group.open = folds.get(service) ?? true;
-      const summary = element('summary'); const heading = element('h3', `${rows[0].serviceLabel}（${rows.length} 項）`);
-      heading.style.display = 'inline'; summary.style.padding = '14px 0'; summary.style.cursor = 'pointer'; summary.append(heading);
+      const group = element('details','','owner-tool-group'); group.dataset.toolService = service; group.open = folds.get(service) ?? false;
+      const summary = element('summary'); const heading = element('span', snapshot.catalog.groups[service] || service, 'owner-tool-heading');
+      summary.append(heading, element('span', snapshot.services?.[service]?.connected ? `發現 ${snapshot.services[service].count} · 可呼叫 ${rows.filter((r: any) => r.allowed).length}` : (snapshot.services?.[service]?.reason || '尚無連線紀錄'), 'owner-tool-count'));
       group.append(summary); group.addEventListener('toggle', () => folds.set(service,group.open));
+      const scope = snapshot.services?.[service]?.scope;
+      if (scope) group.append(element('p',
+        [scope.mode, scope.write_enabled === true ? '來源已授權寫入' : scope.write_enabled === false ? '來源未授權寫入' : '寫入權限未知',
+          scope.reason, scope.contract].filter(Boolean).join(' · '), 'owner-tool-policy'));
       for (const row of rows) {
-        const item = element('div','','setting-row'); item.style.alignItems = 'start';
-        const copy = element('div','','setting-copy'); copy.append(element('h4',row.label),element('p',row.description));
-        const policy = !row.enabled ? '已停用（儲存的設定）' : row.mode === 'confirm'
-          ? '需確認，但執行流程尚未完成；目前仍封鎖' : row.mode === 'read_only'
-          ? '允許受限唯讀；是否已載入仍待驗證' : '原政策封鎖或未支援，開啟此設定仍不會放行';
-        copy.append(element('p',policy,'settings-note'));
-        const diagnostic = element('details'); diagnostic.append(element('summary','診斷資料'),
+        const item = element('div','','owner-tool-row');
+        const copy = element('div','','owner-tool-copy'); copy.append(element('h3',row.label),element('p',row.description,'owner-tool-purpose'));
+        const policy = !row.enabled ? '已停用' : row.mode === 'confirm'
+          ? '需確認 · 執行流程未就緒' : row.mode === 'read_only'
+          ? '受限唯讀' : row.mode === 'owner' ? '依來源授權' : '政策封鎖';
+        copy.append(element('p', [policy, ({read:'讀取',write:'寫入',destructive:'破壞性操作',owner_defined:'來源未標示操作類型'} as Record<string,string>)[row.operation], row.allowed ? '可呼叫' : row.reason_code].filter(Boolean).join(' · '),'owner-tool-policy'));
+        const diagnostic = element('details','','owner-diagnostic'); diagnostic.dataset.toolDiagnostic = row.name;
+        diagnostic.open = diagnostics.get(row.name) ?? false;
+        diagnostic.append(element('summary','診斷資料'),
           element('code',`${row.name} · mode=${row.mode} · ${row.reason_code}`)); copy.append(diagnostic);
-        const label = element('label', '啟用此工具');
+        const label = element('label', '啟用', 'owner-tool-toggle');
         const input = element('input'); input.type = 'checkbox'; input.dataset.toolToggle = row.name;
         input.setAttribute('aria-label',`啟用${row.label}`); input.checked = row.enabled;
         input.addEventListener('change', async () => {
@@ -381,6 +589,7 @@ export function installToolSettings(transport: Pick<OwnerTransport,'call'|'on'>)
       }
       list.append(group);
     }
+    if (focused) [...list.querySelectorAll<HTMLInputElement>('[data-tool-toggle]')].find(n => n.dataset.toolToggle === focused)?.focus();
   };
   const load = async () => {
     if (busy) return;
@@ -389,7 +598,7 @@ export function installToolSettings(transport: Pick<OwnerTransport,'call'|'on'>)
       const value = await transport.call('getTools');
       if (expected !== generation) return;
       snapshot = validToolSettings(value) ? value : null;
-      if (snapshot) { fill(); message = '已讀取儲存的政策；目前執行環境採用狀態尚未驗證。'; }
+      if (snapshot) { fill(); message = snapshot.preview ? '隔離預覽 · 正式服務清單與隔離呼叫紀錄' : snapshot.runtime_adoption === 'MATCHED' ? '執行中的工具清單與政策版本一致。' : (snapshot.inventory_error || '執行中的政策版本尚待確認。'); }
       else message = '工具政策不可用或不符合契約；控制已停用。';
     } catch { snapshot = null; message = '讀取失敗；控制已停用。'; }
     finally { busy = false; sync(); }
@@ -401,8 +610,8 @@ export function installToolSettings(transport: Pick<OwnerTransport,'call'|'on'>)
     const original = [...content.querySelectorAll<HTMLElement>('.settings-group')].find(g => !g.dataset.ownerToolSettings
       && g.querySelector('h2')?.textContent === '工具與權限');
     if (!panel) {
-      panel = element('section','','settings-group'); panel.dataset.ownerToolSettings = 'true';
-      panel.append(element('h2','工具與權限'),element('p','每項開關只控制此工具是否啟用，原權限與參數限制不變。這是對話工具政策，不控制獨立的 Study／Mail 背景來源或 OMI 自動觀測。','settings-note'));
+      panel = element('section','','settings-group owner-tool-settings'); panel.dataset.ownerToolSettings = 'true';
+      panel.append(element('h2','工具與權限'),element('p','展開服務查看來源宣告的操作類型、可呼叫狀態與原因。','settings-note'));
       const status = element('p','','settings-note'); status.dataset.toolStatus = 'true'; status.setAttribute('role','status'); status.setAttribute('aria-live','polite');
       const reload = element('button','重新讀取','quiet-button'); reload.type = 'button'; reload.dataset.toolReload = 'true'; reload.addEventListener('click',() => { void load(); });
       const groups = element('div'); groups.dataset.toolGroups = 'true'; panel.append(status,reload,groups);
@@ -442,33 +651,79 @@ export function sourceCopy(row: any): string {
   if (row.availability === 'partial') return '來源資料不完整；清單僅呈現可驗證的工作。';
   return row.evidenceCount == null ? '尚無法確認工作數量。' : `來源提供 ${row.evidenceCount} 筆工作證據；去重及顯示預算後的項目數可能不同。`;
 }
+export function sourceStatusLabel(row: any): string {
+  if (row.sourceId === 'omi' && row.executionAvailable === false) return '自動觀測未開放';
+  if (row.enabled === false) return '已停用';
+  const status = row.availability === 'auth_required' || row.connection === 'auth_required' ? '需要授權'
+    : row.connection === 'disconnected' ? '未連線'
+    : ['available','partial'].includes(row.availability) && row.evidenceCount === 0
+      ? row.availability === 'partial' ? '本次無待辦 · 資料有限制' : '本次無待辦'
+    : stateNames[row.availability] || '未知';
+  const freshness = row.freshness === 'stale' || row.freshness === 'expired' ? stateNames[row.freshness]
+    : row.freshness !== 'current' ? '時效未知' : '';
+  return [status, freshness].filter(Boolean).join(' · ');
+}
+
 export function installSourceOverview(): (data: any) => void {
-  let panel: HTMLElement | null = null, key = '';
+  // Reuse these nodes, including native details state/focus, across renderer polls.
+  const strip = element('section','','owner-source-strip'); strip.dataset.ownerSourceStrip = 'true';
+  strip.setAttribute('aria-label','來源狀態');
+  const notice = element('p','','owner-source-notice');
+  const statuses = element('ul'); strip.append(notice,statuses);
+  const panel = element('details','','owner-source-overview'); panel.dataset.ownerSourceOverview = 'true';
+  panel.append(element('summary','來源詳情與限制'));
+  const empty = element('p','目前尚未提供來源概覽；OMI 背景觀測仍未就緒。'); panel.append(empty);
+  const entries = new Map<string, {status: HTMLElement; card: HTMLElement; key: string}>();
   return data => {
-    const header = document.querySelector<HTMLElement>('.today-frame > header'); if (!header) return;
-    const rows = data?.canonical?.sourceOverview;
-    const next = JSON.stringify([rows,data?.ok,data?.transportStale]);
-    if (!panel) { panel = element('section','','settings-group'); panel.dataset.ownerSourceOverview = 'true'; }
-    if (key !== next) {
-      key = next; panel.replaceChildren(element('h2','來源狀態'));
-      if (!data?.ok || data.transportStale) panel.append(element('p','Core 讀取失敗；以下來源資料尚未重新確認。','settings-note'));
-      if (!Array.isArray(rows)) panel.append(element('p','目前執行環境尚未提供來源概覽；請在自行重啟採用後驗證。OMI 背景觀測仍未就緒。'));
-      else {
-        const grid = element('div'); grid.style.display = 'grid'; grid.style.gap = '12px 24px';
-        grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))'; panel.append(grid);
-        for (const row of rows) {
-        const card = element('article','','setting-row'); const copy = element('div','','setting-copy');
-        card.style.minWidth = '0'; copy.style.overflowWrap = 'anywhere';
-        copy.append(element('h3',sourceNames[row.sourceId] || '其他來源'),element('p',sourceCopy(row)),
-          element('p',`資料：${stateNames[row.availability] || '未知'} · 連線：${stateNames[row.connection] || '未知'} · 時效：${stateNames[row.freshness] || '未知'}`),
-          element('p',`來源時間：${row.observedAt || '未提供'}；Core 取得／讀取時間：${row.receivedAt || '未提供'}`,'settings-note'));
-        if (row.limitations?.length) copy.append(element('p',[...new Set<string>(row.limitations.map(reasonLabel))].join('；'),'settings-note'));
-        const detail = element('details'); const raw = element('pre',JSON.stringify(row,null,2)); raw.style.whiteSpace = 'pre-wrap';
-        detail.append(element('summary','診斷資料'),raw); copy.append(detail);
-        card.append(copy); grid.append(card);
-        }
+    const header = document.querySelector<HTMLElement>('.today-frame > header');
+    const primary = document.querySelector<HTMLElement>('.today-primary'); if (!header || !primary) return;
+    const rows = Array.isArray(data?.canonical?.sourceOverview) ? data.canonical.sourceOverview : [];
+    const unavailable = !data?.ok || data.transportStale;
+    setCopy(notice, unavailable ? 'Core 讀取失敗；來源狀態待重新確認。' : rows.length ? '' : '尚無來源狀態');
+    notice.hidden = !notice.textContent;
+    empty.hidden = rows.length > 0;
+    const ids = new Set(rows.map((row: any) => row.sourceId));
+    for (const [id, entry] of entries) if (!ids.has(id)) { entry.card.remove(); entry.status.remove(); entries.delete(id); }
+    for (const row of rows) {
+      let entry = entries.get(row.sourceId);
+      if (!entry) {
+        const status = element('li'); status.dataset.sourceId = row.sourceId;
+        const card = element('article','','owner-source-detail'); card.dataset.sourceId = row.sourceId;
+        card.append(element('h3'),element('p','','owner-source-copy'),element('p','','owner-source-axes'),
+          element('p','','owner-source-time'),element('p','','owner-source-limits'));
+        const raw = element('details','','owner-diagnostic'); raw.append(element('summary','診斷資料'),element('pre'));
+        card.append(raw); statuses.append(status); panel.append(card);
+        entry = {status,card,key:''}; entries.set(row.sourceId,entry);
+      }
+      const key = JSON.stringify(row);
+      if (entry.key !== key) {
+        entry.key = key;
+        const name = sourceNames[row.sourceId] || '其他來源';
+        setCopy(entry.status, `${name}：${sourceStatusLabel(row)}`);
+        setCopy(entry.card.querySelector('h3')!, name);
+        setCopy(entry.card.querySelector('.owner-source-copy')!, sourceCopy(row));
+        setCopy(entry.card.querySelector('.owner-source-axes')!, `資料：${stateNames[row.availability] || '未知'} · 連線：${stateNames[row.connection] || '未知'} · 時效：${stateNames[row.freshness] || '未知'}`);
+        setCopy(entry.card.querySelector('.owner-source-time')!, `來源時間：${row.observedAt || '未提供'}；Core 取得／讀取時間：${row.receivedAt || '未提供'}`);
+        setCopy(entry.card.querySelector('.owner-source-limits')!, (row.limitations || []).map(reasonLabel).filter((v: string, i: number, a: string[]) => a.indexOf(v) === i).join('；'));
+        setCopy(entry.card.querySelector('pre')!, JSON.stringify(row,null,2));
       }
     }
-    if (!panel.isConnected) header.after(panel);
+    if (header.nextElementSibling !== strip) header.after(strip);
+    if (primary.nextElementSibling !== panel) primary.after(panel);
+  };
+}
+
+export function installAttachmentHelp(): () => void {
+  const copy = 'PNG／JPEG／WebP、TXT、PDF、WAV；最多 6 個，每個 4 MiB，合計 8 MiB。未支援格式會拒絕傳送。';
+  const help = element('details','','owner-attachment-help'); help.dataset.ownerAttachmentHelp = 'true';
+  const text = element('p',copy); text.id = 'owner-attachment-limits';
+  help.append(element('summary','附件格式與大小'),text);
+  return () => {
+    const attach = document.querySelector<HTMLButtonElement>('[data-attach]');
+    const foot = document.querySelector<HTMLElement>('.composer-foot'); if (!attach || !foot) return;
+    attach.title = `加入附件：${copy}`;
+    attach.setAttribute('aria-label','加入附件');
+    attach.setAttribute('aria-describedby',text.id);
+    if (foot.nextElementSibling !== help) foot.after(help);
   };
 }

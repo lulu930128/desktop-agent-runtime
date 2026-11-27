@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QMenuBar, QWidget
 from kuro_launcher.qt_web_protocol import CONTRACT, RequestBroker, Rejected, WINDOW_EDGES, error, validate
 from kuro_launcher.qt_web_adapter import QtOwnerAdapter
 from web_candidate_fixtures import ChatFixture, controller_fixture
+from kuro_launcher.qt_web_release import VerifiedOwnerBundle, RELEASE_PIN
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -153,48 +154,43 @@ class ChromeWindowTests(unittest.TestCase):
             stack.enter_context(patch.object(qt_web_host, 'create_existing_window_host', side_effect=surface))
             for name in ('_start_notification_delivery', '_schedule_startup_auto_start'):
                 stack.enter_context(patch.object(qt_app.KuroQtLauncherWindow, name))
-            stack.enter_context(patch.object(qt_app, 'QSettings', side_effect=AssertionError('Private settings')))
             stack.enter_context(patch.object(qt_app.QSystemTrayIcon, 'show'))
-            window = qt_app.KuroQtLauncherWindow(SimpleNamespace(), web_bundle=object())
+            window = qt_app.KuroQtLauncherWindow(SimpleNamespace(), web_bundle=VerifiedOwnerBundle.load(ROOT / 'assets/qt-owner' / RELEASE_PIN.fingerprint, RELEASE_PIN))
             try:
                 self.assertTrue(window.windowFlags() & Qt.WindowType.FramelessWindowHint)
                 self.assertEqual(window.findChildren(QMenuBar), [])
                 self.assertIs(window.controller, controller)
                 self.assertIs(window.centralWidget(), window.work_web_candidate)
-                actions = {a.text(): a for a in window.tray.contextMenu().actions()}
-                self.assertEqual(set(actions), {'Show Kuro', 'Restart Kuro', 'Quit Kuro'})
+                actions = {a.text(): a for a in window.tray.contextMenu().actions() if a.isEnabled() and not a.isSeparator()}
+                self.assertEqual(set(actions), {'將 Kuro 帶到最前面', '顯示桌寵', '重新定位桌寵', '開啟日誌資料夾', '重新啟動 Kuro', '結束 Kuro'})
                 with patch.object(window, '_restart_launcher') as restart, patch.object(qt_app.QMessageBox, 'question', return_value=qt_app.QMessageBox.StandardButton.No):
-                    actions['Restart Kuro'].trigger(); restart.assert_not_called()
+                    actions['重新啟動 Kuro'].trigger(); restart.assert_not_called()
                 with patch.object(window, '_restart_launcher') as restart, patch.object(qt_app.QMessageBox, 'question', return_value=qt_app.QMessageBox.StandardButton.Yes):
-                    actions['Restart Kuro'].trigger(); restart.assert_called_once()
+                    actions['重新啟動 Kuro'].trigger(); restart.assert_called_once()
                 window.show()
                 with patch.object(window.tray, 'isVisible', return_value=True), patch.object(qt_app.QSystemTrayIcon, 'isSystemTrayAvailable', return_value=True):
                     window.close(); self.assertFalse(window.isVisible())
-                actions['Show Kuro'].trigger(); self.assertTrue(window.isVisible())
+                actions['將 Kuro 帶到最前面'].trigger(); self.assertTrue(window.isVisible())
                 controller.close.assert_not_called()
                 with patch.object(self.app, 'quit') as quit_app:
-                    actions['Quit Kuro'].trigger(); quit_app.assert_called_once()
+                    actions['結束 Kuro'].trigger(); quit_app.assert_called_once()
                 window.cleanup()
                 controller.close.assert_called_once()
                 window.work_web_candidate.shutdown_candidate.assert_called_once()
             finally:
                 window.cleanup(); window.deleteLater()
 
-    def test_widgets_tray_path_retains_native_frame_and_kuro_menu(self):
+    def test_tray_does_not_create_retired_widgets_menubar(self):
         from kuro_launcher.qt_app import KuroQtLauncherWindow
-        # Existing Widgets constructor coverage lives in the Qt UI regressions;
-        # isolate its actual shared tray method without opening private state.
-        window = QMainWindow()
-        window._web_mode = False
-        for name in ('reveal', '_confirm_restart_launcher', 'quit_application', '_tray_activated'):
-            setattr(window, name, Mock())
+        window = KuroQtLauncherWindow.__new__(KuroQtLauncherWindow)
+        QMainWindow.__init__(window)
+        window.chat_client = SimpleNamespace(connected=False)
+        window.last_status = None
         with patch('kuro_launcher.qt_app.QSystemTrayIcon.show'):
-            KuroQtLauncherWindow._create_tray(window)
-        self.assertFalse(window.windowFlags() & Qt.WindowType.FramelessWindowHint)
-        menu_actions = window.menuBar().actions()
-        self.assertEqual([a.text() for a in menu_actions], ['Kuro'])
-        menu = menu_actions[0].menu()
-        self.assertEqual([a.text() for a in menu.actions()], ['Restart Kuro', 'Quit Kuro'])
+            window._create_tray()
+        self.assertEqual(window.findChildren(QMenuBar), [])
+        self.assertIs(window.tray.parent(), window)
+        self.assertIs(window.tray.contextMenu().parent(), window)
         window.tray.hide(); window.deleteLater()
 
 

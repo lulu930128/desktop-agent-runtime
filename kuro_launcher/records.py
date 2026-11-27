@@ -33,3 +33,8 @@ class MemoryRecord:
     source: str
     updated_at: str
     content_digest: str = ""
+    source_history_uid: str = ""
+    source_character_id: str = ""
+    source_turn: str = ""
+    revision: int = 1
+    valid_to: str = ""

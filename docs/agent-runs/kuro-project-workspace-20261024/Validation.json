@@ -1,0 +1,105 @@
+{
+  "status": "SOURCE_CONFIG_POLICY_BUNDLE_ISOLATED_PASS",
+  "live_runtime_adoption": "PENDING_NEXT_NORMAL_START",
+  "native_user_session": "UNVERIFIED",
+  "head_unchanged": "c2b3e64c27caaec8c2cba5b213444ddce0d79e03",
+  "baseline_files": 102,
+  "baseline_preserved": 99,
+  "baseline_touched": [
+    "devtools/original-git-web-host-20261010/frontend/src/owner-presentation.ts",
+    "kuro_launcher/qt_web_release.py",
+    "tests/g2_tools_today_surface.py"
+  ],
+  "history_function_byte_exact": true,
+  "immutable_originals": {
+    "src/work-panel/main.ts": "9f0b8eb99c7f1e0435b0b85eaf46222edce1215c6cf89dce91be1105d9cdbbc5",
+    "src/work-panel/styles.css": "d6c5bbf9bd49609300f8675061b4acbf4639d3dd08940cf70b79b4054715020f",
+    "src/work-panel/model.ts": "25b91217df1a805160b92f6215878b16f9ee49af7ed10d9a128b7f15093d0792",
+    "src/work-panel/types.ts": "c06528df69736b5338911b793e6c0fc83ba702e61c6505742ff12b60b1949e52",
+    "src/work-panel/schedule.ts": "695bf308ecc1ba010839a3d50703c6696f6e154457c1346874f8fd3a57f66e99",
+    "work-panel.html": "35f01f7e3f8cd449e81a7ec6d119cfe88d996f96c72415537fa0f1385dc74acb"
+  },
+  "syntax_files": 10,
+  "python_adjacent_tests": 52,
+  "node_tests": 30,
+  "qt_targeted_tests": 30,
+  "qt_surface_status": "ISOLATED_SURFACE_PASS",
+  "qt_surface_checks": 80,
+  "native_confirmations": 16,
+  "generated_runtime_config_modified": false,
+  "no_services_restarted": true,
+  "no_external_provider_calls": true,
+  "receipt_paths": [
+    "StdioReceipt.json",
+    "StdioFormalReceipt.json",
+    "devtools/original-git-web-host-20261010/.runtime/kuro-project-workspace-20261024-build.json",
+    ".tmp/kuro-project-workspace-20261024-pass/Result.json"
+  ],
+  "reviewer": "PASS - no blocking findings",
+  "changed_source_config_test_files": {
+    "Open-LLM-VTuber/mcp_servers.json": {
+      "after_sha256": "7945ee636ee7a7dde667e2dde9e41f63c579662b7cf58280fab3780a5a10a361",
+      "before_sha256": "82126394a35c0a78555f4f48917bd4aeec8f79a9d1b70e63b8233ec2b42c885b"
+    },
+    "Open-LLM-VTuber/characters/kuro.yaml": {
+      "after_sha256": "b7010dc25019ab0d06a71ff0e7689397ebb8207cdf75dadecff1b06b616165b7",
+      "before_sha256": "446290893aaca5567f7db24ac59572d98de93230fa23df4e8be14742b6bf12e4"
+    },
+    "Open-LLM-VTuber/local_mcp/filesystem_tools_server.py": {
+      "after_sha256": "6040789b3dbeeecfc279fc5a2bf8df6d4d760a66b9d6944e3806f7a93f99e96c",
+      "before_sha256": "1b351be4292694a45700675f9136525c643400c4cd4a45b4c3c5d7e58c082c70"
+    },
+    "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_catalog_manager.py": {
+      "after_sha256": "d3ad9fdc9bf2ef1c9a1185b6de1ecaaf72e2e836d2d6714eb598634ca48d68d3",
+      "before_sha256": "fb49a20c9887c0644bf1edb1ab81e86d9b43c35b03e63f5c5c9c3e9014e99d57"
+    },
+    "Open-LLM-VTuber/src/open_llm_vtuber/mcpp/tool_policy_manager.py": {
+      "after_sha256": "9e9c6a4a2cc583251265b115fff2d2e5a3ef54adeb3367ba02d7513776509a18"
+    },
+    "Open-LLM-VTuber/tool_policy.json": {
+      "after_sha256": "2cf0c039607f3bb1fcbe840fd3c5a99ab2819c776590001c35f43b688d07ca52",
+      "before_sha256": "56d0b3565c90a152a36f22e817163841b598d074e176c8a776152acb1cec3020"
+    },
+    "Open-LLM-VTuber/tool_catalog.json": {
+      "after_sha256": "80c02005295727d1ea53539f2f90ffee2d9d16a24b3a3dabcae9f67d249f1b38",
+      "before_sha256": "3cf8b68d5997e2df1d127fba4edd695a2397623d421e74d4f79815aa1d5847c6"
+    },
+    "kuro_launcher/tool_policy_settings.py": {
+      "after_sha256": "d4ef5b0aa9e3a5ca0dbce5cfa88261445db48b1d36156021a316deab37af0f1b",
+      "before_sha256": "4f813c5561d506214852d2f2db4272d99963119a04f0348dab09a520147e7ee2"
+    },
+    "devtools/original-git-web-host-20261010/frontend/src/owner-presentation.ts": {
+      "after_sha256": "c1a40551570b82e43d2aff4e62d0a8cfa26536492abc24232feb76c055a81f03",
+      "before_sha256": "e513046cbe1dd1c93aeeac4f4ec8f9e9550a10c08e3c1bafa458ae912a19120a"
+    },
+    "kuro_launcher/qt_web_release.py": {
+      "after_sha256": "0b11486f178ca686852424b9ccf145d794bb1d560311d45ff38a19804b678ab4",
+      "before_sha256": "ef05c0d212c4c427b176770f3b5c9f1f9b95c3ca24dd71463a2a4bc2706e21f9"
+    },
+    "projects/desktop-agent-runtime/prompts/tool_prompt.txt": {
+      "after_sha256": "0e657daedbf68eb562cd5e20daaab396bde170dd2ddb2f0814741d495a6dcc18"
+    },
+    "tests/g2_tools_today_surface.py": {
+      "after_sha256": "cbaebb25258842ca988f70a4a86d1086be06e6932dc177a7c2234a7a79e67be7",
+      "before_sha256": "b2d770658e9c3df79c2afcb08bdc726648ebf2a51a6cf0b7b6795389793bdea5"
+    },
+    "tests/test_g2_tool_settings.py": {
+      "after_sha256": "0164add78323795a6d2305e6755b9db544b486969f4072ce054501d1670c8776",
+      "before_sha256": "573ea46115ed7a79370eeef7e9e28875b33938acc2dde638b43b8557b8d4277c"
+    },
+    "tests/g2_tools_today_frontend.test.cjs": {
+      "after_sha256": "e4d324dc9cfca981ceae051897a8c801c1dcac19e5f92254e5183b90a5d4fec4"
+    },
+    "Open-LLM-VTuber/tests/verify_mcp_source_inventory.py": {
+      "after_sha256": "d3f863b884b26017da98b31140c0ac4047e270d490ac1582ac5880a85d4d5bce",
+      "before_sha256": "8f2d2b5a64048413ef446f8586df329a342ec0e0786d408bb7373bd63405539e"
+    },
+    "Open-LLM-VTuber/tests/test_project_workspace_cutover.py": {
+      "after_sha256": "6517b1bbe86636ddfaa8321821ae7ed460d3cd39cc5ffd04e5ffae748d72418f"
+    },
+    "Open-LLM-VTuber/tests/verify_project_workspace_cutover.py": {
+      "after_sha256": "6bfee915c7be903781005f174393e31e0dc483b22f7c8e16ef8c4a4e6a7c4cd6"
+    }
+  },
+  "git_diff_check": "PASS"
+}

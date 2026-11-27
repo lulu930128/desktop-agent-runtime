@@ -1,8 +1,7 @@
 {
   "version": 1,
   "routing": {
-    "default_behavior": "no_tools_until_needed",
-    "max_candidate_tools": 6
+    "default_behavior": "no_tools_until_needed"
   },
   "categories": {
     "time": {
@@ -17,12 +16,16 @@
         "what time",
         "timezone"
       ],
-      "default_tools": ["kuro-web::get_current_time"],
+      "default_tools": [
+        "kuro-web::get_current_time"
+      ],
       "tools": [
         {
           "name": "kuro-web::get_current_time",
           "level": "light",
-          "capabilities": ["time"],
+          "capabilities": [
+            "time"
+          ],
           "risk": "read_only",
           "when": "Use when the answer depends on the current local time or timezone."
         }
@@ -55,33 +58,48 @@
         "documentation",
         "docs"
       ],
-      "default_tools": ["kuro-web::advanced_search_web"],
+      "default_tools": [
+        "kuro-web::advanced_search_web"
+      ],
       "tools": [
         {
           "name": "kuro-web::search_web",
           "level": "light",
-          "capabilities": ["web_research", "current_info"],
+          "capabilities": [
+            "web_research",
+            "current_info"
+          ],
           "risk": "read_only",
           "when": "Use for a quick first pass when titles, snippets, and URLs are enough."
         },
         {
           "name": "kuro-web::advanced_search_web",
           "level": "deep",
-          "capabilities": ["web_research", "current_info", "source_verification"],
+          "capabilities": [
+            "web_research",
+            "current_info",
+            "source_verification"
+          ],
           "risk": "read_only",
           "when": "Use for source-sensitive research, latest/current questions, official documentation, comparison, or any answer that should cite evidence."
         },
         {
           "name": "kuro-web::smart_search_web",
           "level": "search",
-          "capabilities": ["web_research", "current_info"],
+          "capabilities": [
+            "web_research",
+            "current_info"
+          ],
           "risk": "read_only",
           "when": "Compatibility search tool for practical, time-sensitive, multi-source, or comparison questions."
         },
         {
           "name": "kuro-web::fetch_content",
           "level": "read",
-          "capabilities": ["url", "source_verification"],
+          "capabilities": [
+            "url",
+            "source_verification"
+          ],
           "risk": "read_only",
           "when": "Use after a candidate URL is known and the page body needs verification."
         }
@@ -89,7 +107,7 @@
     },
     "local_files": {
       "title": "Local Files",
-      "description": "Read-only project, prompt, config, and log inspection.",
+      "description": "Read-only Project Workspace inspection. Use workspace_info for root ids, then root plus relative path (project for project_context; files[].path for read_files). Never pass old absolute-path aliases.",
       "intent_keywords": [
         "資料夾",
         "檔案",
@@ -112,35 +130,73 @@
         "list directory",
         "search files"
       ],
-      "default_tools": ["kuro-filesystem::search_files", "kuro-filesystem::read_text_file"],
+      "default_tools": [
+        "project-workspace::find_files",
+        "project-workspace::read_file"
+      ],
       "tools": [
         {
-          "name": "kuro-filesystem::list_allowed_roots",
+          "name": "project-workspace::workspace_info",
           "level": "light",
-          "capabilities": ["local_files"],
+          "capabilities": [
+            "local_files"
+          ],
           "risk": "read_only",
-          "when": "Use when the assistant needs to know which local roots are readable."
+          "when": "Discover configured roots, limits and deny policy before inspecting a workspace."
         },
         {
-          "name": "kuro-filesystem::list_directory",
+          "name": "project-workspace::list_dir",
           "level": "light",
-          "capabilities": ["local_files"],
+          "capabilities": [
+            "local_files"
+          ],
           "risk": "read_only",
-          "when": "Use to inspect folder structure before reading specific files."
+          "when": "Inspect folder structure with bounded depth and entry count."
         },
         {
-          "name": "kuro-filesystem::search_files",
+          "name": "project-workspace::find_files",
           "level": "search",
-          "capabilities": ["local_files"],
+          "capabilities": [
+            "local_files"
+          ],
           "risk": "read_only",
-          "when": "Use to find names, settings, functions, errors, or prompt fragments."
+          "when": "Find file names with a relative glob pattern."
         },
         {
-          "name": "kuro-filesystem::read_text_file",
-          "level": "read",
-          "capabilities": ["local_files"],
+          "name": "project-workspace::search_text",
+          "level": "search",
+          "capabilities": [
+            "local_files"
+          ],
           "risk": "read_only",
-          "when": "Use after a file path is known and text content is needed."
+          "when": "Search text with a bounded query within a configured root."
+        },
+        {
+          "name": "project-workspace::read_file",
+          "level": "read",
+          "capabilities": [
+            "local_files"
+          ],
+          "risk": "read_only",
+          "when": "Read a known relative file path with bounded lines."
+        },
+        {
+          "name": "project-workspace::read_files",
+          "level": "read",
+          "capabilities": [
+            "local_files"
+          ],
+          "risk": "read_only",
+          "when": "Read a bounded list of files using files objects with relative path fields."
+        },
+        {
+          "name": "project-workspace::project_context",
+          "level": "read",
+          "capabilities": [
+            "local_files"
+          ],
+          "risk": "read_only",
+          "when": "Read project entrypoint context using the project relative path field."
         }
       ]
     },
@@ -220,19 +276,28 @@
         "vtuber",
         "audio"
       ],
-      "default_tools": ["kuro-web::advanced_search_web"],
+      "default_tools": [
+        "kuro-web::advanced_search_web"
+      ],
       "tools": [
         {
           "name": "kuro-web::advanced_search_web",
           "level": "deep",
-          "capabilities": ["media_lookup", "web_research", "source_verification"],
+          "capabilities": [
+            "media_lookup",
+            "web_research",
+            "source_verification"
+          ],
           "risk": "read_only",
           "when": "Use after visually inspecting an attached image and deriving textual search terms for objects, products, locations, visible text, sources, facts, or fictional/illustrated/anime/game/VTuber characters that need external verification. Do not use it to identify a private real person by face."
         },
         {
           "name": "kuro-web::search_web",
           "level": "light",
-          "capabilities": ["media_lookup", "web_research"],
+          "capabilities": [
+            "media_lookup",
+            "web_research"
+          ],
           "risk": "read_only",
           "when": "Use for a quick visual follow-up search when the image gives a clear textual query."
         }
@@ -240,7 +305,7 @@
     },
     "memory": {
       "title": "Memory",
-      "description": "Reserved category for searching, proposing, writing, and forgetting long-term memories.",
+      "description": "Kuro 本機角色記憶與聊天脈絡；以唯讀 history 工具查詢過往對話，與外部 Memory Core 分開。",
       "intent_keywords": [
         "記憶",
         "記住",
@@ -255,12 +320,18 @@
         "chat history",
         "history"
       ],
-      "default_tools": ["kuro-filesystem::search_past_conversations"],
+      "default_tools": [
+        "kuro-filesystem::search_past_conversations"
+      ],
       "tools": [
         {
           "name": "kuro-filesystem::search_past_conversations",
           "level": "search",
-          "capabilities": ["memory", "chat_history", "source_verification"],
+          "capabilities": [
+            "memory",
+            "chat_history",
+            "source_verification"
+          ],
           "risk": "read_only",
           "when": "Use when the user asks about previous chats, prior decisions, old context, or details that may exist in raw chat history but not in long-term memory."
         }
@@ -278,77 +349,120 @@
         "sender",
         "subject",
         "newsletter",
-        "\u4fe1\u4ef6",
-        "\u90f5\u4ef6",
-        "\u6536\u4ef6",
-        "\u6536\u4ef6\u5323",
-        "\u4fe1\u7bb1",
-        "\u672a\u8b80",
-        "\u672a\u8b80\u4fe1",
-        "\u4eca\u5929\u7684\u4fe1"
+        "信件",
+        "郵件",
+        "收件",
+        "收件匣",
+        "信箱",
+        "未讀",
+        "未讀信",
+        "今天的信"
       ],
-      "default_tools": ["kuro-mail::mail.daily_brief"],
+      "default_tools": [
+        "kuro-mail::mail.daily_brief"
+      ],
       "tools": [
         {
           "name": "kuro-mail::mail.auth_status",
           "level": "light",
-          "capabilities": ["mail", "gmail", "auth_status"],
+          "capabilities": [
+            "mail",
+            "gmail",
+            "auth_status"
+          ],
           "risk": "read_only",
           "when": "Use to check whether Gmail OAuth is configured and authorized."
         },
         {
           "name": "kuro-mail::mail.auth_start",
           "level": "setup",
-          "capabilities": ["mail", "gmail", "authorization"],
+          "capabilities": [
+            "mail",
+            "gmail",
+            "authorization"
+          ],
           "risk": "local_auth",
           "when": "Use only when the user asks to connect or re-authorize Gmail."
         },
         {
           "name": "kuro-mail::mail.auth_finish",
           "level": "setup",
-          "capabilities": ["mail", "gmail", "authorization"],
+          "capabilities": [
+            "mail",
+            "gmail",
+            "authorization"
+          ],
           "risk": "local_auth",
           "when": "Use only after the user provides the Google OAuth redirected URL."
         },
         {
           "name": "kuro-mail::mail.list_unread",
           "level": "read",
-          "capabilities": ["mail", "gmail", "unread"],
+          "capabilities": [
+            "mail",
+            "gmail",
+            "unread"
+          ],
           "risk": "read_only",
           "when": "Use for unread Gmail summaries. It does not mark mail as read."
         },
         {
           "name": "kuro-mail::mail.search_recent",
           "level": "search",
-          "capabilities": ["mail", "gmail", "search"],
+          "capabilities": [
+            "mail",
+            "gmail",
+            "search"
+          ],
           "risk": "read_only",
           "when": "Use for recent Gmail searches by sender, subject, keyword, or Gmail query syntax."
         },
         {
           "name": "kuro-mail::mail.get_message_summary",
           "level": "read",
-          "capabilities": ["mail", "gmail", "message_summary"],
+          "capabilities": [
+            "mail",
+            "gmail",
+            "message_summary"
+          ],
           "risk": "read_only",
           "when": "Use when a specific Gmail message id needs a metadata/snippet summary."
         },
         {
           "name": "kuro-mail::mail.get_message_detail",
           "level": "read",
-          "capabilities": ["mail", "gmail", "message_detail", "message_body", "attachment_metadata"],
+          "capabilities": [
+            "mail",
+            "gmail",
+            "message_detail",
+            "message_body",
+            "attachment_metadata"
+          ],
           "risk": "read_only",
           "when": "Use only when the user asks to open or read a specific Gmail message body. It does not download attachments or modify the mailbox."
         },
         {
           "name": "kuro-mail::mail.daily_brief",
           "level": "read",
-          "capabilities": ["mail", "gmail", "brief", "provider_query"],
+          "capabilities": [
+            "mail",
+            "gmail",
+            "brief",
+            "provider_query"
+          ],
           "risk": "read_only",
           "when": "Use for an explicit read-only Gmail summary using saved preferences. This provider query is distinct from Core Today and does not update it."
         },
         {
           "name": "kuro-mail::mail.refresh",
           "level": "read",
-          "capabilities": ["mail", "gmail", "brief", "core_handoff", "dashboard_update"],
+          "capabilities": [
+            "mail",
+            "gmail",
+            "brief",
+            "core_handoff",
+            "dashboard_update"
+          ],
           "risk": "read_only_local_update",
           "when": "Use when the user explicitly requests a Mail refresh. It publishes bounded Mail status/work handoffs for Core Today and does not modify the mailbox."
         }
@@ -356,12 +470,27 @@
     },
     "market_intelligence": {
       "title": "Market Intelligence",
-      "description": "Open Market Intelligence local stock, market, watchlist evidence, and prompt-ready briefs.",
+      "description": "OMI Search v4 cache-only data. Use canonical question, target and mode=data_only; refresh_if_missing=false. Never pass caller_profile/allow_llm/allow_write/allow_external_fetch. Preserve stale, partial, missing and backend limitations. No provider refresh, LLM synthesis, runtime control or MCP Apps.",
       "intent_keywords": [
         "OMI",
         "Open Market Intelligence",
         "股票",
         "台股",
+        "美股",
+        "美國股市",
+        "美國市場",
+        "納斯達克",
+        "那斯達克",
+        "道瓊",
+        "標普500",
+        "標普 500",
+        "S&P 500",
+        "NASDAQ",
+        "Dow Jones",
+        "US market",
+        "U.S. market",
+        "US equities",
+        "U.S. equities",
         "大盤",
         "市場",
         "個股",
@@ -392,34 +521,171 @@
         "stock",
         "portfolio"
       ],
-      "default_tools": ["omi-market::omi.ask"],
+      "default_tools": [
+        "omi-search::omi_ask"
+      ],
       "tools": [
         {
-          "name": "omi-market::omi.ask",
+          "name": "omi-search::omi_ask",
           "level": "read",
           "capabilities": [
-            "market_data",
-            "stock_context",
-            "watchlist",
-            "data_freshness",
-            "brief"
+            "omi_search"
           ],
           "risk": "read_only",
-          "when": "Use for Taiwan market, US/ADR stock context, stock, watchlist, data freshness, and prompt-ready brief or trusted OMI LLM analysis backed by Open Market Intelligence data. Send contract_version=omi.decision.v4 and target={type:auto} unless OMI already returned a concrete target in the previous turn. Use selection fields, limits, and max_response_bytes when only bounded evidence is needed. Consume answer, decision, evidence, limitations, status, and continuation directly; do not reconstruct OMI market semantics in Kuro. Do not send legacy scope_type or scope_id to omi.ask. Kuro may set allow_external_fetch=true with a small tool_budget so OMI can refresh stale evidence by its default stale-first policy or choose from backend allowlisted market APIs; Kuro must not call those APIs directly. Prefer mode=data_only or mode=brief for evidence, and mode=analysis with allow_llm=true when OMI should do its own non-persistent LLM synthesis. Do not request report generation or allow_write unless the runtime policy is explicitly changed."
+          "when": "由 OMI Search 取得 v4 既有證據；僅 data_only，不刷新、不呼叫 LLM、不寫入。"
         },
         {
-          "name": "omi-market::omi.ask_stream",
+          "name": "omi-search::omi_read_refresh_status",
           "level": "read",
           "capabilities": [
-            "market_data",
-            "stock_context",
-            "watchlist",
-            "data_freshness",
-            "brief",
-            "streaming_status"
+            "omi_search"
           ],
           "risk": "read_only",
-          "when": "Use only when Kuro or another UI needs OMI status, evidence passport, tool_run, delta, and final events from the OMI streaming endpoint. Keep the same omi.decision.v4 payload rules as omi.ask, treat final as the canonical envelope, inspect done.transport_ok separately from done.ok, do not request report generation, and never set allow_write unless the runtime policy is explicitly changed."
+          "when": "只讀既有工作狀態，不發起或重送刷新。"
+        },
+        {
+          "name": "omi-search::omi_read_market_overview",
+          "level": "read",
+          "capabilities": [
+            "omi_search"
+          ],
+          "risk": "read_only",
+          "when": "讀取 OMI 已有市場資料；保留缺漏與過期警告。"
+        },
+        {
+          "name": "omi-search::omi_read_stock_context",
+          "level": "read",
+          "capabilities": [
+            "omi_search"
+          ],
+          "risk": "read_only",
+          "when": "讀取既有個股證據，不刷新來源。"
+        },
+        {
+          "name": "omi-search::omi_read_data_freshness",
+          "level": "read",
+          "capabilities": [
+            "omi_search"
+          ],
+          "risk": "read_only",
+          "when": "讀取 OMI 資料時間與缺漏狀態，不修復或刷新。",
+          "intent_keywords": [
+            "freshness",
+            "新鮮度"
+          ]
+        },
+        {
+          "name": "omi-search::omi_read_source_health",
+          "level": "read",
+          "capabilities": [
+            "omi_search"
+          ],
+          "risk": "read_only",
+          "when": "只讀來源狀態，不啟停服務。",
+          "intent_keywords": [
+            "health",
+            "狀態"
+          ]
+        },
+        {
+          "name": "omi-search::omi_read_capability_status",
+          "level": "read",
+          "capabilities": [
+            "omi_search"
+          ],
+          "risk": "read_only",
+          "when": "查看 OMI 已登錄能力及可用性。",
+          "intent_keywords": [
+            "capability_status",
+            "能力狀態",
+            "能力清單",
+            "可用能力",
+            "能分析到"
+          ]
+        },
+        {
+          "name": "omi-search::omi_read_tw_market_dashboard",
+          "level": "read",
+          "capabilities": [
+            "omi_search"
+          ],
+          "risk": "read_only",
+          "when": "讀取台股總覽資料；不開啟 widget。"
+        },
+        {
+          "name": "omi-search::omi_search_tw_symbols",
+          "level": "read",
+          "capabilities": [
+            "omi_search"
+          ],
+          "risk": "read_only",
+          "when": "查找台股名稱與代號，不查詢外部 provider。",
+          "intent_keywords": [
+            "symbol",
+            "代號"
+          ]
+        },
+        {
+          "name": "omi-search::omi_read_tw_stock_dashboard_detail",
+          "level": "read",
+          "capabilities": [
+            "omi_search"
+          ],
+          "risk": "read_only",
+          "when": "讀取既有個股總覽明細，保留來源限制。"
+        },
+        {
+          "name": "omi-search::omi_read_tw_workspace_header",
+          "level": "read",
+          "capabilities": [
+            "omi_search"
+          ],
+          "risk": "read_only",
+          "when": "讀取現有市場摘要與時間狀態。"
+        },
+        {
+          "name": "omi-search::omi_read_tw_workspace_watchlist",
+          "level": "read",
+          "capabilities": [
+            "omi_search"
+          ],
+          "risk": "read_only",
+          "when": "唯讀現有自選股，不新增或修改清單。"
+        },
+        {
+          "name": "omi-search::omi_read_tw_workspace_hot_groups",
+          "level": "read",
+          "capabilities": [
+            "omi_search"
+          ],
+          "risk": "read_only",
+          "when": "讀取既有族群資料，不自行重算排名。"
+        },
+        {
+          "name": "omi-search::omi_read_tw_stock_chart",
+          "level": "read",
+          "capabilities": [
+            "omi_search"
+          ],
+          "risk": "read_only",
+          "when": "讀取既有圖表資料，不執行 MCP Apps UI。",
+          "intent_keywords": [
+            "chart",
+            "圖表"
+          ]
+        },
+        {
+          "name": "omi-search::omi_read_tw_stock_research",
+          "level": "read",
+          "capabilities": [
+            "omi_search"
+          ],
+          "risk": "read_only",
+          "when": "讀取既有研究證據，不產生 LLM 報告。",
+          "intent_keywords": [
+            "research",
+            "研究"
+          ]
         }
       ]
     },
@@ -440,6 +706,655 @@
       ],
       "default_tools": [],
       "tools": []
+    },
+    "japanese_study": {
+      "title": "japanese-study",
+      "description": "Read-only existing source data. No creation, submission, recording, audio preparation, synthesis or widget. Source offline/auth failure is not an empty result; independent of Core Today.",
+      "intent_keywords": [
+        "日文",
+        "日語",
+        "日本語",
+        "japanese",
+        "jlpt"
+      ],
+      "default_tools": [
+        "japanese-study::study_get_summary"
+      ],
+      "tools": [
+        {
+          "name": "japanese-study::study_get_summary",
+          "level": "read",
+          "capabilities": [
+            "japanese_study"
+          ],
+          "risk": "read_only",
+          "when": "唯讀 Japanese Study Hub 摘要；與 Core Today 投影分開。",
+          "intent_keywords": [
+            "summary",
+            "摘要"
+          ]
+        },
+        {
+          "name": "japanese-study::study_get_learner_policy",
+          "level": "read",
+          "capabilities": [
+            "japanese_study"
+          ],
+          "risk": "read_only",
+          "when": "讀取既有學習設定，不修改規則。",
+          "intent_keywords": [
+            "policy",
+            "偏好"
+          ]
+        },
+        {
+          "name": "japanese-study::study_get_learning_context",
+          "level": "read",
+          "capabilities": [
+            "japanese_study"
+          ],
+          "risk": "read_only",
+          "when": "讀取既有學習脈絡，不建立或記錄練習。",
+          "intent_keywords": [
+            "context",
+            "脈絡"
+          ]
+        },
+        {
+          "name": "japanese-study::study_search_items",
+          "level": "read",
+          "capabilities": [
+            "japanese_study"
+          ],
+          "risk": "read_only",
+          "when": "搜尋既有單字與文法項目。",
+          "intent_keywords": [
+            "item",
+            "單字",
+            "文法"
+          ]
+        },
+        {
+          "name": "japanese-study::study_get_item",
+          "level": "read",
+          "capabilities": [
+            "japanese_study"
+          ],
+          "risk": "read_only",
+          "when": "唯讀指定學習項目。",
+          "intent_keywords": [
+            "item",
+            "單字",
+            "文法"
+          ]
+        },
+        {
+          "name": "japanese-study::study_get_due_reviews",
+          "level": "read",
+          "capabilities": [
+            "japanese_study"
+          ],
+          "risk": "read_only",
+          "when": "讀取到期待複習項目，不提交作答。",
+          "intent_keywords": [
+            "due",
+            "待複習"
+          ]
+        },
+        {
+          "name": "japanese-study::study_get_plan",
+          "level": "read",
+          "capabilities": [
+            "japanese_study"
+          ],
+          "risk": "read_only",
+          "when": "讀取 Hub 提供的學習計畫，不另建排程。",
+          "intent_keywords": [
+            "plan",
+            "計畫"
+          ]
+        },
+        {
+          "name": "japanese-study::study_list_study_lists",
+          "level": "read",
+          "capabilities": [
+            "japanese_study"
+          ],
+          "risk": "read_only",
+          "when": "列出既有學習清單，不新增或修改清單。",
+          "intent_keywords": [
+            "lists",
+            "清單"
+          ]
+        },
+        {
+          "name": "japanese-study::study_list_practice_sessions",
+          "level": "read",
+          "capabilities": [
+            "japanese_study"
+          ],
+          "risk": "read_only",
+          "when": "有界查找既有練習紀錄，不寫入成績。",
+          "intent_keywords": [
+            "practice",
+            "練習紀錄"
+          ]
+        },
+        {
+          "name": "japanese-study::study_get_practice_session",
+          "level": "read",
+          "capabilities": [
+            "japanese_study"
+          ],
+          "risk": "read_only",
+          "when": "唯讀指定練習紀錄。",
+          "intent_keywords": [
+            "practice",
+            "練習紀錄"
+          ]
+        }
+      ]
+    },
+    "english_study": {
+      "title": "english-study",
+      "description": "Read-only existing source data. No creation, submission, recording, audio preparation, synthesis or widget. Source offline/auth failure is not an empty result; independent of Core Today.",
+      "intent_keywords": [
+        "英文",
+        "英語",
+        "english",
+        "ielts",
+        "雅思"
+      ],
+      "default_tools": [
+        "english-study::english_get_summary"
+      ],
+      "tools": [
+        {
+          "name": "english-study::english_get_summary",
+          "level": "read",
+          "capabilities": [
+            "english_study"
+          ],
+          "risk": "read_only",
+          "when": "唯讀 English Study Hub 摘要；與 Core Today 投影分開。",
+          "intent_keywords": [
+            "summary",
+            "摘要"
+          ]
+        },
+        {
+          "name": "english-study::english_search_items",
+          "level": "read",
+          "capabilities": [
+            "english_study"
+          ],
+          "risk": "read_only",
+          "when": "搜尋既有英文學習項目。",
+          "intent_keywords": [
+            "item",
+            "單字",
+            "文法"
+          ]
+        },
+        {
+          "name": "english-study::english_get_item",
+          "level": "read",
+          "capabilities": [
+            "english_study"
+          ],
+          "risk": "read_only",
+          "when": "唯讀指定英文項目。",
+          "intent_keywords": [
+            "item",
+            "單字",
+            "文法"
+          ]
+        },
+        {
+          "name": "english-study::english_get_due_reviews",
+          "level": "read",
+          "capabilities": [
+            "english_study"
+          ],
+          "risk": "read_only",
+          "when": "讀取到期待複習項目，不提交作答。",
+          "intent_keywords": [
+            "due",
+            "待複習"
+          ]
+        },
+        {
+          "name": "english-study::english_get_plan",
+          "level": "read",
+          "capabilities": [
+            "english_study"
+          ],
+          "risk": "read_only",
+          "when": "讀取 Hub 提供的學習計畫，不另建排程。",
+          "intent_keywords": [
+            "plan",
+            "計畫"
+          ]
+        },
+        {
+          "name": "english-study::english_search_reference_entries",
+          "level": "read",
+          "capabilities": [
+            "english_study"
+          ],
+          "risk": "read_only",
+          "when": "搜尋既有參考條目，不下載或匯入資料。",
+          "intent_keywords": [
+            "reference",
+            "參考"
+          ]
+        },
+        {
+          "name": "english-study::english_get_reference_entry",
+          "level": "read",
+          "capabilities": [
+            "english_study"
+          ],
+          "risk": "read_only",
+          "when": "唯讀指定參考資料。",
+          "intent_keywords": [
+            "reference",
+            "參考"
+          ]
+        },
+        {
+          "name": "english-study::english_get_ielts_progress",
+          "level": "read",
+          "capabilities": [
+            "english_study"
+          ],
+          "risk": "read_only",
+          "when": "讀取既有進度，不推測成績或記錄新結果。",
+          "intent_keywords": [
+            "ielts",
+            "雅思",
+            "進度"
+          ]
+        },
+        {
+          "name": "english-study::english_list_practice_sessions",
+          "level": "read",
+          "capabilities": [
+            "english_study"
+          ],
+          "risk": "read_only",
+          "when": "有界查找既有練習紀錄。",
+          "intent_keywords": [
+            "practice",
+            "練習紀錄"
+          ]
+        },
+        {
+          "name": "english-study::english_get_practice_session",
+          "level": "read",
+          "capabilities": [
+            "english_study"
+          ],
+          "risk": "read_only",
+          "when": "唯讀指定練習紀錄，不修改或補交。",
+          "intent_keywords": [
+            "practice",
+            "練習紀錄"
+          ]
+        }
+      ]
+    },
+    "listening_audio": {
+      "title": "listening-audio",
+      "description": "Read-only existing source data. No creation, submission, recording, audio preparation, synthesis or widget. Source offline/auth failure is not an empty result; independent of Core Today.",
+      "intent_keywords": [
+        "聽力",
+        "聴解",
+        "listening",
+        "音訊題目"
+      ],
+      "default_tools": [
+        "listening-audio::listening_health"
+      ],
+      "tools": [
+        {
+          "name": "listening-audio::listening_health",
+          "level": "read",
+          "capabilities": [
+            "listening_audio"
+          ],
+          "risk": "read_only",
+          "when": "讀取 Trainer 與 TTS 狀態；不啟動服務，狀態不代表合成成功。",
+          "intent_keywords": [
+            "health",
+            "狀態"
+          ]
+        },
+        {
+          "name": "listening-audio::listening_get_question",
+          "level": "read",
+          "capabilities": [
+            "listening_audio"
+          ],
+          "risk": "read_only",
+          "when": "讀取安全題目與音訊可用性；不合成、不開啟 widget。",
+          "intent_keywords": [
+            "question",
+            "題目"
+          ]
+        },
+        {
+          "name": "listening-audio::listening_get_attempt_result",
+          "level": "read",
+          "capabilities": [
+            "listening_audio"
+          ],
+          "risk": "read_only",
+          "when": "讀取既有作答結果，不提交答案或寫入 Study。",
+          "intent_keywords": [
+            "result",
+            "作答結果"
+          ]
+        }
+      ]
+    },
+    "memory_core": {
+      "description": "Memory Core 是 ChatGPT 端的外部長期個人記憶；Kuro MCP 接線目前暫停，與 Kuro 角色記憶及聊天歷史分開。",
+      "policy": "On user request only; public read-only projection, no polling, caching, writes or administrative operations. Preserve source time/quality. Independent of Kuro history, character memory and Core Today.",
+      "intent_keywords": [
+        "memory core",
+        "memory-core",
+        "正式記憶",
+        "外部記憶",
+        "記憶集合"
+      ],
+      "default_tools": [
+        "memory-core::search"
+      ],
+      "tools": [
+        {
+          "name": "memory-core::search",
+          "level": "read",
+          "capabilities": [
+            "memory_core"
+          ],
+          "risk": "read_only",
+          "when": "依使用者需求搜尋 Memory Core；與 Kuro 過往對話及角色記憶分開。",
+          "intent_keywords": [
+            "搜尋正式記憶",
+            "search",
+            "search",
+            "搜尋"
+          ]
+        },
+        {
+          "name": "memory-core::fetch",
+          "level": "read",
+          "capabilities": [
+            "memory_core"
+          ],
+          "risk": "read_only",
+          "when": "依穩定識別碼讀取外部正式記憶，不保存或修改記憶。",
+          "intent_keywords": [
+            "讀取正式記憶",
+            "fetch",
+            "fetch",
+            "讀取",
+            "明細"
+          ]
+        },
+        {
+          "name": "memory-core::memory_fetch_record_revision",
+          "level": "read",
+          "capabilities": [
+            "memory_core"
+          ],
+          "risk": "read_only",
+          "when": "唯讀指定紀錄的歷史版本。",
+          "intent_keywords": [
+            "正式記憶版本",
+            "memory_fetch_record_revision",
+            "revision",
+            "revision",
+            "版本"
+          ]
+        },
+        {
+          "name": "memory-core::memory_list_record_links",
+          "level": "read",
+          "capabilities": [
+            "memory_core"
+          ],
+          "risk": "read_only",
+          "when": "唯讀指定紀錄的關聯，不建立或移除關聯。",
+          "intent_keywords": [
+            "正式記憶關聯",
+            "memory_list_record_links",
+            "links",
+            "links",
+            "關聯"
+          ]
+        },
+        {
+          "name": "memory-core::memory_overview",
+          "level": "read",
+          "capabilities": [
+            "memory_core"
+          ],
+          "risk": "read_only",
+          "when": "按需讀取 Memory Core 概覽；不是 Kuro History 或 Core Today。",
+          "intent_keywords": [
+            "正式記憶概覽",
+            "memory_overview",
+            "overview",
+            "overview",
+            "概覽"
+          ]
+        },
+        {
+          "name": "memory-core::memory_detect_duplicates",
+          "level": "read",
+          "capabilities": [
+            "memory_core"
+          ],
+          "risk": "read_only",
+          "when": "唯讀可能重複的紀錄；不合併、刪除或封存。",
+          "intent_keywords": [
+            "記憶重複查詢",
+            "memory_detect_duplicates",
+            "duplicates",
+            "duplicates",
+            "重複"
+          ]
+        },
+        {
+          "name": "memory-core::memory_list_collections",
+          "level": "read",
+          "capabilities": [
+            "memory_core"
+          ],
+          "risk": "read_only",
+          "when": "唯讀列出可見集合，不建立或修改集合。",
+          "intent_keywords": [
+            "正式記憶集合",
+            "memory_list_collections",
+            "collections",
+            "collections",
+            "集合"
+          ]
+        },
+        {
+          "name": "memory-core::memory_get_collection",
+          "level": "read",
+          "capabilities": [
+            "memory_core"
+          ],
+          "risk": "read_only",
+          "when": "有界讀取指定集合的成員，不自動寫入長期記憶。",
+          "intent_keywords": [
+            "正式記憶集合內容",
+            "memory_get_collection",
+            "collection",
+            "collection",
+            "集合"
+          ]
+        }
+      ]
+    },
+    "personal_asset_os": {
+      "description": "個人資產 PAOS",
+      "policy": "On user request only; public read-only projection, no polling, caching, writes or administrative operations. Preserve source time/quality. Independent of Kuro history, character memory and Core Today.",
+      "intent_keywords": [
+        "paos",
+        "personal asset",
+        "個人資產",
+        "我的資產",
+        "我的部位",
+        "資產帳戶",
+        "資產總額",
+        "資產配置",
+        "資產總覽",
+        "帳戶餘額",
+        "投資部位",
+        "股票部位",
+        "持倉",
+        "交易紀錄",
+        "成交紀錄",
+        "買賣紀錄",
+        "資產交易",
+        "資產對帳",
+        "財務事件",
+        "對帳",
+        "帳務一致性"
+      ],
+      "default_tools": [
+        "personal-asset-os::get_asset_overview"
+      ],
+      "tools": [
+        {
+          "name": "personal-asset-os::get_asset_overview",
+          "level": "read",
+          "capabilities": [
+            "personal_asset_os"
+          ],
+          "risk": "read_only",
+          "when": "查詢資產總額、淨值、資產配置或資產總覽；保留 Broker／FX 來源時間與品質警告。系統健康查詢使用 get_asset_system_status。",
+          "intent_keywords": [
+            "個人資產總覽",
+            "資產總覽",
+            "總額",
+            "淨值",
+            "配置",
+            "get_asset_overview",
+            "overview"
+          ]
+        },
+        {
+          "name": "personal-asset-os::list_asset_accounts",
+          "level": "read",
+          "capabilities": [
+            "personal_asset_os"
+          ],
+          "risk": "read_only",
+          "when": "查詢資產帳戶清單與帳戶餘額；唯讀，不調整帳務。",
+          "intent_keywords": [
+            "資產帳戶清單",
+            "帳戶",
+            "餘額",
+            "balance",
+            "list_asset_accounts",
+            "accounts"
+          ]
+        },
+        {
+          "name": "personal-asset-os::list_asset_positions",
+          "level": "read",
+          "capabilities": [
+            "personal_asset_os"
+          ],
+          "risk": "read_only",
+          "when": "查詢持倉、股票部位與投資部位；保留 Broker／FX 來源限制，不下單或刷新交易。",
+          "intent_keywords": [
+            "投資部位",
+            "持倉",
+            "股票部位",
+            "list_asset_positions",
+            "positions",
+            "部位"
+          ]
+        },
+        {
+          "name": "personal-asset-os::list_recent_asset_transactions",
+          "level": "read",
+          "capabilities": [
+            "personal_asset_os"
+          ],
+          "risk": "read_only",
+          "when": "讀取近期交易、成交與買賣紀錄；不新增、沖銷或修改交易。",
+          "intent_keywords": [
+            "近期資產交易",
+            "交易紀錄",
+            "成交紀錄",
+            "買賣紀錄",
+            "list_recent_asset_transactions",
+            "transactions"
+          ]
+        },
+        {
+          "name": "personal-asset-os::get_pending_financial_events",
+          "level": "read",
+          "capabilities": [
+            "personal_asset_os"
+          ],
+          "risk": "read_only",
+          "when": "讀取待處理財務事件及其待辦；不核准或寫入帳本。",
+          "intent_keywords": [
+            "待處理財務事件",
+            "財務事件",
+            "待處理事件",
+            "get_pending_financial_events",
+            "events"
+          ]
+        },
+        {
+          "name": "personal-asset-os::get_reconciliation_status",
+          "level": "read",
+          "capabilities": [
+            "personal_asset_os"
+          ],
+          "risk": "read_only",
+          "when": "查詢對帳狀況、帳務一致性與既有對帳證據；不執行對帳。",
+          "intent_keywords": [
+            "資產對帳狀態",
+            "get_reconciliation_status",
+            "reconciliation",
+            "對帳",
+            "帳務一致性"
+          ]
+        },
+        {
+          "name": "personal-asset-os::get_asset_system_status",
+          "level": "read",
+          "capabilities": [
+            "personal_asset_os"
+          ],
+          "risk": "read_only",
+          "when": "查詢 PAOS 服務或個人資產系統是否正常、可用性、連線與來源健康；只讀狀態，不啟停、備份或還原服務。",
+          "intent_keywords": [
+            "資產系統狀態",
+            "狀態",
+            "健康",
+            "是否正常",
+            "正常嗎",
+            "可用性",
+            "連線",
+            "故障",
+            "get_asset_system_status",
+            "status",
+            "health"
+          ]
+        }
+      ]
     }
   }
 }

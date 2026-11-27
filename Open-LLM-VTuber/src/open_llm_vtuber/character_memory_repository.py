@@ -22,7 +22,7 @@ class MemorySnapshot(dict):
 
 
 @contextmanager
-def store_lock(path: Path):
+def store_lock(path: Path, *, wait: bool = False):
     """Process-safe, non-blocking lock; the OS releases it after a crash."""
     lock_path = path.with_suffix(path.suffix + ".lock")
     with lock_path.open("a+b") as handle:
@@ -34,13 +34,13 @@ def store_lock(path: Path):
         if os.name == "nt":
             import msvcrt
             try:
-                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK if wait else msvcrt.LK_NBLCK, 1)
             except OSError:
                 raise ValueError("Memory store is busy; reload before retrying.") from None
         else:
             import fcntl
             try:
-                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(handle, fcntl.LOCK_EX | (0 if wait else fcntl.LOCK_NB))
             except OSError:
                 raise ValueError("Memory store is busy; reload before retrying.") from None
         try:
@@ -53,6 +53,18 @@ def store_lock(path: Path):
                 fcntl.flock(handle, fcntl.LOCK_UN)
 
 
+class SharedNamespace(str):
+    """Created only by the scope resolver, never by a character name."""
+
+
+def memory_namespaces(character_id: str, project_id: str = ""):
+    namespaces = [character_id, SharedNamespace("shared/user")]
+    if project_id:
+        digest = hashlib.sha256(project_id.encode("utf-8")).hexdigest()
+        namespaces.append(SharedNamespace("shared/project/" + digest))
+    return namespaces
+
+
 class CharacterMemoryRepository:
     """Filesystem-backed store for character long-term memories.
 
@@ -61,22 +73,27 @@ class CharacterMemoryRepository:
     format until a database-backed repository replaces this implementation.
     """
 
-    def __init__(self, root_env_var: str = "KURO_MEMORY_ROOT") -> None:
+    def __init__(self, root_env_var: str = "KURO_MEMORY_ROOT", *, root: Path | None = None) -> None:
         self._root_env_var = root_env_var
+        self._root = root
 
     def root(self) -> Path:
+        if self._root is not None:
+            return self._root
         root = os.getenv(self._root_env_var, "").strip()
         return Path(root) if root else Path("memories")
 
     def safe_path_component(self, value: str) -> str:
         safe = os.path.basename((value or "").strip())
-        if not safe or safe in {".", ".."}:
+        if not safe or safe != value.strip() or safe in {".", ".."}:
             raise ValueError("Invalid memory path component.")
         if any(ch in safe for ch in '<>:"/\\|?*') or any(ord(ch) < 32 for ch in safe):
             raise ValueError(f"Invalid characters in memory path component: {value}")
         return safe
 
     def store_path(self, conf_uid: str) -> Path:
+        if isinstance(conf_uid, SharedNamespace):
+            return self.root().joinpath(*conf_uid.split("/"), "long_term.json")
         safe_conf_uid = self.safe_path_component(conf_uid)
         return self.root() / "characters" / safe_conf_uid / "long_term.json"
 

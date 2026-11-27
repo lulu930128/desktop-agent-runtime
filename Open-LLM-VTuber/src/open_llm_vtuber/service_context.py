@@ -124,6 +124,7 @@ class ServiceContext:
 
         # Reset MCP components first
         self.mcp_server_registery = None
+        self.tool_adapter = None
         self.tool_manager = None
         self.mcp_client = None
         self.tool_executor = None
@@ -140,15 +141,8 @@ class ServiceContext:
             self.mcp_server_registery = ServerRegistry()
             logger.info("ServerRegistry initialized or referenced.")
 
-            # 2. Use ToolAdapter to get the MCP prompt and tools
-            if not self.tool_adapter:
-                logger.error(
-                    "ToolAdapter not initialized before calling _init_mcp_components."
-                )
-                self.mcp_prompt = "[Error: ToolAdapter not initialized]"
-                return  # Exit if ToolAdapter is mandatory and not initialized
-
             try:
+                self.tool_adapter = ToolAdapter(self.mcp_server_registery)
                 (
                     mcp_prompt_string,
                     openai_tools,
@@ -166,22 +160,13 @@ class ServiceContext:
                 # 3. Initialize ToolManager with the fetched formatted tools
 
                 raw_tools_dict = self.tool_adapter.get_last_formatted_tools_dict()
-                if not raw_tools_dict:
-                    (
-                        _,
-                        raw_tools_dict,
-                    ) = await self.tool_adapter.get_server_and_tool_info(
-                        enabled_servers
-                    )
                 self.tool_manager = ToolManager(
                     formatted_tools_openai=openai_tools,
                     formatted_tools_claude=claude_tools,
                     initial_tools_dict=raw_tools_dict,
                     thinking_power=thinking_power,
                 )
-                catalog_prompt = self.tool_manager.get_tool_catalog_prompt()
-                if catalog_prompt:
-                    self.mcp_prompt = f"{catalog_prompt}\n\nAvailable tool details:\n{mcp_prompt_string}"
+                self.tool_manager.bind_discovery(self.tool_adapter, enabled_servers)
                 logger.info("ToolManager initialized with dynamically fetched tools.")
 
             except Exception as e:
@@ -286,6 +271,10 @@ class ServiceContext:
             self.character_config.agent_config.agent_settings.basic_memory_agent.mcp_enabled_servers,
         )
 
+        if self.tool_executor is not None:
+            # Session history, model descriptors and the Qt inventory must refer to the same executor.
+            await self.init_agent(character_config.agent_config, character_config.persona_prompt, character_config)
+
         logger.debug(
             f"Loaded service context with cache: {_character_log_summary(character_config)}"
         )
@@ -319,19 +308,6 @@ class ServiceContext:
 
         # init vad from character config
         self.init_vad(config.character_config.vad_config)
-
-        # Initialize shared ToolAdapter if it doesn't exist yet
-        if (
-            not self.tool_adapter
-            and config.character_config.agent_config.agent_settings.basic_memory_agent.use_mcpp
-        ):
-            if not self.mcp_server_registery:
-                logger.info(
-                    "Initializing shared ServerRegistry within load_from_config."
-                )
-                self.mcp_server_registery = ServerRegistry()
-            logger.info("Initializing shared ToolAdapter within load_from_config.")
-            self.tool_adapter = ToolAdapter(server_registery=self.mcp_server_registery)
 
         # Initialize MCP Components before initializing Agent
         await self._init_mcp_components(
@@ -439,6 +415,7 @@ class ServiceContext:
             self.agent_engine is not None
             and self.character_config is not None
             and agent_config == self.character_config.agent_config
+            and getattr(self.agent_engine, "_tool_executor", None) is self.tool_executor
             and next_agent_signature == self._agent_signature
         ):
             logger.debug("Agent already initialized with the same config.")

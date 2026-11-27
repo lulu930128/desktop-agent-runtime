@@ -1,4 +1,5 @@
 import path from "node:path";
+import history from "./work-panel-history.cjs";
 
 const root = import.meta.dirname;
 // The archived HTML stays byte-identical. This is the entire entry-only delta.
@@ -11,6 +12,7 @@ export default {
   publicDir: false,
   plugins: [{
     name: "isolated-bootstrap-only",
+    load: history.loadPanel,
     transformIndexHtml: {
       order: "pre",
       handler(html, context) {

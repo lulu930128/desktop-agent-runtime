@@ -5,6 +5,7 @@ import time
 import io
 import wave
 import threading
+import asyncio
 from pathlib import Path
 
 import requests
@@ -17,6 +18,11 @@ from .tts_interface import TTSInterface
 # Even a warm request may need to load its voice after another consumer switches.
 CENTRAL_READ_TIMEOUT_SECONDS = 180
 CENTRAL_FAILURE_COOLDOWN_SECONDS = 5
+CENTRAL_BUSY_RECHECK_SECONDS = 2
+
+
+class CentralVoiceBusy(RuntimeError):
+    """Confirmed not accepted; safe to retry within the current turn's budget."""
 
 
 def _debug_dump_paths() -> tuple[Path, Path]:
@@ -57,6 +63,30 @@ def _response_dump_payload(response: requests.Response) -> dict:
 
 
 class TTSEngine(TTSInterface):
+    cancellation_safe = True
+
+    async def async_generate_audio(self, text, file_name_no_ext=None):
+        for attempt in range(3):
+            work = asyncio.create_task(asyncio.to_thread(self._generate_attempt, text, file_name_no_ext))
+            try:
+                return await asyncio.shield(work)
+            except CentralVoiceBusy:
+                if attempt == 2:
+                    return None
+                await asyncio.sleep(CENTRAL_BUSY_RECHECK_SECONDS)
+            except asyncio.CancelledError:
+                # The accepted HTTP request may finish, but it must never queue
+                # old speech or schedule a retry after interruption.
+                def discard(task):
+                    try:
+                        path = task.result()
+                        if path:
+                            self.remove_file(path)
+                    except Exception:
+                        pass
+                work.add_done_callback(discard)
+                raise
+
     def __init__(
         self,
         api_url: str = "http://127.0.0.1:9880/tts",
@@ -86,6 +116,14 @@ class TTSEngine(TTSInterface):
         self._voice_retry_at = 0.0
 
     def generate_audio(self, text, file_name_no_ext=None):
+        # Keep the synchronous public interface compatible. The async path uses
+        # the typed attempt result to wait only for a confirmed busy response.
+        try:
+            return self._generate_attempt(text, file_name_no_ext)
+        except CentralVoiceBusy:
+            return None
+
+    def _generate_attempt(self, text, file_name_no_ext=None):
         file_name = self.generate_cache_file_name(file_name_no_ext, self.media_type)
 
         cleaned_text = re.sub(r"\[.*?\]", "", text)
@@ -120,9 +158,16 @@ class TTSEngine(TTSInterface):
                 isinstance(item, dict) and item.get('voice_id') == self.voice_id for item in voices
             ):
                 raise ValueError('Voice runtime does not provide the selected voice')
-            if identity.get('status') == 'busy':
-                return self._central_failure('busy', phase, started)
-            if identity.get('status') != 'available':
+            preload = identity.get('preload')
+            waiting_for_voice = (
+                'model_preload_v1' in identity.get('capabilities', [])
+                and isinstance(preload, dict) and preload.get('voice') == self.voice_id
+                and preload.get('state') == 'loading'
+            )
+            if identity.get('status') == 'busy' and not waiting_for_voice:
+                self._central_failure('busy', phase, started)
+                raise CentralVoiceBusy()
+            if identity.get('status') not in {'available', 'busy'}:
                 raise ValueError('Voice runtime unavailable')
             phase = 'synthesis'
             response = requests.post(self.api_url, json=payload,
@@ -160,6 +205,9 @@ class TTSEngine(TTSInterface):
 
     def _central_http_failure(self, status, phase, started):
         # A race between discovery and POST is expected on a shared service.
+        if status == 429:
+            self._central_failure('busy', phase, started, http_status=status)
+            raise CentralVoiceBusy()
         return self._central_failure('busy' if status == 429 else 'http_error', phase, started,
                                      cooldown=0 if status == 429 else CENTRAL_FAILURE_COOLDOWN_SECONDS,
                                      http_status=status)

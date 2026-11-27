@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "enabled": true,
+  "rules": [
+    {
+      "root": "projects",
+      "path": "desktop-agent-runtime/docs/agent-runs/kuro-production-tools-20261123/workspace/**",
+      "operations": [
+        "create_text_file",
+        "append_text_file",
+        "patch_text_file",
+        "update_json_value",
+        "make_directory"
+      ],
+      "extensions": [
+        "*"
+      ]
+    }
+  ]
+}

@@ -132,13 +132,86 @@ class KuroQtLauncherWindow(QMainWindow):
         self.tray.setIcon(self.windowIcon())
         self.tray.setToolTip("Kuro")
         menu = QMenu(self)
-        menu.addAction("Show Kuro", self.reveal)
-        menu.addAction("Restart Kuro", self._confirm_restart_launcher)
-        menu.addAction("Quit Kuro", self.quit_application)
+        menu.setObjectName("kuroTrayMenu")
+        menu.setStyleSheet("""
+            QMenu#kuroTrayMenu {
+                background: #292930; color: #eeeef2;
+                border: 1px solid #42424c; padding: 6px 0;
+                font-size: 10pt;
+            }
+            QMenu#kuroTrayMenu::item { padding: 8px 22px; }
+            QMenu#kuroTrayMenu::item:selected { background: #41414d; }
+            QMenu#kuroTrayMenu::item:disabled { color: #aaaab6; }
+            QMenu#kuroTrayMenu::separator {
+                height: 1px; background: #45454f; margin: 5px 14px;
+            }
+        """)
+        self._tray_chat_status = menu.addAction("對話：尚未確認")
+        self._tray_pet_status = menu.addAction("桌寵：尚未確認")
+        self._tray_chat_status.setEnabled(False)
+        self._tray_pet_status.setEnabled(False)
+        menu.addSeparator()
+        menu.addAction("將 Kuro 帶到最前面", self.reveal)
+        show_pet = menu.addAction("顯示桌寵", lambda: self._run_tray_operation(
+            "顯示桌寵", self.controller.show_pet, pet=True))
+        reset_pet = menu.addAction("重新定位桌寵", lambda: self._run_tray_operation(
+            "重新定位桌寵", lambda: self.controller.run_pet_command("reset-pet-position"), pet=True))
+        menu.addSeparator()
+        logs = menu.addAction("開啟日誌資料夾", lambda: self._run_tray_operation(
+            "開啟日誌資料夾", self.controller.open_logs_dir))
+        menu.addAction("重新啟動 Kuro", self._confirm_restart_launcher)
+        menu.addAction("結束 Kuro", self.quit_application)
+        self._tray_operation_actions = (show_pet, reset_pet, logs)
+        self._tray_operation_pending = False
+        menu.aboutToShow.connect(self._refresh_tray_status)
+        self._refresh_tray_status()
         self.tray.setContextMenu(menu)
         self.tray.activated.connect(self._tray_activated)
         self.tray.messageClicked.connect(self.reveal)
         self.tray.show()
+
+    def _refresh_tray_status(self) -> None:
+        # Read only the existing observations; opening a menu must never do IO.
+        connected = self.chat_client.connected
+        chat = "已連線" if connected is True else "未連線" if connected is False else "尚未確認"
+        status = self.last_status
+        pet = "尚未確認"
+        if isinstance(status, RuntimeStatus):
+            if status.pet_shell is True: pet = "已啟動"
+            elif status.pet_shell is False: pet = "未啟動"
+        self._tray_chat_status.setText(f"對話：{chat}")
+        self._tray_pet_status.setText(f"桌寵：{pet}")
+
+    def _run_tray_operation(self, label: str, operation: Callable[[], object], *, pet: bool = False) -> None:
+        if self._cleanup_done or self._tray_operation_pending:
+            return
+        self._tray_operation_pending = True
+        for action in self._tray_operation_actions:
+            action.setEnabled(False)
+
+        def work():
+            try:
+                result = operation()
+                return {"ok": not pet or (isinstance(result, dict) and result.get("ok") is True)}
+            except Exception:
+                # Do not expose private paths or raw server/exception payloads.
+                return {"ok": False}
+
+        def done(result):
+            if self._cleanup_done:
+                return
+            self._tray_operation_pending = False
+            for action in self._tray_operation_actions:
+                action.setEnabled(True)
+            if not isinstance(result, dict) or result.get("ok") is not True:
+                message = (f"{label}未完成，桌寵可能尚未啟動或暫時無法連線。請稍後再試。"
+                           if pet else "無法開啟日誌資料夾，請確認資料夾是否可存取。")
+                QMessageBox.warning(self, "Kuro", message)
+
+        try:
+            self.work_web_candidate.owner_port.run_worker(work, done)
+        except Exception:
+            done({"ok": False})
 
     def _tray_activated(self, reason) -> None:
         if reason in (QSystemTrayIcon.ActivationReason.Trigger,

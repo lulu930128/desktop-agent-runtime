@@ -9,6 +9,7 @@ new Function('exports','module',compiled)(loaded.exports,loaded);
 const {sourceCopy,reasonLabel,saveToolSetting,validToolSettings} = loaded.exports;
 const policy = JSON.parse(fs.readFileSync('Open-LLM-VTuber/tool_policy.json','utf8'));
 const initial = {ok:true,contract:'kuro.tool-policy-settings.v1',digest:'a'.repeat(64),runtime_adoption:'UNVERIFIED',confirmation_available:false,
+  catalog:{toolNames:Object.keys(policy.tools),groups:Object.fromEntries(Object.keys(policy.tools).map(name=>[name.split('::')[0],'測試服務']))},
   tools:Object.entries(policy.tools).map(([name,row])=>({name,label:'測試功能',description:'合成用途',service:name.split('::')[0],serviceLabel:'測試服務',mode:row.mode,enabled:true,allowed:row.mode==='read_only'}))};
 
 test('source overview distinguishes empty limited missing offline auth stale and auto blocked',()=>{
@@ -35,6 +36,21 @@ test('policy UI writes only boolean plus CAS and verifies GET without adoption c
   assert.deepEqual(calls.map(r=>r[0]),['updateToolPolicy','getTools']);
   assert.deepEqual(calls[0][1],{name,enabled:false,expectedDigest:initial.digest});
   assert.equal(validToolSettings({...initial,runtime_adoption:'VERIFIED'}),false);
+});
+
+test('policy UI accepts the canonical inventory without a fixed legacy count',()=>{
+  assert.equal(initial.tools.length,Object.keys(policy.tools).length);
+  assert.ok(Object.keys(initial.catalog.groups).length>=5);
+  assert.equal(validToolSettings({...initial,tools:initial.tools.slice(1)}),false);
+  assert.equal(validToolSettings({...initial,catalog:{...initial.catalog,groups:{}}}),false);
+  const dynamic = Array.from({length:181},(_,i)=>({...initial.tools[0],service:'project-workspace',
+    serviceLabel:'專案',name:'project-workspace::tool_'+i,mode:'owner'}));
+  assert.equal(validToolSettings({...initial,tools:dynamic,catalog:{toolNames:dynamic.map(r=>r.name),
+    groups:{'project-workspace':'專案'}}}),true);
+  assert.equal(initial.tools.filter(r=>r.service==='kuro-filesystem').length,1);
+  assert.equal(validToolSettings({...initial,tools:[]}),false);
+  assert.equal(validToolSettings({...initial,tools:[initial.tools[0],initial.tools[0]]}),false);
+  assert.equal(validToolSettings({...initial,tools:Array.from({length:129},(_,i)=>({...initial.tools[0],name:'fixture::'+i}))}),false);
 });
 
 test('cancel no retry, stale readback and permission upgrade in reply never look saved',async()=>{

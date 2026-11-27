@@ -36,7 +36,9 @@ export class BackendClient {
   private renderer: PetLive2DRenderer;
   private protocolAdapter: BackendProtocolAdapter;
   private currentAudio: HTMLAudioElement | null;
-  private audioQueue: string[];
+  private audioQueue: { data: string; segmentId?: number }[];
+  private endedSegments = new Set<number>();
+  private stoppedRequest?: string;
   private readonly updateState: (patch: Partial<RendererState>) => void;
   private reconnectTimer: number | null;
   private reconnectAttempt: number;
@@ -46,6 +48,8 @@ export class BackendClient {
   private backendSynthComplete: boolean;
   private playbackCompleteSent: boolean;
   private playbackRequestId: string | undefined;
+  private playbackStatus: "completed" | "failed" | "interrupted" = "completed";
+  private playbackWatchdog: number | null = null;
   private micStream: MediaStream | null;
   private micAudioContext: AudioContext | null;
   private micSource: MediaStreamAudioSourceNode | null;
@@ -256,7 +260,11 @@ export class BackendClient {
 
   public stopPlayback(): void {
     this.stopAudioPlayback(true);
-    this.resetPlaybackTurn();
+    if (this.playbackRequestId) {
+      this.playbackStatus = "interrupted";
+      this.stoppedRequest = this.playbackRequestId;
+      this.sendPlaybackComplete();
+    }
     this.updateState({ aiState: "interrupted" });
   }
 
@@ -343,11 +351,13 @@ export class BackendClient {
       return;
     }
     this.socket.send(
-      JSON.stringify({ ...(this.protocolAdapter.createPlaybackCompleteMessage() as Record<string, unknown>), request_id: this.playbackRequestId })
+      JSON.stringify({ ...(this.protocolAdapter.createPlaybackCompleteMessage() as Record<string, unknown>), request_id: this.playbackRequestId, status: this.playbackStatus, ...(this.endedSegments.size ? { ended_segments: [...this.endedSegments] } : {}) })
     );
   }
 
   private stopAudioPlayback(clearQueue = false): void {
+    if (this.playbackWatchdog !== null) window.clearTimeout(this.playbackWatchdog);
+    this.playbackWatchdog = null;
     if (clearQueue) {
       this.audioQueue = [];
     }
@@ -360,59 +370,15 @@ export class BackendClient {
     this.stopSpeechLipSync(true);
   }
 
-  private ensureSpeechAudioContext(): AudioContext | null {
-    if (this.speechAudioContext) {
-      return this.speechAudioContext;
-    }
-
-    const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioContextCtor) {
-      return null;
-    }
-
-    this.speechAudioContext = new AudioContextCtor();
-    return this.speechAudioContext;
-  }
-
   private beginSpeechLipSync(
-    audio: HTMLAudioElement,
+    _audio: HTMLAudioElement,
     envelope: SpeechLipSyncEnvelope | null
   ): void {
+    // Mouth motion follows the WAV envelope and media clock. It must never
+    // reroute audible playback through a possibly suspended AudioContext.
     this.stopSpeechLipSync(false);
     this.speechEnvelope = envelope;
-
-    const audioContext = this.ensureSpeechAudioContext();
-    if (!audioContext) {
-      this.startSpeechLipSyncFallback();
-      return;
-    }
-
-    try {
-      const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.58;
-      const source = audioContext.createMediaElementSource(audio);
-      source.connect(analyser);
-      analyser.connect(audioContext.destination);
-
-      this.speechSource = source;
-      this.speechAnalyser = analyser;
-      this.speechData = new Uint8Array(new ArrayBuffer(analyser.fftSize));
-      this.lipSyncLevel = envelope ? 0 : 0.34;
-      this.speechFallbackStartedAt = performance.now();
-      this.renderer.setLipSyncValue(this.lipSyncLevel);
-
-      if (audioContext.state === "suspended") {
-        void audioContext.resume().catch((error) => {
-          console.warn("[pet-renderer] Speech audio context resume failed", error);
-        });
-      }
-
-      this.scheduleSpeechLipSyncFrame();
-    } catch (error) {
-      console.warn("[pet-renderer] Speech lip sync setup failed", error);
-      this.startSpeechLipSyncFallback();
-    }
+    this.startSpeechLipSyncFallback();
   }
 
   private startSpeechLipSyncFallback(): void {
@@ -785,6 +751,8 @@ export class BackendClient {
 
   private resetPlaybackTurn(): void {
     this.playbackRequestId = undefined;
+    this.endedSegments.clear();
+    this.playbackStatus = "completed";
     this.audioQueue = [];
     this.backendSynthComplete = false;
     this.playbackCompleteSent = false;
@@ -848,13 +816,13 @@ export class BackendClient {
     return this.appendAssistantTextFragment(text);
   }
 
-  private playAudioPayload(audioBase64: string | null): void {
+  private playAudioPayload(audioBase64: string | null, segmentId?: number): void {
     if (!audioBase64) {
       this.maybeNotifyPlaybackComplete();
       return;
     }
 
-    this.audioQueue.push(audioBase64);
+    this.audioQueue.push({data: audioBase64, segmentId});
     this.playbackCompleteSent = false;
     this.updateState({
       aiState: "speaking"
@@ -867,47 +835,65 @@ export class BackendClient {
       return;
     }
 
-    const audioBase64 = this.audioQueue.shift();
-    if (!audioBase64) {
+    const item = this.audioQueue.shift();
+    if (!item) {
       this.maybeNotifyPlaybackComplete();
       return;
     }
 
-    const lipSyncEnvelope = buildSpeechLipSyncEnvelope(audioBase64);
+    const requestId = this.playbackRequestId;
+    const audioBase64 = item.data;
     const audio = new Audio(`data:audio/wav;base64,${audioBase64}`);
     this.currentAudio = audio;
-    this.beginSpeechLipSync(audio, lipSyncEnvelope);
-    this.updateState({
-      aiState: "speaking"
-    });
-
+    try {
+      this.beginSpeechLipSync(audio, buildSpeechLipSyncEnvelope(audioBase64));
+    } catch {
+      console.warn("[pet-renderer] Lip sync unavailable; audio playback continues");
+    }
+    this.updateState({ aiState: "speaking" });
+    const reportSegment = (phase: "playing" | "ended" | "failed") => {
+      if (item.segmentId !== undefined && this.socket?.readyState === WebSocket.OPEN) {
+        this.socket.send(JSON.stringify({ type: "audio-play-start", request_id: requestId, segment_id: item.segmentId, phase }));
+      }
+    };
     let settled = false;
-    const finishPlayback = () => {
-      if (settled) {
-        return;
-      }
+    const finishPlayback = (failed = false) => {
+      if (settled || this.currentAudio !== audio || requestId !== this.playbackRequestId) return;
       settled = true;
-      if (this.currentAudio === audio) {
-        this.currentAudio = null;
-      }
+      if (this.playbackWatchdog !== null) window.clearTimeout(this.playbackWatchdog);
+      this.playbackWatchdog = null;
+      if (failed) this.playbackStatus = "failed";
+      else if (item.segmentId !== undefined) this.endedSegments.add(item.segmentId);
+      reportSegment(failed ? "failed" : "ended");
+      console.info("[speech-timing] " + JSON.stringify({event: failed ? "electron_failed" : "electron_ended", request_id: requestId, segment_id: item.segmentId}));
+      this.currentAudio = null;
+      audio.pause();
       this.stopSpeechLipSync(true);
       this.playNextQueuedAudio();
     };
-
-    audio.addEventListener("ended", finishPlayback);
+    let lastTime = -1;
+    const armWatchdog = () => {
+      if (settled || this.currentAudio !== audio || requestId !== this.playbackRequestId) return;
+      if (audio.currentTime === lastTime) return;
+      lastTime = audio.currentTime;
+      if (this.playbackWatchdog !== null) window.clearTimeout(this.playbackWatchdog);
+      this.playbackWatchdog = window.setTimeout(() => finishPlayback(true), 15000);
+    };
+    audio.addEventListener("ended", () => finishPlayback());
+    audio.addEventListener("timeupdate", armWatchdog);
     audio.addEventListener("playing", () => {
+      if (this.currentAudio !== audio) return;
+      reportSegment("playing");
+      console.info("[speech-timing] " + JSON.stringify({event: "electron_playing", at_ms: Date.now(), request_id: requestId, segment_id: item.segmentId}));
       this.scheduleSpeechLipSyncFrame();
     });
-
-    audio.addEventListener("error", () => {
-      console.warn("[pet-renderer] Audio element reported playback error");
-      finishPlayback();
-    });
-
-    void audio.play().catch((error) => {
-      console.warn("[pet-renderer] Audio playback failed", error);
-      finishPlayback();
-    });
+    audio.addEventListener("error", () => finishPlayback(true));
+    armWatchdog();
+    try {
+      void audio.play().catch(() => finishPlayback(true));
+    } catch {
+      finishPlayback(true);
+    }
   }
 
   private markBackendSynthComplete(): void {
@@ -939,8 +925,15 @@ export class BackendClient {
   }
 
   private handleMessage(payload: Record<string, any>): void {
-    if (payload.type === "backend-synth-complete") {
-      this.playbackRequestId = typeof payload.request_id === "string" ? payload.request_id : undefined;
+    if (payload.request_id && payload.request_id === this.stoppedRequest) {
+      if (payload.type === "backend-synth-complete") this.sendPlaybackComplete();
+      return;
+    }
+    if (payload.type === "control" && payload.text !== "conversation-chain-start" && payload.request_id &&
+        this.playbackRequestId && payload.request_id !== this.playbackRequestId) return;
+    if (typeof payload.request_id === "string" && payload.type !== "control") {
+      if (this.playbackRequestId && this.playbackRequestId !== payload.request_id) return;
+      this.playbackRequestId = payload.request_id;
     }
     const events = this.protocolAdapter.toKuroEvents(payload, {
       baseUrl: this.config.baseUrl
@@ -948,6 +941,7 @@ export class BackendClient {
 
     for (const event of events) {
       this.handleKuroEvent(event);
+      if (event.type === "conversation-start") this.playbackRequestId = payload.request_id;
     }
   }
 
@@ -965,16 +959,20 @@ export class BackendClient {
         confName: event.confName,
         confUid: event.confUid
       });
+    } else if (event.type === "speech-status") {
+      this.updateState({ speechStatus: event.status });
     } else if (event.type === "assistant-audio") {
       if (event.speechStatus) this.updateState({ speechStatus: event.speechStatus });
       if (event.displayText) {
-        const assistantText = this.appendAssistantTextFragment(event.displayText);
+        const assistantText = event.appendDisplay
+          ? (this.assistantTurnText += event.displayText)
+          : this.appendAssistantTextFragment(event.displayText);
         this.updateState({
           latestAssistantText: assistantText,
           aiState: event.audioBase64 ? "speaking" : "idle"
         });
       }
-      this.playAudioPayload(event.audioBase64);
+      this.playAudioPayload(event.audioBase64, event.segmentId);
     } else if (event.type === "synth-complete") {
       this.markBackendSynthComplete();
     } else if (event.type === "conversation-start") {
@@ -987,6 +985,9 @@ export class BackendClient {
         aiState: this.currentAudio || this.audioQueue.length > 0 ? "speaking" : "idle"
       });
     } else if (event.type === "interrupt") {
+      this.playbackStatus = "interrupted";
+      this.stoppedRequest = this.playbackRequestId;
+      this.sendPlaybackComplete();
       this.stopAudioPlayback(true);
       this.resetPlaybackTurn();
       this.updateState({ aiState: "interrupted" });

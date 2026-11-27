@@ -1,6 +1,7 @@
-"""Read-only service discovery and bounded synthesis; never owns shared processes."""
+"""Shared voice consumer; model preload and synthesis never own shared processes."""
 import io
 import json
+import threading
 import urllib.request
 import wave
 
@@ -34,18 +35,51 @@ def require_voice(base_url, voice, timeout=3):
     return data
 
 
+def preload(base_url, voice, timeout=3):
+    """Request model-only loading once. Acceptance is not model/audio readiness."""
+    data = require_voice(base_url, voice, timeout=timeout)
+    if 'model_preload_v1' not in data.get('capabilities', []):
+        raise RuntimeError('Central voice service update required for model preload')
+    request = urllib.request.Request(base_url + '/preload',
+        data=json.dumps({'voice': voice}).encode(),
+        headers={'Content-Type': 'application/json'}, method='POST')
+    with _open(request, timeout) as response:
+        result = json.loads(response.read(65536))
+    if not isinstance(result, dict) or result.get('voice') != voice or result.get('state') not in {'loading', 'ready'}:
+        raise RuntimeError('Unexpected voice preload receipt')
+    return result, data.get('service_version', 'unknown')
+
+
+def preload_async(base_url, voice, log):
+    """Lifecycle hook; log must be thread-safe (Qt uses log_signal.emit). No retries."""
+    def request():
+        try:
+            result, version = preload(base_url, voice)
+            log(f"中央語音 model_preload voice={voice} state={result['state']} version={version} "
+                f"request_id={result.get('request_id', 'no-op')}；以 /health 與中央 log 確認載入，尚非發聲驗收")
+        except Exception as exc:
+            log(f"中央語音 model_preload 未完成 voice={voice} error_type={type(exc).__name__}；文字啟動不受影響")
+    worker = threading.Thread(target=request, name='kuro-voice-preload', daemon=True)
+    worker.start()
+    return worker
+
+
 def readiness(base_url, voice, timeout=3):
     """Observe readiness for the selected voice without loading or switching models."""
     data = require_voice(base_url, voice, timeout=timeout)
     selected = next(item for item in data['voices'] if isinstance(item, dict) and item.get('voice_id') == voice)
     result = dict(voiceId=voice, modelLoaded=data.get('model_loaded'),
-                  lastInference=selected.get('last_inference', 'not_run'))
+                  lastInference=selected.get('last_inference', 'not_run'),
+                  preload=data.get('preload'), serviceVersion=data.get('service_version'),
+                  sourceSha256=data.get('source_sha256'))
     if data['status'] == 'busy':
         result.update(state='busy', reason='中央語音處理中，稍後可再發聲')
     elif result['lastInference'] == 'failed':
         result.update(state='unavailable', reason='上次語音合成失敗，下次發聲會重新嘗試')
     elif result['modelLoaded'] == voice and result['lastInference'] == 'passed':
         result.update(state='available', reason='目前角色語音已載入，最近一次合成成功')
+    elif result['modelLoaded'] == voice:
+        result.update(state='available', reason='目前角色模型預載已完成，首次合成尚未驗證')
     else:
         result.update(state='cold', reason='首次發聲需載入角色語音，最多等待 180 秒')
     return result

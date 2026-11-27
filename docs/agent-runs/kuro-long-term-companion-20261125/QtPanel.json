@@ -1,0 +1,16 @@
+{
+  "fingerprint": "85a8c575346ee9fd4d7582f261764d2bccafa53949b550c77f4f6161a619620e",
+  "widget": "KuroQtLauncherWindow",
+  "renderer": "QWebEngineView",
+  "platform": "offscreen",
+  "records": 95,
+  "search_readback": true,
+  "revision_editor": true,
+  "controls": [
+    "儲存記憶模式",
+    "重查目前對話索引",
+    "匯出所有角色",
+    "還原至新目錄"
+  ],
+  "production": false
+}

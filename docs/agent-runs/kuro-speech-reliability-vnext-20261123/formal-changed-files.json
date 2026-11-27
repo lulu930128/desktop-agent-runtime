@@ -1,0 +1,35 @@
+{
+  "head": "c2b3e64c27caaec8c2cba5b213444ddce0d79e03",
+  "basis": "Working bytes before the formal Qt interruption and correlation fix. Excludes signed bundle, existing Tool WIP, runtime settings and acceptance receipts.",
+  "previous_speech_patch_sha256": "df97b3157dc22369aee50e544f367ddc5e3d9bd174891a9b7f277a8f119b300c",
+  "patch_sha256": "3f8fb78ac771ba737e257641aa84e816eb6a06459daed4fee092a274d20f8fea",
+  "byte_exact_forward": true,
+  "byte_exact_reverse": true,
+  "files": [
+    {
+      "path": "kuro_launcher/qt_web_adapter.py",
+      "before_sha256": "e51dd9946513586e0fd7ca21d44ddbcf3bff53dc270ab437539853b39d03ddd7",
+      "after_sha256": "47d6eddf22902b3f2979add34753ba7996b63e8803e953e7f85f1e2e07ca323b"
+    },
+    {
+      "path": "launcher_qt.py",
+      "before_sha256": "62c8b398dd1c496973770543ad1e1ee5843022e7d07886a81bd9215f9b5869c5",
+      "after_sha256": "4f644d90e398e14736c0a268919c24cc416e81c9bedb0527778a5bb3646754b0"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/conversations/single_conversation.py",
+      "before_sha256": "8e1937d86f93ad4bb52565e95ef8431b9c02cd6c18455fb23d5c27734b9e050c",
+      "after_sha256": "f2c5d9b9c9bc7b8f4ec38cb3017431ce75276d61bcec2227581d16467ba22f89"
+    },
+    {
+      "path": "Open-LLM-VTuber/src/open_llm_vtuber/websocket_handler.py",
+      "before_sha256": "65e2d88b4a768a753a69b56c0cd3c7c5cd559d924ea25f3aa6026bb94bc54929",
+      "after_sha256": "2a734d502e2638d8081a9c996d559df106b527ecf0790095ddd1538a2db3c13b"
+    },
+    {
+      "path": "tests/test_g3_conversation.py",
+      "before_sha256": "f7523c98389f45a9bfbcfb6e3b1e14dc97df33d1e1a748d54072e06025bb8125",
+      "after_sha256": "082562cae22f129442c14023cc98333c9b174660413f179c957f38343020ddf2"
+    }
+  ]
+}

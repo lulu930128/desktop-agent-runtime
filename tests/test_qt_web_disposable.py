@@ -48,6 +48,53 @@ class DisposableTests(unittest.TestCase):
         # Preserve the actual canonical store/index; disable only external runtime refresh.
         self.controller._maybe_refresh_memory_prompt = Mock()
 
+    def test_shared_source_exposes_only_shared_excerpt(self):
+        self.memory()
+        from open_llm_vtuber import character_memory_manager as manager
+        directory=self.path/"chat_history"/"other"
+        directory.mkdir(parents=True)
+        content="我平常喝無糖茶。"
+        row={"role":"human","turn_id":"one","content":content+"此處為另一個專案的內容。","project_id":"private"}
+        (directory/"history.json").write_text(json.dumps([row]),encoding="utf-8")
+        manager.add_character_memory("other",content,scope_level="global_user",history_uid="history",
+                                    evidence={"character_id":"other","turn_id":"one"})
+        record=self.call("getMemories")["memories"][0]
+        result=self.call("memoryAction",{"action":"source","payload":{"entry_id":record["id"],"content_digest":record["content_digest"]}})
+        self.assertEqual(result["source"]["text"],content)
+        self.confirm.assert_not_called()
+
+    def test_batch_review_and_revision_bind_exact_source(self):
+        self.memory()
+        from open_llm_vtuber import character_memory_manager as manager
+        for value in ("alpha ticket","beta ticket"):
+            manager.add_character_memory("actor",value,source="heuristic")
+        rows=self.call("getMemories")["memories"]
+        selected=[{"entry_id":r["id"],"content_digest":r["content_digest"]} for r in rows]
+        result=self.call("memoryAction",{"action":"review","payload":{"entries":selected,"status":"active"}})
+        self.assertEqual((result["applied"],result["unresolved"]),(2,[]))
+        original=self.call("getMemories")["memories"][0]
+        revised=self.call("memoryAction",{"action":"revise","payload":{"entry_id":original["id"],
+                    "content_digest":original["content_digest"],"content":"corrected ticket"}})
+        self.assertTrue(revised["changed"])
+        entries=self.call("getMemories")["memories"]
+        self.assertTrue(any(e["id"]==original["id"] and e["status"]=="superseded" for e in entries))
+        self.assertTrue(any(e["content"]=="corrected ticket" and e["revision"]==2 for e in entries))
+
+    def test_memory_archive_uses_native_selection_and_new_restore_root(self):
+        self.memory()
+        self.controller.add_memory("SYNTHETIC archive sentinel", expected_conf_uid="actor")
+        self.assertTrue(self.call("getMemories")["ok"])
+        archive = self.path/"export.zip"
+        destination = self.path/"restored"
+        self.adapter.archive_picker = lambda action: {"archive":str(archive)} if action=="backup" else {
+            "archive":str(archive),"destination":str(destination)}
+        self.assertTrue(self.call("memoryAction",{"action":"backup","payload":{}})["ok"])
+        self.assertTrue(archive.is_file())
+        self.assertTrue(self.call("getMemories")["ok"])
+        self.assertTrue(self.call("memoryAction",{"action":"restore","payload":{}})["maintenance"]["verified"])
+        source = Path("memories/characters/actor/long_term.json")
+        self.assertEqual((self.path/source).read_bytes(),(destination/source).read_bytes())
+
     def test_real_memory_digest_conflict_preserves_concurrent_content(self):
         self.memory()
         from open_llm_vtuber import character_memory_manager as memory

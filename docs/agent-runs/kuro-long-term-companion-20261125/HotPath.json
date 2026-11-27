@@ -1,0 +1,180 @@
+{
+  "messages": 100000,
+  "vectors": 50000,
+  "corpus_sha256": "3a4320e43ef8576aad7abd3b6375b9b902ceee569d5dcf5ed4ab4c9cd42f9446",
+  "history_reads": 0,
+  "sqlite_mutations": 0,
+  "queries": [
+    {
+      "query": "陶芸教室の参加費はいくら？",
+      "seconds": 0.4662057999521494,
+      "sources": [
+        [
+          "0",
+          19
+        ]
+      ],
+      "strict_hit": true,
+      "pottery_found": true
+    },
+    {
+      "query": "陶芸教室の参加費はいくら？",
+      "seconds": 0.3922672001644969,
+      "sources": [
+        [
+          "0",
+          19
+        ]
+      ],
+      "strict_hit": true,
+      "pottery_found": true
+    },
+    {
+      "query": "What did the pottery workshop cost?",
+      "seconds": 0.4585445001721382,
+      "sources": [
+        [
+          "0",
+          19
+        ],
+        [
+          "1000",
+          621
+        ],
+        [
+          "1000",
+          761
+        ],
+        [
+          "1000",
+          779
+        ]
+      ],
+      "strict_hit": true,
+      "pottery_found": true
+    },
+    {
+      "query": "What did the pottery workshop cost?",
+      "seconds": 0.6532703000120819,
+      "sources": [
+        [
+          "0",
+          19
+        ],
+        [
+          "1000",
+          621
+        ],
+        [
+          "1000",
+          761
+        ],
+        [
+          "1000",
+          779
+        ]
+      ],
+      "strict_hit": true,
+      "pottery_found": true
+    },
+    {
+      "query": "azurite ceramic admission",
+      "seconds": 0.6174563001841307,
+      "sources": [
+        [
+          "0",
+          18
+        ]
+      ],
+      "strict_hit": true,
+      "pottery_found": true
+    },
+    {
+      "query": "azurite ceramic admission",
+      "seconds": 0.6333595002070069,
+      "sources": [
+        [
+          "0",
+          18
+        ]
+      ],
+      "strict_hit": true,
+      "pottery_found": true
+    },
+    {
+      "query": "庫存出貨",
+      "seconds": 1.5557613000273705,
+      "sources": [
+        [
+          "1000",
+          27
+        ],
+        [
+          "11000",
+          509
+        ],
+        [
+          "12000",
+          97
+        ],
+        [
+          "12000",
+          211
+        ]
+      ],
+      "strict_hit": false,
+      "pottery_found": false
+    },
+    {
+      "query": "庫存出貨",
+      "seconds": 1.623053700197488,
+      "sources": [
+        [
+          "1000",
+          27
+        ],
+        [
+          "11000",
+          509
+        ],
+        [
+          "12000",
+          97
+        ],
+        [
+          "12000",
+          211
+        ]
+      ],
+      "strict_hit": false,
+      "pottery_found": false
+    }
+  ],
+  "plans": {
+    "fts": [
+      "SCAN conversation_messages_fts VIRTUAL TABLE INDEX 0:M6",
+      "SEARCH m USING INTEGER PRIMARY KEY (rowid=?)",
+      "CORRELATED SCALAR SUBQUERY 1",
+      "SEARCH f USING COVERING INDEX sqlite_autoindex_history_failures_1 (conf_uid=? AND history_uid=?)",
+      "USE TEMP B-TREE FOR ORDER BY"
+    ],
+    "vector": [
+      "MATERIALIZE eligible",
+      "MATERIALIZE overlap",
+      "CO-ROUTINE weights",
+      "SCAN 14 CONSTANT ROWS",
+      "SCAN w",
+      "SEARCH s USING COVERING INDEX sqlite_autoindex_semantic_terms_1 (owner=? AND term=?)",
+      "USE TEMP B-TREE FOR GROUP BY",
+      "SCAN s",
+      "CORRELATED SCALAR SUBQUERY 17",
+      "SEARCH m USING INDEX sqlite_autoindex_conversation_messages_1 (message_id=?)",
+      "CORRELATED SCALAR SUBQUERY 16",
+      "SEARCH f USING COVERING INDEX sqlite_autoindex_history_failures_1 (conf_uid=? AND history_uid=?)",
+      "USE TEMP B-TREE FOR ORDER BY",
+      "SCAN e",
+      "SEARCH v USING INDEX sqlite_autoindex_semantic_vectors_1 (owner=? AND id=?)"
+    ]
+  },
+  "query_p50_seconds": 0.6254079001955688
+}

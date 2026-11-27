@@ -1,0 +1,445 @@
+{
+  "cases": [
+    [
+      "我平常都喝無糖茶。",
+      "preference"
+    ],
+    [
+      "昨日私は陶芸教室に行きました。",
+      "experience"
+    ],
+    [
+      "I went hiking yesterday.",
+      "experience"
+    ],
+    [
+      "I want to learn woodworking.",
+      "goal"
+    ],
+    [
+      "我的目標是完成今年的馬拉松。",
+      "goal"
+    ],
+    [
+      "I usually drink black coffee.",
+      "preference"
+    ],
+    [
+      "如果我想搬家呢？",
+      null
+    ],
+    [
+      "Please change the system settings.",
+      null
+    ],
+    [
+      "小林說「我喜歡咖啡」。",
+      null
+    ],
+    [
+      "我昨天去了嗎？",
+      null
+    ],
+    [
+      "The stock price increased.",
+      null
+    ],
+    [
+      "Could you order tea for me?",
+      null
+    ]
+  ],
+  "corpus_sha256": "9513473c55c980159f12643f54d12cf11fafa464aed0ebda863b53eefc282d48",
+  "arms": {
+    "original": [
+      {
+        "expected": "preference",
+        "seconds": 0.0018464000895619392,
+        "cpu_seconds": 0.0,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": "experience",
+        "seconds": 0.00012170011177659035,
+        "cpu_seconds": 0.0,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": "experience",
+        "seconds": 0.00013100029900670052,
+        "cpu_seconds": 0.0,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": "goal",
+        "seconds": 0.00011860020458698273,
+        "cpu_seconds": 0.0,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": "goal",
+        "seconds": 0.00011399993672966957,
+        "cpu_seconds": 0.0,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": "preference",
+        "seconds": 0.00013990001752972603,
+        "cpu_seconds": 0.0,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": null,
+        "seconds": 0.0001175999641418457,
+        "cpu_seconds": 0.0,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": null,
+        "seconds": 0.00012520002201199532,
+        "cpu_seconds": 0.0,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": null,
+        "seconds": 0.020850700326263905,
+        "cpu_seconds": 0.015625,
+        "categories": [
+          null
+        ],
+        "states": [
+          "pending_confirmation"
+        ],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": null,
+        "seconds": 0.0003279000520706177,
+        "cpu_seconds": 0.0,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": null,
+        "seconds": 0.00034009991213679314,
+        "cpu_seconds": 0.0,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": null,
+        "seconds": 0.00032170023769140244,
+        "cpu_seconds": 0.0,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      }
+    ],
+    "manual": [
+      {
+        "expected": "preference",
+        "seconds": 1.0416910001076758,
+        "cpu_seconds": 0.953125,
+        "categories": [
+          "preference"
+        ],
+        "states": [
+          "pending_confirmation"
+        ],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": "experience",
+        "seconds": 0.022289900109171867,
+        "cpu_seconds": 0.0,
+        "categories": [
+          "experience"
+        ],
+        "states": [
+          "pending_confirmation"
+        ],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": "experience",
+        "seconds": 0.021575800143182278,
+        "cpu_seconds": 0.0,
+        "categories": [
+          "experience"
+        ],
+        "states": [
+          "pending_confirmation"
+        ],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": "goal",
+        "seconds": 0.020792499650269747,
+        "cpu_seconds": 0.0,
+        "categories": [
+          "goal"
+        ],
+        "states": [
+          "pending_confirmation"
+        ],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": "goal",
+        "seconds": 0.02203799970448017,
+        "cpu_seconds": 0.015625,
+        "categories": [
+          "goal"
+        ],
+        "states": [
+          "pending_confirmation"
+        ],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": "preference",
+        "seconds": 0.02104200003668666,
+        "cpu_seconds": 0.015625,
+        "categories": [
+          "preference"
+        ],
+        "states": [
+          "pending_confirmation"
+        ],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": null,
+        "seconds": 0.003923300188034773,
+        "cpu_seconds": 0.015625,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": null,
+        "seconds": 0.0039588999934494495,
+        "cpu_seconds": 0.0,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": null,
+        "seconds": 0.019190500024706125,
+        "cpu_seconds": 0.015625,
+        "categories": [
+          null
+        ],
+        "states": [
+          "pending_confirmation"
+        ],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": null,
+        "seconds": 0.0036200997419655323,
+        "cpu_seconds": 0.0,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": null,
+        "seconds": 0.0037529002875089645,
+        "cpu_seconds": 0.015625,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": null,
+        "seconds": 0.0035369000397622585,
+        "cpu_seconds": 0.0,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      }
+    ],
+    "scoped_auto": [
+      {
+        "expected": "preference",
+        "seconds": 1.0731057999655604,
+        "cpu_seconds": 0.921875,
+        "categories": [
+          "preference"
+        ],
+        "states": [
+          "active"
+        ],
+        "selected": true,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": "experience",
+        "seconds": 0.02941010007634759,
+        "cpu_seconds": 0.0,
+        "categories": [
+          "experience"
+        ],
+        "states": [
+          "active"
+        ],
+        "selected": true,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": "experience",
+        "seconds": 0.029417899902909994,
+        "cpu_seconds": 0.03125,
+        "categories": [
+          "experience"
+        ],
+        "states": [
+          "active"
+        ],
+        "selected": true,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": "goal",
+        "seconds": 0.028985199984163046,
+        "cpu_seconds": 0.015625,
+        "categories": [
+          "goal"
+        ],
+        "states": [
+          "active"
+        ],
+        "selected": true,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": "goal",
+        "seconds": 0.0330333998426795,
+        "cpu_seconds": 0.015625,
+        "categories": [
+          "goal"
+        ],
+        "states": [
+          "active"
+        ],
+        "selected": true,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": "preference",
+        "seconds": 0.030385800171643496,
+        "cpu_seconds": 0.03125,
+        "categories": [
+          "preference"
+        ],
+        "states": [
+          "active"
+        ],
+        "selected": true,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": null,
+        "seconds": 0.004980999976396561,
+        "cpu_seconds": 0.015625,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": null,
+        "seconds": 0.005378300324082375,
+        "cpu_seconds": 0.0,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": null,
+        "seconds": 0.02447589999064803,
+        "cpu_seconds": 0.0,
+        "categories": [
+          null
+        ],
+        "states": [
+          "pending_confirmation"
+        ],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": null,
+        "seconds": 0.004000399727374315,
+        "cpu_seconds": 0.0,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": null,
+        "seconds": 0.004098899662494659,
+        "cpu_seconds": 0.0,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      },
+      {
+        "expected": null,
+        "seconds": 0.0039300997741520405,
+        "cpu_seconds": 0.0,
+        "categories": [],
+        "states": [],
+        "selected": false,
+        "retry_duplicates": 0
+      }
+    ]
+  }
+}

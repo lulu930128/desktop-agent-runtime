@@ -8,7 +8,6 @@ sys.path.insert(0, str(SRC))
 
 from open_llm_vtuber.mcpp.market_preflight import (
     OMI_ASK_STREAM_TOOL_NAME,
-    build_autonomous_omi_args,
     build_omi_evidence_snapshot,
     extract_omi_resolution_from_tool_results,
     format_omi_evidence_for_history,
@@ -20,64 +19,10 @@ from open_llm_vtuber.mcpp.market_preflight import (
 
 
 class MarketPreflightTest(unittest.TestCase):
-    def test_builds_readonly_omi_question_without_stock_parsing(self) -> None:
-        args = build_autonomous_omi_args(
-            current_text="幫我查2330近五年財報",
-            route_text="user: 幫我查2330近五年財報",
-        )
-
-        self.assertEqual(args["contract_version"], "omi.decision.v4")
-        self.assertEqual(args["target"], {"type": "auto"})
-        self.assertEqual(args["mode"], "auto")
-        self.assertEqual(args["output"], "decision_with_evidence")
-        self.assertEqual(args["realtime_policy"], "prefer_live")
-        self.assertEqual(args["selection"]["max_response_bytes"], 65_536)
-        self.assertEqual(args["caller_profile"], "kuro_readonly")
-        self.assertTrue(args["allow_llm"])
-        self.assertFalse(args["allow_write"])
-        self.assertTrue(args["allow_external_fetch"])
-        self.assertEqual(args["tool_budget"]["max_calls"], 5)
-        self.assertEqual(args["tool_budget"]["max_external_fetches"], 3)
-        self.assertNotIn("refresh_policy", args)
-        self.assertIn("conversation_context", args)
-        self.assertNotIn("scope_id", args)
-        self.assertNotIn("scope_type", args)
-        self.assertNotIn("strategy_profile", args)
-        self.assertIn("2330", args["question"])
-
-    def test_keeps_recent_context_for_omi_to_resolve_followup(self) -> None:
-        args = build_autonomous_omi_args(
-            current_text="可以",
-            route_text=(
-                "user: 可以幫我查查台積電的數據嗎\n"
-                "assistant: 想要哪個期間的歷史財報？\n"
-                "user: 幫我查近五年的吧\n"
-                "assistant: 我就抓最近五個完整會計年度，這樣可以嗎？\n"
-                "user: 可以"
-            ),
-        )
-
-        self.assertEqual(args["target"], {"type": "auto"})
-        self.assertNotIn("scope_id", args)
-        self.assertIn("台積電", args["question"])
-        self.assertIn("可以", args["question"])
-
-    def test_includes_last_omi_resolution_for_followup(self) -> None:
-        last_resolution = {
-            "target": {"type": "tw_stock", "id": "2330", "label": "台積電", "market": "TW"},
-            "confidence": "high",
-        }
-
-        args = build_autonomous_omi_args(
-            current_text="那 ADR 呢",
-            route_text="user: 那 ADR 呢",
-            last_resolution=last_resolution,
-        )
-
-        self.assertEqual(
-            args["conversation_context"]["last_resolution"],
-            last_resolution,
-        )
+    def test_transport_and_autorun_are_retired(self):
+        from open_llm_vtuber.mcpp import market_preflight
+        for name in ('should_autorun_omi', 'build_autonomous_omi_args', 'stream_omi_ask_events', '_iter_omi_sse_http_events'):
+            self.assertFalse(hasattr(market_preflight, name))
 
     def test_formats_omi_v2_response_for_llm_context(self) -> None:
         raw = (

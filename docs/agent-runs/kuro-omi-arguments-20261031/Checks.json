@@ -1,0 +1,21 @@
+{
+  "tests_run": 63,
+  "test_patterns": {
+    "test_omi_effective_arguments.py": 12,
+    "test_tool_argument_diagnostics.py": 12,
+    "test_tool_policy_omi.py": 4,
+    "test_mcp_m0_policy.py": 5,
+    "test_tool_catalog_market_routing.py": 9,
+    "test_mcp_m0_schema.py": 7,
+    "test_conversation_mcp.py": 6,
+    "test_no_tool_query_truth.py": 8
+  },
+  "test_failures": 0,
+  "test_errors": 0,
+  "head_unchanged": true,
+  "index_unchanged": true,
+  "live_loaded_sources_match": true,
+  "source_syntax": "PASS",
+  "task_patch_added_lines": 538,
+  "task_patch_removed_lines": 13
+}

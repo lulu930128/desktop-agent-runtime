@@ -25,6 +25,13 @@ def has_save_authorization(entry: dict[str, Any]) -> bool:
         except (TypeError, ValueError):
             return False
         method = approval.get("method")
+        if approval.get("version") == 2 and method == "scoped_auto":
+            evidence = entry.get("evidence") or {}
+            return (entry.get("source") == "user_statement" and bool(evidence.get("rule_digest"))
+                    and bool(evidence.get("turn_id")) and authorized_at.tzinfo is not None
+                    and approval.get("reference") == evidence["rule_digest"]
+                    and approval.get("content_digest") == content_digest(entry)
+                    and approval.get("source_digest") == review_digest(evidence))
         return (approval.get("version") == 1 and isinstance(method, str)
                 and method in {"manual", "explicit", "user_confirmation"}
                 and approval.get("content_digest") == content_digest(entry)

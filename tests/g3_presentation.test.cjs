@@ -6,7 +6,15 @@ const vm = require('node:vm');
 const ts = require('../pet-electron/node_modules/typescript');
 const backendRoot = path.resolve(__dirname, '../pet-electron/renderer/src/backend');
 
-function fixture() {
+function fixture(realAudio = false) {
+  const audios = [];
+  const state = {};
+  class Audio {
+    constructor(src) { this.src = src; this.currentTime = 0; this.events = {}; audios.push(this); }
+    addEventListener(name, cb) { this.events[name] = cb; }
+    play() { return Promise.resolve(); }
+    pause() {}
+  }
   const timers = [];
   const sockets = [];
   class Socket {
@@ -26,7 +34,7 @@ function fixture() {
     const module = { exports: {} };
     cache.set(filename, module.exports);
     vm.runInNewContext(js, {
-      module, exports: module.exports, URL, WebSocket: Socket, console: { info() {}, warn() {} },
+      module, exports: module.exports, URL, Audio, WebSocket: Socket, console: { info() {}, warn() {} },
       btoa: value => Buffer.from(value, 'binary').toString('base64'),
       window: { setTimeout(callback) { timers.push(callback); return timers.length; }, clearTimeout() {} },
       performance: { now: () => 0 },
@@ -39,12 +47,12 @@ function fixture() {
   }
   const { BackendClient } = load(path.join(backendRoot, 'backend-client.ts'));
   const client = new BackendClient({ wsUrl: 'ws://localhost:23456/client-ws?fixture=1', baseUrl: 'http://localhost:23456' },
-    { setMouthOpen() {}, setSpeaking() {} }, () => {});
-  client.stopAudioPlayback = () => { client.currentAudio = null; client.audioQueue = []; };
+    { setMouthOpen() {}, setSpeaking() {}, setLipSyncValue() {} }, patch => Object.assign(state, patch));
+  if (!realAudio) client.stopAudioPlayback = () => { client.currentAudio = null; client.audioQueue = []; };
   client.connect();
   const socket = sockets[0];
   socket.events.open();
-  return { client, socket, timers };
+  return { client, socket, timers, audios, state };
 }
 
 test('canonical Pet URL and init never create history', () => {
@@ -93,7 +101,7 @@ test('Pet acknowledges only after actual playback queue drains', () => {
   client.audioQueue = [];
   client.maybeNotifyPlaybackComplete();
   timers.shift()();
-  assert.deepEqual(socket.sent.at(-1), { type: 'frontend-playback-complete', request_id: 'turn-1' });
+  assert.deepEqual(socket.sent.at(-1), { type: 'frontend-playback-complete', request_id: 'turn-1', status: 'completed' });
 });
 
 test('stale playback timer cannot acknowledge a later turn', () => {
@@ -108,11 +116,62 @@ test('stale playback timer cannot acknowledge a later turn', () => {
   assert.equal(socket.sent.at(-1).request_id, 'new');
 });
 
-test('interrupt resets pending playback without inventing completion', () => {
+test('interrupt reports interruption rather than successful playback', () => {
   const { client, socket, timers } = fixture();
   client.handleMessage({ type: 'backend-synth-complete', request_id: 'old' });
   client.handleMessage({ type: 'control', text: 'interrupt' });
   timers.shift()();
-  assert.equal(socket.sent.length, 1);
+  assert.equal(socket.sent.length, 2);
+  assert.equal(socket.sent.at(-1).status, 'interrupted');
   assert.equal(client.playbackRequestId, undefined);
+});
+
+
+test('audio error is failed even when synthesis finishes normally', () => {
+  const {client, socket, timers, audios} = fixture(true);
+  client.stopSpeechLipSync = () => {};
+  client.handleMessage({type: 'audio', audio: 'fixture', request_id: 't'});
+  client.handleMessage({type: 'backend-synth-complete', request_id: 't'});
+  audios[0].events.error();
+  timers.at(-1)();
+  assert.equal(socket.sent.at(-1).status, 'failed');
+});
+
+test('lip sync exception does not stop audio; late callback cannot clear new playback', () => {
+  const {client, socket, timers, audios} = fixture(true);
+  client.stopSpeechLipSync = () => {};
+  client.beginSpeechLipSync = () => { throw Error('optional animation failed'); };
+  client.handleMessage({type: 'audio', audio: 'fixture', request_id: 'old'});
+  const old = audios[0];
+  client.handleMessage({type: 'control', text: 'conversation-chain-start', request_id: 'new'});
+  client.handleMessage({type: 'audio', audio: 'fixture', request_id: 'new'});
+  old.events.ended();
+  assert.equal(client.currentAudio, audios[1]);
+  client.handleMessage({type: 'backend-synth-complete', request_id: 'new'});
+  audios[1].events.ended();
+  timers.at(-1)();
+  assert.equal(socket.sent.at(-1).status, 'completed');
+  assert.equal(socket.sent.at(-1).request_id, 'new');
+});
+
+test('standalone speech status reaches the presentation state', () => {
+  const {client, state} = fixture();
+  client.handleMessage({type: 'speech-status', status: 'unavailable', request_id: 't'});
+  assert.equal(state.speechStatus, 'unavailable');
+});
+
+test('Pet keeps repeated Display deltas and acknowledges only ended segments', () => {
+  const {client, state, socket, timers, audios} = fixture(true);
+  client.stopSpeechLipSync = () => {};
+  for (const text of ["説明", "説明", "\n  x = 1"]) {
+    client.handleMessage({type: "audio", request_id: "scope", display_contract: "kuro.speech-lanes.v1",
+      display_append: true, display_text: {text}});
+  }
+  assert.equal(state.latestAssistantText, "説明説明\n  x = 1");
+  for (const id of [1,2,3]) client.handleMessage({type:"audio",request_id:"scope",audio:"fixture",segment_id:id});
+  client.handleMessage({type:"backend-synth-complete",request_id:"scope"});
+  audios[0].events.ended(); audios[1].events.error(); audios[2].events.ended();
+  timers.at(-1)();
+  assert.deepEqual(socket.sent.at(-1).ended_segments, [1,3]);
+  assert.equal(socket.sent.at(-1).status, "failed");
 });

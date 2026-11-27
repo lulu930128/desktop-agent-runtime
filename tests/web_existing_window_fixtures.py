@@ -111,7 +111,7 @@ class ExistingWindowFixture:
             "conf_uid": "actor", "conf_name": "SYNTHETIC actor", "default_project_id": "project"}}), encoding="utf-8")
         (self.root / "projects/fixture/project.yaml").write_text(json.dumps({
             "project_id": "project", "display_name": "SYNTHETIC project"}), encoding="utf-8")
-        (self.root / "llm/tool_policy.json").write_text(json.dumps({"default_mode": "blocked"}), encoding="utf-8")
+        (self.root / "llm/tool_policy.json").write_text(json.dumps({"default_mode": "blocked", "tools": {}}), encoding="utf-8")
         paths = {"ROOT": str(self.root)}
         for key, name in {"open_llm_vtuber_dir": "llm", "characters_dir": "characters", "projects_dir": "projects",
                 "bridge_dir": "bridge", "tts_dir": "voice", "env_tts": "env", "env_llm": "env",

@@ -1,0 +1,17 @@
+{
+  "mode": "operate",
+  "contract": "2026-11-20.1",
+  "build_id": "85db28e2f01e9c40a860",
+  "write_enabled": true,
+  "write_tools": [
+    "create_text_file",
+    "append_text_file",
+    "patch_text_file",
+    "update_json_value",
+    "make_directory",
+    "get_write_operation"
+  ],
+  "reason": "enabled",
+  "observed": "2026-11-23T08:19:29.475Z",
+  "surface": "Codex Project Workspace connector"
+}

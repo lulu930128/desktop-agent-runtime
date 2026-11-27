@@ -1,4 +1,5 @@
 import path from "node:path";
+import history from "./work-panel-history.cjs";
 import {createHash} from "node:crypto";
 import fs from "node:fs";
 
@@ -8,6 +9,7 @@ const csp = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inl
 export default {
   root, base: "./", publicDir: false,
   plugins: [{name: "qt-owner-only",
+    load: history.loadPanel,
     enforce: "pre",
     resolveId(source, importer) {
       if (source === "./model" && importer?.replaceAll("\\", "/").endsWith("/src/work-panel/main.ts"))

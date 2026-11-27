@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 import launcher_qt  # bootstrap runtime imports
 from PySide6.QtWidgets import QApplication, QMainWindow, QSystemTrayIcon, QMessageBox
 from kuro_launcher.qt_app import KuroQtLauncherWindow
-from kuro_launcher.qt_controller import QtLauncherController
+from kuro_launcher.qt_controller import QtLauncherController, RuntimeStatus
 from kuro_launcher.qt_notifications import QtScheduleDelivery
 
 
@@ -31,6 +31,8 @@ class DesktopTests(unittest.TestCase):
         w.tray = Mock()
         w.controller = Mock()
         w.chat_client = Mock()
+        w.chat_client.connected = False
+        w.last_status = None
         w.status_timer = Mock()
         w.runtime_timer = Mock()
         w.schedule_delivery = Mock()
@@ -101,15 +103,17 @@ class DesktopTests(unittest.TestCase):
             w._create_tray()
         tray.assert_called_once_with(w)
         menu = w.tray.setContextMenu.call_args.args[0]
-        self.assertEqual([a.text() for a in menu.actions()], ["Show Kuro", "Restart Kuro", "Quit Kuro"])
+        actions = {a.text(): a for a in menu.actions() if a.isEnabled() and not a.isSeparator()}
+        self.assertEqual(list(actions), ["將 Kuro 帶到最前面", "顯示桌寵", "重新定位桌寵",
+                                        "開啟日誌資料夾", "重新啟動 Kuro", "結束 Kuro"])
         w.hide()
-        menu.actions()[0].trigger()
+        actions["將 Kuro 帶到最前面"].trigger()
         self.assertTrue(w.isVisible())
         w.hide()
         w.tray.messageClicked.connect.call_args.args[0]()
         self.assertTrue(w.isVisible())
         with patch.object(QApplication, "instance") as app:
-            menu.actions()[2].trigger()
+            actions["結束 Kuro"].trigger()
             app.return_value.quit.assert_called_once()
 
     def test_restart_native_confirmation_cancel_and_accept(self):
@@ -121,6 +125,105 @@ class DesktopTests(unittest.TestCase):
         with patch("kuro_launcher.qt_app.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes):
             w._confirm_restart_launcher()
         w._restart_launcher.assert_called_once()
+
+    def create_tray_menu(self):
+        with patch("kuro_launcher.qt_app.QSystemTrayIcon.show"):
+            self.window._create_tray()
+        return self.window.tray.contextMenu()
+
+    def test_tray_status_uses_only_observed_snapshot_without_io(self):
+        w = self.window
+        menu = self.create_tray_menu()
+        self.assertEqual([a.text() for a in menu.actions()[:2]], ["對話：未連線", "桌寵：尚未確認"])
+        for connected, snapshot, expected in (
+            (True, RuntimeStatus(False, False, False, True), ["對話：已連線", "桌寵：已啟動"]),
+            (False, RuntimeStatus(True, True, True, False), ["對話：未連線", "桌寵：未啟動"]),
+            (None, None, ["對話：尚未確認", "桌寵：尚未確認"]),
+            (False, SimpleNamespace(pet_shell=True), ["對話：未連線", "桌寵：尚未確認"]),
+        ):
+            w.chat_client.connected, w.last_status = connected, snapshot
+            menu.aboutToShow.emit()
+            self.assertEqual([a.text() for a in menu.actions()[:2]], expected)
+        self.assertTrue(all(not a.isEnabled() for a in menu.actions()[:2]))
+        self.assertEqual([i for i, a in enumerate(menu.actions()) if a.isSeparator()], [2, 6])
+        self.assertIn('QMenu#kuroTrayMenu', menu.styleSheet())
+        self.assertEqual(w.styleSheet(), '')
+        self.assertEqual(w.controller.mock_calls, [])
+        self.assertEqual(w.work_web_candidate.owner_port.mock_calls, [])
+
+    def test_pet_actions_dispatch_off_gui_thread_and_do_not_invent_status(self):
+        w = self.window
+        menu = self.create_tray_menu()
+        actions = {a.text(): a for a in menu.actions()}
+        port = w.work_web_candidate.owner_port
+        for label, method, args in (("顯示桌寵", w.controller.show_pet, ()),
+                                    ("重新定位桌寵", w.controller.run_pet_command, ("reset-pet-position",))):
+            with self.subTest(label=label):
+                port.reset_mock()
+                worker_threads = []
+                def operation(*_):
+                    worker_threads.append(threading.get_ident())
+                    return {"ok": True}
+                method.side_effect = operation
+                actions[label].trigger()
+                self.assertEqual(worker_threads, [])
+                self.assertFalse(actions[label].isEnabled())
+                w._run_tray_operation(label, method, pet=True)
+                port.run_worker.assert_called_once()
+                work, done = port.run_worker.call_args.args
+                results = []
+                thread = threading.Thread(target=lambda: results.append(work()))
+                thread.start(); thread.join(timeout=2)
+                self.assertFalse(thread.is_alive())
+                self.assertNotEqual(worker_threads, [threading.get_ident()])
+                method.assert_called_once_with(*args)
+                with patch.object(QMessageBox, 'warning') as warning:
+                    done(results[0])
+                    warning.assert_not_called()
+                self.assertTrue(actions[label].isEnabled())
+                self.assertIsNone(w.last_status)
+                port.refresh_status.assert_not_called()
+
+    def test_tray_failure_is_visible_sanitized_and_retryable(self):
+        w = self.window
+        menu = self.create_tray_menu()
+        action = next(a for a in menu.actions() if a.text() == "重新定位桌寵")
+        for outcome in (TimeoutError('private fixture payload'), {"ok": False}, None, {"ok": "true"}):
+            with self.subTest(outcome=type(outcome).__name__):
+                w.controller.run_pet_command.side_effect = outcome if isinstance(outcome, Exception) else None
+                w.controller.run_pet_command.return_value = outcome
+                action.trigger()
+                work, done = w.work_web_candidate.owner_port.run_worker.call_args.args
+                with patch.object(QMessageBox, 'warning') as warning:
+                    done(work())
+                    warning.assert_called_once()
+                    message = warning.call_args.args[2]
+                    self.assertIn('重新定位桌寵未完成', message)
+                    self.assertNotIn('private fixture payload', message)
+                self.assertTrue(action.isEnabled())
+
+    def test_logs_dispatch_failure_and_late_completion_after_cleanup(self):
+        w = self.window
+        menu = self.create_tray_menu()
+        action = next(a for a in menu.actions() if a.text() == "開啟日誌資料夾")
+        w.controller.open_logs_dir.return_value = None
+        action.trigger()
+        w.controller.open_logs_dir.assert_not_called()
+        work, done = w.work_web_candidate.owner_port.run_worker.call_args.args
+        with patch.object(QMessageBox, 'warning') as warning:
+            done(work())
+            warning.assert_not_called()
+        w.controller.open_logs_dir.assert_called_once_with()
+        w.work_web_candidate.owner_port.run_worker.side_effect = RuntimeError('pool closed')
+        with patch.object(QMessageBox, 'warning') as warning:
+            action.trigger()
+            self.assertIn('無法開啟日誌資料夾', warning.call_args.args[2])
+        self.assertTrue(action.isEnabled())
+        w.cleanup()
+        with patch.object(QMessageBox, 'warning') as warning:
+            done({"ok": False})
+            action.trigger()
+            warning.assert_not_called()
 
     def test_pet_spawn_overrides_inherited_desktop_owner(self):
         c = QtLauncherController.__new__(QtLauncherController)

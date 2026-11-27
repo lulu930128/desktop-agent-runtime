@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
+from datetime import date
 from typing import Any, Protocol
-from .character_memory_lifecycle import entry_status, is_active_memory
+from .character_memory_lifecycle import entry_status as entry_status, is_active_memory
 
 
 VALID_SCOPE_LEVELS = {
@@ -60,10 +62,35 @@ def estimate_tokens(content: str) -> int:
     return max(1, len(text) // 3)
 
 
+@lru_cache(maxsize=32)
+def _turn_ids(spans):
+    return frozenset(turn for _,turn in spans)
+
+
+def suppressed_turn_ids(spans):
+    return _turn_ids(frozenset(spans))
+
+
+def query_cutoff(text: str) -> str:
+    match = re.search(r"(?:截至|當時|as of|\bon|時点) *(\d{4}-\d{2}-\d{2})", text,re.I)
+    if match:
+        try:
+            return date.fromisoformat(match[1]).isoformat()
+        except ValueError:
+            pass
+    return ""
+
+
+def query_terms(content: str) -> set[str]:
+    # Common English question words alone do not establish evidentiary relevance.
+    return keyword_terms(content) - {"what","which","when","who","how","did","does","do","was","were",
+                                    "is","are","the","an","of","to","in","on","at","my","me","and","for"}
+
+
 def keyword_terms(content: str) -> set[str]:
     text = (content or "").lower()
     terms = set(re.findall(r"[a-z0-9_./:\\-]{2,}", text))
-    for chunk in re.findall(r"[\u4e00-\u9fff]{2,}", text):
+    for chunk in re.findall(r"[\u3040-\u30ff\u3400-\u9fff]{2,}", text):
         terms.add(chunk)
         if len(chunk) > 2:
             terms.update(chunk[index : index + 2] for index in range(len(chunk) - 1))

@@ -1,0 +1,417 @@
+{
+  "runs": [
+    {
+      "messages": 1000,
+      "added": 1000,
+      "corpus_sha256": "3d943dfc3f892d11dd0c16f73fb410063233bd734c2c21531d8e81bb507eb446",
+      "vectors": 500,
+      "rows": {
+        "ai": 500,
+        "episode": 500,
+        "human": 500
+      },
+      "stage_seconds": 6.656870199833065,
+      "build_cpu_seconds": 5.984375,
+      "process_peak_bytes": 552497152,
+      "queries": [
+        {
+          "query": "陶芸教室の参加費はいくら？",
+          "seconds": 0.0728969001211226,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ]
+          ]
+        },
+        {
+          "query": "陶芸教室の参加費はいくら？",
+          "seconds": 0.051478799898177385,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ]
+          ]
+        },
+        {
+          "query": "What did the pottery workshop cost?",
+          "seconds": 0.042527500074356794,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ]
+          ]
+        },
+        {
+          "query": "What did the pottery workshop cost?",
+          "seconds": 0.044697100296616554,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ]
+          ]
+        },
+        {
+          "query": "azurite ceramic admission",
+          "seconds": 0.029008500277996063,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              18
+            ]
+          ]
+        },
+        {
+          "query": "azurite ceramic admission",
+          "seconds": 0.028834799770265818,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              18
+            ]
+          ]
+        },
+        {
+          "query": "庫存出貨",
+          "seconds": 0.07505099987611175,
+          "hit": false,
+          "sources": [
+            [
+              "0",
+              1
+            ],
+            [
+              "0",
+              7
+            ],
+            [
+              "0",
+              13
+            ],
+            [
+              "0",
+              19
+            ]
+          ]
+        },
+        {
+          "query": "庫存出貨",
+          "seconds": 0.07605129992589355,
+          "hit": false,
+          "sources": [
+            [
+              "0",
+              1
+            ],
+            [
+              "0",
+              7
+            ],
+            [
+              "0",
+              13
+            ],
+            [
+              "0",
+              19
+            ]
+          ]
+        }
+      ],
+      "db_bytes": 5607424,
+      "query_p50_seconds": 0.04808795009739697
+    },
+    {
+      "messages": 10000,
+      "added": 9000,
+      "corpus_sha256": "5e2c09757faed93fbb142ffbfd5a77e1d836f7d569fe985f3b4c9f94359138eb",
+      "vectors": 5000,
+      "rows": {
+        "ai": 5000,
+        "episode": 5000,
+        "human": 5000
+      },
+      "stage_seconds": 78.58841940015554,
+      "build_cpu_seconds": 76.015625,
+      "process_peak_bytes": 552497152,
+      "queries": [
+        {
+          "query": "陶芸教室の参加費はいくら？",
+          "seconds": 0.5148688000626862,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ]
+          ]
+        },
+        {
+          "query": "陶芸教室の参加費はいくら？",
+          "seconds": 0.5157552999444306,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ]
+          ]
+        },
+        {
+          "query": "What did the pottery workshop cost?",
+          "seconds": 0.37434140034019947,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ],
+            [
+              "1000",
+              689
+            ],
+            [
+              "1000",
+              785
+            ],
+            [
+              "1000",
+              761
+            ]
+          ]
+        },
+        {
+          "query": "What did the pottery workshop cost?",
+          "seconds": 0.379661800339818,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ],
+            [
+              "1000",
+              689
+            ],
+            [
+              "1000",
+              785
+            ],
+            [
+              "1000",
+              761
+            ]
+          ]
+        },
+        {
+          "query": "azurite ceramic admission",
+          "seconds": 0.2459121998399496,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              18
+            ]
+          ]
+        },
+        {
+          "query": "azurite ceramic admission",
+          "seconds": 0.23950689984485507,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              18
+            ]
+          ]
+        },
+        {
+          "query": "庫存出貨",
+          "seconds": 1.1020812997594476,
+          "hit": false,
+          "sources": [
+            [
+              "0",
+              67
+            ],
+            [
+              "0",
+              91
+            ],
+            [
+              "0",
+              277
+            ],
+            [
+              "0",
+              313
+            ]
+          ]
+        },
+        {
+          "query": "庫存出貨",
+          "seconds": 1.0506313000805676,
+          "hit": false,
+          "sources": [
+            [
+              "0",
+              67
+            ],
+            [
+              "0",
+              91
+            ],
+            [
+              "0",
+              277
+            ],
+            [
+              "0",
+              313
+            ]
+          ]
+        }
+      ],
+      "db_bytes": 55607296,
+      "query_p50_seconds": 0.4472653002012521
+    },
+    {
+      "messages": 100000,
+      "added": 90000,
+      "corpus_sha256": "3a4320e43ef8576aad7abd3b6375b9b902ceee569d5dcf5ed4ab4c9cd42f9446",
+      "vectors": 50000,
+      "rows": {
+        "ai": 50000,
+        "episode": 50000,
+        "human": 50000
+      },
+      "stage_seconds": 895.528002299834,
+      "build_cpu_seconds": 850.28125,
+      "process_peak_bytes": 552497152,
+      "queries": [
+        {
+          "query": "陶芸教室の参加費はいくら？",
+          "seconds": 9.744849599897861,
+          "hit": false,
+          "sources": []
+        },
+        {
+          "query": "陶芸教室の参加費はいくら？",
+          "seconds": 6.773146700114012,
+          "hit": false,
+          "sources": []
+        },
+        {
+          "query": "What did the pottery workshop cost?",
+          "seconds": 4.718570100143552,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ],
+            [
+              "1000",
+              761
+            ]
+          ]
+        },
+        {
+          "query": "What did the pottery workshop cost?",
+          "seconds": 4.579019799828529,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              19
+            ],
+            [
+              "1000",
+              761
+            ]
+          ]
+        },
+        {
+          "query": "azurite ceramic admission",
+          "seconds": 3.018478199839592,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              18
+            ]
+          ]
+        },
+        {
+          "query": "azurite ceramic admission",
+          "seconds": 3.0024502999149263,
+          "hit": true,
+          "sources": [
+            [
+              "0",
+              18
+            ]
+          ]
+        },
+        {
+          "query": "庫存出貨",
+          "seconds": 16.277914500329643,
+          "hit": false,
+          "sources": [
+            [
+              "0",
+              67
+            ],
+            [
+              "0",
+              91
+            ],
+            [
+              "1000",
+              27
+            ],
+            [
+              "2000",
+              269
+            ]
+          ]
+        },
+        {
+          "query": "庫存出貨",
+          "seconds": 15.59883730020374,
+          "hit": false,
+          "sources": [
+            [
+              "0",
+              67
+            ],
+            [
+              "0",
+              91
+            ],
+            [
+              "1000",
+              27
+            ],
+            [
+              "2000",
+              269
+            ]
+          ]
+        }
+      ],
+      "db_bytes": 558399488,
+      "query_p50_seconds": 5.745858400128782
+    }
+  ],
+  "network_calls": 0
+}

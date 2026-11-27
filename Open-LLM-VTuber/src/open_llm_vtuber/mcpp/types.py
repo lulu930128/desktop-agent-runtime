@@ -24,6 +24,9 @@ class MCPServer:
     timeout: Optional[timedelta] = timedelta(seconds=30)
     description: str = "No description available."
     allowed_tools: list[str] | None = None
+    require_read_only: bool = False
+    transport: str = "stdio"
+    url: str | None = None
 
 
 @dataclass
@@ -43,6 +46,7 @@ class FormattedTool:
     generic_schema: Optional[dict[str, Any]] = None
     description: str = "No description available."
     api_name: str = ""
+    read_only: bool = False
     canonical_id: str = ""
     wire_name: str = ""
     schema_digest: str = ""
@@ -60,6 +64,7 @@ class DiscoveryResult:
     pages_read: int = 0
     observed_at: str = ""
     schema_digest: str = ""
+    instructions: str = ""
     source: str = "live"
     cache_observed_at: str = ""
 
